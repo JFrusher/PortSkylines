@@ -109,12 +109,12 @@ func step(dt: float) -> void:
 	if _until_ship <= 0.0:
 		_until_ship = SHIP_INTERVAL
 		_call_ship()
-	for ship in ships.duplicate():
+	for ship: Ship in ships.duplicate():
 		_work(ship, dt)
 	_until_lorry -= dt
 	if _until_lorry <= 0.0 and _dispatch_lorry():
 		_until_lorry = LORRY_INTERVAL
-	for lorry in lorries.duplicate():
+	for lorry: Lorry in lorries.duplicate():
 		_drive(lorry, dt)
 
 
