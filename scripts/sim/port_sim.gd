@@ -58,6 +58,17 @@ class Ship:
 		berth = at_berth
 		boxes = cargo
 
+	func to_dict() -> Dictionary:
+		return {"quay": quay, "berth": berth, "boxes": boxes, "state": state, "sail": sail, "prev_sail": prev_sail, "crane": crane}
+
+	static func from_dict(d: Dictionary) -> Ship:
+		var ship := Ship.new(d.quay, d.berth, d.boxes)
+		ship.state = d.state
+		ship.sail = d.sail
+		ship.prev_sail = d.prev_sail
+		ship.crane = d.crane
+		return ship
+
 
 class Lorry:
 	var path: Array[Vector2i]
@@ -72,12 +83,68 @@ class Lorry:
 		path = route
 		yard = to_yard
 
+	func to_dict() -> Dictionary:
+		return {"path": path.duplicate(), "yard": yard, "loaded": loaded, "t": t, "prev_t": prev_t}
+
+	static func from_dict(d: Dictionary) -> Lorry:
+		var route: Array[Vector2i] = []
+		route.assign(d.path)
+		var lorry := Lorry.new(route, d.yard)
+		lorry.loaded = d.loaded
+		lorry.t = d.t
+		lorry.prev_t = d.prev_t
+		return lorry
+
 	## Position in tile coordinates, `alpha` of the way from the last tick to this one.
 	func position(alpha: float) -> Vector2:
 		var at := lerpf(prev_t, t, alpha)
 		var i := mini(int(at), path.size() - 1)
 		var j := mini(i + 1, path.size() - 1)
 		return Vector2(path[i]).lerp(Vector2(path[j]), clampf(at - i, 0.0, 1.0))
+
+
+## Everything the sim needs to carry on exactly where it was, in plain types.
+func to_dict() -> Dictionary:
+	return {
+		"map": map.to_dict(),
+		"ticks": clock.ticks,
+		"rng_seed": rng.seed,
+		"rng_state": rng.state,
+		"money": money,
+		"delivered": delivered,
+		"status": status,
+		"ships": ships.map(func(ship: Ship) -> Dictionary: return ship.to_dict()),
+		"lorries": lorries.map(func(lorry: Lorry) -> Dictionary: return lorry.to_dict()),
+		"stacked": stacked.duplicate(),
+		"claimed": _claimed.duplicate(),
+		"until_ship": _until_ship,
+		"until_lorry": _until_lorry,
+	}
+
+
+static func from_dict(d: Dictionary) -> PortSim:
+	var sim := PortSim.new()
+	sim.map = PortMap.from_dict(d.map)
+	sim.clock.ticks = d.ticks
+	sim.rng.seed = d.rng_seed
+	sim.rng.state = d.rng_state
+	sim.money = d.money
+	sim.delivered = d.delivered
+	sim.status = d.status
+	for ship: Dictionary in d.ships:
+		sim.ships.append(Ship.from_dict(ship))
+	for lorry: Dictionary in d.lorries:
+		sim.lorries.append(Lorry.from_dict(lorry))
+	sim.stacked = d.stacked.duplicate()
+	sim._claimed = d.claimed.duplicate()
+	sim._until_ship = d.until_ship
+	sim._until_lorry = d.until_lorry
+	return sim
+
+
+## Identical for identical states; used by the replay and save tests.
+func state_hash() -> int:
+	return hash(var_to_bytes(to_dict()))
 
 
 ## The one way the player changes the sim. Applied between ticks, so a

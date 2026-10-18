@@ -100,3 +100,19 @@ func cells_of(kind: int) -> Array[Vector2i]:
 		if _tiles[i] == kind:
 			found.append(Vector2i(i % size.x, int(i / float(size.x))))
 	return found
+
+
+func to_dict() -> Dictionary:
+	return {"size": size, "sea_width": sea_width, "entry": entry, "version": version, "tiles": _tiles.duplicate()}
+
+
+static func from_dict(d: Dictionary) -> PortMap:
+	var map := PortMap.new(d.size, d.sea_width)
+	map.entry = d.entry
+	map.version = d.version
+	map._tiles = d.tiles.duplicate()
+	map._roads.fill_solid_region(map._roads.region)
+	for i in map._tiles.size():
+		if map._tiles[i] == Tile.ROAD:
+			map._roads.set_point_solid(Vector2i(i % map.size.x, int(i / float(map.size.x))), false)
+	return map

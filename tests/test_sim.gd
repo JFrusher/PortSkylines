@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_no_ship_without_a_road()
 	_test_ships_unload_and_lorries_pay()
 	_test_commands()
+	_test_round_trip()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -94,3 +95,17 @@ func _test_commands() -> void:
 	_expect(by_command.apply({"op": "bulldoze", "cell": cell}), "", "bulldoze command")
 	_expect(by_command.map.tile(cell), PortMap.Tile.LAND, "a bulldoze command clears the tile")
 	_expect(by_command.apply({"op": "fly"}), "Unknown command: fly", "unknown command is refused")
+
+
+func _test_round_trip() -> void:
+	var straight := _port()
+	var halves := _port()
+	_run(straight, 50)
+	_run(halves, 25)
+	var copy := PortSim.from_dict(halves.to_dict())
+	_expect(copy.state_hash(), halves.state_hash(), "to_dict -> from_dict keeps the state")
+	_run(copy, 25)
+	_expect(copy.ships.is_empty() and copy.lorries.is_empty(), false, "the round trip happened mid-traffic")
+	_expect(copy.state_hash(), straight.state_hash(), "a round trip mid-run changes nothing")
+	_expect(copy.build(ROAD, Vector2i(30, 3)), "", "the copy's map still accepts builds")
+	_expect(copy.map.route(copy.map.entry, Vector2i(copy.map.sea_width, copy.map.entry.y)).is_empty(), false, "the copy's road routing works")
