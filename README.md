@@ -5,7 +5,7 @@ highway, build quays on the coast and container yards inland; ships call at
 connected quays, cranes stack their boxes in the nearest reachable yard, and
 lorries from the highway collect each box and pay for it.
 
-Built with [Godot 4.4](https://godotengine.org/download) (standard build, GDScript).
+Built with [Godot 4.7.2](https://godotengine.org/download) (standard build, GDScript). CI pins the same version in `GODOT_VERSION` in `.github/workflows/ci.yml`.
 
 ## Play
 
