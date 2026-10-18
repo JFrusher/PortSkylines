@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_cranes()
 	_test_crane_timing()
 	_test_outreach()
+	_test_route_cache()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -118,7 +119,7 @@ func _test_round_trip() -> void:
 	var copy := PortSim.from_dict(halves.to_dict())
 	_expect(copy.state_hash(), halves.state_hash(), "to_dict -> from_dict keeps the state")
 	_run(copy, 25)
-	_expect(copy.ships.is_empty() and copy.lorries.is_empty(), false, "the round trip happened mid-traffic")
+	_expect(copy.ships.is_empty() and copy.vehicles.is_empty(), false, "the round trip happened mid-traffic")
 	_expect(copy.state_hash(), straight.state_hash(), "a round trip mid-run changes nothing")
 	_expect(copy.build(ROAD, Vector2i(30, 3)), "", "the copy's map still accepts builds")
 	_expect(copy.map.route(copy.map.entry, Vector2i(copy.map.sea_width, copy.map.entry.y)).is_empty(), false, "the copy's road routing works")
@@ -230,3 +231,15 @@ func _test_outreach() -> void:
 	_run(sim, sim.rules.first_ship_minutes + 30)
 	_expect(sim.ships.size() == 1 and sim.ships[0].boxes == rules.ship_classes.panamax.import_moves, true, "a panamax gets no moves from cranes that are too short")
 	_expect(sim.status.contains("reaches 13 rows"), true, "the status says why (%s)" % sim.status)
+
+
+func _test_route_cache() -> void:
+	var sim := _port()
+	var map := sim.map
+	var to := Vector2i(map.sea_width, map.entry.y)
+	var first := map.route(map.entry, to)
+	_expect(map._route_cache.size(), 1, "a route is cached after the first request")
+	first.reverse()
+	_expect(map.route(map.entry, to)[0], map.access_road(map.entry), "changing a returned route leaves the cache alone")
+	sim.build(ROAD, Vector2i(30, 3))
+	_expect(map._route_cache.size(), 0, "building clears the cache")

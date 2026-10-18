@@ -1,7 +1,8 @@
 extends SceneTree
 ## 10,000 ticks of a seeded random port, with the sim's invariants checked
 ## after every tick: money only changes through commands and fees, yards stay within capacity, lorries only
-## come for boxes that exist, and every lorry drives on road.
+## come for boxes that exist, every vehicle drives on road, and no two
+## vehicles ever share a lane.
 ## godot --headless --script res://tests/test_soak.gd
 
 const RandomPort := preload("res://tests/random_port.gd")
@@ -52,8 +53,15 @@ func _check(sim: PortSim, spent: int) -> void:
 		var count: int = sim.stacked[yard]
 		_expect(count >= 0 and count <= sim.rules.yard_capacity, true, "yard %s holds %d boxes %s" % [yard, count, at])
 		_expect(sim._claimed.get(yard, 0) <= count, true, "lorries come only for boxes in yard %s %s" % [yard, at])
-	for lorry: PortSim.Lorry in sim.lorries:
-		for cell: Vector2i in lorry.path:
+	var lanes := {}
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.lane in lanes:
+			_expect(vehicle.lane, null, "vehicles %d and %d share a lane %s" % [vehicle.id, lanes[vehicle.lane], at])
+		lanes[vehicle.lane] = vehicle.id
+		var here := vehicle.path[int(vehicle.t)]
+		_expect(Vector2i(vehicle.lane.x, vehicle.lane.y), here, "vehicle %d holds the lane of the tile it is on %s" % [vehicle.id, at])
+		_expect(sim.traffic.holder(vehicle.lane), vehicle.id, "traffic agrees vehicle %d holds its lane %s" % [vehicle.id, at])
+		for cell: Vector2i in vehicle.path:
 			if sim.map.tile(cell) != PortMap.Tile.ROAD:
-				_expect(sim.map.tile(cell), PortMap.Tile.ROAD, "lorry path cell %s is road %s" % [cell, at])
+				_expect(sim.map.tile(cell), PortMap.Tile.ROAD, "vehicle path cell %s is road %s" % [cell, at])
 				return

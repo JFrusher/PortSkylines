@@ -48,6 +48,13 @@ static func _migrate(data: Dictionary) -> Dictionary:
 static func _v1_to_v2(data: Dictionary) -> Dictionary:
 	data.sim.ships = []
 	data.sim.cranes = []
+	# Lorries move to the v2 traffic model; lorries on the road are dropped
+	# and any boxes they had claimed are free again.
+	data.sim.erase("lorries")
+	data.sim.vehicles = []
+	data.sim.claimed = {}
+	data.sim.next_vehicle = 1
+	data.sim.gave_up = 0
 	data.sim.status = "Saved game updated: ships that were in port have sailed"
 	data.version = 2
 	return data

@@ -20,6 +20,8 @@ var _roads := AStarGrid2D.new()
 ## Tile indices per kind, kept sorted so cells_of() returns map order, the
 ## same order a full scan gives, without scanning.
 var _index := {}
+## Routes already found, keyed by their two road ends; cleared on any change.
+var _route_cache := {}
 
 
 func _init(map_size: Vector2i, sea: int) -> void:
@@ -77,6 +79,7 @@ func place(kind: int, cell: Vector2i) -> void:
 	new.insert(new.bsearch(i), i)
 	_tiles[i] = kind
 	_roads.set_point_solid(cell, kind != Tile.ROAD)
+	_route_cache.clear()
 	version += 1
 
 
@@ -129,7 +132,24 @@ func route(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	var b := access_road(to)
 	if a == NONE or b == NONE:
 		return []
-	return _roads.get_id_path(a, b)
+	var key := Vector4i(a.x, a.y, b.x, b.y)
+	if key not in _route_cache:
+		_route_cache[key] = _roads.get_id_path(a, b)
+	var path: Array[Vector2i] = _route_cache[key]
+	return path.duplicate()
+
+
+## A road route from road tile `from` to `to`'s access road that does not pass
+## through `blocked`; empty when there is none.
+func route_avoiding(from: Vector2i, to: Vector2i, blocked: Vector2i) -> Array[Vector2i]:
+	var b := access_road(to)
+	if b == NONE or from == blocked or b == blocked:
+		return []
+	var was_solid := _roads.is_point_solid(blocked)
+	_roads.set_point_solid(blocked, true)
+	var path := _roads.get_id_path(from, b)
+	_roads.set_point_solid(blocked, was_solid)
+	return path
 
 
 func cells_of(kind: int) -> Array[Vector2i]:

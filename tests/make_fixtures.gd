@@ -19,5 +19,5 @@ func _initialize() -> void:
 		sim.tick()
 	var path := "res://tests/fixtures/save_v%d.bin" % SaveFile.VERSION
 	var err := SaveFile.save(path, sim)
-	print(err if err else "wrote %s (ships %d, lorries %d)" % [path, sim.ships.size(), sim.lorries.size()])
+	print(err if err else "wrote %s (ships %d, vehicles %d)" % [path, sim.ships.size(), sim.vehicles.size()])
 	quit(1 if err else 0)

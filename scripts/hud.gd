@@ -57,7 +57,7 @@ func flash(text: String) -> void:
 
 
 func _process(dt: float) -> void:
-	_readout.text = "$%d    Boxes delivered %d    Ships %d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size(), sim.lorries.size()]
+	_readout.text = "$%d    Boxes delivered %d    Ships %d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size(), sim.vehicles.size()]
 	_flash_left -= dt
 	if _flash_left <= 0.0:
 		_message.text = sim.status

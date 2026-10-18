@@ -16,6 +16,7 @@ const SCHEMA := {
 	"yard_capacity": TYPE_INT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
+	"give_up_seconds": TYPE_FLOAT,
 	# "*" means any key, each holding the record that follows.
 	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "weight": TYPE_FLOAT}},
 	"water_depth": TYPE_FLOAT,

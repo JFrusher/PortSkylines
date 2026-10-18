@@ -15,7 +15,10 @@ var delivered := 0
 var status := "Run a road from the highway to the coast, then build a quay and a yard"
 var ships: Array[Ship] = []
 var cranes: Array[Crane] = []
-var lorries: Array[Lorry] = []
+var vehicles: Array[Vehicle] = []
+var traffic := Traffic.new()
+## Lorries that gave up on a jam and left; see _drive.
+var gave_up := 0
 ## Boxes stacked on each yard tile.
 var stacked := {}
 
@@ -24,6 +27,7 @@ var _claimed := {}
 ## Calendar minutes until the next ship and the next lorry dispatch.
 var _until_ship := 0.0
 var _until_lorry := 0.0
+var _next_vehicle := 1
 
 
 func _init(seed_value := 0, game_rules := Content.base()) -> void:
@@ -90,39 +94,6 @@ class Crane:
 		return crane
 
 
-class Lorry:
-	var path: Array[Vector2i]
-	var yard: Vector2i
-	var loaded := false
-	## Distance travelled along `path`, in tiles.
-	var t := 0.0
-	## `t` at the start of this tick, for drawing between ticks.
-	var prev_t := 0.0
-
-	func _init(route: Array[Vector2i], to_yard: Vector2i) -> void:
-		path = route
-		yard = to_yard
-
-	func to_dict() -> Dictionary:
-		return {"path": path.duplicate(), "yard": yard, "loaded": loaded, "t": t, "prev_t": prev_t}
-
-	static func from_dict(d: Dictionary) -> Lorry:
-		var route: Array[Vector2i] = []
-		route.assign(d.path)
-		var lorry := Lorry.new(route, d.yard)
-		lorry.loaded = d.loaded
-		lorry.t = d.t
-		lorry.prev_t = d.prev_t
-		return lorry
-
-	## Position in tile coordinates, `alpha` of the way from the last tick to this one.
-	func position(alpha: float) -> Vector2:
-		var at := lerpf(prev_t, t, alpha)
-		var i := mini(int(at), path.size() - 1)
-		var j := mini(i + 1, path.size() - 1)
-		return Vector2(path[i]).lerp(Vector2(path[j]), clampf(at - i, 0.0, 1.0))
-
-
 ## Everything the sim needs to carry on exactly where it was, in plain types.
 func to_dict() -> Dictionary:
 	return {
@@ -135,7 +106,9 @@ func to_dict() -> Dictionary:
 		"status": status,
 		"ships": ships.map(func(ship: Ship) -> Dictionary: return ship.to_dict()),
 		"cranes": cranes.map(func(crane: Crane) -> Dictionary: return crane.to_dict()),
-		"lorries": lorries.map(func(lorry: Lorry) -> Dictionary: return lorry.to_dict()),
+		"vehicles": vehicles.map(func(vehicle: Vehicle) -> Dictionary: return vehicle.to_dict()),
+		"next_vehicle": _next_vehicle,
+		"gave_up": gave_up,
 		"stacked": stacked.duplicate(),
 		"claimed": _claimed.duplicate(),
 		"until_ship": _until_ship,
@@ -156,8 +129,12 @@ static func from_dict(d: Dictionary) -> PortSim:
 		sim.ships.append(Ship.from_dict(ship))
 	for crane: Dictionary in d.cranes:
 		sim.cranes.append(Crane.from_dict(crane))
-	for lorry: Dictionary in d.lorries:
-		sim.lorries.append(Lorry.from_dict(lorry))
+	for data: Dictionary in d.vehicles:
+		var vehicle := Vehicle.from_dict(data)
+		sim.vehicles.append(vehicle)
+		sim.traffic.claim(vehicle.lane, vehicle.id)
+	sim._next_vehicle = d.next_vehicle
+	sim.gave_up = d.gave_up
 	sim.stacked = d.stacked.duplicate()
 	sim._claimed = d.claimed.duplicate()
 	sim._until_ship = d.until_ship
@@ -239,9 +216,9 @@ func bulldoze_error(cell: Vector2i) -> String:
 	for ship in ships:
 		if cell in ship.cells:
 			return "A ship is alongside"
-	for lorry in lorries:
-		if cell in lorry.path:
-			return "Lorries are using this road"
+	for vehicle in vehicles:
+		if cell in vehicle.path:
+			return "Vehicles are using this road"
 	return ""
 
 
@@ -267,8 +244,8 @@ func tick() -> void:
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and _dispatch_lorry():
 		_until_lorry = rules.lorry_interval_minutes
-	for lorry: Lorry in lorries.duplicate():
-		_drive(lorry)
+	for vehicle: Vehicle in vehicles.duplicate():
+		_drive(vehicle)
 
 
 ## A ship of a random class (weighted by the data) calls at the first free
@@ -387,26 +364,96 @@ func _dispatch_lorry() -> bool:
 		var path := map.route(map.entry, yard)
 		if path.is_empty():
 			continue
+		var lorry := Vehicle.new(_next_vehicle, "lorry", path)
+		lorry.yard = yard
+		lorry.lane = Traffic.lane(map, path, 0)
+		if not traffic.claim(lorry.lane, lorry.id):
+			return false
+		_next_vehicle += 1
 		_claimed[yard] = _claimed.get(yard, 0) + 1
-		lorries.append(Lorry.new(path, yard))
+		vehicles.append(lorry)
 		return true
 	return false
 
 
-func _drive(lorry: Lorry) -> void:
-	# shortcut: lorries drive through each other, add cell reservation in M2.
-	lorry.prev_t = lorry.t
-	lorry.t += rules.lorry_speed * SimClock.TICK_SECONDS
-	if lorry.t < lorry.path.size() - 1:
+## A lorry drives to its yard tile, picks up the box, drives back to the
+## highway and pays. Stuck too long, it replans around the jam; stuck twice as
+## long, it gives up and leaves with whatever it carries, paying nothing.
+func _drive(lorry: Vehicle) -> void:
+	if not _advance(lorry, rules.lorry_speed):
+		_unstick(lorry)
 		return
 	if lorry.loaded:
-		lorries.erase(lorry)
+		_leave(lorry)
 		money += rules.fee_per_box
 		delivered += 1
+		return
+	var back := lorry.path.duplicate()
+	back.reverse()
+	if not _move_to_lane(lorry, Traffic.lane(map, back, 0)):
+		lorry.waited += 1
 		return
 	stacked[lorry.yard] -= 1
 	_claimed[lorry.yard] -= 1
 	lorry.loaded = true
-	lorry.path.reverse()
+	lorry.path = back
 	lorry.t = 0.0
 	lorry.prev_t = 0.0
+	lorry.waited = 0
+	lorry.replanned = false
+
+
+## Moves `vehicle` up to one tile along its path at `speed` tiles per vehicle
+## second, entering the next tile only once it holds that tile's lane.
+## Returns whether it is at the end of its path.
+func _advance(vehicle: Vehicle, speed: float) -> bool:
+	vehicle.prev_t = vehicle.t
+	if vehicle.at_end():
+		return true
+	var i := int(vehicle.t)
+	var target := minf(vehicle.t + speed * SimClock.TICK_SECONDS, i + 1.99)
+	if int(target) > i:
+		if not _move_to_lane(vehicle, Traffic.lane(map, vehicle.path, i + 1)):
+			vehicle.t = maxf(vehicle.t, minf(target, i + 0.95))
+			vehicle.waited += 1
+			return false
+		vehicle.waited = 0
+	vehicle.t = minf(target, vehicle.path.size() - 1)
+	return vehicle.at_end()
+
+
+## The safety valve for jams: after give_up_seconds a vehicle tries a route
+## around the tile it is waiting for; after twice that, a lorry gives up.
+func _unstick(vehicle: Vehicle) -> void:
+	var limit := roundi(rules.give_up_seconds / SimClock.TICK_SECONDS)
+	if vehicle.waited >= limit and not vehicle.replanned:
+		vehicle.replanned = true
+		var i := int(vehicle.t)
+		var around := map.route_avoiding(vehicle.path[i], vehicle.path[-1], vehicle.path[i + 1])
+		if not around.is_empty():
+			vehicle.path = around
+			vehicle.t = 0.0
+			vehicle.prev_t = 0.0
+	elif vehicle.waited >= limit * 2 and vehicle.kind == "lorry":
+		if not vehicle.loaded:
+			_claimed[vehicle.yard] -= 1
+		_leave(vehicle)
+		gave_up += 1
+		status = "A lorry gave up on a traffic jam and left"
+
+
+## Takes `lane` for `vehicle` and lets go of the one it held. At a junction
+## both can be the same shared lane, which must then stay held.
+func _move_to_lane(vehicle: Vehicle, lane: Vector3i) -> bool:
+	if lane == vehicle.lane:
+		return true
+	if not traffic.claim(lane, vehicle.id):
+		return false
+	traffic.release(vehicle.lane, vehicle.id)
+	vehicle.lane = lane
+	return true
+
+
+func _leave(vehicle: Vehicle) -> void:
+	traffic.release(vehicle.lane, vehicle.id)
+	vehicles.erase(vehicle)

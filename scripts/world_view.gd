@@ -10,6 +10,7 @@ const TILE_COLOR := {
 	PortMap.Tile.YARD: Color(0.45, 0.45, 0.43),
 }
 const BOX_HEIGHT := 0.3
+const LANE_OFFSET := 0.22
 const BOX_COLOR := Color(0.85, 0.4, 0.15)
 const SEA_START := -18.0  # how far the water reaches past the map
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
@@ -27,9 +28,9 @@ var _stacks := ChunkedMeshes.new()
 var _stack_mesh := _box_mesh(Vector3(0.8, BOX_HEIGHT, 0.4), BOX_COLOR)
 ## Chunks that held stacks last frame, so emptied ones get cleared.
 var _stack_chunks := {}
-# shortcut: ships and lorries are one node each, fine under ~100; MultiMesh them in M5.
+# shortcut: ships and vehicles are one node each, fine under ~100; MultiMesh them in M5.
 var _ships := {}  # PortSim.Ship -> Node3D
-var _lorries := {}  # PortSim.Lorry -> Node3D
+var _vehicles := {}  # Vehicle -> Node3D
 var _cranes := {}  # PortSim.Crane -> Node3D
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
 
@@ -62,7 +63,7 @@ func _process(_dt: float) -> void:
 	_draw_stacks()
 	_draw_ships()
 	_draw_cranes()
-	_draw_lorries()
+	_draw_vehicles()
 
 
 ## Redraws only the chunks whose tiles changed since the last draw.
@@ -149,22 +150,24 @@ func _draw_cranes() -> void:
 		_cranes[crane] = tower
 
 
-func _draw_lorries() -> void:
-	_forget_gone(_lorries, sim.lorries)
-	for lorry: PortSim.Lorry in sim.lorries:
-		if lorry not in _lorries:
+func _draw_vehicles() -> void:
+	_forget_gone(_vehicles, sim.vehicles)
+	for lorry: Vehicle in sim.vehicles:
+		if lorry not in _vehicles:
 			var cab := _box(Vector3(0.3, 0.25, 0.6), Color(0.85, 0.85, 0.8))
 			var box := _box(Vector3(0.28, 0.22, 0.5), BOX_COLOR)
 			box.name = "Box"
 			box.position.y = 0.23
 			cab.add_child(box)
 			add_child(cab)
-			_lorries[lorry] = cab
-		var cab: Node3D = _lorries[lorry]
+			_vehicles[lorry] = cab
+		var cab: Node3D = _vehicles[lorry]
 		var at := lorry.position(alpha)
-		cab.position = Vector3(at.x + 0.5, 0.17, at.y + 0.5)
 		var i := mini(int(lorry.t), lorry.path.size() - 1)
 		var heading := Vector2(lorry.path[mini(i + 1, lorry.path.size() - 1)] - lorry.path[i])
+		# Keep right: each direction drives in its own half of the road.
+		var right := Vector2(-heading.y, heading.x) * LANE_OFFSET
+		cab.position = Vector3(at.x + 0.5 + right.x, 0.17, at.y + 0.5 + right.y)
 		if heading != Vector2.ZERO:
 			cab.rotation.y = atan2(heading.x, heading.y)
 		cab.get_node("Box").visible = lorry.loaded
