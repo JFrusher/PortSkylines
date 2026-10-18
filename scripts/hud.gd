@@ -4,6 +4,7 @@ extends CanvasLayer
 ## choices through `tool` and `speed`; never changes the sim.
 
 const BULLDOZE := -1
+const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 const FLASH_SECONDS := 2.5
 
 var sim: PortSim
@@ -24,9 +25,8 @@ func _ready() -> void:
 	var top := _row(root)
 	top.add_child(_outlined(_readout))
 	var speeds := ButtonGroup.new()
-	for s in 4:
-		var label: String = ["Pause", "1×", "2×", "3×"][s]
-		_button(top, label, speeds, s == speed, func() -> void: speed = s)
+	for s: int in SPEEDS:
+		_button(top, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
 	root.add_child(_outlined(_message))
 
 	var spacer := Control.new()
