@@ -13,12 +13,13 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 
 | File | Covers |
 |---|---|
-| `test_sim.gd` | Build and bulldoze rules, the ship-to-lorry loop, commands, save dictionaries, the tile index |
+| `test_sim.gd` | Build rules, berths, crane rate and outreach, yards and gear, dwell, exports, gates, upkeep, KPIs, events, save dictionaries |
+| `test_traffic.gd` | Lanes: head-on, queues, a ring, and giving up when stuck |
 | `test_clock.gd` | Calendar time and frame-to-tick conversion |
 | `test_replay.gd` | The same command log gives the same state at 1, 3 and 6 ticks per frame |
-| `test_save.gd` | Save files, refusing bad files, and every committed fixture |
+| `test_save.gd` | Save files, atomic replace, refusing bad files and payloads, and every committed fixture |
 | `test_content.gd` | The game data loader and its error messages |
-| `test_soak.gd` | 10,000 ticks of random commands with invariants checked every tick |
+| `test_soak.gd` | Calm and congested ports under random commands, with money, capacity, box and lane invariants checked every tick |
 
 ## Save fixtures
 
