@@ -14,6 +14,8 @@ const BOX_COLOR := Color(0.85, 0.4, 0.15)
 const SEA_START := -18.0  # where ships appear, west of the map
 
 var sim: PortSim
+## How far play has moved from the last tick towards the next, 0 to 1.
+var alpha := 1.0
 
 var _drawn_version := -1
 var _tiles := {}  # Vector2i -> MeshInstance3D
@@ -98,7 +100,8 @@ func _draw_ships() -> void:
 			add_child(hull)
 			_ships[ship] = hull
 		var hull: Node3D = _ships[ship]
-		var x := lerpf(SEA_START, ship.berth.x + 0.5, ease(ship.sail, -2.0))
+		var sail := lerpf(ship.prev_sail, ship.sail, alpha)
+		var x := lerpf(SEA_START, ship.berth.x + 0.5, ease(sail, -2.0))
 		hull.position = Vector3(x, -0.05, ship.berth.y + 0.5)
 		var cargo: Node3D = hull.get_node("Cargo")
 		cargo.visible = ship.boxes > 0
@@ -117,7 +120,7 @@ func _draw_lorries() -> void:
 			add_child(cab)
 			_lorries[lorry] = cab
 		var cab: Node3D = _lorries[lorry]
-		var at := lorry.position()
+		var at := lorry.position(alpha)
 		cab.position = Vector3(at.x + 0.5, 0.17, at.y + 0.5)
 		var i := mini(int(lorry.t), lorry.path.size() - 1)
 		var heading := Vector2(lorry.path[mini(i + 1, lorry.path.size() - 1)] - lorry.path[i])

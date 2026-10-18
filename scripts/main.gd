@@ -38,6 +38,7 @@ func _process(dt: float) -> void:
 	if ticks == max_ticks and left >= SimClock.TICK_SECONDS and OS.is_debug_build():
 		print_debug("Dropped %.2f s of sim time after a slow frame" % left)
 	_accumulated = minf(left, SimClock.TICK_SECONDS)
+	view.alpha = _accumulated / SimClock.TICK_SECONDS
 	var cell := _hovered_cell()
 	view.show_hover(cell, _order_error(cell) == "")
 	if _painting:

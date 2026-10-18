@@ -42,6 +42,8 @@ class Ship:
 	var state := State.ARRIVING
 	## 0 out at sea, 1 alongside the quay.
 	var sail := 0.0
+	## `sail` at the start of this tick, for drawing between ticks.
+	var prev_sail := 0.0
 	## Calendar minutes into the current crane move.
 	var crane := 0.0
 
@@ -57,16 +59,19 @@ class Lorry:
 	var loaded := false
 	## Distance travelled along `path`, in tiles.
 	var t := 0.0
+	## `t` at the start of this tick, for drawing between ticks.
+	var prev_t := 0.0
 
 	func _init(route: Array[Vector2i], to_yard: Vector2i) -> void:
 		path = route
 		yard = to_yard
 
-	## Position in tile coordinates, between two path cells.
-	func position() -> Vector2:
-		var i := mini(int(t), path.size() - 1)
+	## Position in tile coordinates, `alpha` of the way from the last tick to this one.
+	func position(alpha: float) -> Vector2:
+		var at := lerpf(prev_t, t, alpha)
+		var i := mini(int(at), path.size() - 1)
 		var j := mini(i + 1, path.size() - 1)
-		return Vector2(path[i]).lerp(Vector2(path[j]), clampf(t - i, 0.0, 1.0))
+		return Vector2(path[i]).lerp(Vector2(path[j]), clampf(at - i, 0.0, 1.0))
 
 
 func build_error(kind: int, cell: Vector2i) -> String:
@@ -141,6 +146,7 @@ func _occupied(quay: Vector2i, berth: Vector2i) -> bool:
 
 
 func _work(ship: Ship) -> void:
+	ship.prev_sail = ship.sail
 	match ship.state:
 		Ship.State.ARRIVING:
 			ship.sail = minf(ship.sail + SimClock.TICK_SECONDS / SAIL_SECONDS, 1.0)
@@ -196,6 +202,7 @@ func _dispatch_lorry() -> bool:
 
 func _drive(lorry: Lorry) -> void:
 	# shortcut: lorries drive through each other, add cell reservation in M2.
+	lorry.prev_t = lorry.t
 	lorry.t += LORRY_SPEED * SimClock.TICK_SECONDS
 	if lorry.t < lorry.path.size() - 1:
 		return
@@ -209,3 +216,4 @@ func _drive(lorry: Lorry) -> void:
 	lorry.loaded = true
 	lorry.path.reverse()
 	lorry.t = 0.0
+	lorry.prev_t = 0.0
