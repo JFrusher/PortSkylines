@@ -14,6 +14,8 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	# A 12-tile quay, long enough for every ship class.
 	for y in range(map.entry.y - 6, map.entry.y + 6):
 		log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(map.sea_width, y)}})
+	for y: int in [map.entry.y - 1, map.entry.y]:
+		log.append({"tick": 0, "command": {"op": "place_crane", "cell": Vector2i(map.sea_width, y)}})
 	log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.YARD, "cell": Vector2i(map.sea_width + 2, map.entry.y - 1)}})
 	var kinds := [PortMap.Tile.ROAD, PortMap.Tile.QUAY, PortMap.Tile.YARD]
 	for i in extra_commands:

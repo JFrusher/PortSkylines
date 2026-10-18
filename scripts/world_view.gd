@@ -30,6 +30,7 @@ var _stack_chunks := {}
 # shortcut: ships and lorries are one node each, fine under ~100; MultiMesh them in M5.
 var _ships := {}  # PortSim.Ship -> Node3D
 var _lorries := {}  # PortSim.Lorry -> Node3D
+var _cranes := {}  # PortSim.Crane -> Node3D
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
 
 
@@ -60,6 +61,7 @@ func _process(_dt: float) -> void:
 		_draw_tiles()
 	_draw_stacks()
 	_draw_ships()
+	_draw_cranes()
 	_draw_lorries()
 
 
@@ -129,6 +131,22 @@ func _draw_ships() -> void:
 		var cargo: Node3D = hull.get_node("Cargo")
 		cargo.visible = ship.boxes > 0
 		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_classes[ship.kind].import_moves), 0.01)
+
+
+## A tower on the quay tile with a boom reaching out over the water.
+func _draw_cranes() -> void:
+	_forget_gone(_cranes, sim.cranes)
+	for crane: PortSim.Crane in sim.cranes:
+		if crane in _cranes:
+			continue
+		var tower := _box(Vector3(0.7, 3.0, 0.7), Color(0.85, 0.3, 0.2))
+		tower.position = Vector3(crane.cell.x + 0.5, 1.5, crane.cell.y + 0.5)
+		var water := sim.map.neighbor(crane.cell, PortMap.Tile.WATER) - crane.cell
+		var boom := _box(Vector3(maxf(absf(water.x) * 3.5, 0.3), 0.3, maxf(absf(water.y) * 3.5, 0.3)), Color(0.85, 0.3, 0.2))
+		boom.position = Vector3(water.x * 1.2, 1.4, water.y * 1.2)
+		tower.add_child(boom)
+		add_child(tower)
+		_cranes[crane] = tower
 
 
 func _draw_lorries() -> void:

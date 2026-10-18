@@ -7,6 +7,7 @@ signal save_pressed
 signal load_pressed
 
 const BULLDOZE := -1
+const CRANE := -2
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 const FLASH_SECONDS := 2.5
 
@@ -45,6 +46,7 @@ func _ready() -> void:
 		var kind: int = PortMap.Tile[name.to_upper()]
 		var label := "%s  $%d" % [name.capitalize(), sim.cost(kind)]
 		_button(bar, label, tools, kind == tool, func() -> void: tool = kind)
+	_button(bar, "Crane  $%d" % sim.rules.sts_crane.cost, tools, false, func() -> void: tool = CRANE)
 	_button(bar, "Bulldoze", tools, false, func() -> void: tool = BULLDOZE)
 
 

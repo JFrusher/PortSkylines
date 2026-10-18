@@ -1,6 +1,6 @@
 extends SceneTree
 ## 10,000 ticks of a seeded random port, with the sim's invariants checked
-## after every tick: money adds up, yards stay within capacity, lorries only
+## after every tick: money only changes through commands and fees, yards stay within capacity, lorries only
 ## come for boxes that exist, and every lorry drives on road.
 ## godot --headless --script res://tests/test_soak.gd
 
@@ -30,9 +30,9 @@ func _soak(rules: Dictionary) -> PortSim:
 	var next := 0
 	while sim.clock.ticks < TICKS and _failures == 0:
 		while next < log.size() and log[next].tick == sim.clock.ticks:
-			var command: Dictionary = log[next].command
-			if sim.apply(command) == "" and command.op == "build":
-				spent += sim.cost(command.kind)
+			var before := sim.money
+			sim.apply(log[next].command)
+			spent += before - sim.money
 			next += 1
 		sim.tick()
 		_check(sim, spent)

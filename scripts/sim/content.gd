@@ -13,13 +13,14 @@ const SCHEMA := {
 	"first_ship_minutes": TYPE_FLOAT,
 	"ship_interval_minutes": TYPE_FLOAT,
 	"sail_seconds": TYPE_FLOAT,
-	"crane_minutes": TYPE_FLOAT,
 	"yard_capacity": TYPE_INT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
 	# "*" means any key, each holding the record that follows.
 	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "weight": TYPE_FLOAT}},
 	"water_depth": TYPE_FLOAT,
+	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT},
+	"crane_interference": TYPE_FLOAT,
 }
 
 static var _base := {}

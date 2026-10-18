@@ -1,0 +1,4 @@
+{
+	"sts_crane": {"cost": 1500, "rate": 25, "outreach": 13},
+	"crane_interference": 0.9
+}

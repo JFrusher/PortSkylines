@@ -47,6 +47,7 @@ static func _migrate(data: Dictionary) -> Dictionary:
 ## the old format, so they are dropped; the map, money and yards carry over.
 static func _v1_to_v2(data: Dictionary) -> Dictionary:
 	data.sim.ships = []
+	data.sim.cranes = []
 	data.sim.status = "Saved game updated: ships that were in port have sailed"
 	data.version = 2
 	return data

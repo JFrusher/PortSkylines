@@ -83,14 +83,28 @@ func _unhandled_input(event: InputEvent) -> void:
 ## every cell a drag passes over.
 func _order(cell: Vector2i, report: bool) -> void:
 	_last_cell = cell
-	var command := {"op": "bulldoze", "cell": cell} if hud.tool == Hud.BULLDOZE else {"op": "build", "kind": hud.tool, "cell": cell}
-	var err := sim.apply(command)
+	var err := sim.apply(_command(cell))
 	if err != "" and report:
 		hud.flash(err)
 
 
+## The command the selected tool gives for `cell`.
+func _command(cell: Vector2i) -> Dictionary:
+	match hud.tool:
+		Hud.BULLDOZE:
+			return {"op": "bulldoze", "cell": cell}
+		Hud.CRANE:
+			return {"op": "place_crane", "cell": cell}
+	return {"op": "build", "kind": hud.tool, "cell": cell}
+
+
 func _order_error(cell: Vector2i) -> String:
-	return sim.bulldoze_error(cell) if hud.tool == Hud.BULLDOZE else sim.build_error(hud.tool, cell)
+	match hud.tool:
+		Hud.BULLDOZE:
+			return sim.bulldoze_error(cell)
+		Hud.CRANE:
+			return sim.crane_error(cell)
+	return sim.build_error(hud.tool, cell)
 
 
 func _hovered_cell() -> Vector2i:

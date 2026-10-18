@@ -14,6 +14,7 @@ var money := 0
 var delivered := 0
 var status := "Run a road from the highway to the coast, then build a quay and a yard"
 var ships: Array[Ship] = []
+var cranes: Array[Crane] = []
 var lorries: Array[Lorry] = []
 ## Boxes stacked on each yard tile.
 var stacked := {}
@@ -51,9 +52,6 @@ class Ship:
 	var sail := 0.0
 	## `sail` at the start of this tick, for drawing between ticks.
 	var prev_sail := 0.0
-	## Calendar minutes into the current crane move.
-	var crane := 0.0
-
 	func _init(ship_kind: String, along: Array[Vector2i], water_side: Vector2i, cargo: int) -> void:
 		kind = ship_kind
 		cells = along
@@ -61,7 +59,7 @@ class Ship:
 		boxes = cargo
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "cells": cells.duplicate(), "side": side, "boxes": boxes, "state": state, "sail": sail, "prev_sail": prev_sail, "crane": crane}
+		return {"kind": kind, "cells": cells.duplicate(), "side": side, "boxes": boxes, "state": state, "sail": sail, "prev_sail": prev_sail}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var along: Array[Vector2i] = []
@@ -70,8 +68,26 @@ class Ship:
 		ship.state = d.state
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
-		ship.crane = d.crane
 		return ship
+
+
+## A ship-to-shore crane on a quay tile. It works any ship lying along its
+## tile that its outreach can reach across.
+class Crane:
+	var cell: Vector2i
+	## Calendar minutes into the current move.
+	var timer := 0.0
+
+	func _init(at: Vector2i) -> void:
+		cell = at
+
+	func to_dict() -> Dictionary:
+		return {"cell": cell, "timer": timer}
+
+	static func from_dict(d: Dictionary) -> Crane:
+		var crane := Crane.new(d.cell)
+		crane.timer = d.timer
+		return crane
 
 
 class Lorry:
@@ -118,6 +134,7 @@ func to_dict() -> Dictionary:
 		"delivered": delivered,
 		"status": status,
 		"ships": ships.map(func(ship: Ship) -> Dictionary: return ship.to_dict()),
+		"cranes": cranes.map(func(crane: Crane) -> Dictionary: return crane.to_dict()),
 		"lorries": lorries.map(func(lorry: Lorry) -> Dictionary: return lorry.to_dict()),
 		"stacked": stacked.duplicate(),
 		"claimed": _claimed.duplicate(),
@@ -137,6 +154,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.status = d.status
 	for ship: Dictionary in d.ships:
 		sim.ships.append(Ship.from_dict(ship))
+	for crane: Dictionary in d.cranes:
+		sim.cranes.append(Crane.from_dict(crane))
 	for lorry: Dictionary in d.lorries:
 		sim.lorries.append(Lorry.from_dict(lorry))
 	sim.stacked = d.stacked.duplicate()
@@ -160,6 +179,8 @@ func apply(command: Dictionary) -> String:
 			return build(command.kind, command.cell)
 		"bulldoze":
 			return bulldoze(command.cell)
+		"place_crane":
+			return place_crane(command.cell)
 	return "Unknown command: %s" % command.get("op")
 
 
@@ -178,7 +199,38 @@ func build(kind: int, cell: Vector2i) -> String:
 	return err
 
 
+func crane_error(cell: Vector2i) -> String:
+	if map.tile(cell) != PortMap.Tile.QUAY:
+		return "Cranes stand on quay tiles"
+	if _crane_at(cell):
+		return "There is a crane here already"
+	if money < rules.sts_crane.cost:
+		return "Not enough money"
+	return ""
+
+
+func place_crane(cell: Vector2i) -> String:
+	var err := crane_error(cell)
+	if err == "":
+		money -= rules.sts_crane.cost
+		cranes.append(Crane.new(cell))
+	return err
+
+
+func _crane_at(cell: Vector2i) -> Crane:
+	for crane in cranes:
+		if crane.cell == cell:
+			return crane
+	return null
+
+
+## Bulldozing a quay tile with a crane removes the crane first.
 func bulldoze_error(cell: Vector2i) -> String:
+	var crane := _crane_at(cell)
+	if crane and _ship_at(cell):
+		return "The crane is working a ship"
+	if crane:
+		return ""
 	var err := map.bulldoze_error(cell)
 	if err != "":
 		return err
@@ -195,7 +247,10 @@ func bulldoze_error(cell: Vector2i) -> String:
 
 func bulldoze(cell: Vector2i) -> String:
 	var err := bulldoze_error(cell)
-	if err == "":
+	var crane := _crane_at(cell)
+	if err == "" and crane:
+		cranes.erase(crane)
+	elif err == "":
 		map.place(PortMap.Tile.LAND, cell)
 		stacked.erase(cell)
 	return err
@@ -273,24 +328,43 @@ func _work(ship: Ship) -> void:
 				ship.state = Ship.State.WORKING
 				status = "A ship is unloading"
 		Ship.State.WORKING:
-			ship.crane += SimClock.CALENDAR_MINUTES_PER_TICK
-			if ship.crane < rules.crane_minutes:
+			var working := _cranes_for(ship)
+			if working.is_empty():
+				status = "A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rules.ship_classes[ship.kind].outreach]
 				return
-			var yard := _nearest_yard_with_space(_apron(ship.cells))
-			if yard == PortMap.NONE:
-				ship.crane = rules.crane_minutes
-				status = "A ship is waiting: no yard space reachable from its quay"
-				return
-			ship.crane -= rules.crane_minutes
-			# shortcut: the box jumps from crane to yard, add terminal tractors in M2.
-			ship.boxes -= 1
-			stacked[yard] = stacked.get(yard, 0) + 1
+			var move_minutes: float = 60.0 / (rules.sts_crane.rate * rules.crane_interference)
+			for crane in working:
+				if ship.boxes == 0:
+					break
+				crane.timer += SimClock.CALENDAR_MINUTES_PER_TICK
+				if crane.timer < move_minutes:
+					continue
+				var yard := _nearest_yard_with_space(_apron(ship.cells))
+				if yard == PortMap.NONE:
+					crane.timer = move_minutes
+					status = "A ship is waiting: no yard space reachable from its quay"
+					continue
+				crane.timer -= move_minutes
+				# shortcut: the box jumps from crane to yard, add terminal tractors in M2.
+				ship.boxes -= 1
+				stacked[yard] = stacked.get(yard, 0) + 1
 			if ship.boxes == 0:
+				for crane in working:
+					crane.timer = 0.0
 				ship.state = Ship.State.LEAVING
 		Ship.State.LEAVING:
 			ship.sail -= SimClock.TICK_SECONDS / rules.sail_seconds
 			if ship.sail <= 0.0:
 				ships.erase(ship)
+
+
+## The cranes along `ship` whose outreach reaches across it.
+func _cranes_for(ship: Ship) -> Array[Crane]:
+	var found: Array[Crane] = []
+	for crane in cranes:
+		if crane.cell in ship.cells and rules.sts_crane.outreach >= rules.ship_classes[ship.kind].outreach:
+			found.append(crane)
+	return found
 
 
 func _nearest_yard_with_space(quay: Vector2i) -> Vector2i:
