@@ -17,6 +17,9 @@ var version := 0
 
 var _tiles := PackedByteArray()
 var _roads := AStarGrid2D.new()
+## Tile indices per kind, kept sorted so cells_of() returns map order, the
+## same order a full scan gives, without scanning.
+var _index := {}
 
 
 func _init(map_size: Vector2i, sea: int) -> void:
@@ -25,6 +28,7 @@ func _init(map_size: Vector2i, sea: int) -> void:
 	_tiles.resize(size.x * size.y)
 	for i in _tiles.size():
 		_tiles[i] = Tile.WATER if i % size.x < sea_width else Tile.LAND
+	_rebuild_index()
 	_roads.region = Rect2i(Vector2i.ZERO, size)
 	_roads.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_NEVER
 	_roads.update()
@@ -66,7 +70,12 @@ func bulldoze_error(cell: Vector2i) -> String:
 
 ## Sets a tile without checking; callers check build_error/bulldoze_error first.
 func place(kind: int, cell: Vector2i) -> void:
-	_tiles[cell.x + cell.y * size.x] = kind
+	var i := cell.x + cell.y * size.x
+	var old: PackedInt32Array = _index[_tiles[i]]
+	old.remove_at(old.bsearch(i))
+	var new: PackedInt32Array = _index[kind]
+	new.insert(new.bsearch(i), i)
+	_tiles[i] = kind
 	_roads.set_point_solid(cell, kind != Tile.ROAD)
 	version += 1
 
@@ -96,10 +105,17 @@ func route(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 
 func cells_of(kind: int) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
-	for i in _tiles.size():
-		if _tiles[i] == kind:
-			found.append(Vector2i(i % size.x, int(i / float(size.x))))
+	for i: int in _index[kind]:
+		found.append(Vector2i(i % size.x, int(i / float(size.x))))
 	return found
+
+
+func _rebuild_index() -> void:
+	_index = {}
+	for kind: int in Tile.values():
+		_index[kind] = PackedInt32Array()
+	for i in _tiles.size():
+		_index[_tiles[i]].append(i)
 
 
 func to_dict() -> Dictionary:
@@ -111,6 +127,7 @@ static func from_dict(d: Dictionary) -> PortMap:
 	map.entry = d.entry
 	map.version = d.version
 	map._tiles = d.tiles.duplicate()
+	map._rebuild_index()
 	map._roads.fill_solid_region(map._roads.region)
 	for i in map._tiles.size():
 		if map._tiles[i] == Tile.ROAD:

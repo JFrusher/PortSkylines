@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_ships_unload_and_lorries_pay()
 	_test_commands()
 	_test_round_trip()
+	_test_cells_of_matches_a_scan()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -109,3 +110,20 @@ func _test_round_trip() -> void:
 	_expect(copy.state_hash(), straight.state_hash(), "a round trip mid-run changes nothing")
 	_expect(copy.build(ROAD, Vector2i(30, 3)), "", "the copy's map still accepts builds")
 	_expect(copy.map.route(copy.map.entry, Vector2i(copy.map.sea_width, copy.map.entry.y)).is_empty(), false, "the copy's road routing works")
+
+
+func _test_cells_of_matches_a_scan() -> void:
+	var sim := PortSim.new()
+	var map := sim.map
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5
+	var kinds := [PortMap.Tile.LAND, ROAD, QUAY, YARD]
+	for i in 1000:
+		map.place(kinds[rng.randi() % kinds.size()], Vector2i(rng.randi_range(map.sea_width, map.size.x - 1), rng.randi_range(0, map.size.y - 1)))
+	for kind: int in PortMap.Tile.values():
+		var scan: Array[Vector2i] = []
+		for y in map.size.y:
+			for x in map.size.x:
+				if map.tile(Vector2i(x, y)) == kind:
+					scan.append(Vector2i(x, y))
+		_expect(map.cells_of(kind), scan, "cells_of(%s) matches a full scan after 1,000 places" % PortMap.Tile.keys()[kind])
