@@ -13,11 +13,11 @@ var _failures := 0
 
 
 func _initialize() -> void:
-	var calm := _soak(Content.base())
+	var calm := _soak(RandomPort.rules())
 	_expect(calm.delivered > 0, true, "the calm port delivers boxes (%d)" % calm.delivered)
 	# A lorry every 10 game hours: yards fill up and ships wait, which the calm
 	# port never pushes hard enough to test.
-	var congested_rules := Content.base().duplicate(true)
+	var congested_rules := RandomPort.rules()
 	congested_rules.lorry_interval_minutes = 600.0
 	var congested := _soak(congested_rules)
 	_expect(congested.yard.stacks.keys().any(func(t: Vector2i) -> bool: return congested.yard.count(t) == congested.yard.capacity(t)), true, "the congested port fills a yard tile to capacity")
@@ -64,8 +64,8 @@ func _check(sim: PortSim, spent: int) -> void:
 		if vehicle.loaded:
 			_expect(seen.has(vehicle.box), false, "box %d on vehicle %d is in one place only %s" % [vehicle.box, vehicle.id, at])
 			seen[vehicle.box] = vehicle.id
-		elif vehicle.kind == "lorry":
-			_expect(seen.get(vehicle.box) == vehicle.target, true, "lorry %d's box %d waits at its target %s" % [vehicle.id, vehicle.box, at])
+		elif vehicle.box != 0:
+			_expect(seen.get(vehicle.box) == vehicle.target, true, "%s %d's box %d waits at its target %s" % [vehicle.kind, vehicle.id, vehicle.box, at])
 		if vehicle.state == "handling":
 			handling[vehicle.block] = handling.get(vehicle.block, 0) + 1
 		if vehicle.lane == Traffic.NO_LANE:

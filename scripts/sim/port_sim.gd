@@ -1,9 +1,11 @@
 class_name PortSim
 extends RefCounted
-## The port. Ships call at berths; quay cranes lift their boxes onto terminal
-## tractors, which carry them to the yard, where machines stack them; lorries
-## from the highway collect imports and pay a fee per box. Changed only
-## through apply(command) and tick().
+## The port. Ships call at berths. Quay cranes lift their imports onto
+## terminal tractors, which carry them to import blocks where yard machines
+## stack them; after their dwell, lorries from the highway collect them.
+## Lorries also bring exports to export blocks; once a ship is discharged,
+## tractors fetch exports to its cranes, which load them. Lorries pay a fee
+## per box in or out. Changed only through apply(command) and tick().
 
 ## Every tunable number, from data/base/*.json; see Content.
 var rules: Dictionary
@@ -12,6 +14,7 @@ var clock := SimClock.new()
 ## The only source of randomness in the sim, so a seed and a command log replay exactly.
 var rng := RandomNumberGenerator.new()
 var money := 0
+## Boxes through the highway: imports out and exports in.
 var delivered := 0
 var status := "Run a road from the highway to the coast, then build a quay, cranes, tractors and a yard"
 var ships: Array[Ship] = []
@@ -20,19 +23,20 @@ var vehicles: Array[Vehicle] = []
 var traffic := Traffic.new()
 var yard: Yard
 ## Every box in the port by id: {"kind": "import" or "export", "due": the
-## calendar minute it may leave}. A box is always in exactly one place: on a
-## vehicle or in a yard stack (boxes still on a ship are only counted).
+## calendar minute an import may leave}. A box is always in exactly one
+## place: on a vehicle or in a yard stack (boxes on ships are only counted).
 var boxes := {}
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
 ## Lorries that gave up on a traffic jam and left; see _unstick.
 var gave_up := 0
 
-## Boxes a lorry is already coming for.
+## Boxes a vehicle is already coming for.
 var _claimed := {}
-## Calendar minutes until the next ship and the next lorry dispatch.
+## Calendar minutes until the next ship, import lorry and export lorry.
 var _until_ship := 0.0
 var _until_lorry := 0.0
+var _until_export := 0.0
 var _next_vehicle := 1
 var _next_box := 1
 
@@ -58,27 +62,29 @@ class Ship:
 	var cells: Array[Vector2i]
 	## The step from those quay tiles to the water the ship is in.
 	var side: Vector2i
-	## Import boxes still on board.
+	## Import boxes still on board, and exports it still has room for.
 	var boxes: int
+	var exports: int
 	var state := State.ARRIVING
 	## 0 out at sea, 1 alongside the quay.
 	var sail := 0.0
 	## `sail` at the start of this tick, for drawing between ticks.
 	var prev_sail := 0.0
 
-	func _init(ship_kind: String, along: Array[Vector2i], water_side: Vector2i, cargo: int) -> void:
+	func _init(ship_kind: String, along: Array[Vector2i], water_side: Vector2i, imports: int, export_room: int) -> void:
 		kind = ship_kind
 		cells = along
 		side = water_side
-		boxes = cargo
+		boxes = imports
+		exports = export_room
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "cells": cells.duplicate(), "side": side, "boxes": boxes, "state": state, "sail": sail, "prev_sail": prev_sail}
+		return {"kind": kind, "cells": cells.duplicate(), "side": side, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var along: Array[Vector2i] = []
 		along.assign(d.cells)
-		var ship := Ship.new(d.kind, along, d.side, d.boxes)
+		var ship := Ship.new(d.kind, along, d.side, d.boxes, d.exports)
 		ship.state = d.state
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
@@ -86,8 +92,8 @@ class Ship:
 
 
 ## A ship-to-shore crane on a quay tile. It works any ship lying along its
-## tile that its outreach can reach across, one box per move, each onto the
-## tractor waiting on the road behind it.
+## tile that its outreach can reach across, one box per move, to or from the
+## tractor beneath it.
 class Crane:
 	var cell: Vector2i
 	## Calendar minutes into the current move.
@@ -128,6 +134,7 @@ func to_dict() -> Dictionary:
 		"claimed": _claimed.duplicate(),
 		"until_ship": _until_ship,
 		"until_lorry": _until_lorry,
+		"until_export": _until_export,
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 	}
@@ -158,6 +165,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._claimed = d.claimed.duplicate()
 	sim._until_ship = d.until_ship
 	sim._until_lorry = d.until_lorry
+	sim._until_export = d.until_export
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	return sim
@@ -286,8 +294,11 @@ func tick() -> void:
 	for ship: Ship in ships.duplicate():
 		_work(ship)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_lorry <= 0.0 and _dispatch_lorry():
+	if _until_lorry <= 0.0 and _dispatch_import_lorry():
 		_until_lorry = rules.lorry_interval_minutes
+	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
+	if _until_export <= 0.0 and _dispatch_export_lorry():
+		_until_export = rules.export_lorry_interval_minutes
 	for vehicle: Vehicle in vehicles.duplicate():
 		if vehicle.kind == "lorry":
 			_drive_lorry(vehicle)
@@ -310,7 +321,7 @@ func _call_ship() -> void:
 		var span := cells.slice(0, spec.length)
 		if _apron(span) == PortMap.NONE:
 			continue
-		ships.append(Ship.new(kind, span, berth.side, spec.import_moves))
+		ships.append(Ship.new(kind, span, berth.side, spec.import_moves, spec.export_moves))
 		status = "A %s is coming in" % kind
 		return
 	status = "A %s went elsewhere: no free berth of %d quay tiles with a road to the highway" % [kind, spec.length]
@@ -365,22 +376,26 @@ func _work(ship: Ship) -> void:
 				return
 			var move_minutes: float = 60.0 / (rules.sts_crane.rate * rules.crane_interference)
 			for crane in working:
-				_work_crane(crane, ship, move_minutes)
-			if ship.boxes == 0:
-				for crane in working:
-					_release_tractor(crane)
-				ship.state = Ship.State.LEAVING
+				if ship.boxes > 0:
+					_discharge(crane, ship, move_minutes)
+				else:
+					_load(crane, ship, move_minutes)
+			if ship.boxes == 0 and working.all(func(c: Crane) -> bool: return c.tractor == 0):
+				if ship.exports == 0:
+					ship.state = Ship.State.LEAVING
+					status = "A %s is sailing, fully loaded" % ship.kind
+				elif _export_for(map.access_road(working[0].cell)).is_empty():
+					ship.state = Ship.State.LEAVING
+					status = "A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports]
 		Ship.State.LEAVING:
 			ship.sail -= SimClock.TICK_SECONDS / rules.sail_seconds
 			if ship.sail <= 0.0:
 				ships.erase(ship)
 
 
-## One crane's tick on a ship: it needs a tractor sent to it, works its move
-## while the tractor comes, and lowers the box once the tractor is beneath.
-func _work_crane(crane: Crane, ship: Ship, move_minutes: float) -> void:
-	if ship.boxes == 0:
-		return
+## One crane's tick discharging: it needs a tractor sent under it, works its
+## move while the tractor comes, and lowers the box once the tractor is there.
+func _discharge(crane: Crane, ship: Ship, move_minutes: float) -> void:
 	if crane.tractor == 0 and not _send_tractor(crane):
 		return
 	crane.timer = minf(crane.timer + SimClock.CALENDAR_MINUTES_PER_TICK, move_minutes)
@@ -389,25 +404,50 @@ func _work_crane(crane: Crane, ship: Ship, move_minutes: float) -> void:
 		return
 	crane.timer = 0.0
 	crane.tractor = 0
-	var id := _next_box
-	_next_box += 1
-	boxes[id] = {"kind": "import", "due": clock.calendar_minutes()}
+	var id := _new_box("import", clock.calendar_minutes() + rules.import_dwell_minutes)
 	ship.boxes -= 1
 	tractor.box = id
 	tractor.loaded = true
 	_head_for(tractor, yard.entrance(tractor.target))
+	if ship.boxes == 0:
+		_release_idle_tractors(ship)
 
 
-## Sends a parked tractor under `crane`, off the road on the quay, with a yard tile
-## reserved for the box it will take. False, with the reason in the status,
-## when that can't happen yet.
+## One crane's tick loading: it sends a tractor to fetch an export while the
+## ship has room for more than are already on their way, then lifts the box
+## aboard once the tractor is back beneath it.
+func _load(crane: Crane, ship: Ship, move_minutes: float) -> void:
+	if crane.tractor == 0:
+		var fetching := _cranes_for(ship).filter(func(c: Crane) -> bool: return c.tractor != 0).size()
+		if ship.exports > fetching:
+			_send_fetcher(crane)
+		return
+	var tractor := _vehicle(crane.tractor)
+	if tractor.state != "under_crane":
+		return
+	crane.timer += SimClock.CALENDAR_MINUTES_PER_TICK
+	if crane.timer < move_minutes:
+		return
+	crane.timer = 0.0
+	crane.tractor = 0
+	boxes.erase(tractor.box)
+	ship.exports -= 1
+	_leave(tractor)
+
+
+func _new_box(kind: String, due: float) -> int:
+	var id := _next_box
+	_next_box += 1
+	boxes[id] = {"kind": kind, "due": due}
+	return id
+
+
+## Sends a parked tractor under `crane`, off the road on the quay, with an
+## import yard tile reserved for the box it will take. False, with the
+## reason in the status, when that can't happen yet.
 func _send_tractor(crane: Crane) -> bool:
-	if _tractors_out() >= tractors:
-		status = "A crane is waiting for a free tractor"
-		return false
-	var home := map.access_road(crane.cell)
+	var home := _tractor_home(crane)
 	if home == PortMap.NONE:
-		status = "A crane has no road behind it for tractors"
 		return false
 	var tile := _yard_tile_for("import", home)
 	if tile == PortMap.NONE:
@@ -425,15 +465,71 @@ func _send_tractor(crane: Crane) -> bool:
 	return true
 
 
-## A tractor sent to `crane` but not given a box goes back to its park.
-func _release_tractor(crane: Crane) -> void:
-	if crane.tractor == 0:
+## Sends a parked tractor from behind `crane` to fetch the nearest export.
+func _send_fetcher(crane: Crane) -> void:
+	var home := _tractor_home(crane)
+	if home == PortMap.NONE:
 		return
-	var tractor := _vehicle(crane.tractor)
-	yard.reserve(tractor.target, -1)
-	_leave(tractor)
-	crane.tractor = 0
-	crane.timer = 0.0
+	var found := _export_for(home)
+	if found.is_empty():
+		return
+	var path := map.route(home, yard.entrance(found.tile))
+	var tractor := Vehicle.new(_next_vehicle, "tractor", path)
+	tractor.lane = Traffic.lane(map, path, 0)
+	if not traffic.claim(tractor.lane, tractor.id):
+		return
+	_next_vehicle += 1
+	tractor.home = home
+	tractor.target = found.tile
+	tractor.box = found.box
+	_claimed[found.box] = true
+	vehicles.append(tractor)
+	crane.tractor = tractor.id
+
+
+## The road behind `crane` if a tractor is free to park there, else NONE
+## with the reason in the status.
+func _tractor_home(crane: Crane) -> Vector2i:
+	if _tractors_out() >= tractors:
+		status = "A crane is waiting for a free tractor"
+		return PortMap.NONE
+	var home := map.access_road(crane.cell)
+	if home == PortMap.NONE:
+		status = "A crane has no road behind it for tractors"
+	return home
+
+
+## The nearest unclaimed export by road from `from`: {"box", "tile"}, or {}.
+func _export_for(from: Vector2i) -> Dictionary:
+	var best := {}
+	var best_length := 1 << 30
+	for block_anchor in yard.anchors():
+		if yard.role_of(block_anchor) != "export":
+			continue
+		var way_in := yard.entrance(block_anchor)
+		var path := map.route(from, way_in) if way_in != PortMap.NONE else ([] as Array[Vector2i])
+		if path.is_empty() or path.size() >= best_length:
+			continue
+		for tile in yard.block(block_anchor):
+			for id: int in yard.stacks.get(tile, []):
+				if id not in _claimed and boxes[id].kind == "export":
+					best = {"box": id, "tile": tile}
+					best_length = path.size()
+					break
+			if best_length == path.size():
+				break
+	return best
+
+
+## Tractors sent under `ship`'s cranes for imports that never came go back to park.
+func _release_idle_tractors(ship: Ship) -> void:
+	for crane in _cranes_for(ship):
+		var tractor := _vehicle(crane.tractor)
+		if tractor and tractor.state == "under_crane" and not tractor.loaded:
+			yard.reserve(tractor.target, -1)
+			_leave(tractor)
+			crane.tractor = 0
+			crane.timer = 0.0
 
 
 func _tractors_out() -> int:
@@ -475,77 +571,128 @@ func _yard_tile_for(role: String, from: Vector2i) -> Vector2i:
 	return best
 
 
-## Sends a lorry from the highway for an import box whose time has come.
-func _dispatch_lorry() -> bool:
+## Sends a lorry from the highway for an import box whose dwell is over.
+func _dispatch_import_lorry() -> bool:
 	var now := clock.calendar_minutes()
 	for tile: Vector2i in yard.stacks:
 		for id: int in yard.stacks[tile]:
 			if id in _claimed or boxes[id].kind != "import" or boxes[id].due > now:
 				continue
-			var path := map.route(map.entry, yard.entrance(tile))
-			if path.is_empty():
-				break
-			var lorry := Vehicle.new(_next_vehicle, "lorry", path)
-			lorry.lane = Traffic.lane(map, path, 0)
-			if not traffic.claim(lorry.lane, lorry.id):
+			var lorry := _new_lorry(yard.entrance(tile))
+			if lorry == null:
 				return false
-			_next_vehicle += 1
 			lorry.box = id
 			lorry.target = tile
 			_claimed[id] = true
-			vehicles.append(lorry)
 			return true
 	return false
 
 
-## A lorry drives to its box's yard tile, waits for a machine to load it,
-## drives back to the highway and pays.
+## Sends a lorry from the highway with an export box for the nearest export
+## block with room.
+func _dispatch_export_lorry() -> bool:
+	var tile := _yard_tile_for("export", map.entry)
+	if tile == PortMap.NONE:
+		return false
+	var lorry := _new_lorry(yard.entrance(tile))
+	if lorry == null:
+		return false
+	lorry.box = _new_box("export", 0.0)
+	lorry.loaded = true
+	lorry.target = tile
+	yard.reserve(tile, 1)
+	return true
+
+
+## A lorry at the highway heading for `to`, or null when there is no road or
+## the highway's lane is taken this tick.
+func _new_lorry(to: Vector2i) -> Vehicle:
+	var path := map.route(map.entry, to) if to != PortMap.NONE else ([] as Array[Vector2i])
+	if path.is_empty():
+		return null
+	var lorry := Vehicle.new(_next_vehicle, "lorry", path)
+	lorry.lane = Traffic.lane(map, path, 0)
+	if not traffic.claim(lorry.lane, lorry.id):
+		return null
+	_next_vehicle += 1
+	vehicles.append(lorry)
+	return lorry
+
+
+## Import lorries drive to their box's block, wait for a machine to load it,
+## drive back to the highway and pay. Export lorries drive their box to its
+## block, are paid once a machine has stacked it, and drive back empty.
 func _drive_lorry(lorry: Vehicle) -> void:
 	match lorry.state:
 		"drive":
 			if not _advance(lorry, rules.lorry_speed):
 				_unstick(lorry)
-			elif lorry.loaded:
+			elif lorry.box == 0:
 				_leave(lorry)
+			elif lorry.loaded and boxes[lorry.box].kind == "import":
 				boxes.erase(lorry.box)
-				money += rules.fee_per_box
-				delivered += 1
+				_leave(lorry)
+				_paid()
 			else:
 				lorry.state = "yard"
 		"yard":
 			_start_handling(lorry)
 		"handling":
-			if _handled(lorry):
+			if not _handled(lorry):
+				return
+			if lorry.loaded:
+				yard.reserve(lorry.target, -1)
+				yard.add(lorry.target, lorry.box)
+				lorry.box = 0
+				lorry.loaded = false
+				_paid()
+			else:
 				yard.take(lorry.target, lorry.box)
 				_claimed.erase(lorry.box)
 				lorry.loaded = true
-				_head_for(lorry, map.entry)
+			_head_for(lorry, map.entry)
 		"no_route":
 			_head_for(lorry, map.entry)
 
 
-## A tractor waits under its crane for a box, carries it to its reserved yard
-## tile, waits for a machine to stack it, and drives back to park.
+func _paid() -> void:
+	money += rules.fee_per_box
+	delivered += 1
+
+
+## Tractors carry imports from under a crane to a block, and fetch exports
+## from a block back to under a crane, waiting for a machine at the block.
 func _drive_tractor(tractor: Vehicle) -> void:
 	match tractor.state:
 		"drive":
 			if not _advance(tractor, rules.tractor.speed):
 				_unstick(tractor)
-			elif tractor.loaded:
-				tractor.state = "yard"
-			else:
+			elif tractor.box == 0:
 				_leave(tractor)
+			elif tractor.loaded and boxes[tractor.box].kind == "export":
+				traffic.release(tractor.lane, tractor.id)
+				tractor.lane = Traffic.NO_LANE
+				tractor.state = "under_crane"
+			else:
+				tractor.state = "yard"
 		"yard":
 			_start_handling(tractor)
 		"handling":
-			if _handled(tractor):
+			if not _handled(tractor):
+				return
+			if tractor.loaded:
 				yard.reserve(tractor.target, -1)
 				yard.add(tractor.target, tractor.box)
 				tractor.box = 0
 				tractor.loaded = false
-				_head_for(tractor, tractor.home)
+			else:
+				yard.take(tractor.target, tractor.box)
+				_claimed.erase(tractor.box)
+				tractor.loaded = true
+			_head_for(tractor, tractor.home)
 		"no_route":
-			_head_for(tractor, yard.entrance(tractor.target) if tractor.loaded else tractor.home)
+			var going := yard.entrance(tractor.target) if (tractor.loaded and boxes[tractor.box].kind == "import") else tractor.home
+			_head_for(tractor, going)
 
 
 ## Starts a machine of the vehicle's target block working for it, if one is
@@ -575,7 +722,8 @@ func _handled(vehicle: Vehicle) -> bool:
 
 
 ## Points `vehicle` along the road from where it stands to `to`'s access road.
-## With no such road it waits in "no_route" and tries again next tick.
+## With no such road, or its first lane taken, it waits in "no_route" and
+## tries again next tick.
 func _head_for(vehicle: Vehicle, to: Vector2i) -> void:
 	var here := vehicle.path[int(vehicle.t)]
 	var path := map.route(here, to) if to != PortMap.NONE else ([] as Array[Vector2i])
@@ -624,8 +772,10 @@ func _unstick(vehicle: Vehicle) -> void:
 			vehicle.prev_t = 0.0
 	elif vehicle.waited >= limit * 2 and vehicle.kind == "lorry":
 		if vehicle.loaded:
+			if boxes[vehicle.box].kind == "export":
+				yard.reserve(vehicle.target, -1)
 			boxes.erase(vehicle.box)
-		else:
+		elif vehicle.box != 0:
 			_claimed.erase(vehicle.box)
 		_leave(vehicle)
 		gave_up += 1

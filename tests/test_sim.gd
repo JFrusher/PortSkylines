@@ -25,6 +25,8 @@ func _initialize() -> void:
 	_test_route_cache()
 	_test_yard_settings()
 	_test_yard_machines_set_the_pace()
+	_test_import_dwell()
+	_test_exports_are_loaded()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -95,7 +97,9 @@ func _test_no_ship_without_a_road() -> void:
 
 
 func _test_ships_unload_and_lorries_pay() -> void:
-	var sim := _port()
+	var rules := Content.base().duplicate(true)
+	rules.import_dwell_minutes = 0.0
+	var sim := _port(rules)
 	var before := sim.money
 	_run(sim, sim.rules.first_ship_minutes + 1)
 	_expect(sim.ships.size(), 1, "a ship calls at the 12-tile berth")
@@ -267,7 +271,8 @@ func _test_yard_settings() -> void:
 	var exports := _port()
 	exports.set_yard(tile, {"role": "export"})
 	_run(exports, exports.rules.first_ship_minutes + 30)
-	_expect(exports.yard.stacks.is_empty(), true, "imports never go to an export block")
+	var imports_there: int = exports.yard.stacks.values().reduce(func(n: int, ids: Array) -> int: return n + ids.filter(func(id: int) -> bool: return exports.boxes[id].kind == "import").size(), 0)
+	_expect(imports_there, 0, "imports never go to an export block")
 	_expect(exports.status.contains("no import yard space"), true, "the status says why the ship waits (%s)" % exports.status)
 
 
@@ -285,10 +290,54 @@ func _test_yard_machines_set_the_pace() -> void:
 		var sim := _port(rules)
 		sim.buy_tractors(20)
 		_run(sim, rules.first_ship_minutes + 1)
-		var first := sim.ships[0]
+		var import_moves: int = rules.ship_classes.panamax.import_moves
 		var ticks := 0
-		while first.boxes > 0 and ticks < 100000:
+		while _stacked(sim) < import_moves and ticks < 100000:
 			sim.tick()
 			ticks += 1
 		minutes.append(ticks * SimClock.CALENDAR_MINUTES_PER_TICK)
-	_expect(absf(minutes[1] / minutes[0] - 2.0) < 0.2, true, "half the machines take twice as long (%.0f vs %.0f min)" % [minutes[1], minutes[0]])
+	_expect(absf(minutes[1] / minutes[0] - 2.0) < 0.2, true, "half the machines take twice as long to stack the ship (%.0f vs %.0f min)" % [minutes[1], minutes[0]])
+
+
+func _stacked(sim: PortSim) -> int:
+	return sim.yard.stacks.values().reduce(func(n: int, ids: Array) -> int: return n + ids.size(), 0)
+
+
+func _test_import_dwell() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.import_dwell_minutes = 60.0
+	var sim := _port(rules)
+	var first_stacked := -1.0
+	var first_pickup := -1.0
+	for i in roundi(240 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		if first_stacked < 0 and not sim.yard.stacks.is_empty():
+			first_stacked = sim.clock.calendar_minutes()
+		if first_pickup < 0 and sim.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry"):
+			first_pickup = sim.clock.calendar_minutes()
+	_expect(first_stacked > 0 and first_pickup > 0, true, "imports were stacked and collected")
+	_expect(first_pickup - first_stacked >= 55.0, true, "no lorry comes before the hour's dwell (stacked %.1f, first lorry %.1f)" % [first_stacked, first_pickup])
+
+
+func _test_exports_are_loaded() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.ship_classes.panamax.weight = 0.0
+	rules.first_ship_minutes = 120.0
+	var sim := _port(rules)
+	var exports := Vector2i(sim.map.sea_width + 7, sim.map.entry.y + 1)
+	for x in range(exports.x, exports.x + 3):
+		sim.build(YARD, Vector2i(x, exports.y))
+	_expect(sim.set_yard(exports, {"role": "export"}), "", "an export block")
+	_run(sim, 119)
+	var stacked := 0
+	for tile in sim.yard.block(exports):
+		stacked += sim.yard.count(tile)
+	_expect(stacked >= rules.ship_classes.feeder.export_moves, true, "lorries brought %d exports before the ship" % stacked)
+	_run(sim, 2)
+	var ship := sim.ships[0]
+	var ticks := 0
+	while ship.state != PortSim.Ship.State.LEAVING and ticks < 200000:
+		sim.tick()
+		ticks += 1
+	_expect([ship.boxes, ship.exports], [0, 0], "the feeder leaves discharged and fully loaded")
+	_expect(sim.status.contains("fully loaded"), true, "and says so (%s)" % sim.status)

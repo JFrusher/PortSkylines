@@ -31,9 +31,10 @@ func _road_sim() -> PortSim:
 	return sim
 
 
-## Puts a loaded lorry on `path`: it drives to the end and leaves.
+## Puts a lorry with an import box on `path`: it drives to the end and leaves.
 func _lorry(sim: PortSim, path: Array[Vector2i]) -> Vehicle:
 	var lorry := Vehicle.new(sim.vehicles.size() + 100, "lorry", path)
+	lorry.box = sim._new_box("import", 0.0)
 	lorry.loaded = true
 	lorry.lane = Traffic.lane(sim.map, path, 0)
 	_expect(sim.traffic.claim(lorry.lane, lorry.id), true, "lorry %d starts in a free lane" % lorry.id)

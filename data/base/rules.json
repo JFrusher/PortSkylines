@@ -7,6 +7,8 @@
 	"ship_interval_minutes": 45,
 	"sail_seconds": 4,
 	"lorry_interval_minutes": 1,
+	"export_lorry_interval_minutes": 2,
+	"import_dwell_minutes": 1440,
 	"lorry_speed": 5,
 	"give_up_seconds": 30
 }

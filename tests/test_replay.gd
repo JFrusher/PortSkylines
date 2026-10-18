@@ -31,7 +31,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 ## Runs the log for TICKS ticks, `ticks_per_frame` at a time, applying each
 ## command between ticks at its tick, as main.gd does.
 func _play(log: Array[Dictionary], ticks_per_frame: int) -> PortSim:
-	var sim := PortSim.new(1)
+	var sim := PortSim.new(1, RandomPort.rules())
 	var next := 0
 	while sim.clock.ticks < TICKS:
 		for i in mini(ticks_per_frame, TICKS - sim.clock.ticks):

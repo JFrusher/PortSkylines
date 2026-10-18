@@ -1,7 +1,16 @@
 extends RefCounted
 ## Seeded command logs for tests: a working port (road from the highway,
-## quay, yard), then random builds and bulldozes near the coast at random
-## ticks. Many are refused; that is part of the log.
+## quay, cranes, tractors, an import and an export block), then random builds
+## and bulldozes near the coast at random ticks. Many are refused; that is
+## part of the log.
+
+
+## The base rules with imports dwelling 30 minutes, so lorries collect them
+## within a test's run.
+static func rules() -> Dictionary:
+	var quick := Content.base().duplicate(true)
+	quick.import_dwell_minutes = 30.0
+	return quick
 
 
 static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Array[Dictionary]:
@@ -20,6 +29,9 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	for y: int in [map.entry.y - 1, map.entry.y]:
 		log.append({"tick": 0, "command": {"op": "place_crane", "cell": Vector2i(map.sea_width, y)}})
 	log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.YARD, "cell": Vector2i(map.sea_width + 2, map.entry.y - 1)}})
+	var exports := Vector2i(map.sea_width + 6, map.entry.y + 1)
+	log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.YARD, "cell": exports}})
+	log.append({"tick": 0, "command": {"op": "set_yard", "cell": exports, "settings": {"role": "export"}}})
 	var kinds := [PortMap.Tile.ROAD, PortMap.Tile.QUAY, PortMap.Tile.YARD]
 	# sort_custom is not stable, so only the random commands are sorted; the
 	# port above must be built in the order written.

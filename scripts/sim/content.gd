@@ -14,6 +14,8 @@ const SCHEMA := {
 	"ship_interval_minutes": TYPE_FLOAT,
 	"sail_seconds": TYPE_FLOAT,
 	"lorry_interval_minutes": TYPE_FLOAT,
+	"export_lorry_interval_minutes": TYPE_FLOAT,
+	"import_dwell_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
 	"give_up_seconds": TYPE_FLOAT,
 	# "*" means any key, each holding the record that follows.
