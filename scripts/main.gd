@@ -45,6 +45,7 @@ func _load() -> void:
 		hud.flash(loaded.error)
 		return
 	sim = loaded.sim
+	_painting = false
 	rig.bounds = Rect2(Vector2.ZERO, Vector2(sim.map.size))
 	_accumulated = 0.0
 	view.queue_free()
