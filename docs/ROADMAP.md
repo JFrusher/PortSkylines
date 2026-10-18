@@ -133,9 +133,55 @@ Wishlist goals should treat the published tiers as soft. **[Unverified]** Zukows
 | **Console lock-in** | C# console support is beta on Switch and Xbox only ([W4](https://www.w4games.com/w4consoles)) | Stay on GDScript plus C++ GDExtension. Treat consoles as post-1.0 |
 | **EA trust** | Valve: no promises of future features ([Steamworks](https://partner.steamgames.com/doc/store/earlyaccess) [Unverified]). Slow-update criticism of W&R | Enter EA only when M7's exit criteria pass. Keep a regular update rhythm. Ship a save migration with every update |
 
+## Decisions so far (18 Oct 2026)
+
+The developer answered most of the open questions below. These answers override the recommendations in the phases above wherever they differ.
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Name | Keep "Port Skylines" |
+| 2–3 | Team and time | Solo, full-time |
+| 4, 24 | Goal and price | Hobby / portfolio, free to play |
+| 5–7 | Platforms | Windows only |
+| 8 | Art | Semi-realistic industrial |
+| 9–10 | Feel and role | Realistic planner |
+| 11 | Roads | Grid simulation, drawn with rounded corners |
+| 12 | Scope | Whole port: several terminals, channel, pilots |
+| 13 | Map | Buy tiles, with upkeep |
+| 14 | Time | Two clocks, as in CS: vehicles move in real time, the calendar runs faster |
+| 15 | Modes | Sandbox only at 1.0 |
+| 16 | Failure | Loans and bailouts, plus a no-fail creative mode |
+| 17 | Economy | Contracts, fees and reputation |
+| 18 | Traffic | CS2-style cost routing |
+| 19 | Transport modes | Road, on-dock rail, and barge/feeder transhipment |
+| 20 | Automation | Global policies, per-block rules, and an automation tech tier |
+| 21 | Events | Wind and storms, strikes and congestion, regulations |
+| 22 | Modding | Data-file mods |
+| 23 | Release | Straight to 1.0, no Early Access |
+| 26–27 | Tech | Upgrade to Godot 4.6/4.7 in M1 and pin it. GDScript, plus C++ GDExtension only for profiled hot loops |
+| 28–29 | Spec | Mid-range PC (GTX 1660 class), about 2,000 lorries and 20,000 boxes at 60 fps |
+| 30 | Saves | Every old save migrates forever |
+| 31–32 | Brands and repo | Fictional shipping lines and ports. The repo stays public |
+
+**Still open:** 33 (localisation and accessibility) and 34 (public roadmap cadence).
+
+**What these answers change** **[Inference]**:
+- **Release phases.** A free hobby release going straight to 1.0 removes the wishlist gates, the Next Fest timing and the Early Access sections. M6 becomes public playtest builds, for example on itch.io or a free Steam page (Steam still charges its app fee). M7 becomes 1.0 readiness. There is no competitor race to win, so phases can run until their exit criteria pass rather than to a date.
+- **Name.** The trademark risk does not go away because the game is free. Using SKYLINES on a published game can still draw an objection, so a name change is still possible later. Not legal advice.
+- **Scope against time.** The chosen scope is far larger than the single terminal that the 24–30 month estimate assumed. It adds a whole port, three transport modes, CS2-style routing, semi-realistic art, three event types and automation, all built solo with no Early Access feedback. An honest solo estimate becomes about 5–8 years full-time to 1.0. To keep the game playable throughout, build in this order:
+  1. One terminal, road only, working end to end.
+  2. Rail.
+  3. A second terminal.
+  4. Barge and feeder transhipment.
+  5. Events.
+  6. Automation.
+- **Traffic.** CS2-style cost routing decides which route a vehicle takes. It does not stop vehicles occupying the same space, so cell or slot reservation from M2 is still needed underneath it. Cost routing over a lane graph moves into M5.
+- **Two clocks.** A day/night calendar decoupled from vehicle speed makes dwell, free days and contracts tunable without changing how fast things move. Add it in M1 alongside the fixed tick.
+- **Saves.** "Migrate forever" makes M1's versioned save format and the CI save-fixture test mandatory from the first save.
+
 ## Open questions for the developer
 
-Each answer changes phase content, ordering or duration.
+Each answer changes phase content, ordering or duration. Answers given so far are in **Decisions so far** above.
 
 1. **Final name.** "Skylines" carries high, not-legally-assessed risk. It matters because the Steam page, domain, trailer and wishlists all attach to the name, and renaming after M4 discards that work. Options: rename now (recommended), get an attorney's clearance opinion first, or keep the name and accept the risk of a forced rebrand.
 2. **Team size and roles.** This sets every duration above, roughly 2x between solo and a small team. Options: solo plus bought assets; solo plus contract artist; a 3-6 person team.
