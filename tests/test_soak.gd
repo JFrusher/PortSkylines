@@ -49,7 +49,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 
 func _check(sim: PortSim, spent: int) -> void:
 	var at := "at tick %d" % sim.clock.ticks
-	_expect(sim.money, sim.rules.start_money - spent + sim.delivered * sim.rules.fee_per_box, "money adds up " + at)
+	_expect(sim.money, sim.rules.start_money - spent + sim.delivered * sim.rules.fee_per_box - sim.upkeep_paid, "money adds up " + at)
 	# Every box is in exactly one place: a yard stack or a vehicle's load.
 	var seen := {}
 	for tile: Vector2i in sim.yard.stacks:

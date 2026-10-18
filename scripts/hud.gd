@@ -20,6 +20,7 @@ var tool: int = PortMap.Tile.ROAD
 var speed := 1
 
 var _readout := Label.new()
+var _kpis := Label.new()
 var _message := Label.new()
 var _flash_left := 0.0
 
@@ -37,6 +38,7 @@ func _ready() -> void:
 		_button(top, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
 	_action(top, "Save", save_pressed)
 	_action(top, "Load", load_pressed)
+	root.add_child(_outlined(_kpis))
 	root.add_child(_outlined(_message))
 
 	var spacer := Control.new()
@@ -67,9 +69,12 @@ func flash(text: String) -> void:
 func _process(dt: float) -> void:
 	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
 	_readout.text = "$%d    Boxes delivered %d    Ships %d    Tractors %d/%d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size(), sim.vehicles.size() - lorries, sim.tractors, lorries]
+	var k := sim.kpis()
+	_kpis.text = "Berth %.0f moves/h    Crane %.0f moves/h    Gate turn %.0f min    Yard %d%% full    %d boxes/day    Upkeep $%d/day" % [
+		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]
 	_flash_left -= dt
 	if _flash_left <= 0.0:
-		_message.text = sim.status
+		_message.text = "\n".join(sim.events.slice(-5).map(func(e: Dictionary) -> String: return "Day %d %02d:%02d  %s" % [int(e.minute / 1440), int(e.minute / 60) % 24, int(e.minute) % 60, e.text]))
 
 
 func _row(parent: Control) -> HBoxContainer:

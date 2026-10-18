@@ -4,6 +4,7 @@
 	"fee_per_box": 120,
 	"build_cost": {"road": 10, "quay": 200, "yard": 50, "gate": 300},
 	"gate_minutes": 2,
+	"upkeep": {"road": 1, "quay": 5, "yard": 2, "gate": 20, "sts_crane": 150, "tractor": 30},
 	"first_ship_minutes": 10,
 	"ship_interval_minutes": 45,
 	"sail_seconds": 4,

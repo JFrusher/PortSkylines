@@ -11,6 +11,7 @@ const SCHEMA := {
 	"fee_per_box": TYPE_INT,
 	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT},
 	"gate_minutes": TYPE_FLOAT,
+	"upkeep": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT, "sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"first_ship_minutes": TYPE_FLOAT,
 	"ship_interval_minutes": TYPE_FLOAT,
 	"sail_seconds": TYPE_FLOAT,
@@ -25,7 +26,7 @@ const SCHEMA := {
 	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
-	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT}},
+	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT, "upkeep_per_machine": TYPE_INT}},
 }
 
 static var _base := {}

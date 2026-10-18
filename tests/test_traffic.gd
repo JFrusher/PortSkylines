@@ -110,4 +110,4 @@ func _test_blocked_lorry_gives_up() -> void:
 		sim.tick()
 	_expect(lorry.replanned, true, "the lorry looked for a way round")
 	_expect([sim.vehicles.size(), sim.gave_up], [0, 1], "then gave up and left")
-	_expect(sim.status.contains("gave up"), true, "the status says so")
+	_expect(sim.last_event().contains("gave up"), true, "the status says so")

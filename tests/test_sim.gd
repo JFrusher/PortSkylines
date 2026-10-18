@@ -30,6 +30,8 @@ func _initialize() -> void:
 	_test_exports_are_loaded()
 	_test_gate()
 	_test_parallel_gates()
+	_test_upkeep_at_midnight()
+	_test_events_do_not_repeat()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -188,11 +190,11 @@ func _test_ships_fit_their_berth() -> void:
 		sim.build(QUAY, Vector2i(sim.map.sea_width, y))
 	_run(sim, sim.rules.first_ship_minutes + 1)
 	_expect(sim.ships.size(), 0, "a panamax does not call at an 8-tile berth")
-	_expect(sim.status.contains("12 quay tiles"), true, "the status says how long a berth it needs (%s)" % sim.status)
+	_expect(sim.last_event().contains("12 quay tiles"), true, "the status says how long a berth it needs (%s)" % sim.last_event())
 	rules.water_depth = 11.0
 	var shallow := PortSim.new(0, rules)
 	_run(shallow, shallow.rules.first_ship_minutes + 1)
-	_expect(shallow.status.contains("needs 13 m"), true, "a panamax does not call at 11 m of water (%s)" % shallow.status)
+	_expect(shallow.last_event().contains("needs 13 m"), true, "a panamax does not call at 11 m of water (%s)" % shallow.last_event())
 
 
 func _test_cranes() -> void:
@@ -215,7 +217,7 @@ func _test_crane_timing() -> void:
 	rules.start_money = 100000
 	# A yard that never holds the cranes up: room for everything, a machine
 	# per tile, near-instant stacking.
-	rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 0.05, "tiles_per_machine": 1, "cost_per_tile": 0}
+	rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 0.05, "tiles_per_machine": 1, "cost_per_tile": 0, "upkeep_per_machine": 0}
 	var sim := _port(rules)
 	var row := sim.map.entry.y
 	sim.place_crane(Vector2i(sim.map.sea_width, row + 2))
@@ -231,6 +233,10 @@ func _test_crane_timing() -> void:
 	var expected := 120.0 / (3 * 25 * 0.9) * 60
 	_expect(sim.cranes.size(), 3, "three cranes on the berth")
 	_expect(absf(minutes - expected) <= expected * 0.05, true, "3 cranes work 120 moves in %.1f min (expected %.1f)" % [minutes, expected])
+	_run(sim, 10)
+	var k := sim.kpis()
+	_expect(absf(k.crane_moves_per_hour - 25 * 0.9) < 25 * 0.9 * 0.05, true, "the crane-rate KPI reads 22.5 moves an hour (%.1f)" % k.crane_moves_per_hour)
+	_expect(absf(k.berth_moves_per_hour - 3 * 25 * 0.9) < 3 * 25 * 0.9 * 0.05, true, "the berth KPI reads 67.5 moves an hour (%.1f)" % k.berth_moves_per_hour)
 
 
 func _test_outreach() -> void:
@@ -246,7 +252,7 @@ func _test_outreach() -> void:
 	sim.place_crane(Vector2i(sim.map.sea_width, row))
 	_run(sim, sim.rules.first_ship_minutes + 30)
 	_expect(sim.ships.size() == 1 and sim.ships[0].boxes == rules.ship_classes.panamax.import_moves, true, "a panamax gets no moves from cranes that are too short")
-	_expect(sim.status.contains("reaches 13 rows"), true, "the status says why (%s)" % sim.status)
+	_expect(sim.last_event().contains("reaches 13 rows"), true, "the status says why (%s)" % sim.last_event())
 
 
 func _test_route_cache() -> void:
@@ -277,7 +283,7 @@ func _test_yard_settings() -> void:
 	_run(exports, exports.rules.first_ship_minutes + 30)
 	var imports_there: int = exports.yard.stacks.values().reduce(func(n: int, ids: Array) -> int: return n + ids.filter(func(id: int) -> bool: return exports.boxes[id].kind == "import").size(), 0)
 	_expect(imports_there, 0, "imports never go to an export block")
-	_expect(exports.status.contains("no import yard space"), true, "the status says why the ship waits (%s)" % exports.status)
+	_expect(exports.last_event().contains("no import yard space"), true, "the status says why the ship waits (%s)" % exports.last_event())
 
 
 ## One machine per tile against one per two tiles, with handling slow enough
@@ -289,7 +295,7 @@ func _test_yard_machines_set_the_pace() -> void:
 		var rules := Content.base().duplicate(true)
 		rules.ship_classes.feeder.weight = 0.0
 		rules.start_money = 100000
-		rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 20.0, "tiles_per_machine": per_machine, "cost_per_tile": 0}
+		rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 20.0, "tiles_per_machine": per_machine, "cost_per_tile": 0, "upkeep_per_machine": 0}
 		rules.lorry_interval_minutes = 1e9  # no lorries competing for the machines
 		var sim := _port(rules)
 		sim.buy_tractors(20)
@@ -344,7 +350,7 @@ func _test_exports_are_loaded() -> void:
 		sim.tick()
 		ticks += 1
 	_expect([ship.boxes, ship.exports], [0, 0], "the feeder leaves discharged and fully loaded")
-	_expect(sim.status.contains("fully loaded"), true, "and says so (%s)" % sim.status)
+	_expect(sim.last_event().contains("fully loaded"), true, "and says so (%s)" % sim.last_event())
 
 
 func _test_gate() -> void:
@@ -358,7 +364,7 @@ func _test_gate() -> void:
 	gateless.yard.add(Vector2i(gateless.map.sea_width + 3, row - 1), gateless._new_box("import", 0.0))
 	_run(gateless, 5)
 	_expect(gateless.vehicles.is_empty(), true, "no lorry comes in without a gate")
-	_expect(gateless.status.contains("build a gate"), true, "the status says so (%s)" % gateless.status)
+	_expect(gateless.last_event().contains("build a gate"), true, "the status says so (%s)" % gateless.last_event())
 	var sim := _port(rules)
 	_run(sim, sim.rules.first_ship_minutes + 240)
 	_expect(sim.turn_times.size() > 5, true, "lorries record turn times (%d)" % sim.turn_times.size())
@@ -376,7 +382,7 @@ func _test_parallel_gates() -> void:
 		rules.export_lorry_interval_minutes = 0.05
 		rules.first_ship_minutes = 1e9
 		rules.start_money = 100000
-		rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 0.05, "tiles_per_machine": 1, "cost_per_tile": 0}
+		rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 0.05, "tiles_per_machine": 1, "cost_per_tile": 0, "upkeep_per_machine": 0}
 		var sim := PortSim.new(0, rules)
 		var row := sim.map.entry.y
 		var gate_x := sim.map.entry.x - 6
@@ -393,3 +399,26 @@ func _test_parallel_gates() -> void:
 		_run(sim, 300)
 		counts.append(sim.delivered)
 	_expect(counts[1] >= counts[0] * 1.7, true, "two gates take in about twice the exports of one (%d vs %d)" % [counts[1], counts[0]])
+
+
+func _test_upkeep_at_midnight() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.first_ship_minutes = 1e9
+	var sim := _port(rules)
+	var upkeep := sim.daily_upkeep()
+	var expected: int = rules.upkeep.road * sim.map.cells_of(ROAD).size() + rules.upkeep.quay * 12 + rules.upkeep.yard * 6 + rules.upkeep.gate + rules.upkeep.sts_crane * 2 + rules.upkeep.tractor * 6 + rules.yard_gear.reach_stacker.upkeep_per_machine
+	_expect(upkeep, expected, "upkeep adds every tile, crane, tractor and yard machine")
+	for i in SimClock.TICKS_PER_DAY - 1:
+		sim.tick()
+	var before := sim.money
+	sim.tick()
+	_expect([before - sim.money, sim.upkeep_paid], [upkeep, upkeep], "upkeep is charged exactly at midnight")
+	_expect(sim.last_event().begins_with("Day 1: upkeep"), true, "and reported (%s)" % sim.last_event())
+
+
+func _test_events_do_not_repeat() -> void:
+	var sim := PortSim.new()
+	var before := sim.events.size()
+	sim._event("A crane is waiting for a free tractor")
+	sim._event("A crane is waiting for a free tractor")
+	_expect(sim.events.size(), before + 1, "a message repeated tick after tick is kept once")
