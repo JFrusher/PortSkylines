@@ -29,6 +29,9 @@ const SCHEMA := {
 	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT, "upkeep_per_machine": TYPE_INT}},
 }
 
+# Keys the sim divides by or repeats on; zero or less would hang or spin it.
+const POSITIVE := ["ship_interval_minutes", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+
 static var _base := {}
 
 
@@ -103,4 +106,6 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 		parent[key] = int(got)
 	else:
 		parent[key] = float(got)
+	if key in POSITIVE and got <= 0:
+		return "%s: must be greater than zero" % where
 	return ""

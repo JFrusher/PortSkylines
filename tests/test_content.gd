@@ -17,6 +17,12 @@ func _initialize() -> void:
 	_expect(_error_for({"start_money": 6.5}), "rules.json: start_money: must be a whole number", "an int key refuses fractions")
 	_expect(_error_for({"colour": 1}), "rules.json: colour: unknown key", "an unknown key is refused")
 	_expect(base.ship_classes.feeder.length is int, true, "records under a \"*\" key are checked and typed")
+	for key: String in ["ship_interval_minutes", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds"]:
+		for value: int in [0, -1]:
+			_expect(_error_for({key: value}), "rules.json: %s: must be greater than zero" % key, "%s refuses %d" % [key, value])
+		_expect(_error_for({key: 1}), "", "%s accepts a positive whole number" % key)
+	_expect(_error_for({"sail_seconds": 0.5}), "", "a positive fractional duration is valid")
+	_expect(_error_for({"first_ship_minutes": 0}), "", "the first ship can arrive immediately")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
