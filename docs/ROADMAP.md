@@ -165,6 +165,8 @@ The developer answered most of the open questions below. These answers override 
 
 **Still open:** 33 (localisation and accessibility) and 34 (public roadmap cadence).
 
+The step-by-step plan that follows these decisions is in [docs/phases/](phases/README.md): eleven phase files, M1 to M11.
+
 **What these answers change** **[Inference]**:
 - **Release phases.** A free hobby release going straight to 1.0 removes the wishlist gates, the Next Fest timing and the Early Access sections. M6 becomes public playtest builds, for example on itch.io or a free Steam page (Steam still charges its app fee). M7 becomes 1.0 readiness. There is no competitor race to win, so phases can run until their exit criteria pass rather than to a date.
 - **Name.** The trademark risk does not go away because the game is free. Using SKYLINES on a published game can still draw an objection, so a name change is still possible later. Not legal advice.
