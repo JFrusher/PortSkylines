@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot 4.4.1
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/godot.zip" https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP"
+          echo "GODOT=$RUNNER_TEMP/Godot_v4.4.1-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - run: $GODOT --headless --import
+      - name: Sim tests
+        run: $GODOT --headless --script res://tests/test_sim.gd
+      - name: Main scene runs without script errors
+        run: |
+          $GODOT --headless --quit-after 600 2>&1 | tee run.log
+          ! grep -E "SCRIPT ERROR|^ERROR" run.log
