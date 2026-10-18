@@ -24,7 +24,9 @@ jobs:
             # A script error before quit() leaves Godot running, so cap each test.
             timeout 300 $GODOT --headless --script "res://$t" 2>&1 | tee test.log
             test "${PIPESTATUS[0]}" -eq 0
-            ! grep -E "SCRIPT ERROR|^ERROR" test.log
+            if grep -E "SCRIPT ERROR|^ERROR" test.log; then
+              exit 1
+            fi
           done
       - name: Main scene runs without script errors
         run: |

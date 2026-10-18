@@ -86,4 +86,6 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 		parent[key] = int(got)
 	else:
 		parent[key] = float(got)
+	if key in ["ship_interval_minutes", "ship_boxes", "sail_seconds", "crane_minutes", "lorry_interval_minutes", "lorry_speed"] and got <= 0:
+		return "%s: must be greater than zero" % where
 	return ""

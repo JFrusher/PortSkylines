@@ -11,11 +11,29 @@ const MAGIC := "PSKY"
 
 
 static func save(path: String, sim: PortSim) -> String:
-	var file := FileAccess.open(path, FileAccess.WRITE)
+	var temporary := path + ".tmp"
+	var file := FileAccess.open(temporary, FileAccess.WRITE)
 	if file == null:
 		return "Can't write %s: %s" % [path, error_string(FileAccess.get_open_error())]
-	file.store_buffer(MAGIC.to_ascii_buffer())
-	file.store_var({"version": VERSION, "sim": sim.to_dict()}, false)
+	# Match store_var's length-prefixed format, with objects refused.
+	var payload := var_to_bytes({"version": VERSION, "sim": sim.to_dict()})
+	var bytes := MAGIC.to_ascii_buffer()
+	bytes.resize(MAGIC.length() + 4)
+	bytes.encode_u32(MAGIC.length(), payload.size())
+	bytes.append_array(payload)
+	var written := file.store_buffer(bytes)
+	file.flush()
+	var err := file.get_error()
+	file.close()
+	# close() returns no status. Read back after closing to catch buffered write
+	# failures too, before the existing save can be replaced.
+	if not written or err != OK or file.get_error() != OK or FileAccess.get_file_as_bytes(temporary) != bytes:
+		DirAccess.remove_absolute(temporary)
+		return "Can't write %s" % path
+	err = DirAccess.rename_absolute(temporary, path)
+	if err != OK:
+		DirAccess.remove_absolute(temporary)
+		return "Can't write %s: %s" % [path, error_string(err)]
 	return ""
 
 
@@ -33,9 +51,68 @@ static func load_from(path: String) -> Dictionary:
 		return {"error": "%s is from a newer version of the game (save v%d, game v%d)" % [path, data.version, VERSION]}
 	if data.version < 1:
 		return {"error": "%s has an invalid save version %d" % [path, data.version]}
-	return {"sim": PortSim.from_dict(_migrate(data).sim)}
+	data = _migrate(data)
+	if not _valid_sim(data.get("sim")):
+		return {"error": "%s is not a Port Skylines save" % path}
+	return {"sim": PortSim.from_dict(data.sim)}
 
 
 ## Brings an older save up to VERSION one step at a time. Empty until v2.
 static func _migrate(data: Dictionary) -> Dictionary:
 	return data
+
+
+## Check the entire payload before any typed deserialiser sees it.
+static func _valid_sim(data: Variant) -> bool:
+	if not data is Dictionary or not _has_fields(data, {
+		"map": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"rng_state": TYPE_INT, "money": TYPE_INT, "delivered": TYPE_INT,
+		"status": TYPE_STRING, "ships": TYPE_ARRAY, "lorries": TYPE_ARRAY,
+		"stacked": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
+		"until_ship": TYPE_FLOAT, "until_lorry": TYPE_FLOAT,
+	}):
+		return false
+	var map: Dictionary = data.map
+	if not _has_fields(map, {
+		"size": TYPE_VECTOR2I, "sea_width": TYPE_INT, "entry": TYPE_VECTOR2I,
+		"version": TYPE_INT, "tiles": TYPE_PACKED_BYTE_ARRAY,
+	}):
+		return false
+	if map.size.x <= 0 or map.size.y <= 0 or map.tiles.size() != map.size.x * map.size.y:
+		return false
+	for tile: int in map.tiles:
+		if tile not in PortMap.Tile.values():
+			return false
+	for ship: Variant in data.ships:
+		if not ship is Dictionary or not _has_fields(ship, {
+			"quay": TYPE_VECTOR2I, "berth": TYPE_VECTOR2I, "boxes": TYPE_INT,
+			"state": TYPE_INT, "sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT,
+			"crane": TYPE_FLOAT,
+		}):
+			return false
+	for lorry: Variant in data.lorries:
+		if not lorry is Dictionary or not _has_fields(lorry, {
+			"path": TYPE_ARRAY, "yard": TYPE_VECTOR2I, "loaded": TYPE_BOOL,
+			"t": TYPE_FLOAT, "prev_t": TYPE_FLOAT,
+		}):
+			return false
+		if lorry.path.is_empty():
+			return false
+		for cell: Variant in lorry.path:
+			if not cell is Vector2i:
+				return false
+	for counts: Dictionary in [data.stacked, data.claimed]:
+		for cell: Variant in counts:
+			if not cell is Vector2i or not counts[cell] is int:
+				return false
+	return true
+
+
+static func _has_fields(data: Dictionary, fields: Dictionary) -> bool:
+	for key: String in fields:
+		var value: Variant = data.get(key)
+		if typeof(value) != fields[key] and not (fields[key] == TYPE_FLOAT and value is int):
+			return false
+		if fields[key] == TYPE_FLOAT and not is_finite(value):
+			return false
+	return true
