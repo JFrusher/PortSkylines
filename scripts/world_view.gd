@@ -18,8 +18,15 @@ var sim: PortSim
 var alpha := 1.0
 
 var _drawn_version := -1
-var _tiles := {}  # Vector2i -> MeshInstance3D
-var _stacks := {}  # Vector2i -> MeshInstance3D
+## Tile kinds as last drawn, to find the chunks a map change touched.
+var _drawn_tiles := PackedByteArray()
+var _tiles := ChunkedMeshes.new()
+var _tile_meshes := {}  # tile kind -> Mesh
+var _stacks := ChunkedMeshes.new()
+var _stack_mesh := _box_mesh(Vector3(0.8, BOX_HEIGHT, 0.4), BOX_COLOR)
+## Chunks that held stacks last frame, so emptied ones get cleared.
+var _stack_chunks := {}
+# shortcut: ships and lorries are one node each, fine under ~100; MultiMesh them in M5.
 var _ships := {}  # PortSim.Ship -> Node3D
 var _lorries := {}  # PortSim.Lorry -> Node3D
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
@@ -35,6 +42,10 @@ func _ready() -> void:
 	land.position = Vector3(map.sea_width + land_width / 2.0, -0.5, map.size.y / 2.0)
 	add_child(land)
 	add_child(_hover)
+	add_child(_tiles)
+	add_child(_stacks)
+	for kind: int in TILE_HEIGHT:
+		_tile_meshes[kind] = _box_mesh(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
 
 
 func show_hover(cell: Vector2i, ok: bool) -> void:
@@ -51,41 +62,48 @@ func _process(_dt: float) -> void:
 	_draw_lorries()
 
 
+## Redraws only the chunks whose tiles changed since the last draw.
 func _draw_tiles() -> void:
 	_drawn_version = sim.map.version
-	var wanted := {}
-	for kind: int in TILE_HEIGHT:
-		for cell in sim.map.cells_of(kind):
-			wanted[cell] = kind
-	for cell: Vector2i in _tiles.keys():
-		if wanted.get(cell, -1) != _tiles[cell].get_meta("kind"):
-			_tiles[cell].queue_free()
-			_tiles.erase(cell)
-	for cell: Vector2i in wanted:
-		if cell in _tiles:
-			continue
-		var kind: int = wanted[cell]
-		var tile := _box(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
-		tile.position = Vector3(cell.x + 0.5, TILE_HEIGHT[kind] / 2.0, cell.y + 0.5)
-		tile.set_meta("kind", kind)
-		add_child(tile)
-		_tiles[cell] = tile
+	var map := sim.map
+	_drawn_tiles.resize(map.size.x * map.size.y)
+	var dirty := {}
+	for y in map.size.y:
+		for x in map.size.x:
+			var kind := map.tile(Vector2i(x, y))
+			if _drawn_tiles[x + y * map.size.x] != kind:
+				_drawn_tiles[x + y * map.size.x] = kind
+				dirty[ChunkedMeshes.chunk_of(Vector2i(x, y))] = true
+	for chunk: Vector2i in dirty:
+		var by_kind := {}
+		for kind: int in TILE_HEIGHT:
+			by_kind[kind] = [] as Array[Transform3D]
+		for y in range(chunk.y * ChunkedMeshes.CHUNK, mini((chunk.y + 1) * ChunkedMeshes.CHUNK, map.size.y)):
+			for x in range(chunk.x * ChunkedMeshes.CHUNK, mini((chunk.x + 1) * ChunkedMeshes.CHUNK, map.size.x)):
+				var kind := map.tile(Vector2i(x, y))
+				if kind in TILE_HEIGHT:
+					by_kind[kind].append(Transform3D(Basis(), Vector3(x + 0.5, TILE_HEIGHT[kind] / 2.0, y + 0.5)))
+		for kind: int in by_kind:
+			_tiles.show_part(Vector3i(chunk.x, chunk.y, kind), _tile_meshes[kind], by_kind[kind])
 
 
 func _draw_stacks() -> void:
-	for cell: Vector2i in _stacks.keys():
-		if sim.stacked.get(cell, 0) == 0:
-			_stacks[cell].queue_free()
-			_stacks.erase(cell)
+	var by_chunk := {}
+	for chunk: Vector2i in _stack_chunks:
+		by_chunk[chunk] = [] as Array[Transform3D]
 	for cell: Vector2i in sim.stacked:
 		var count: int = sim.stacked[cell]
 		if count == 0:
 			continue
-		if cell not in _stacks:
-			_stacks[cell] = _box(Vector3(0.8, BOX_HEIGHT, 0.4), BOX_COLOR)
-			add_child(_stacks[cell])
-		_stacks[cell].scale.y = count
-		_stacks[cell].position = Vector3(cell.x + 0.5, 0.08 + count * BOX_HEIGHT / 2.0, cell.y + 0.5)
+		var chunk := ChunkedMeshes.chunk_of(cell)
+		if chunk not in by_chunk:
+			by_chunk[chunk] = [] as Array[Transform3D]
+		by_chunk[chunk].append(Transform3D(Basis.from_scale(Vector3(1, count, 1)), Vector3(cell.x + 0.5, 0.08 + count * BOX_HEIGHT / 2.0, cell.y + 0.5)))
+	_stack_chunks.clear()
+	for chunk: Vector2i in by_chunk:
+		_stacks.show_part(chunk, _stack_mesh, by_chunk[chunk])
+		if not by_chunk[chunk].is_empty():
+			_stack_chunks[chunk] = true
 
 
 func _draw_ships() -> void:
@@ -138,6 +156,12 @@ func _forget_gone(drawn: Dictionary, live: Array) -> void:
 
 
 func _box(size: Vector3, color: Color) -> MeshInstance3D:
+	var node := MeshInstance3D.new()
+	node.mesh = _box_mesh(size, color)
+	return node
+
+
+func _box_mesh(size: Vector3, color: Color) -> BoxMesh:
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	if color.a < 1.0:
@@ -145,6 +169,4 @@ func _box(size: Vector3, color: Color) -> MeshInstance3D:
 	var mesh := BoxMesh.new()
 	mesh.size = size
 	mesh.material = material
-	var node := MeshInstance3D.new()
-	node.mesh = mesh
-	return node
+	return mesh
