@@ -58,7 +58,8 @@ func _unhandled_input(event: InputEvent) -> void:
 ## every cell a drag passes over.
 func _order(cell: Vector2i, report: bool) -> void:
 	_last_cell = cell
-	var err := sim.bulldoze(cell) if hud.tool == Hud.BULLDOZE else sim.build(hud.tool, cell)
+	var command := {"op": "bulldoze", "cell": cell} if hud.tool == Hud.BULLDOZE else {"op": "build", "kind": hud.tool, "cell": cell}
+	var err := sim.apply(command)
 	if err != "" and report:
 		hud.flash(err)
 

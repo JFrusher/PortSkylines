@@ -80,6 +80,18 @@ class Lorry:
 		return Vector2(path[i]).lerp(Vector2(path[j]), clampf(at - i, 0.0, 1.0))
 
 
+## The one way the player changes the sim. Applied between ticks, so a
+## command log tagged with tick numbers replays exactly. Returns why it was
+## refused, or "".
+func apply(command: Dictionary) -> String:
+	match command.get("op"):
+		"build":
+			return build(command.kind, command.cell)
+		"bulldoze":
+			return bulldoze(command.cell)
+	return "Unknown command: %s" % command.get("op")
+
+
 func build_error(kind: int, cell: Vector2i) -> String:
 	var err := map.build_error(kind, cell)
 	if err == "" and money < COST[kind]:

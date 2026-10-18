@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_bulldoze_rules()
 	_test_no_ship_without_a_road()
 	_test_ships_unload_and_lorries_pay()
+	_test_commands()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -80,3 +81,16 @@ func _test_ships_unload_and_lorries_pay() -> void:
 	_run(sim, PortSim.FIRST_SHIP_MINUTES + 120)
 	_expect(sim.delivered >= PortSim.SHIP_BOXES, true, "first ship's boxes all delivered (%d)" % sim.delivered)
 	_expect(sim.money, before + sim.delivered * PortSim.FEE_PER_BOX, "every delivery is paid")
+
+
+func _test_commands() -> void:
+	var by_command := PortSim.new()
+	var direct := PortSim.new()
+	var cell := Vector2i(12, 3)
+	_expect(by_command.apply({"op": "build", "kind": QUAY, "cell": cell}), "", "build command")
+	direct.build(QUAY, cell)
+	_expect(by_command.map.tile(cell), direct.map.tile(cell), "a build command builds like build()")
+	_expect(by_command.money, direct.money, "a build command charges like build()")
+	_expect(by_command.apply({"op": "bulldoze", "cell": cell}), "", "bulldoze command")
+	_expect(by_command.map.tile(cell), PortMap.Tile.LAND, "a bulldoze command clears the tile")
+	_expect(by_command.apply({"op": "fly"}), "Unknown command: fly", "unknown command is refused")
