@@ -88,6 +88,35 @@ func neighbor(cell: Vector2i, kind: int) -> Vector2i:
 	return NONE
 
 
+## Straight runs of quay tiles with water along one side: the places a ship can
+## lie. Each is {"cells": quay tiles in order along the run, "side": the step
+## from a quay tile to the water}.
+func berths() -> Array[Dictionary]:
+	var found: Array[Dictionary] = []
+	var seen := {}
+	for cell in cells_of(Tile.QUAY):
+		var water := neighbor(cell, Tile.WATER)
+		if cell in seen or water == NONE:
+			continue
+		var side := water - cell
+		var along := Vector2i(absi(side.y), absi(side.x))
+		var start := cell
+		while _berth_continues(start - along, side):
+			start -= along
+		var cells: Array[Vector2i] = []
+		var at := start
+		while _berth_continues(at, side):
+			cells.append(at)
+			seen[at] = true
+			at += along
+		found.append({"cells": cells, "side": side})
+	return found
+
+
+func _berth_continues(cell: Vector2i, side: Vector2i) -> bool:
+	return tile(cell) == Tile.QUAY and tile(cell + side) == Tile.WATER
+
+
 ## The road a building is entered from: itself if it is a road, else an adjacent one.
 func access_road(cell: Vector2i) -> Vector2i:
 	# shortcut: takes the first adjacent road even if a better one exists, fine until gates own access in M2.

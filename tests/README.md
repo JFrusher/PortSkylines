@@ -22,7 +22,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 
 ## Save fixtures
 
-`tests/fixtures/save_v<N>.bin` is a save written at version N. When `SaveFile.VERSION` goes up, run `godot --headless --script res://tests/make_fixtures.gd` once and commit the new file. Never regenerate an old fixture: they prove that old saves still load.
+`tests/fixtures/save_v<N>.bin` is a save written at version N. When `SaveFile.VERSION` goes up, run `godot --headless --script res://tests/make_fixtures.gd` once and commit the new file. Never regenerate a fixture once its version is on `main`: they prove that old saves still load. While a PR is still changing the format of the new version, regenerate that version's fixture in the same PR.
 
 ## Benchmark
 

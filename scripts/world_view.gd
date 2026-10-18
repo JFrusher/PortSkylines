@@ -11,7 +11,8 @@ const TILE_COLOR := {
 }
 const BOX_HEIGHT := 0.3
 const BOX_COLOR := Color(0.85, 0.4, 0.15)
-const SEA_START := -18.0  # where ships appear, west of the map
+const SEA_START := -18.0  # how far the water reaches past the map
+const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
 var sim: PortSim
 ## How far play has moved from the last tick towards the next, 0 to 1.
@@ -109,9 +110,11 @@ func _draw_stacks() -> void:
 func _draw_ships() -> void:
 	_forget_gone(_ships, sim.ships)
 	for ship: PortSim.Ship in sim.ships:
+		var length := ship.cells.size()
+		var along_z := ship.side.x != 0
 		if ship not in _ships:
-			var hull := _box(Vector3(1.4, 0.6, 4.5), Color(0.15, 0.2, 0.35))
-			var cargo := _box(Vector3(1.0, 0.6, 3.6), BOX_COLOR)
+			var hull := _box(Vector3(1.4, 0.6, length - 0.4) if along_z else Vector3(length - 0.4, 0.6, 1.4), Color(0.15, 0.2, 0.35))
+			var cargo := _box(Vector3(1.0, 0.6, length - 1.6) if along_z else Vector3(length - 1.6, 0.6, 1.0), BOX_COLOR)
 			cargo.name = "Cargo"
 			cargo.position.y = 0.6
 			hull.add_child(cargo)
@@ -119,11 +122,13 @@ func _draw_ships() -> void:
 			_ships[ship] = hull
 		var hull: Node3D = _ships[ship]
 		var sail := lerpf(ship.prev_sail, ship.sail, alpha)
-		var x := lerpf(SEA_START, ship.berth.x + 0.5, ease(sail, -2.0))
-		hull.position = Vector3(x, -0.05, ship.berth.y + 0.5)
+		var middle := (Vector2(ship.cells[0]) + Vector2(ship.cells[-1])) / 2.0 + Vector2(ship.side) + Vector2(0.5, 0.5)
+		var alongside := Vector3(middle.x, -0.05, middle.y)
+		var at_sea := alongside + Vector3(ship.side.x, 0, ship.side.y) * SEA_DISTANCE
+		hull.position = at_sea.lerp(alongside, ease(sail, -2.0))
 		var cargo: Node3D = hull.get_node("Cargo")
 		cargo.visible = ship.boxes > 0
-		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_boxes), 0.01)
+		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_classes[ship.kind].import_moves), 0.01)
 
 
 func _draw_lorries() -> void:

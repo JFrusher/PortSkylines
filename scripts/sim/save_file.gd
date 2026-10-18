@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 1
+const VERSION := 2
 const MAGIC := "PSKY"
 
 
@@ -36,6 +36,17 @@ static func load_from(path: String) -> Dictionary:
 	return {"sim": PortSim.from_dict(_migrate(data).sim)}
 
 
-## Brings an older save up to VERSION one step at a time. Empty until v2.
+## Brings an older save up to VERSION one step at a time.
 static func _migrate(data: Dictionary) -> Dictionary:
+	if data.version == 1:
+		data = _v1_to_v2(data)
+	return data
+
+
+## v2 (M2) gave ships classes and berths. Ships in a v1 save were mid-call in
+## the old format, so they are dropped; the map, money and yards carry over.
+static func _v1_to_v2(data: Dictionary) -> Dictionary:
+	data.sim.ships = []
+	data.sim.status = "Saved game updated: ships that were in port have sailed"
+	data.version = 2
 	return data

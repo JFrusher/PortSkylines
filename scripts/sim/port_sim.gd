@@ -39,9 +39,12 @@ func cost(kind: int) -> int:
 
 class Ship:
 	enum State { ARRIVING, WORKING, LEAVING }
-	var quay: Vector2i
-	## The water tile the ship lies on.
-	var berth: Vector2i
+	## Its class, a key of rules.ship_classes.
+	var kind: String
+	## The quay tiles it lies along, in order.
+	var cells: Array[Vector2i]
+	## The step from those quay tiles to the water the ship is in.
+	var side: Vector2i
 	var boxes: int
 	var state := State.ARRIVING
 	## 0 out at sea, 1 alongside the quay.
@@ -51,16 +54,19 @@ class Ship:
 	## Calendar minutes into the current crane move.
 	var crane := 0.0
 
-	func _init(at_quay: Vector2i, at_berth: Vector2i, cargo: int) -> void:
-		quay = at_quay
-		berth = at_berth
+	func _init(ship_kind: String, along: Array[Vector2i], water_side: Vector2i, cargo: int) -> void:
+		kind = ship_kind
+		cells = along
+		side = water_side
 		boxes = cargo
 
 	func to_dict() -> Dictionary:
-		return {"quay": quay, "berth": berth, "boxes": boxes, "state": state, "sail": sail, "prev_sail": prev_sail, "crane": crane}
+		return {"kind": kind, "cells": cells.duplicate(), "side": side, "boxes": boxes, "state": state, "sail": sail, "prev_sail": prev_sail, "crane": crane}
 
 	static func from_dict(d: Dictionary) -> Ship:
-		var ship := Ship.new(d.quay, d.berth, d.boxes)
+		var along: Array[Vector2i] = []
+		along.assign(d.cells)
+		var ship := Ship.new(d.kind, along, d.side, d.boxes)
 		ship.state = d.state
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
@@ -179,7 +185,7 @@ func bulldoze_error(cell: Vector2i) -> String:
 	if stacked.get(cell, 0) > 0:
 		return "The yard still holds boxes"
 	for ship in ships:
-		if ship.quay == cell:
+		if cell in ship.cells:
 			return "A ship is alongside"
 	for lorry in lorries:
 		if cell in lorry.path:
@@ -210,20 +216,50 @@ func tick() -> void:
 		_drive(lorry)
 
 
+## A ship of a random class (weighted by the data) calls at the first free
+## berth long and deep enough with a road to the highway, or goes elsewhere.
 func _call_ship() -> void:
-	for quay in map.cells_of(PortMap.Tile.QUAY):
-		var berth := map.neighbor(quay, PortMap.Tile.WATER)
-		if _occupied(quay, berth) or map.route(map.entry, quay).is_empty():
-			continue
-		ships.append(Ship.new(quay, berth, rules.ship_boxes))
-		status = "A ship is coming in"
+	var kind := _pick_ship_kind()
+	var spec: Dictionary = rules.ship_classes[kind]
+	if rules.water_depth < spec.draft:
+		status = "A %s went elsewhere: it needs %.0f m of water, the port has %.0f m" % [kind, spec.draft, rules.water_depth]
 		return
-	status = "A ship went elsewhere: no free quay with a road to the highway"
+	for berth: Dictionary in map.berths():
+		var cells: Array[Vector2i] = berth.cells
+		if cells.size() < spec.length or _ship_at(cells[0]):
+			continue
+		var span := cells.slice(0, spec.length)
+		if _apron(span) == PortMap.NONE:
+			continue
+		ships.append(Ship.new(kind, span, berth.side, spec.import_moves))
+		status = "A %s is coming in" % kind
+		return
+	status = "A %s went elsewhere: no free berth of %d quay tiles with a road to the highway" % [kind, spec.length]
 
 
-func _occupied(quay: Vector2i, berth: Vector2i) -> bool:
+func _pick_ship_kind() -> String:
+	var total := 0.0
+	for kind: String in rules.ship_classes:
+		total += rules.ship_classes[kind].weight
+	var pick := rng.randf() * total
+	for kind: String in rules.ship_classes:
+		pick -= rules.ship_classes[kind].weight
+		if pick < 0.0:
+			return kind
+	return rules.ship_classes.keys()[-1]
+
+
+## The first quay tile in `cells` with a road route to the highway, or NONE.
+func _apron(cells: Array[Vector2i]) -> Vector2i:
+	for cell in cells:
+		if not map.route(map.entry, cell).is_empty():
+			return cell
+	return PortMap.NONE
+
+
+func _ship_at(quay: Vector2i) -> bool:
 	for ship in ships:
-		if ship.quay == quay or ship.berth == berth:
+		if quay in ship.cells:
 			return true
 	return false
 
@@ -240,7 +276,7 @@ func _work(ship: Ship) -> void:
 			ship.crane += SimClock.CALENDAR_MINUTES_PER_TICK
 			if ship.crane < rules.crane_minutes:
 				return
-			var yard := _nearest_yard_with_space(ship.quay)
+			var yard := _nearest_yard_with_space(_apron(ship.cells))
 			if yard == PortMap.NONE:
 				ship.crane = rules.crane_minutes
 				status = "A ship is waiting: no yard space reachable from its quay"

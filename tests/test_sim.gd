@@ -17,6 +17,8 @@ func _initialize() -> void:
 	_test_commands()
 	_test_round_trip()
 	_test_cells_of_matches_a_scan()
+	_test_berths()
+	_test_ships_fit_their_berth()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -34,7 +36,8 @@ func _port() -> PortSim:
 	var coast := sim.map.sea_width
 	for x in range(coast + 1, sim.map.entry.x):
 		_expect(sim.build(ROAD, Vector2i(x, row)), "", "road at x=%d" % x)
-	_expect(sim.build(QUAY, Vector2i(coast, row)), "", "quay")
+	for y in range(row - 6, row + 6):
+		_expect(sim.build(QUAY, Vector2i(coast, y)), "", "quay at y=%d" % y)
 	_expect(sim.build(YARD, Vector2i(coast + 2, row - 1)), "", "yard")
 	return sim
 
@@ -80,8 +83,11 @@ func _test_no_ship_without_a_road() -> void:
 func _test_ships_unload_and_lorries_pay() -> void:
 	var sim := _port()
 	var before := sim.money
-	_run(sim, sim.rules.first_ship_minutes + 120)
-	_expect(sim.delivered >= sim.rules.ship_boxes, true, "first ship's boxes all delivered (%d)" % sim.delivered)
+	_run(sim, sim.rules.first_ship_minutes + 1)
+	_expect(sim.ships.size(), 1, "a ship calls at the 12-tile berth")
+	var cargo := sim.ships[0].boxes
+	_run(sim, cargo * sim.rules.crane_minutes + 60)
+	_expect(sim.delivered >= cargo, true, "the first ship's %d boxes are all delivered (%d)" % [cargo, sim.delivered])
 	_expect(sim.money, before + sim.delivered * sim.rules.fee_per_box, "every delivery is paid")
 
 
@@ -127,3 +133,39 @@ func _test_cells_of_matches_a_scan() -> void:
 				if map.tile(Vector2i(x, y)) == kind:
 					scan.append(Vector2i(x, y))
 		_expect(map.cells_of(kind), scan, "cells_of(%s) matches a full scan after 1,000 places" % PortMap.Tile.keys()[kind])
+
+
+func _test_berths() -> void:
+	var map := PortSim.new().map
+	var coast := map.sea_width
+	for y in range(10, 22):
+		map.place(QUAY, Vector2i(coast, y))
+	var berths := map.berths()
+	_expect(berths.size(), 1, "a straight quay is one berth")
+	_expect(berths[0].cells.size(), 12, "a 12-tile quay is a 12-tile berth")
+	_expect(berths[0].side, Vector2i.LEFT, "the berth faces the sea")
+	# A second quay row behind the first faces no water, so it adds no berth.
+	map.place(QUAY, Vector2i(coast + 1, 10))
+	_expect(map.berths().size(), 1, "quay tiles away from the water are not a berth")
+	# Bulldozing a tile in the middle splits the berth in two.
+	map.place(PortMap.Tile.LAND, Vector2i(coast, 15))
+	var lengths := map.berths().map(func(b: Dictionary) -> int: return b.cells.size())
+	_expect(lengths, [5, 6], "a gap splits a berth")
+
+
+func _test_ships_fit_their_berth() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.ship_classes.feeder.weight = 0.0
+	var sim := PortSim.new(0, rules)
+	var row := sim.map.entry.y
+	for x in range(sim.map.sea_width + 1, sim.map.entry.x):
+		sim.build(ROAD, Vector2i(x, row))
+	for y in range(row - 4, row + 4):
+		sim.build(QUAY, Vector2i(sim.map.sea_width, y))
+	_run(sim, sim.rules.first_ship_minutes + 1)
+	_expect(sim.ships.size(), 0, "a panamax does not call at an 8-tile berth")
+	_expect(sim.status.contains("12 quay tiles"), true, "the status says how long a berth it needs (%s)" % sim.status)
+	rules.water_depth = 11.0
+	var shallow := PortSim.new(0, rules)
+	_run(shallow, shallow.rules.first_ship_minutes + 1)
+	_expect(shallow.status.contains("needs 13 m"), true, "a panamax does not call at 11 m of water (%s)" % shallow.status)

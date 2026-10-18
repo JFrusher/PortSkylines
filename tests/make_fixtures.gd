@@ -9,7 +9,8 @@ func _initialize() -> void:
 	var row := sim.map.entry.y
 	for x in range(sim.map.sea_width + 1, sim.map.entry.x):
 		sim.apply({"op": "build", "kind": PortMap.Tile.ROAD, "cell": Vector2i(x, row)})
-	sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(sim.map.sea_width, row)})
+	for y in range(row - 6, row + 6):
+		sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(sim.map.sea_width, y)})
 	sim.apply({"op": "build", "kind": PortMap.Tile.YARD, "cell": Vector2i(sim.map.sea_width + 2, row - 1)})
 	# 30 game minutes: a ship alongside, boxes stacked and lorries on the road.
 	for i in roundi(30 / SimClock.CALENDAR_MINUTES_PER_TICK):

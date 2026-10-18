@@ -12,12 +12,14 @@ const SCHEMA := {
 	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT},
 	"first_ship_minutes": TYPE_FLOAT,
 	"ship_interval_minutes": TYPE_FLOAT,
-	"ship_boxes": TYPE_INT,
 	"sail_seconds": TYPE_FLOAT,
 	"crane_minutes": TYPE_FLOAT,
 	"yard_capacity": TYPE_INT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
+	# "*" means any key, each holding the record that follows.
+	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "weight": TYPE_FLOAT}},
+	"water_depth": TYPE_FLOAT,
 }
 
 static var _base := {}
@@ -70,6 +72,14 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 	if want is Dictionary:
 		if not got is Dictionary:
 			return "%s: must be an object" % where
+		if want.has("*"):
+			if got.is_empty():
+				return "%s: must list at least one entry" % where
+			for sub: String in got:
+				var err := _check(got, sub, want["*"], "%s.%s" % [where, sub])
+				if err:
+					return err
+			return ""
 		for sub: String in want:
 			if not got.has(sub):
 				return "%s: missing \"%s\"" % [where, sub]
