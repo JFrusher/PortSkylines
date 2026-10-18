@@ -4,23 +4,13 @@ extends RefCounted
 ## nearest yard reachable by road, and lorries from the highway collect them
 ## and pay a fee per box.
 
-const COST := {PortMap.Tile.ROAD: 10, PortMap.Tile.QUAY: 200, PortMap.Tile.YARD: 50}
-const START_MONEY := 5000
-const FEE_PER_BOX := 120
-const FIRST_SHIP_MINUTES := 10.0
-const SHIP_INTERVAL_MINUTES := 45.0
-const SHIP_BOXES := 12
-const SAIL_SECONDS := 4.0
-const CRANE_MINUTES := 2.0
-const YARD_CAPACITY := 6
-const LORRY_INTERVAL_MINUTES := 1.0
-const LORRY_SPEED := 5.0  # tiles per vehicle second
-
-var map := PortMap.new()
+## Every tunable number, from data/base/*.json; see Content.
+var rules: Dictionary
+var map: PortMap
 var clock := SimClock.new()
 ## The only source of randomness in the sim, so a seed and a command log replay exactly.
 var rng := RandomNumberGenerator.new()
-var money := START_MONEY
+var money := 0
 var delivered := 0
 var status := "Run a road from the highway to the coast, then build a quay and a yard"
 var ships: Array[Ship] = []
@@ -31,12 +21,20 @@ var stacked := {}
 ## Boxes on each yard tile that a lorry is already coming for.
 var _claimed := {}
 ## Calendar minutes until the next ship and the next lorry dispatch.
-var _until_ship := FIRST_SHIP_MINUTES
+var _until_ship := 0.0
 var _until_lorry := 0.0
 
 
-func _init(seed_value := 0) -> void:
+func _init(seed_value := 0, game_rules := Content.base()) -> void:
+	rules = game_rules
+	map = PortMap.new(Vector2i(rules.map.width, rules.map.height), rules.map.sea_width)
+	money = rules.start_money
+	_until_ship = rules.first_ship_minutes
 	rng.seed = seed_value
+
+
+func cost(kind: int) -> int:
+	return rules.build_cost[PortMap.Tile.keys()[kind].to_lower()]
 
 
 class Ship:
@@ -161,7 +159,7 @@ func apply(command: Dictionary) -> String:
 
 func build_error(kind: int, cell: Vector2i) -> String:
 	var err := map.build_error(kind, cell)
-	if err == "" and money < COST[kind]:
+	if err == "" and money < cost(kind):
 		err = "Not enough money"
 	return err
 
@@ -169,7 +167,7 @@ func build_error(kind: int, cell: Vector2i) -> String:
 func build(kind: int, cell: Vector2i) -> String:
 	var err := build_error(kind, cell)
 	if err == "":
-		money -= COST[kind]
+		money -= cost(kind)
 		map.place(kind, cell)
 	return err
 
@@ -201,13 +199,13 @@ func tick() -> void:
 	clock.tick()
 	_until_ship -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_ship <= 0.0:
-		_until_ship = SHIP_INTERVAL_MINUTES
+		_until_ship = rules.ship_interval_minutes
 		_call_ship()
 	for ship: Ship in ships.duplicate():
 		_work(ship)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and _dispatch_lorry():
-		_until_lorry = LORRY_INTERVAL_MINUTES
+		_until_lorry = rules.lorry_interval_minutes
 	for lorry: Lorry in lorries.duplicate():
 		_drive(lorry)
 
@@ -217,7 +215,7 @@ func _call_ship() -> void:
 		var berth := map.neighbor(quay, PortMap.Tile.WATER)
 		if _occupied(quay, berth) or map.route(map.entry, quay).is_empty():
 			continue
-		ships.append(Ship.new(quay, berth, SHIP_BOXES))
+		ships.append(Ship.new(quay, berth, rules.ship_boxes))
 		status = "A ship is coming in"
 		return
 	status = "A ship went elsewhere: no free quay with a road to the highway"
@@ -234,27 +232,27 @@ func _work(ship: Ship) -> void:
 	ship.prev_sail = ship.sail
 	match ship.state:
 		Ship.State.ARRIVING:
-			ship.sail = minf(ship.sail + SimClock.TICK_SECONDS / SAIL_SECONDS, 1.0)
+			ship.sail = minf(ship.sail + SimClock.TICK_SECONDS / rules.sail_seconds, 1.0)
 			if ship.sail == 1.0:
 				ship.state = Ship.State.WORKING
 				status = "A ship is unloading"
 		Ship.State.WORKING:
 			ship.crane += SimClock.CALENDAR_MINUTES_PER_TICK
-			if ship.crane < CRANE_MINUTES:
+			if ship.crane < rules.crane_minutes:
 				return
 			var yard := _nearest_yard_with_space(ship.quay)
 			if yard == PortMap.NONE:
-				ship.crane = CRANE_MINUTES
+				ship.crane = rules.crane_minutes
 				status = "A ship is waiting: no yard space reachable from its quay"
 				return
-			ship.crane -= CRANE_MINUTES
+			ship.crane -= rules.crane_minutes
 			# shortcut: the box jumps from crane to yard, add terminal tractors in M2.
 			ship.boxes -= 1
 			stacked[yard] = stacked.get(yard, 0) + 1
 			if ship.boxes == 0:
 				ship.state = Ship.State.LEAVING
 		Ship.State.LEAVING:
-			ship.sail -= SimClock.TICK_SECONDS / SAIL_SECONDS
+			ship.sail -= SimClock.TICK_SECONDS / rules.sail_seconds
 			if ship.sail <= 0.0:
 				ships.erase(ship)
 
@@ -263,7 +261,7 @@ func _nearest_yard_with_space(quay: Vector2i) -> Vector2i:
 	var best := PortMap.NONE
 	var best_length := 1 << 30
 	for yard in map.cells_of(PortMap.Tile.YARD):
-		if stacked.get(yard, 0) >= YARD_CAPACITY:
+		if stacked.get(yard, 0) >= rules.yard_capacity:
 			continue
 		var path := map.route(quay, yard)
 		if not path.is_empty() and path.size() < best_length:
@@ -288,12 +286,12 @@ func _dispatch_lorry() -> bool:
 func _drive(lorry: Lorry) -> void:
 	# shortcut: lorries drive through each other, add cell reservation in M2.
 	lorry.prev_t = lorry.t
-	lorry.t += LORRY_SPEED * SimClock.TICK_SECONDS
+	lorry.t += rules.lorry_speed * SimClock.TICK_SECONDS
 	if lorry.t < lorry.path.size() - 1:
 		return
 	if lorry.loaded:
 		lorries.erase(lorry)
-		money += FEE_PER_BOX
+		money += rules.fee_per_box
 		delivered += 1
 		return
 	stacked[lorry.yard] -= 1

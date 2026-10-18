@@ -41,8 +41,9 @@ func _ready() -> void:
 
 	var tools := ButtonGroup.new()
 	var bar := _row(root)
-	for kind: int in PortSim.COST:
-		var label := "%s  $%d" % [PortMap.Tile.keys()[kind].capitalize(), PortSim.COST[kind]]
+	for name: String in sim.rules.build_cost:
+		var kind: int = PortMap.Tile[name.to_upper()]
+		var label := "%s  $%d" % [name.capitalize(), sim.cost(kind)]
 		_button(bar, label, tools, kind == tool, func() -> void: tool = kind)
 	_button(bar, "Bulldoze", tools, false, func() -> void: tool = BULLDOZE)
 

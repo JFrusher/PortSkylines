@@ -32,7 +32,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 func _command_log(seed_value: int) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var map := PortMap.new()
+	var map := PortSim.new().map
 	var log: Array[Dictionary] = []
 	for x in range(map.sea_width + 1, map.entry.x):
 		log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.ROAD, "cell": Vector2i(x, map.entry.y)}})

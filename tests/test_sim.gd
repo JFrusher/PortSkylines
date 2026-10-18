@@ -52,7 +52,7 @@ func _test_build_rules() -> void:
 	_expect(sim.build(ROAD, Vector2i(99, 3)), "Off the map", "road off the map")
 	_expect(sim.build(QUAY, Vector2i(12, 0)), "", "quay on the north edge faces the sea")
 	_expect(sim.build(QUAY, Vector2i(30, 0)), "A quay must face the water", "map edge is not water")
-	_expect(sim.money, PortSim.START_MONEY - 400, "quays cost money")
+	_expect(sim.money, sim.rules.start_money - 400, "quays cost money")
 	sim.money = 5
 	_expect(sim.build(ROAD, Vector2i(30, 3)), "Not enough money", "building while broke")
 
@@ -72,16 +72,16 @@ func _test_bulldoze_rules() -> void:
 func _test_no_ship_without_a_road() -> void:
 	var sim := PortSim.new()
 	sim.build(QUAY, Vector2i(12, 3))
-	_run(sim, PortSim.FIRST_SHIP_MINUTES + 1)
+	_run(sim, sim.rules.first_ship_minutes + 1)
 	_expect(sim.ships.size(), 0, "no ship calls at an unconnected quay")
 
 
 func _test_ships_unload_and_lorries_pay() -> void:
 	var sim := _port()
 	var before := sim.money
-	_run(sim, PortSim.FIRST_SHIP_MINUTES + 120)
-	_expect(sim.delivered >= PortSim.SHIP_BOXES, true, "first ship's boxes all delivered (%d)" % sim.delivered)
-	_expect(sim.money, before + sim.delivered * PortSim.FEE_PER_BOX, "every delivery is paid")
+	_run(sim, sim.rules.first_ship_minutes + 120)
+	_expect(sim.delivered >= sim.rules.ship_boxes, true, "first ship's boxes all delivered (%d)" % sim.delivered)
+	_expect(sim.money, before + sim.delivered * sim.rules.fee_per_box, "every delivery is paid")
 
 
 func _test_commands() -> void:

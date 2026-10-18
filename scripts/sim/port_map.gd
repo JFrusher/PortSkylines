@@ -19,7 +19,7 @@ var _tiles := PackedByteArray()
 var _roads := AStarGrid2D.new()
 
 
-func _init(map_size := Vector2i(64, 48), sea := 12) -> void:
+func _init(map_size: Vector2i, sea: int) -> void:
 	size = map_size
 	sea_width = sea
 	_tiles.resize(size.x * size.y)

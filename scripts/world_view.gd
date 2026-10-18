@@ -105,7 +105,7 @@ func _draw_ships() -> void:
 		hull.position = Vector3(x, -0.05, ship.berth.y + 0.5)
 		var cargo: Node3D = hull.get_node("Cargo")
 		cargo.visible = ship.boxes > 0
-		cargo.scale.y = maxf(ship.boxes / float(PortSim.SHIP_BOXES), 0.01)
+		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_boxes), 0.01)
 
 
 func _draw_lorries() -> void:
