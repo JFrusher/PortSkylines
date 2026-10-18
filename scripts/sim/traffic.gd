@@ -30,7 +30,7 @@ static func lane(map: PortMap, path: Array[Vector2i], i: int) -> Vector3i:
 static func _is_junction(map: PortMap, cell: Vector2i) -> bool:
 	var roads := 0
 	for side: Vector2i in PortMap.SIDES:
-		if map.tile(cell + side) == PortMap.Tile.ROAD:
+		if PortMap.is_road(map.tile(cell + side)):
 			roads += 1
 	return roads >= 3
 

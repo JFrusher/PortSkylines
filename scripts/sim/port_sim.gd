@@ -30,6 +30,8 @@ var boxes := {}
 var tractors := 0
 ## Lorries that gave up on a traffic jam and left; see _unstick.
 var gave_up := 0
+## Gate-in to gate-out minutes of the latest lorries, newest last.
+var turn_times: Array[float] = []
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
@@ -131,6 +133,7 @@ func to_dict() -> Dictionary:
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
 		"gave_up": gave_up,
+		"turn_times": turn_times.duplicate(),
 		"claimed": _claimed.duplicate(),
 		"until_ship": _until_ship,
 		"until_lorry": _until_lorry,
@@ -157,11 +160,13 @@ static func from_dict(d: Dictionary) -> PortSim:
 	for data: Dictionary in d.vehicles:
 		var vehicle := Vehicle.from_dict(data)
 		sim.vehicles.append(vehicle)
-		if vehicle.lane != Traffic.NO_LANE:
-			sim.traffic.claim(vehicle.lane, vehicle.id)
+		for held: Vector3i in [vehicle.lane, vehicle.ahead]:
+			if held != Traffic.NO_LANE:
+				sim.traffic.claim(held, vehicle.id)
 	sim.boxes = d.boxes.duplicate(true)
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
+	sim.turn_times.assign(d.turn_times)
 	sim._claimed = d.claimed.duplicate()
 	sim._until_ship = d.until_ship
 	sim._until_lorry = d.until_lorry
@@ -604,10 +609,13 @@ func _dispatch_export_lorry() -> bool:
 	return true
 
 
-## A lorry at the highway heading for `to`, or null when there is no road or
-## the highway's lane is taken this tick.
+## A lorry at the highway heading for `to` through a gate, or null when
+## there is no such road or the highway's lane is taken this tick.
 func _new_lorry(to: Vector2i) -> Vehicle:
-	var path := map.route(map.entry, to) if to != PortMap.NONE else ([] as Array[Vector2i])
+	if map.cells_of(PortMap.Tile.GATE).is_empty():
+		status = "Lorries can't come in: build a gate on the road from the highway"
+		return null
+	var path := _route_via_gate(map.entry, to)
 	if path.is_empty():
 		return null
 	var lorry := Vehicle.new(_next_vehicle, "lorry", path)
@@ -651,8 +659,46 @@ func _drive_lorry(lorry: Vehicle) -> void:
 				_claimed.erase(lorry.box)
 				lorry.loaded = true
 			_head_for(lorry, map.entry)
+		"gate":
+			lorry.timer -= SimClock.CALENDAR_MINUTES_PER_TICK
+			if lorry.timer <= 0.0:
+				lorry.state = "drive"
 		"no_route":
 			_head_for(lorry, map.entry)
+
+
+## The cheapest road route from `from` to `to` through a gate, counting each
+## lorry still to cross that gate the same way (a gate has a lane each way)
+## as rules.gate_minutes of driving, so lorries spread over parallel gates.
+## Empty when no gate connects them.
+func _route_via_gate(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var best: Array[Vector2i] = []
+	var best_cost := INF
+	for gate in map.cells_of(PortMap.Tile.GATE):
+		var there := map.route(from, gate)
+		var on := map.route(gate, to) if to != PortMap.NONE else ([] as Array[Vector2i])
+		if there.is_empty() or on.is_empty():
+			continue
+		var route := there + on.slice(1)
+		var queue := _queue_at(gate, Traffic.lane(map, route, there.size() - 1))
+		var cost: float = route.size() + queue * rules.gate_minutes * rules.lorry_speed
+		if cost < best_cost:
+			best_cost = cost
+			best = route
+	return best
+
+
+## Lorries that have yet to cross `gate` in `lane`.
+func _queue_at(gate: Vector2i, lane: Vector3i) -> int:
+	var count := 0
+	for vehicle in vehicles:
+		if vehicle.kind != "lorry":
+			continue
+		for k in range(int(vehicle.t), vehicle.path.size()):
+			if vehicle.path[k] == gate and Traffic.lane(map, vehicle.path, k) == lane:
+				count += 1
+				break
+	return count
 
 
 func _paid() -> void:
@@ -726,7 +772,11 @@ func _handled(vehicle: Vehicle) -> bool:
 ## tries again next tick.
 func _head_for(vehicle: Vehicle, to: Vector2i) -> void:
 	var here := vehicle.path[int(vehicle.t)]
-	var path := map.route(here, to) if to != PortMap.NONE else ([] as Array[Vector2i])
+	var path: Array[Vector2i] = []
+	if vehicle.kind == "lorry":
+		path = _route_via_gate(here, to)
+	elif to != PortMap.NONE:
+		path = map.route(here, to)
 	if path.is_empty() or not _move_to_lane(vehicle, Traffic.lane(map, path, 0)):
 		vehicle.state = "no_route"
 		return
@@ -748,13 +798,32 @@ func _advance(vehicle: Vehicle, speed: float) -> bool:
 	var i := int(vehicle.t)
 	var target := minf(vehicle.t + speed * SimClock.TICK_SECONDS, i + 1.99)
 	if int(target) > i:
-		if not _move_to_lane(vehicle, Traffic.lane(map, vehicle.path, i + 1)):
+		if not _enter(vehicle, i + 1):
 			vehicle.t = maxf(vehicle.t, minf(target, i + 0.95))
 			vehicle.waited += 1
 			return false
 		vehicle.waited = 0
+		if vehicle.kind == "lorry" and map.tile(vehicle.path[i + 1]) == PortMap.Tile.GATE:
+			vehicle.t = i + 1
+			_at_gate(vehicle)
+			return false
 	vehicle.t = minf(target, vehicle.path.size() - 1)
 	return vehicle.at_end()
+
+
+## A lorry entering a gate stops to be processed. Coming in it starts its
+## turn-time clock; going out it records the turn time.
+func _at_gate(lorry: Vehicle) -> void:
+	lorry.state = "gate"
+	lorry.timer = rules.gate_minutes
+	var now := clock.calendar_minutes()
+	if lorry.gate_in < 0.0:
+		lorry.gate_in = now
+		return
+	turn_times.append(now - lorry.gate_in)
+	if turn_times.size() > 50:
+		turn_times.pop_front()
+	lorry.gate_in = -1.0
 
 
 ## The safety valve for jams: after give_up_seconds a vehicle tries a route
@@ -770,6 +839,7 @@ func _unstick(vehicle: Vehicle) -> void:
 			vehicle.path = around
 			vehicle.t = 0.0
 			vehicle.prev_t = 0.0
+	# shortcut: a lorry's way round ignores gates, so it may skip one; rare, revisit with cost routing in M6.
 	elif vehicle.waited >= limit * 2 and vehicle.kind == "lorry":
 		if vehicle.loaded:
 			if boxes[vehicle.box].kind == "export":
@@ -780,6 +850,27 @@ func _unstick(vehicle: Vehicle) -> void:
 		_leave(vehicle)
 		gave_up += 1
 		status = "A lorry gave up on a traffic jam and left"
+
+
+## Moves `vehicle` into the lane of `path[i]`. Don't block the box: it enters
+## a junction only if it can also take the lane just past it, so it never
+## stands in a junction blocking crossing traffic.
+func _enter(vehicle: Vehicle, i: int) -> bool:
+	var next := Traffic.lane(map, vehicle.path, i)
+	if next == vehicle.ahead:
+		vehicle.ahead = Traffic.NO_LANE
+		return _move_to_lane(vehicle, next)
+	if next.z != Traffic.JUNCTION or i + 1 >= vehicle.path.size():
+		# shortcut: a path that ends in a junction stops in it; fine while yard entrances and homes rarely sit on junctions.
+		return _move_to_lane(vehicle, next)
+	var after := Traffic.lane(map, vehicle.path, i + 1)
+	if not traffic.claim(after, vehicle.id):
+		return false
+	if not _move_to_lane(vehicle, next):
+		traffic.release(after, vehicle.id)
+		return false
+	vehicle.ahead = after
+	return true
 
 
 ## Takes `lane` for `vehicle` and lets go of the one it held. At a junction
@@ -796,4 +887,5 @@ func _move_to_lane(vehicle: Vehicle, lane: Vector3i) -> bool:
 
 func _leave(vehicle: Vehicle) -> void:
 	traffic.release(vehicle.lane, vehicle.id)
+	traffic.release(vehicle.ahead, vehicle.id)
 	vehicles.erase(vehicle)

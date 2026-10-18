@@ -3,7 +3,8 @@ extends RefCounted
 ## The tile grid and what may be built where. Knows nothing about money,
 ## ships or rendering.
 
-enum Tile { LAND, WATER, ROAD, QUAY, YARD }
+## Values are stored in saves: add new kinds at the end.
+enum Tile { LAND, WATER, ROAD, QUAY, YARD, GATE }
 
 const NONE := Vector2i(-1, -1)
 const SIDES := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
@@ -78,7 +79,7 @@ func place(kind: int, cell: Vector2i) -> void:
 	var new: PackedInt32Array = _index[kind]
 	new.insert(new.bsearch(i), i)
 	_tiles[i] = kind
-	_roads.set_point_solid(cell, kind != Tile.ROAD)
+	_roads.set_point_solid(cell, not is_road(kind))
 	_route_cache.clear()
 	version += 1
 
@@ -120,10 +121,15 @@ func _berth_continues(cell: Vector2i, side: Vector2i) -> bool:
 	return tile(cell) == Tile.QUAY and tile(cell + side) == Tile.WATER
 
 
-## The road a building is entered from: itself if it is a road, else an adjacent one.
+## Tiles vehicles drive on: roads, and gates, which lorries must also stop at.
+static func is_road(kind: int) -> bool:
+	return kind == Tile.ROAD or kind == Tile.GATE
+
+
+## The road a building is entered from: itself if it is a road or gate, else an adjacent road.
 func access_road(cell: Vector2i) -> Vector2i:
-	# shortcut: takes the first adjacent road even if a better one exists, fine until gates own access in M2.
-	return cell if tile(cell) == Tile.ROAD else neighbor(cell, Tile.ROAD)
+	# shortcut: takes the first adjacent road even if a better one exists, fine until buildings get set entrances.
+	return cell if is_road(tile(cell)) else neighbor(cell, Tile.ROAD)
 
 
 ## Road route between two cells' access roads; empty when there is none.
@@ -179,6 +185,6 @@ static func from_dict(d: Dictionary) -> PortMap:
 	map._rebuild_index()
 	map._roads.fill_solid_region(map._roads.region)
 	for i in map._tiles.size():
-		if map._tiles[i] == Tile.ROAD:
+		if is_road(map._tiles[i]):
 			map._roads.set_point_solid(Vector2i(i % map.size.x, int(i / float(map.size.x))), false)
 	return map

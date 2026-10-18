@@ -3,11 +3,12 @@ extends Node3D
 ## Draws the sim as a small 3D model port. Reads PortSim every frame and
 ## never changes it.
 
-const TILE_HEIGHT := {PortMap.Tile.ROAD: 0.04, PortMap.Tile.QUAY: 0.25, PortMap.Tile.YARD: 0.08}
+const TILE_HEIGHT := {PortMap.Tile.ROAD: 0.04, PortMap.Tile.QUAY: 0.25, PortMap.Tile.YARD: 0.08, PortMap.Tile.GATE: 0.5}
 const TILE_COLOR := {
 	PortMap.Tile.ROAD: Color(0.2, 0.2, 0.22),
 	PortMap.Tile.QUAY: Color(0.62, 0.6, 0.55),
 	PortMap.Tile.YARD: Color(0.45, 0.45, 0.43),
+	PortMap.Tile.GATE: Color(0.2, 0.45, 0.7),
 }
 const BOX_HEIGHT := 0.3
 const LANE_OFFSET := 0.22

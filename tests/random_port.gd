@@ -19,7 +19,8 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	var map := PortSim.new().map
 	var log: Array[Dictionary] = []
 	for x in range(map.sea_width + 1, map.entry.x):
-		log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.ROAD, "cell": Vector2i(x, map.entry.y)}})
+		var kind := PortMap.Tile.GATE if x == map.entry.x - 3 else PortMap.Tile.ROAD
+		log.append({"tick": 0, "command": {"op": "build", "kind": kind, "cell": Vector2i(x, map.entry.y)}})
 	# A 12-tile quay, long enough for every ship class.
 	for y in range(map.entry.y - 6, map.entry.y + 6):
 		log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(map.sea_width, y)}})

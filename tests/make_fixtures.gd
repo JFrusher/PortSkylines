@@ -8,7 +8,7 @@ func _initialize() -> void:
 	var sim := PortSim.new(1)
 	var row := sim.map.entry.y
 	for x in range(sim.map.sea_width + 1, sim.map.entry.x):
-		sim.apply({"op": "build", "kind": PortMap.Tile.ROAD, "cell": Vector2i(x, row)})
+		sim.apply({"op": "build", "kind": PortMap.Tile.GATE if x == sim.map.entry.x - 3 else PortMap.Tile.ROAD, "cell": Vector2i(x, row)})
 	for y in range(row - 6, row + 6):
 		sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(sim.map.sea_width, y)})
 		sim.apply({"op": "build", "kind": PortMap.Tile.ROAD, "cell": Vector2i(sim.map.sea_width + 1, y)})

@@ -5,6 +5,7 @@ extends SceneTree
 const ROAD := PortMap.Tile.ROAD
 const QUAY := PortMap.Tile.QUAY
 const YARD := PortMap.Tile.YARD
+const GATE := PortMap.Tile.GATE
 
 var _failures := 0
 
@@ -27,6 +28,8 @@ func _initialize() -> void:
 	_test_yard_machines_set_the_pace()
 	_test_import_dwell()
 	_test_exports_are_loaded()
+	_test_gate()
+	_test_parallel_gates()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -37,14 +40,15 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
 
 
-## A road from the highway to the coast, a 12-tile quay with an apron road
-## behind it, two cranes, six tractors and a 3x2 yard block beside the road.
+## A road from the highway to the coast with a gate near the highway, a
+## 12-tile quay with an apron road behind it, two cranes, six tractors and a
+## 3x2 yard block beside the road.
 func _port(rules := Content.base()) -> PortSim:
 	var sim := PortSim.new(0, rules)
 	var row := sim.map.entry.y
 	var coast := sim.map.sea_width
 	for x in range(coast + 1, sim.map.entry.x):
-		_expect(sim.build(ROAD, Vector2i(x, row)), "", "road at x=%d" % x)
+		_expect(sim.build(GATE if x == sim.map.entry.x - 3 else ROAD, Vector2i(x, row)), "", "road at x=%d" % x)
 	for y in range(row - 6, row + 6):
 		_expect(sim.build(QUAY, Vector2i(coast, y)), "", "quay at y=%d" % y)
 		if y != row:
@@ -341,3 +345,51 @@ func _test_exports_are_loaded() -> void:
 		ticks += 1
 	_expect([ship.boxes, ship.exports], [0, 0], "the feeder leaves discharged and fully loaded")
 	_expect(sim.status.contains("fully loaded"), true, "and says so (%s)" % sim.status)
+
+
+func _test_gate() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.import_dwell_minutes = 0.0
+	var gateless := PortSim.new(0, rules)
+	var row := gateless.map.entry.y
+	for x in range(gateless.map.sea_width + 1, gateless.map.entry.x):
+		gateless.build(ROAD, Vector2i(x, row))
+	gateless.build(YARD, Vector2i(gateless.map.sea_width + 3, row - 1))
+	gateless.yard.add(Vector2i(gateless.map.sea_width + 3, row - 1), gateless._new_box("import", 0.0))
+	_run(gateless, 5)
+	_expect(gateless.vehicles.is_empty(), true, "no lorry comes in without a gate")
+	_expect(gateless.status.contains("build a gate"), true, "the status says so (%s)" % gateless.status)
+	var sim := _port(rules)
+	_run(sim, sim.rules.first_ship_minutes + 240)
+	_expect(sim.turn_times.size() > 5, true, "lorries record turn times (%d)" % sim.turn_times.size())
+	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * rules.gate_minutes), true, "every turn includes a stop at the gate each way")
+
+
+## Lorries bringing exports as fast as they can, through one gate or two
+## parallel ones, with a slow gate and a fast yard: two gates take about twice
+## as many boxes in.
+func _test_parallel_gates() -> void:
+	var counts: Array[int] = []
+	for gates: int in [1, 2]:
+		var rules := Content.base().duplicate(true)
+		rules.gate_minutes = 6.0
+		rules.export_lorry_interval_minutes = 0.05
+		rules.first_ship_minutes = 1e9
+		rules.start_money = 100000
+		rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 0.05, "tiles_per_machine": 1, "cost_per_tile": 0}
+		var sim := PortSim.new(0, rules)
+		var row := sim.map.entry.y
+		var gate_x := sim.map.entry.x - 6
+		for x in range(sim.map.sea_width + 1, sim.map.entry.x):
+			sim.build(GATE if x == gate_x else ROAD, Vector2i(x, row))
+		if gates == 2:
+			# A loop round the first gate through a second one.
+			for cell: Vector2i in [Vector2i(gate_x + 2, row + 1), Vector2i(gate_x + 2, row + 2), Vector2i(gate_x + 1, row + 2), Vector2i(gate_x - 1, row + 2), Vector2i(gate_x - 2, row + 2), Vector2i(gate_x - 2, row + 1)]:
+				sim.build(ROAD, cell)
+			sim.build(GATE, Vector2i(gate_x, row + 2))
+		for x in range(20, 26):
+			sim.build(YARD, Vector2i(x, row - 1))
+		sim.set_yard(Vector2i(20, row - 1), {"role": "export"})
+		_run(sim, 300)
+		counts.append(sim.delivered)
+	_expect(counts[1] >= counts[0] * 1.7, true, "two gates take in about twice the exports of one (%d vs %d)" % [counts[1], counts[0]])

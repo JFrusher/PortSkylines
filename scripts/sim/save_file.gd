@@ -72,6 +72,7 @@ static func _v1_to_v2(data: Dictionary) -> Dictionary:
 	data.sim.next_box = next
 	data.sim.tractors = 0
 	data.sim.until_export = 0.0
+	data.sim.turn_times = []
 	data.sim.status = "Saved game updated: ships that were in port have sailed"
 	data.version = 2
 	return data

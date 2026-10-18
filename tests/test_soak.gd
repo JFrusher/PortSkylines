@@ -74,10 +74,15 @@ func _check(sim: PortSim, spent: int) -> void:
 		if vehicle.lane in lanes:
 			_expect(vehicle.lane, null, "vehicles %d and %d share a lane %s" % [vehicle.id, lanes[vehicle.lane], at])
 		lanes[vehicle.lane] = vehicle.id
+		if vehicle.ahead != Traffic.NO_LANE:
+			_expect(vehicle.lane.z, Traffic.JUNCTION, "vehicle %d holds a lane ahead only while in a junction %s" % [vehicle.id, at])
+			_expect(sim.traffic.holder(vehicle.ahead), vehicle.id, "vehicle %d holds its lane past the junction %s" % [vehicle.id, at])
+			_expect(lanes.has(vehicle.ahead), false, "vehicle %d's lane ahead is its own %s" % [vehicle.id, at])
+			lanes[vehicle.ahead] = vehicle.id
 		_expect(Vector2i(vehicle.lane.x, vehicle.lane.y), vehicle.path[int(vehicle.t)], "vehicle %d holds the lane of the tile it is on %s" % [vehicle.id, at])
 		_expect(sim.traffic.holder(vehicle.lane), vehicle.id, "traffic agrees vehicle %d holds its lane %s" % [vehicle.id, at])
 		for cell: Vector2i in vehicle.path:
-			if sim.map.tile(cell) != PortMap.Tile.ROAD:
+			if not PortMap.is_road(sim.map.tile(cell)):
 				_expect(sim.map.tile(cell), PortMap.Tile.ROAD, "vehicle path cell %s is road %s" % [cell, at])
 				return
 	_expect(seen.size(), sim.boxes.size(), "every box in the port is somewhere %s" % at)
