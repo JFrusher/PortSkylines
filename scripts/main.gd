@@ -7,6 +7,11 @@ var view := WorldView.new()
 var rig := CameraRig.new()
 var hud := Hud.new()
 
+## Most ticks one frame may run per speed step; a slower frame drops the rest.
+const MAX_TICKS_PER_FRAME := 8
+
+## Play time not yet turned into ticks, in seconds.
+var _accumulated := 0.0
 var _painting := false
 var _last_cell := PortMap.NONE
 
@@ -24,9 +29,15 @@ func _ready() -> void:
 
 
 func _process(dt: float) -> void:
-	# shortcut: one tick per frame per speed step, replaced by the accumulator in M1.8.
-	for i in hud.speed:
+	_accumulated += dt * hud.speed
+	var max_ticks := MAX_TICKS_PER_FRAME * hud.speed
+	var ticks := SimClock.ticks_for(_accumulated, max_ticks)
+	for i in ticks:
 		sim.tick()
+	var left := _accumulated - ticks * SimClock.TICK_SECONDS
+	if ticks == max_ticks and left >= SimClock.TICK_SECONDS and OS.is_debug_build():
+		print_debug("Dropped %.2f s of sim time after a slow frame" % left)
+	_accumulated = minf(left, SimClock.TICK_SECONDS)
 	var cell := _hovered_cell()
 	view.show_hover(cell, _order_error(cell) == "")
 	if _painting:
