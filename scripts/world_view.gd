@@ -95,8 +95,8 @@ func _draw_stacks() -> void:
 	var by_chunk := {}
 	for chunk: Vector2i in _stack_chunks:
 		by_chunk[chunk] = [] as Array[Transform3D]
-	for cell: Vector2i in sim.stacked:
-		var count: int = sim.stacked[cell]
+	for cell: Vector2i in sim.yard.stacks:
+		var count := sim.yard.count(cell)
 		if count == 0:
 			continue
 		var chunk := ChunkedMeshes.chunk_of(cell)
@@ -154,7 +154,7 @@ func _draw_vehicles() -> void:
 	_forget_gone(_vehicles, sim.vehicles)
 	for lorry: Vehicle in sim.vehicles:
 		if lorry not in _vehicles:
-			var cab := _box(Vector3(0.3, 0.25, 0.6), Color(0.85, 0.85, 0.8))
+			var cab := _box(Vector3(0.3, 0.25, 0.6), Color(0.85, 0.85, 0.8) if lorry.kind == "lorry" else Color(0.95, 0.75, 0.1))
 			var box := _box(Vector3(0.28, 0.22, 0.5), BOX_COLOR)
 			box.name = "Box"
 			box.position.y = 0.23

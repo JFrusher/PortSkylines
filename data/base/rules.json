@@ -6,7 +6,6 @@
 	"first_ship_minutes": 10,
 	"ship_interval_minutes": 45,
 	"sail_seconds": 4,
-	"yard_capacity": 6,
 	"lorry_interval_minutes": 1,
 	"lorry_speed": 5,
 	"give_up_seconds": 30

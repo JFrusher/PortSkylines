@@ -13,7 +13,6 @@ const SCHEMA := {
 	"first_ship_minutes": TYPE_FLOAT,
 	"ship_interval_minutes": TYPE_FLOAT,
 	"sail_seconds": TYPE_FLOAT,
-	"yard_capacity": TYPE_INT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
 	"give_up_seconds": TYPE_FLOAT,
@@ -22,6 +21,8 @@ const SCHEMA := {
 	"water_depth": TYPE_FLOAT,
 	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT},
 	"crane_interference": TYPE_FLOAT,
+	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
+	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT}},
 }
 
 static var _base := {}

@@ -55,6 +55,22 @@ static func _v1_to_v2(data: Dictionary) -> Dictionary:
 	data.sim.claimed = {}
 	data.sim.next_vehicle = 1
 	data.sim.gave_up = 0
+	# Yard tiles held box counts; they become import boxes ready to collect.
+	var stacks := {}
+	var boxes := {}
+	var next := 1
+	for tile: Vector2i in data.sim.stacked:
+		for i in int(data.sim.stacked[tile]):
+			boxes[next] = {"kind": "import", "due": 0.0}
+			if not stacks.has(tile):
+				stacks[tile] = []
+			stacks[tile].append(next)
+			next += 1
+	data.sim.erase("stacked")
+	data.sim.yard = {"stacks": stacks, "reserved": {}, "role": {}, "gear": {}, "busy": {}}
+	data.sim.boxes = boxes
+	data.sim.next_box = next
+	data.sim.tractors = 0
 	data.sim.status = "Saved game updated: ships that were in port have sailed"
 	data.version = 2
 	return data

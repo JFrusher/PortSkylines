@@ -1,8 +1,9 @@
 extends SceneTree
 ## 10,000 ticks of a seeded random port, with the sim's invariants checked
-## after every tick: money only changes through commands and fees, yards stay within capacity, lorries only
-## come for boxes that exist, every vehicle drives on road, and no two
-## vehicles ever share a lane.
+## after every tick: money only changes through commands and fees, yards stay
+## within capacity, every box is in exactly one place, busy yard machines match
+## the vehicles they serve, every vehicle drives on road, and no two vehicles
+## ever share a lane.
 ## godot --headless --script res://tests/test_soak.gd
 
 const RandomPort := preload("res://tests/random_port.gd")
@@ -19,7 +20,7 @@ func _initialize() -> void:
 	var congested_rules := Content.base().duplicate(true)
 	congested_rules.lorry_interval_minutes = 600.0
 	var congested := _soak(congested_rules)
-	_expect(congested.stacked.values().has(congested.rules.yard_capacity), true, "the congested port fills a yard to capacity")
+	_expect(congested.yard.stacks.keys().any(func(t: Vector2i) -> bool: return congested.yard.count(t) == congested.yard.capacity(t)), true, "the congested port fills a yard tile to capacity")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -49,19 +50,35 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 func _check(sim: PortSim, spent: int) -> void:
 	var at := "at tick %d" % sim.clock.ticks
 	_expect(sim.money, sim.rules.start_money - spent + sim.delivered * sim.rules.fee_per_box, "money adds up " + at)
-	for yard: Vector2i in sim.stacked:
-		var count: int = sim.stacked[yard]
-		_expect(count >= 0 and count <= sim.rules.yard_capacity, true, "yard %s holds %d boxes %s" % [yard, count, at])
-		_expect(sim._claimed.get(yard, 0) <= count, true, "lorries come only for boxes in yard %s %s" % [yard, at])
+	# Every box is in exactly one place: a yard stack or a vehicle's load.
+	var seen := {}
+	for tile: Vector2i in sim.yard.stacks:
+		var count := sim.yard.count(tile)
+		_expect(count + sim.yard.reserved.get(tile, 0) <= sim.yard.capacity(tile), true, "yard %s holds %d + %d reserved %s" % [tile, count, sim.yard.reserved.get(tile, 0), at])
+		for id: int in sim.yard.stacks[tile]:
+			_expect(seen.has(id), false, "box %d is in one place only %s" % [id, at])
+			seen[id] = tile
+	var handling := {}
 	var lanes := {}
 	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.loaded:
+			_expect(seen.has(vehicle.box), false, "box %d on vehicle %d is in one place only %s" % [vehicle.box, vehicle.id, at])
+			seen[vehicle.box] = vehicle.id
+		elif vehicle.kind == "lorry":
+			_expect(seen.get(vehicle.box) == vehicle.target, true, "lorry %d's box %d waits at its target %s" % [vehicle.id, vehicle.box, at])
+		if vehicle.state == "handling":
+			handling[vehicle.block] = handling.get(vehicle.block, 0) + 1
+		if vehicle.lane == Traffic.NO_LANE:
+			_expect(vehicle.state in ["under_crane", "handling", "no_route"], true, "vehicle %d is off the road only under a crane, in a bay or waiting to re-enter %s" % [vehicle.id, at])
+			continue
 		if vehicle.lane in lanes:
 			_expect(vehicle.lane, null, "vehicles %d and %d share a lane %s" % [vehicle.id, lanes[vehicle.lane], at])
 		lanes[vehicle.lane] = vehicle.id
-		var here := vehicle.path[int(vehicle.t)]
-		_expect(Vector2i(vehicle.lane.x, vehicle.lane.y), here, "vehicle %d holds the lane of the tile it is on %s" % [vehicle.id, at])
+		_expect(Vector2i(vehicle.lane.x, vehicle.lane.y), vehicle.path[int(vehicle.t)], "vehicle %d holds the lane of the tile it is on %s" % [vehicle.id, at])
 		_expect(sim.traffic.holder(vehicle.lane), vehicle.id, "traffic agrees vehicle %d holds its lane %s" % [vehicle.id, at])
 		for cell: Vector2i in vehicle.path:
 			if sim.map.tile(cell) != PortMap.Tile.ROAD:
 				_expect(sim.map.tile(cell), PortMap.Tile.ROAD, "vehicle path cell %s is road %s" % [cell, at])
 				return
+	_expect(seen.size(), sim.boxes.size(), "every box in the port is somewhere %s" % at)
+	_expect(handling, sim.yard.busy, "busy machines match the vehicles being handled %s" % at)

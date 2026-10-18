@@ -14,7 +14,7 @@ func _initialize() -> void:
 	_expect(_error_for({"start_money": null}), DIR + ": missing \"start_money\"", "a missing key names the key")
 	_expect(_error_for({"map": {"width": 64, "height": 48}}), "rules.json: map: missing \"sea_width\"", "a missing nested key names the path")
 	_expect(_error_for({"fee_per_box": "lots"}), "rules.json: fee_per_box: must be a number", "a wrong type names the key")
-	_expect(_error_for({"yard_capacity": 6.5}), "rules.json: yard_capacity: must be a whole number", "an int key refuses fractions")
+	_expect(_error_for({"start_money": 6.5}), "rules.json: start_money: must be a whole number", "an int key refuses fractions")
 	_expect(_error_for({"colour": 1}), "rules.json: colour: unknown key", "an unknown key is refused")
 	_expect(base.ship_classes.feeder.length is int, true, "records under a \"*\" key are checked and typed")
 	print("tests: %d failure(s)" % _failures)

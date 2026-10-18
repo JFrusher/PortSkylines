@@ -29,6 +29,7 @@ func _ready() -> void:
 	hud.sim = sim
 	hud.save_pressed.connect(_save)
 	hud.load_pressed.connect(_load)
+	hud.tractors_pressed.connect(func() -> void: _report(sim.apply({"op": "buy_tractors", "count": 2})))
 	add_child(hud)
 
 
@@ -84,7 +85,12 @@ func _unhandled_input(event: InputEvent) -> void:
 func _order(cell: Vector2i, report: bool) -> void:
 	_last_cell = cell
 	var err := sim.apply(_command(cell))
-	if err != "" and report:
+	if report:
+		_report(err)
+
+
+func _report(err: String) -> void:
+	if err != "":
 		hud.flash(err)
 
 
@@ -95,7 +101,18 @@ func _command(cell: Vector2i) -> Dictionary:
 			return {"op": "bulldoze", "cell": cell}
 		Hud.CRANE:
 			return {"op": "place_crane", "cell": cell}
+		Hud.IMPORT_YARD, Hud.EXPORT_YARD, Hud.RTG:
+			return {"op": "set_yard", "cell": cell, "settings": _yard_settings()}
 	return {"op": "build", "kind": hud.tool, "cell": cell}
+
+
+func _yard_settings() -> Dictionary:
+	match hud.tool:
+		Hud.IMPORT_YARD:
+			return {"role": "import"}
+		Hud.EXPORT_YARD:
+			return {"role": "export"}
+	return {"gear": "rtg"}
 
 
 func _order_error(cell: Vector2i) -> String:
@@ -104,6 +121,8 @@ func _order_error(cell: Vector2i) -> String:
 			return sim.bulldoze_error(cell)
 		Hud.CRANE:
 			return sim.crane_error(cell)
+		Hud.IMPORT_YARD, Hud.EXPORT_YARD, Hud.RTG:
+			return sim.set_yard_error(cell, _yard_settings())
 	return sim.build_error(hud.tool, cell)
 
 

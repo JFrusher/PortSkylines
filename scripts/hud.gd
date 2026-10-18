@@ -5,9 +5,13 @@ extends CanvasLayer
 
 signal save_pressed
 signal load_pressed
+signal tractors_pressed
 
 const BULLDOZE := -1
 const CRANE := -2
+const EXPORT_YARD := -3
+const IMPORT_YARD := -4
+const RTG := -5
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 const FLASH_SECONDS := 2.5
 
@@ -47,6 +51,10 @@ func _ready() -> void:
 		var label := "%s  $%d" % [name.capitalize(), sim.cost(kind)]
 		_button(bar, label, tools, kind == tool, func() -> void: tool = kind)
 	_button(bar, "Crane  $%d" % sim.rules.sts_crane.cost, tools, false, func() -> void: tool = CRANE)
+	_button(bar, "Import yard", tools, false, func() -> void: tool = IMPORT_YARD)
+	_button(bar, "Export yard", tools, false, func() -> void: tool = EXPORT_YARD)
+	_button(bar, "RTG  $%d/tile" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG)
+	_action(bar, "+2 tractors  $%d" % (sim.rules.tractor.cost * 2), tractors_pressed)
 	_button(bar, "Bulldoze", tools, false, func() -> void: tool = BULLDOZE)
 
 
@@ -57,7 +65,8 @@ func flash(text: String) -> void:
 
 
 func _process(dt: float) -> void:
-	_readout.text = "$%d    Boxes delivered %d    Ships %d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size(), sim.vehicles.size()]
+	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
+	_readout.text = "$%d    Boxes delivered %d    Ships %d    Tractors %d/%d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size(), sim.vehicles.size() - lorries, sim.tractors, lorries]
 	_flash_left -= dt
 	if _flash_left <= 0.0:
 		_message.text = sim.status

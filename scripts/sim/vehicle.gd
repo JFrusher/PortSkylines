@@ -1,8 +1,11 @@
 class_name Vehicle
 extends RefCounted
-## A lorry or terminal tractor driving a road path. It holds one lane at a
-## time (see Traffic) and moves into the next tile only once it holds that
-## tile's lane.
+## A lorry or terminal tractor. It holds one lane at a time (see Traffic) and
+## moves into the next tile only once it holds that tile's lane. `state` is
+## "drive" along `path`, "yard" queueing on the road for a machine at
+## `target`, "handling" in the block's bay while a machine works for `timer`
+## minutes, "under_crane" (tractors, on the quay) or "no_route" waiting for
+## the road or lane it needs. Under a crane and in a bay it holds no lane.
 
 var id: int
 var kind: String
@@ -11,14 +14,22 @@ var path: Array[Vector2i]
 var t := 0.0
 ## `t` at the start of this tick, for drawing between ticks.
 var prev_t := 0.0
-## The lane it holds now.
-var lane: Vector3i
+## The lane it holds now; Traffic.NO_LANE while it is off the road.
+var lane := Traffic.NO_LANE
 ## Ticks spent waiting for the next lane.
 var waited := 0
 var replanned := false
-## Lorry job: the yard tile it collects from, and whether it has the box.
-var yard := PortMap.NONE
+var state := "drive"
+## The box it carries or has come for (0 for none), and whether it is on board.
+var box := 0
 var loaded := false
+## The yard tile it delivers to or collects from.
+var target := PortMap.NONE
+## Where a tractor parks: the road behind its crane.
+var home := PortMap.NONE
+## Minutes left of handling, and the block whose machine is doing it.
+var timer := 0.0
+var block := PortMap.NONE
 
 
 func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector2i]) -> void:
@@ -40,7 +51,11 @@ func at_end() -> bool:
 
 
 func to_dict() -> Dictionary:
-	return {"id": id, "kind": kind, "path": path.duplicate(), "t": t, "prev_t": prev_t, "lane": lane, "waited": waited, "replanned": replanned, "yard": yard, "loaded": loaded}
+	return {
+		"id": id, "kind": kind, "path": path.duplicate(), "t": t, "prev_t": prev_t, "lane": lane,
+		"waited": waited, "replanned": replanned, "state": state, "box": box, "loaded": loaded,
+		"target": target, "home": home, "timer": timer, "block": block,
+	}
 
 
 static func from_dict(d: Dictionary) -> Vehicle:
@@ -52,6 +67,11 @@ static func from_dict(d: Dictionary) -> Vehicle:
 	vehicle.lane = d.lane
 	vehicle.waited = d.waited
 	vehicle.replanned = d.replanned
-	vehicle.yard = d.yard
+	vehicle.state = d.state
+	vehicle.box = d.box
 	vehicle.loaded = d.loaded
+	vehicle.target = d.target
+	vehicle.home = d.home
+	vehicle.timer = d.timer
+	vehicle.block = d.block
 	return vehicle

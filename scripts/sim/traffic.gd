@@ -7,6 +7,8 @@ extends RefCounted
 ## lane, so no two vehicles are ever in the same lane.
 
 const JUNCTION := 4
+## Held by vehicles off the road: under a crane or in a yard block's bay.
+const NO_LANE := Vector3i(-1, -1, -1)
 
 var _holders := {}
 
