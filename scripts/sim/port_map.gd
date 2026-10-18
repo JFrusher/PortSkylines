@@ -81,6 +81,7 @@ func neighbor(cell: Vector2i, kind: int) -> Vector2i:
 
 ## The road a building is entered from: itself if it is a road, else an adjacent one.
 func access_road(cell: Vector2i) -> Vector2i:
+	# shortcut: takes the first adjacent road even if a better one exists, fine until gates own access in M2.
 	return cell if tile(cell) == Tile.ROAD else neighbor(cell, Tile.ROAD)
 
 

@@ -153,6 +153,7 @@ func _work(ship: Ship, dt: float) -> void:
 				status = "A ship is waiting: no yard space reachable from its quay"
 				return
 			ship.crane -= CRANE_SECONDS
+			# shortcut: the box jumps from crane to yard, add terminal tractors in M2.
 			ship.boxes -= 1
 			stacked[yard] = stacked.get(yard, 0) + 1
 			if ship.boxes == 0:
@@ -190,6 +191,7 @@ func _dispatch_lorry() -> bool:
 
 
 func _drive(lorry: Lorry, dt: float) -> void:
+	# shortcut: lorries drive through each other, add cell reservation in M2.
 	lorry.t += LORRY_SPEED * dt
 	if lorry.t < lorry.path.size() - 1:
 		return
