@@ -18,6 +18,8 @@ const LORRY_SPEED := 5.0  # tiles per vehicle second
 
 var map := PortMap.new()
 var clock := SimClock.new()
+## The only source of randomness in the sim, so a seed and a command log replay exactly.
+var rng := RandomNumberGenerator.new()
 var money := START_MONEY
 var delivered := 0
 var status := "Run a road from the highway to the coast, then build a quay and a yard"
@@ -31,6 +33,10 @@ var _claimed := {}
 ## Calendar minutes until the next ship and the next lorry dispatch.
 var _until_ship := FIRST_SHIP_MINUTES
 var _until_lorry := 0.0
+
+
+func _init(seed_value := 0) -> void:
+	rng.seed = seed_value
 
 
 class Ship:
