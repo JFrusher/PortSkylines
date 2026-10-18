@@ -24,8 +24,9 @@ func _ready() -> void:
 
 
 func _process(dt: float) -> void:
+	# shortcut: one tick per frame per speed step, replaced by the accumulator in M1.8.
 	for i in hud.speed:
-		sim.step(dt)
+		sim.tick()
 	var cell := _hovered_cell()
 	view.show_hover(cell, _order_error(cell) == "")
 	if _painting:

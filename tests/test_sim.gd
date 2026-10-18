@@ -36,9 +36,9 @@ func _port() -> PortSim:
 	return sim
 
 
-func _run(sim: PortSim, seconds: float) -> void:
-	for i in int(seconds / 0.05):
-		sim.step(0.05)
+func _run(sim: PortSim, minutes: float) -> void:
+	for i in roundi(minutes / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
 
 
 func _test_build_rules() -> void:
@@ -70,13 +70,13 @@ func _test_bulldoze_rules() -> void:
 func _test_no_ship_without_a_road() -> void:
 	var sim := PortSim.new()
 	sim.build(QUAY, Vector2i(12, 3))
-	_run(sim, PortSim.FIRST_SHIP + 1)
+	_run(sim, PortSim.FIRST_SHIP_MINUTES + 1)
 	_expect(sim.ships.size(), 0, "no ship calls at an unconnected quay")
 
 
 func _test_ships_unload_and_lorries_pay() -> void:
 	var sim := _port()
 	var before := sim.money
-	_run(sim, PortSim.FIRST_SHIP + 120)
+	_run(sim, PortSim.FIRST_SHIP_MINUTES + 120)
 	_expect(sim.delivered >= PortSim.SHIP_BOXES, true, "first ship's boxes all delivered (%d)" % sim.delivered)
 	_expect(sim.money, before + sim.delivered * PortSim.FEE_PER_BOX, "every delivery is paid")
