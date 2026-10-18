@@ -9,6 +9,8 @@ var hud := Hud.new()
 
 ## Most ticks one frame may run per speed step; a slower frame drops the rest.
 const MAX_TICKS_PER_FRAME := 8
+## shortcut: one save slot, add named slots and autosave in M11.
+const SAVE_PATH := "user://save.bin"
 
 ## Play time not yet turned into ticks, in seconds.
 var _accumulated := 0.0
@@ -25,7 +27,30 @@ func _ready() -> void:
 	rig.position = Vector3(sim.map.sea_width + 10, 0, sim.map.size.y / 2.0)
 	add_child(rig)
 	hud.sim = sim
+	hud.save_pressed.connect(_save)
+	hud.load_pressed.connect(_load)
 	add_child(hud)
+
+
+func _save() -> void:
+	var err := SaveFile.save(SAVE_PATH, sim)
+	hud.flash(err if err else "Saved")
+
+
+## Swaps in the saved sim and a fresh view of it.
+func _load() -> void:
+	var loaded := SaveFile.load_from(SAVE_PATH)
+	if loaded.has("error"):
+		hud.flash(loaded.error)
+		return
+	sim = loaded.sim
+	_accumulated = 0.0
+	view.queue_free()
+	view = WorldView.new()
+	view.sim = sim
+	add_child(view)
+	hud.sim = sim
+	hud.flash("Loaded")
 
 
 func _process(dt: float) -> void:

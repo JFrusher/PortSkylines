@@ -3,6 +3,9 @@ extends CanvasLayer
 ## Toolbar, speed buttons and the money/status readout. Reports the player's
 ## choices through `tool` and `speed`; never changes the sim.
 
+signal save_pressed
+signal load_pressed
+
 const BULLDOZE := -1
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 const FLASH_SECONDS := 2.5
@@ -27,6 +30,8 @@ func _ready() -> void:
 	var speeds := ButtonGroup.new()
 	for s: int in SPEEDS:
 		_button(top, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
+	_action(top, "Save", save_pressed)
+	_action(top, "Load", load_pressed)
 	root.add_child(_outlined(_message))
 
 	var spacer := Control.new()
@@ -70,6 +75,14 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 	button.button_group = group
 	button.button_pressed = pressed
 	button.pressed.connect(on_press)
+	row.add_child(button)
+
+
+## A plain button that reports a press through `pressed_signal`.
+func _action(row: HBoxContainer, text: String, pressed_signal: Signal) -> void:
+	var button := Button.new()
+	button.text = text
+	button.pressed.connect(pressed_signal.emit)
 	row.add_child(button)
 
 
