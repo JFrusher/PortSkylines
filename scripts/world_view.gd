@@ -28,6 +28,11 @@ const YARD_ROWS := 2
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const LANE_OFFSET := 0.22
+## Camera distances to a chunk's centre past which it is drawn with less
+## detail, as Cities: Skylines does: each tile's stack as one slab instead of
+## every box, then no yard machines. Instances drawn cost the most render time.
+const STACK_DETAIL := 60.0
+const MACHINE_DETAIL := 80.0
 const CRANE_HEIGHT := 3.2
 ## How far the girder reaches behind the quay edge and out over the water, in tiles.
 const CRANE_BACK := -1.0
@@ -60,8 +65,13 @@ var _quay_edge_mesh: Mesh
 var _water := ShaderMaterial.new()
 var _stacks := ChunkedMeshes.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
+## Far from the camera, each yard tile's stack as one slab in its top box's livery.
+var _slabs := ChunkedMeshes.new()
+var _slab_mesh: Mesh
 ## Stack parts ([chunk, teu]) drawn last time, so emptied ones get cleared.
 var _stack_parts := {}
+## Chunks with slabs drawn last time, so emptied ones get cleared.
+var _slab_chunks := {}
 ## The tick and map version the stacks were drawn for; bulldozing a stack changes the map.
 var _stacks_drawn := []
 # shortcut: ships are one node each, fine at the handful a port works at once; MultiMesh them if berths grow past ~20.
@@ -97,8 +107,13 @@ func _ready() -> void:
 	add_child(land)
 	add_child(_hover)
 	add_child(_tiles)
+	_stacks.range_end = STACK_DETAIL
+	_slabs.range_begin = STACK_DETAIL
+	_machines.range_end = MACHINE_DETAIL
 	add_child(_stacks)
+	add_child(_slabs)
 	add_child(_machines)
+	_slab_mesh = _merged([[Vector3.ONE, Vector3(0, 0.5, 0), Color.WHITE]])
 	for gear: String in sim.rules.yard_gear:
 		_machine_meshes[gear] = _machine_mesh(gear)
 	for kind: int in TILE_HEIGHT:
@@ -267,11 +282,25 @@ func _draw_stacks() -> void:
 	for part: Array in _stack_parts:
 		transforms[part] = [] as Array[Transform3D]
 		colors[part] = PackedColorArray()
+	var slabs := {}
+	var slab_colors := {}
+	for chunk: Vector2i in _slab_chunks:
+		slabs[chunk] = [] as Array[Transform3D]
+		slab_colors[chunk] = PackedColorArray()
 	for cell: Vector2i in sim.yard.stacks:
 		var chunk := ChunkedMeshes.chunk_of(cell)
 		var ids: Array = sim.yard.stacks[cell]
+		if ids.is_empty():
+			continue
 		var forties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 2)
 		var twenties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 1)
+		if chunk not in slabs:
+			slabs[chunk] = [] as Array[Transform3D]
+			slab_colors[chunk] = PackedColorArray()
+		var tiers: float = stack_spot(forties.size(), ids.size() - 1).y + 1
+		var top: int = (forties + twenties)[-1]
+		slabs[chunk].append(Transform3D(Basis().scaled(Vector3(BOX_LENGTH[2], tiers * BOX_HEIGHT, YARD_ROWS * 0.34)), Vector3(cell.x + 0.5, 0.08, cell.y + 0.5)))
+		slab_colors[chunk].append(_livery(sim.boxes[top].line, top))
 		for i in ids.size():
 			var forty := i < forties.size()
 			var id: int = forties[i] if forty else twenties[i - forties.size()]
@@ -287,6 +316,11 @@ func _draw_stacks() -> void:
 		_stacks.show_part(part, _stack_meshes[part[1]], transforms[part], colors[part])
 		if not transforms[part].is_empty():
 			_stack_parts[part] = true
+	_slab_chunks.clear()
+	for chunk: Vector2i in slabs:
+		_slabs.show_part(chunk, _slab_mesh, slabs[chunk], slab_colors[chunk])
+		if not slabs[chunk].is_empty():
+			_slab_chunks[chunk] = true
 
 
 ## Where the `i`th box of a yard tile with `forties` 40 ft boxes sits, as

@@ -6,6 +6,10 @@ extends Node3D
 
 const CHUNK := 32
 
+## Camera distances to a part's centre between which it is drawn (0: no
+## limit), so a view can draw a chunk in less detail as the camera pulls back.
+var range_begin := 0.0
+var range_end := 0.0
 var _parts := {}
 
 
@@ -22,6 +26,8 @@ func show_part(key: Variant, mesh: Mesh, transforms: Array[Transform3D], colors 
 		part.multimesh.transform_format = MultiMesh.TRANSFORM_3D
 		part.multimesh.use_colors = not colors.is_empty()
 		part.multimesh.mesh = mesh
+		part.visibility_range_begin = range_begin
+		part.visibility_range_end = range_end
 		add_child(part)
 		_parts[key] = part
 	var multimesh: MultiMesh = _parts[key].multimesh

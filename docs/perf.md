@@ -129,3 +129,32 @@ the ratio of render CPU time carry over to a real GPU.
 Vehicle draw calls are now four, whatever the vehicle count. The frame is
 still sim-bound at this load (about 9 ticks a frame at 27 ms each), which
 the later M5 steps take on.
+
+### What render time is spent on (M5 steps 5 and 6)
+
+Endgame save, sim paused, render CPU with one group hidden at a time
+(software GL, so ratios only):
+
+| Hidden | Instances | Render CPU saved |
+|---|---:|---:|
+| Ground tiles | 23,882 | 69 ms of 168 |
+| Stacked boxes | 19,767 | 48 ms |
+| Yard machines | 2,016 | 44 ms |
+| Ships and cranes (162 draw calls) | | 5 ms |
+
+Cost follows instances drawn: swapping every container for a 12-triangle
+box saved nothing, and a quarter of the resolution saved nothing. So step 5
+(ships and cranes in a MultiMesh) is not justified by the counts and is
+skipped. Step 6 draws chunks with less detail as the camera pulls back, the
+way Cities: Skylines does: past 60 units from a chunk's centre each yard
+tile's stack is one slab in its top box's livery, and past 80 the yard
+machines are not drawn. Chunks out of view are culled whole, as before.
+
+`bench/endgame_bench.gd -- 0 90` (paused, the game's farthest zoom):
+
+| | Render CPU ms | Draw calls | Primitives |
+|---|---:|---:|---:|
+| Every box and machine at every distance | 264 | 313 | 578,321 |
+| Fidelity by distance | 164 | 282 | 430,013 |
+
+Ground tiles are now the largest cost and are drawn as before.
