@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_terminals()
 	_test_unconnected_areas()
 	_test_handovers()
+	_test_machine_jobs()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -368,6 +369,35 @@ func _test_handovers() -> void:
 			return seen, {})).size()
 		too_many = too_many or holding.size() > 4
 	_expect(doubled or too_many, false, "no slot ever holds two vehicles, and no more vehicles hold slots than there are slots")
+
+
+func _test_machine_jobs() -> void:
+	var gear: Dictionary = Content.base().yard_gear
+	var machines := Machines.new(gear)
+	_expect(machines.count_for("rtg", 25), 2, "an RTG per 10 bays")
+	_expect(machines.count_for("reach_stacker", 2), 1, "every area gets at least one machine")
+	var rtg := machines.add(1, "rtg", 0)
+	machines.give(rtg, 3, 8)
+	# Travel 3 bays, lift, travel 5 bays, set down: bays are 12 m.
+	var seconds: float = 3 * 12 / gear.rtg.speed + gear.rtg.lift_seconds + 5 * 12 / gear.rtg.speed + gear.rtg.set_down_seconds
+	var phases := []
+	var ticks := 0
+	while true:
+		if phases.is_empty() or phases[-1] != machines.phase(rtg):
+			phases.append(machines.phase(rtg))
+		ticks += 1
+		if not machines.tick().is_empty():
+			break
+	_expect(ticks, ceili(seconds / SimClock.TICK_SECONDS), "one move takes the data's time (%.1f s)" % seconds)
+	_expect(phases, ["travel", "lift", "travel", "set_down"], "in the phases travel, lift, travel and set down")
+	_expect(machines.list[rtg].bay, 8, "the machine ends where it set the box down")
+	_expect(machines.phase(rtg), "", "and is idle")
+	var stacker := machines.add(1, "reach_stacker", 8)
+	machines.give(stacker, 8, 8)
+	var lift_only := 0
+	while machines.tick().is_empty():
+		lift_only += 1
+	_expect(lift_only + 1, ceili((gear.reach_stacker.lift_seconds + gear.reach_stacker.set_down_seconds) / SimClock.TICK_SECONDS), "a move within one bay is just lift and set down")
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`
