@@ -14,6 +14,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | File | Covers |
 |---|---|
 | `test_sim.gd` | Build rules, berths, crane rate and outreach, yards and gear, dwell, exports, gates, upkeep, KPIs, events, the ledger, services, offers, reputation, storage and move prices, loans, bailouts, creative mode, land, dredging, crane orders, milestones, the scoreboard, save dictionaries, the inspect tool, bulldozing things in use |
+| `test_rules.gd` | The same rules on a port of roads and areas: ship calls, crane timing and outreach, the yard's pace, dwell, the gate, upkeep, contracts, money, dredging, milestones, the scoreboard, Inspect and bulldozing areas in use |
 | `test_traffic.gd` | Lanes: head-on, queues, a ring, giving up when stuck, and a junction booking when the map changes |
 | `test_grid.gd` | The 4 m grid: site size in cells, metres round-trip, cell centres |
 | `test_roads.gd` | Roads and areas on the 4 m grid: segments, angles, shared nodes |

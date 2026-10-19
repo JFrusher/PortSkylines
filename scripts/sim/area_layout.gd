@@ -25,20 +25,25 @@ static func yard_block(area: Dictionary, depth: int) -> Dictionary:
 
 
 ## A quay apron, from its road to the water: row 0 the buffer strip, row 1 the
-## landside crane rail, the rows up to the waterside rail tractor lanes under
-## the cranes, cut into a handover slot per bay, and the last row the quay
-## edge. {"buffer", "rails": [landside, waterside], "slots", "edge"}.
+## landside crane rail, row 2 the tractors' through lane, row 3 the working
+## lane under the cranes cut into a handover slot per bay, the rows up to the
+## waterside rail where hatch covers are laid, and the last row the quay edge.
+## {"buffer", "rails": [landside, waterside], "lanes": [through], "slots",
+## "hatches", "edge"}.
 static func quay_apron(area: Dictionary, depth: int) -> Dictionary:
 	var length := _length(area)
 	var layout := {
 		"buffer": _row(area, 0, 0, length),
 		"rails": [_row(area, 1, 0, length), _row(area, depth - 2, 0, length)],
+		"lanes": [_row(area, 2, 0, length)],
 		"slots": [],
+		"hatches": [],
 		"edge": _row(area, depth - 1, 0, length),
 	}
 	for bay in length / BAY:
-		for row in range(2, depth - 2):
-			layout.slots.append(_row(area, row, bay * BAY, BAY))
+		layout.slots.append(_row(area, 3, bay * BAY, BAY))
+	for row in range(4, depth - 2):
+		layout.hatches.append_array(_row(area, row, 0, length))
 	return layout
 
 

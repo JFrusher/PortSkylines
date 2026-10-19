@@ -163,27 +163,29 @@ func _add_area(id: int, next_id: int) -> int:
 	for road_point: int in _at.get(cell.call(0, length - 1) - area.out, []):
 		if not at.values().has(road_point):
 			_connect(at[cell.call(0, length - 1)], road_point, lorries)
-	if area.type == "yard_block":
-		# Each slot is entered sideways from the buffer and left sideways back
-		# into it, so a parked vehicle never blocks the way to another slot.
-		for slot: Array in layout.slots:
-			var ks := range(length).filter(func(k: int) -> bool: return cell.call(1, k) in slot)
-			for k: int in ks:
-				point.call(cell.call(1, k))
-				if k > ks[0]:
-					_connect(at[cell.call(1, k - 1)], at[cell.call(1, k)], lorries)
-			_connect(at[cell.call(0, ks[0])], at[cell.call(1, ks[0])], lorries)
-			_connect(at[cell.call(1, ks[-1])], at[cell.call(0, mini(ks[-1] + 1, length - 1))], lorries)
-	elif area.type in ["quay_apron", "gate"]:
+	if area.type in ["quay_apron", "gate"]:
 		# Drive-through lanes: out from the buffer down the area's first column,
 		# along each lane, and back to the buffer up its last column.
-		var lane_rows: Array = range(2, areas.types.quay_apron.depth - 2) if area.type == "quay_apron" else range(1, areas.types.gate.depth - 1)
+		var lane_rows: Array = [2] if area.type == "quay_apron" else range(1, areas.types.gate.depth - 1)
 		for row in range(1, lane_rows[-1] + 1):
 			_connect(point.call(cell.call(row - 1, 0)), point.call(cell.call(row, 0)), lorries)
 			_connect(point.call(cell.call(row, length - 1)), point.call(cell.call(row - 1, length - 1)), lorries)
 		for row: int in lane_rows:
 			for k in range(1, length):
 				_connect(point.call(cell.call(row, k - 1)), point.call(cell.call(row, k)), lorries)
+	if area.type in ["yard_block", "quay_apron"]:
+		# Each slot is entered sideways from the lane beside it (a block's
+		# buffer, an apron's through lane) and left sideways back into it, so a
+		# parked vehicle never blocks the way to another slot.
+		var lane := 0 if area.type == "yard_block" else 2
+		for slot: Array in layout.slots:
+			var ks := range(length).filter(func(k: int) -> bool: return cell.call(lane + 1, k) in slot)
+			for k: int in ks:
+				point.call(cell.call(lane + 1, k))
+				if k > ks[0]:
+					_connect(at[cell.call(lane + 1, k - 1)], at[cell.call(lane + 1, k)], lorries)
+			_connect(at[cell.call(lane, ks[0])], at[cell.call(lane + 1, ks[0])], lorries)
+			_connect(at[cell.call(lane + 1, ks[-1])], at[cell.call(lane, mini(ks[-1] + 1, length - 1))], lorries)
 	return next[0]
 
 

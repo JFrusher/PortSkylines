@@ -6,6 +6,9 @@ extends RefCounted
 const STATES := {
 	"drive": "Driving", "yard": "Queueing for a yard machine", "handling": "Being handled in the yard",
 	"gate": "At the gate", "under_crane": "Under a crane", "no_route": "Waiting for a road",
+	"arriving": "Driving to its area", "queued": "Waiting for a handover slot", "to_slot": "Driving to its handover slot",
+	"handled": "Being handled in the yard", "at_gate": "At the gate", "returning": "Driving out of the yard",
+	"leaving": "Leaving the port", "to_crane": "Bringing an export to its crane",
 }
 const SHIP_STATES := ["Arriving", "Working", "Leaving", "At anchor"]
 
@@ -16,6 +19,15 @@ static func pick(sim: PortSim, cell: Vector2i, grid_cell: Vector2i) -> Variant:
 	for vehicle in sim.vehicles:
 		if Vector2i(vehicle.position(1.0).round()) == cell:
 			return vehicle
+	for vehicle in sim.area_vehicles:
+		if Vector2i(vehicle.position(1.0).round()) == grid_cell:
+			return vehicle
+	for ship in sim.ships:
+		if ship.apron and grid_cell in _ship_water(sim, ship):
+			return ship
+	for crane in sim.cranes:
+		if crane.apron and grid_cell in _crane_cells(sim, crane):
+			return crane
 	for ship in sim.ships:
 		for quay in ship.cells:
 			if quay + ship.side == cell:
@@ -32,7 +44,7 @@ static func pick(sim: PortSim, cell: Vector2i, grid_cell: Vector2i) -> Variant:
 ## A title then lines of state for `thing` from `pick`, or [] once it is gone.
 static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 	if thing is Vehicle:
-		return _vehicle(sim, thing) if thing in sim.vehicles else []
+		return _vehicle(sim, thing) if thing in sim.vehicles or thing in sim.area_vehicles else []
 	if thing is PortSim.Ship:
 		return _ship(sim, thing) if thing in sim.ships else []
 	if thing is PortSim.Crane:
@@ -40,6 +52,28 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 	if thing is Dictionary:
 		return _area(sim, thing.area) if thing.area in sim.areas.list else []
 	return _cell(sim, thing)
+
+
+## The water an apron ship lies in: its length of the quay edge, out to its beam.
+static func _ship_water(sim: PortSim, ship: PortSim.Ship) -> Array[Vector2i]:
+	var area: Dictionary = sim.areas.list[ship.apron]
+	var along: Vector2i = (area.end - area.start).sign()
+	var depth: int = sim.rules.area_types.quay_apron.depth
+	var found: Array[Vector2i] = []
+	for k in range(ship.from, ship.from + AreaFlow.ship_cells(sim, ship.kind)):
+		for beam in range(depth, depth + 8):
+			found.append(area.start + along * k + area.out * beam)
+	return found
+
+
+## The cells an apron crane stands across, between its rails.
+static func _crane_cells(sim: PortSim, crane: PortSim.Crane) -> Array[Vector2i]:
+	var area: Dictionary = sim.areas.list[crane.apron]
+	var along: Vector2i = (area.end - area.start).sign()
+	var found: Array[Vector2i] = []
+	for row in range(1, sim.rules.area_types.quay_apron.depth - 1):
+		found.append(area.start + along * crane.along + area.out * row)
+	return found
 
 
 static func _vehicle(sim: PortSim, vehicle: Vehicle) -> Array[String]:

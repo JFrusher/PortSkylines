@@ -859,6 +859,8 @@ func daily_upkeep() -> int:
 	for id: int in areas.list:
 		total += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
 	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
+	for machine: Dictionary in machines.list.values():
+		total += rules.yard_gear[machine.gear].upkeep_per_machine
 	for block_anchor in yard.anchors():
 		total += rules.yard_gear[yard.gear_of(block_anchor)].upkeep_per_machine * yard.machines(block_anchor)
 	return total
@@ -872,6 +874,11 @@ func kpis() -> Dictionary:
 	for tile in map.cells_of(PortMap.Tile.YARD):
 		capacity += yard.capacity(tile)
 		held += yard.count(tile)
+	for area: int in area_stacks:
+		if area in areas.list:
+			var stacks: AreaStacks = area_stacks[area]
+			capacity += stacks.stacks.size() * rules.yard_gear[areas.list[area].settings.gear].tiers
+			held += stacks.boxes().size()
 	return {
 		"berth_moves_per_hour": last.moves / last.hours if last else 0.0,
 		"crane_moves_per_hour": last.moves / last.hours / last.cranes if last else 0.0,
@@ -952,7 +959,7 @@ func _call(service: Dictionary) -> void:
 	if channel_depth < spec.draft:
 		why = "it needs %.0f m of channel, the port has %.0f m" % [spec.draft, channel_depth]
 	elif not _could_berth(service.kind):
-		why = "no berth of %d quay tiles with a road to the highway" % spec.length
+		why = "no berth of %d quay tiles with a road to the highway" % spec.length if areas.list.is_empty() else "no quay apron of %d m in a terminal with a gate and a road" % Grid.metres(AreaFlow.ship_cells(self, service.kind))
 	if why != "":
 		_event("%s's %s went elsewhere: %s" % [who, service.kind, why])
 		_event_if(contracts.missed(service.line))
@@ -1149,10 +1156,14 @@ func _stack(tile: Vector2i, box: int) -> void:
 func _storage_due() -> int:
 	var now := clock.calendar_minutes()
 	var count := 0
+	var stacked: Array = []
 	for tile: Vector2i in yard.stacks:
-		for id: int in yard.stacks[tile]:
-			if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
-				count += 1
+		stacked.append_array(yard.stacks[tile])
+	for area: int in area_stacks:
+		stacked.append_array(area_stacks[area].boxes())
+	for id: int in stacked:
+		if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
+			count += 1
 	return count
 
 

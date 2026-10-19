@@ -94,15 +94,21 @@ static func tick(sim: PortSim) -> void:
 ## once the holds are empty and the cranes idle it sails.
 static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 	var working := cranes_for(sim, ship)
-	if working.is_empty():
-		sim._event("A %s is waiting: no crane stands along it" % ship.kind)
+	var rows: int = sim.rules.ship_classes[ship.kind].outreach
+	if working.is_empty() or sim.rules.sts_crane.outreach < rows:
+		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rows])
 		return
 	var move_minutes: float = 60.0 / (sim.rules.sts_crane.rate * sim.rules.crane_interference)
 	for crane in working:
 		if ship.boxes > 0:
 			_discharge(sim, crane, ship, move_minutes)
-		else:
-			_load(sim, crane, ship, move_minutes)
+			continue
+		if crane.tractor != 0 and _vehicle(sim, crane.tractor).box == 0:
+			# Another crane lifted the last import: this one's empty tractor goes back.
+			_gone(sim, _vehicle(sim, crane.tractor))
+			crane.tractor = 0
+			crane.timer = 0.0
+		_load(sim, crane, ship, move_minutes)
 	if ship.boxes == 0 and working.all(func(c: PortSim.Crane) -> bool: return c.tractor == 0):
 		if ship.exports == 0:
 			sim._sail(ship, working.size())
@@ -194,8 +200,7 @@ static func _export_box(sim: PortSim, terminal: int) -> int:
 
 ## The middle cell of the apron slot under `crane`, in the lane nearest the road.
 static func _crane_slot(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> Vector2i:
-	var depth: int = sim.rules.area_types.quay_apron.depth
-	return sim.areas.layout(ship.apron).slots[crane.along / AreaLayout.BAY * (depth - 4)][1]
+	return sim.areas.layout(ship.apron).slots[crane.along / AreaLayout.BAY][1]
 
 
 ## Puts a tractor from the pool in the apron slot under `crane`, bound for an
@@ -241,6 +246,7 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 			continue
 		var gate := _gate_of(sim, sim.areas.list[block].terminal)
 		if gate == 0:
+			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[sim.areas.list[block].terminal].name)
 			continue
 		for box: int in sim.area_stacks[block].boxes():
 			if box in sim._claimed or sim.boxes[box].kind != "import" or sim.boxes[box].due > now:
@@ -494,7 +500,8 @@ static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
 	var layout := sim.areas.layout(vehicle.area)
 	for id: int in sim.machines.list:
 		var machine: Dictionary = sim.machines.list[id]
-		if machine.area != vehicle.area or not machine.job.is_empty():
+		# A machine done this tick is still busy until its job is booked off.
+		if machine.area != vehicle.area or id in sim.machine_jobs:
 			continue
 		# A yard block has one slot per bay, so a slot's index is its bay.
 		if vehicle.loaded:

@@ -1,4 +1,6 @@
 extends RefCounted
+
+const RandomPort := preload("res://tests/random_port.gd")
 ## Small ports on roads and areas for tests: a coastal terminal, and one
 ## working its first ship. Building them is checked with push_error, so a
 ## broken helper shows up as an ERROR line, which CI fails on.
@@ -8,8 +10,8 @@ extends RefCounted
 ## cells long west of the coast road, and a gate on the north side of the
 ## east road, fed by the westbound lane lorries come in on. Traffic only
 ## turns back at dead ends, so areas sit beside the lane that reaches them.
-static func terminal(apron_length: int) -> PortSim:
-	var sim := PortSim.new(0, Content.base(), true)
+static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
+	var sim := PortSim.new(0, rules, true)
 	var entry := sim.site_entry()
 	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, entry.y), "type": "terminal_1_1"})
 	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"})
@@ -45,6 +47,38 @@ static func working_terminal(imports: int, exports := 0) -> PortSim:
 	ship.sail = 1.0
 	ship.berthed = sim.clock.calendar_minutes()
 	return sim
+
+
+## A port for rule tests, like the tile tests' port: `terminal` with an apron
+## long enough for a Panamax, an import block, two cranes and six tractors,
+## under `rules` (see RandomPort.quick), and weekly `calls` services. Built
+## for free, then the cash is set back to the start money and creative mode
+## off, so tests start from an ordinary port.
+static func base(rules := RandomPort.quick(), calls := "feeder") -> PortSim:
+	var sim := terminal(80, rules)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the import block is built")
+	_built(sim.apply({"op": "set_terminal", "id": 3, "terminal": 1}), "the block joins the terminal")
+	for along: int in [20, 40]:
+		_built(sim.apply({"op": "place_sts", "apron": 1, "along": along}), "a crane is ordered")
+	_built(sim.apply({"op": "buy_tractors", "count": 6}), "tractors are bought")
+	sim.creative = false
+	sim.ledger.cash = rules.start_money
+	if calls != "":
+		RandomPort.calls(sim, calls)
+	return sim
+
+
+## An export block next to `base`'s import block, in its terminal.
+static func add_export_block(sim: PortSim) -> int:
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.creative = true
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "the export block is built")
+	sim.creative = false
+	var id: int = sim.areas.list.keys()[-1]
+	_built(sim.apply({"op": "set_area", "id": id, "settings": {"role": "export"}}), "the export block is set")
+	_built(sim.apply({"op": "set_terminal", "id": id, "terminal": 1}), "it joins the terminal")
+	return id
 
 
 ## The first slice's chain, built with commands only on `terminal`: an import
