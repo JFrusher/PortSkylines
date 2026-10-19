@@ -5,6 +5,10 @@ extends RefCounted
 ## needs no saving and follows a loaded game. Reads PortSim, never changes it.
 
 
+## Services the guide asks for, so ships call through the week, not once a week.
+const SERVICES := 3
+
+
 ## The steps in order for `sim`: {"text", "done": Callable() -> bool}.
 static func steps(sim: PortSim) -> Array[Dictionary]:
 	var feeder: int = sim.rules.ship_classes.feeder.length
@@ -21,8 +25,8 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 			return sim.tractors > 0},
 		{"text": "Build a yard block beside a road for the boxes (Yard, key 4).", "done": func() -> bool:
 			return sim.map.cells_of(PortMap.Tile.YARD).any(func(c: Vector2i) -> bool: return sim.yard.entrance(c) != PortMap.NONE)},
-		{"text": "Open Contracts and accept a line's offer. Offers come every few hours.", "done": func() -> bool:
-			return not sim.contracts.services.is_empty()},
+		{"text": "Open Contracts and accept %d lines' offers. Each is a weekly call, so several keep the berth busy; offers come every few hours once the crane is up." % SERVICES, "done": func() -> bool:
+			return sim.contracts.services.size() >= SERVICES},
 		{"text": "Wait for the first ship and work it. Speed time up with 3×.", "done": func() -> bool:
 			return not sim.ship_log.is_empty()},
 	]

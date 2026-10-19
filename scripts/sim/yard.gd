@@ -18,14 +18,21 @@ var gear := {}
 ## Machines at work in each block, by anchor.
 var busy := {}
 
-var _blocks_version := -1
-var _anchor_of := {}
-var _blocks := {}
+## Blocks are kept up to date tile by tile as the map changes, so a change
+## costs the size of the blocks it touches, not of the whole yard.
+var _anchor_of := {}  # yard tile -> its block's anchor
+var _blocks := {}  # anchor -> the block's tiles, in no set order
+var _in_order := {}  # anchors whose tile list is in map order
+var _anchors: Array[Vector2i] = []  # in map order; rebuilt when empty
+var _anchors_known := false
 
 
 func _init(port_map: PortMap, game_rules: Dictionary) -> void:
 	map = port_map
 	rules = game_rules
+	map.tile_changed.connect(_on_tile_changed)
+	for cell in map.cells_of(PortMap.Tile.YARD):
+		_add_tile(cell)
 
 
 func role_of(cell: Vector2i) -> String:
@@ -49,22 +56,29 @@ func space(cell: Vector2i) -> int:
 
 
 func anchor(cell: Vector2i) -> Vector2i:
-	_refresh_blocks()
 	return _anchor_of.get(cell, PortMap.NONE)
 
 
+## The tiles of the block holding `cell`, in map order.
 func block(cell: Vector2i) -> Array[Vector2i]:
-	_refresh_blocks()
 	var found: Array[Vector2i] = []
-	found.assign(_blocks.get(_anchor_of.get(cell), []))
+	var block_anchor: Vector2i = _anchor_of.get(cell, PortMap.NONE)
+	if block_anchor == PortMap.NONE:
+		return found
+	if not _in_order.has(block_anchor):
+		_blocks[block_anchor].sort_custom(_before)
+		_in_order[block_anchor] = true
+	found.assign(_blocks[block_anchor])
 	return found
 
 
+## Every block's anchor, in map order.
 func anchors() -> Array[Vector2i]:
-	_refresh_blocks()
-	var found: Array[Vector2i] = []
-	found.assign(_blocks.keys())
-	return found
+	if not _anchors_known:
+		_anchors.assign(_blocks.keys())
+		_anchors.sort_custom(_before)
+		_anchors_known = true
+	return _anchors.duplicate()
 
 
 ## The block's way in: its first tile with a road beside it, or NONE.
@@ -167,17 +181,55 @@ static func from_dict(d: Dictionary, port_map: PortMap, game_rules: Dictionary) 
 	return yard
 
 
-## Rebuilds the blocks by flood fill when the map has changed.
-func _refresh_blocks() -> void:
-	if _blocks_version == map.version:
-		return
-	_blocks_version = map.version
-	_anchor_of = {}
-	_blocks = {}
-	for start in map.cells_of(PortMap.Tile.YARD):
+func _on_tile_changed(cell: Vector2i, was: int, now: int) -> void:
+	if was == PortMap.Tile.YARD:
+		_remove_tile(cell)
+	if now == PortMap.Tile.YARD:
+		_add_tile(cell)
+
+
+## Joins `cell` to the blocks beside it; the merged block's anchor is its first tile.
+func _add_tile(cell: Vector2i) -> void:
+	var joined: Array[Vector2i] = []
+	for side: Vector2i in PortMap.SIDES:
+		var next: Vector2i = _anchor_of.get(cell + side, PortMap.NONE)
+		if next != PortMap.NONE and next not in joined:
+			joined.append(next)
+	var merged := cell
+	for other in joined:
+		if _before(other, merged):
+			merged = other
+	var tiles: Array = _blocks.get(merged, [])
+	for other in joined:
+		if other == merged:
+			continue
+		for tile: Vector2i in _blocks[other]:
+			_anchor_of[tile] = merged
+			tiles.append(tile)
+		_blocks.erase(other)
+		_in_order.erase(other)
+	tiles.append(cell)
+	_anchor_of[cell] = merged
+	_blocks[merged] = tiles
+	_in_order.erase(merged)
+	_anchors_known = false
+
+
+## Takes `cell` out of its block and splits what is left into its connected parts.
+func _remove_tile(cell: Vector2i) -> void:
+	var old: Vector2i = _anchor_of[cell]
+	var rest: Array = _blocks[old]
+	_blocks.erase(old)
+	_in_order.erase(old)
+	for tile: Vector2i in rest:
+		_anchor_of.erase(tile)
+	rest.erase(cell)
+	rest.sort_custom(_before)
+	# Flooding from each unclaimed tile in map order makes that tile its part's anchor.
+	for start: Vector2i in rest:
 		if start in _anchor_of:
 			continue
-		var tiles: Array[Vector2i] = [start]
+		var tiles: Array = [start]
 		_anchor_of[start] = start
 		var i := 0
 		while i < tiles.size():
@@ -188,3 +240,9 @@ func _refresh_blocks() -> void:
 					tiles.append(next)
 			i += 1
 		_blocks[start] = tiles
+	_anchors_known = false
+
+
+## Map order: by row, then by column.
+static func _before(a: Vector2i, b: Vector2i) -> bool:
+	return a.y < b.y or (a.y == b.y and a.x < b.x)

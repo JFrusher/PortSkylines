@@ -301,7 +301,7 @@ func _draw_contracts() -> void:
 		var new_fee: int = fee + change[2]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_storage", "free_days": free_days, "fee": new_fee}))
 		terms.add_child(button)
-	_contracts.add_child(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services while reputation is good and berths have room"))
+	_contracts.add_child(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
 	for offer in contracts.offers:
 		var row := _row(_contracts)
 		row.add_child(_label("    " + _service_text(offer) + "   offer ends day %d" % int(offer.expires / SimClock.MINUTES_PER_DAY)))

@@ -30,12 +30,17 @@ func _initialize() -> void:
 		for command: Dictionary in steps[i]:
 			_expect(sim.apply(command), "", "step %d: %s" % [i, command])
 		_expect(Guide.current(sim), i + 1, "step %d's commands finish it" % i)
+	var crane_up := -1.0
 	var accepted := _run_until(sim, func() -> bool:
+		if crane_up < 0.0 and not sim.cranes.is_empty():
+			crane_up = sim.clock.calendar_minutes()
+		if not sim.contracts.offers.is_empty() and crane_up < 0.0:
+			_expect(true, false, "no line offers a service before the crane is up")
 		for offer in sim.contracts.offers:
-			return sim.apply({"op": "accept_offer", "id": offer.id}) == ""
-		return false)
-	_expect(accepted, true, "a line offers a service and it is accepted")
-	_expect(Guide.current(sim), steps.size() + 1, "accepting the offer finishes its step")
+			sim.apply({"op": "accept_offer", "id": offer.id})
+		return sim.contracts.services.size() >= Guide.SERVICES)
+	_expect(accepted, true, "lines offer %d services and they are accepted" % Guide.SERVICES)
+	_expect(Guide.current(sim), steps.size() + 1, "accepting the offers finishes their step")
 	_expect(_run_until(sim, func() -> bool: return not sim.ship_log.is_empty()), true, "the first ship is worked")
 	_expect(Guide.current(sim), Guide.steps(sim).size(), "the guide ends with the first ship worked")
 	_expect(sim.apply({"op": "bulldoze", "cell": Vector2i(sim.map.entry.x - 3, row)}), "", "bulldoze the gate")

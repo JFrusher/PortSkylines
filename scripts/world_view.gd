@@ -28,6 +28,11 @@ const YARD_ROWS := 2
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const LANE_OFFSET := 0.22
+## Camera distances to a chunk's centre past which it is drawn with less
+## detail, as Cities: Skylines does: each tile's stack as one slab instead of
+## every box, then no yard machines. Instances drawn cost the most render time.
+const STACK_DETAIL := 60.0
+const MACHINE_DETAIL := 80.0
 const CRANE_HEIGHT := 3.2
 ## How far the girder reaches behind the quay edge and out over the water, in tiles.
 const CRANE_BACK := -1.0
@@ -60,13 +65,23 @@ var _quay_edge_mesh: Mesh
 var _water := ShaderMaterial.new()
 var _stacks := ChunkedMeshes.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
+## Far from the camera, each yard tile's stack as one slab in its top box's livery.
+var _slabs := ChunkedMeshes.new()
+var _slab_mesh: Mesh
 ## Stack parts ([chunk, teu]) drawn last time, so emptied ones get cleared.
 var _stack_parts := {}
+## Chunks with slabs drawn last time, so emptied ones get cleared.
+var _slab_chunks := {}
 ## The tick and map version the stacks were drawn for; bulldozing a stack changes the map.
 var _stacks_drawn := []
-# shortcut: ships and vehicles are one node each, fine under ~100; MultiMesh them in M5.
+# shortcut: ships are one node each, fine at the handful a port works at once; MultiMesh them if berths grow past ~20.
 var _ships := {}  # PortSim.Ship -> Node3D
-var _vehicles := {}  # Vehicle -> Node3D
+## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
+var _vehicle_parts := {}
+## Each vehicle's last heading by id, kept while it waits on a one-tile path.
+var _headings := {}
+## A box on a vehicle's chassis: a container model turned along the vehicle and scaled to it.
+var _vehicle_box := Transform3D(Basis(Vector3.UP, PI / 2).scaled_local(Vector3(0.65, 0.75, 0.8)), Vector3(0, 0.2, -0.06))
 var _cranes := {}  # PortSim.Crane -> Node3D
 var _machines := ChunkedMeshes.new()
 var _machine_meshes := {}  # gear -> Mesh
@@ -92,8 +107,13 @@ func _ready() -> void:
 	add_child(land)
 	add_child(_hover)
 	add_child(_tiles)
+	_stacks.range_end = STACK_DETAIL
+	_slabs.range_begin = STACK_DETAIL
+	_machines.range_end = MACHINE_DETAIL
 	add_child(_stacks)
+	add_child(_slabs)
 	add_child(_machines)
+	_slab_mesh = _merged([[Vector3.ONE, Vector3(0, 0.5, 0), Color.WHITE]])
 	for gear: String in sim.rules.yard_gear:
 		_machine_meshes[gear] = _machine_mesh(gear)
 	for kind: int in TILE_HEIGHT:
@@ -262,11 +282,25 @@ func _draw_stacks() -> void:
 	for part: Array in _stack_parts:
 		transforms[part] = [] as Array[Transform3D]
 		colors[part] = PackedColorArray()
+	var slabs := {}
+	var slab_colors := {}
+	for chunk: Vector2i in _slab_chunks:
+		slabs[chunk] = [] as Array[Transform3D]
+		slab_colors[chunk] = PackedColorArray()
 	for cell: Vector2i in sim.yard.stacks:
 		var chunk := ChunkedMeshes.chunk_of(cell)
 		var ids: Array = sim.yard.stacks[cell]
+		if ids.is_empty():
+			continue
 		var forties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 2)
 		var twenties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 1)
+		if chunk not in slabs:
+			slabs[chunk] = [] as Array[Transform3D]
+			slab_colors[chunk] = PackedColorArray()
+		var tiers: float = stack_spot(forties.size(), ids.size() - 1).y + 1
+		var top: int = (forties + twenties)[-1]
+		slabs[chunk].append(Transform3D(Basis().scaled(Vector3(BOX_LENGTH[2], tiers * BOX_HEIGHT, YARD_ROWS * 0.34)), Vector3(cell.x + 0.5, 0.08, cell.y + 0.5)))
+		slab_colors[chunk].append(_livery(sim.boxes[top].line, top))
 		for i in ids.size():
 			var forty := i < forties.size()
 			var id: int = forties[i] if forty else twenties[i - forties.size()]
@@ -282,6 +316,11 @@ func _draw_stacks() -> void:
 		_stacks.show_part(part, _stack_meshes[part[1]], transforms[part], colors[part])
 		if not transforms[part].is_empty():
 			_stack_parts[part] = true
+	_slab_chunks.clear()
+	for chunk: Vector2i in slabs:
+		_slabs.show_part(chunk, _slab_mesh, slabs[chunk], slab_colors[chunk])
+		if not slabs[chunk].is_empty():
+			_slab_chunks[chunk] = true
 
 
 ## Where the `i`th box of a yard tile with `forties` 40 ft boxes sits, as
@@ -448,48 +487,61 @@ func _ship_beside(cell: Vector2i) -> PortSim.Ship:
 	return null
 
 
+## Every vehicle as four MultiMeshes (cabs tinted by kind, chassis, and
+## boxes by length in their line's livery), each filled with one buffer
+## write a frame, so draw calls stay the same however many vehicles there are.
 func _draw_vehicles() -> void:
-	_forget_gone(_vehicles, sim.vehicles)
+	if _vehicle_parts.is_empty():
+		_vehicle_parts = {
+			"cab": _vehicle_part(_merged([[Vector3(0.24, 0.2, 0.16), Vector3.ZERO, Color.WHITE]])),
+			"chassis": _vehicle_part(_merged([[Vector3(0.22, 0.04, 0.52), Vector3.ZERO, Color(0.2, 0.2, 0.22)]])),
+			1: _vehicle_part(_stack_meshes[1]),
+			2: _vehicle_part(_stack_meshes[2]),
+		}
+	var buffers := {}
+	for part: Variant in _vehicle_parts:
+		buffers[part] = PackedFloat32Array()
+	var headings := {}
 	for vehicle: Vehicle in sim.vehicles:
-		if vehicle not in _vehicles:
-			_vehicles[vehicle] = _vehicle_model(vehicle.kind)
-		var model: Node3D = _vehicles[vehicle]
 		var pose := path_pose(vehicle.path, lerpf(vehicle.prev_t, vehicle.t, alpha))
-		var at := pose[0]
-		var heading := pose[1].normalized()
+		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
+		headings[vehicle.id] = heading
 		# Keep right: each direction drives in its own half of the road.
 		var right := Vector2(-heading.y, heading.x) * LANE_OFFSET
-		model.position = Vector3(at.x + 0.5 + right.x, 0.04, at.y + 0.5 + right.y)
-		if heading != Vector2.ZERO:
-			model.rotation.y = atan2(heading.x, heading.y)
-		var box: MeshInstance3D = model.get_node("Box")
-		box.visible = vehicle.loaded
-		if vehicle.loaded and box.get_meta("id", 0) != vehicle.box:
-			box.set_meta("id", vehicle.box)
-			var spec: Dictionary = sim.boxes[vehicle.box]
-			box.mesh = _stack_meshes[spec.teu]
-			box.scale = Vector3(0.65, 0.75, 0.8)
-			(box.material_override as StandardMaterial3D).albedo_color = _livery(spec.line, vehicle.box)
+		var placed := Transform3D(Basis(Vector3.UP, atan2(heading.x, heading.y)), Vector3(pose[0].x + 0.5 + right.x, 0.04, pose[0].y + 0.5 + right.y))
+		_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
+		_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
+		if vehicle.loaded:
+			var box: Dictionary = sim.boxes[vehicle.box]
+			_put(buffers[box.teu], placed * _vehicle_box, _livery(box.line, vehicle.box))
+	_headings = headings
+	for part: Variant in _vehicle_parts:
+		var multimesh: MultiMesh = _vehicle_parts[part].multimesh
+		var buffer: PackedFloat32Array = buffers[part]
+		var count := buffer.size() / 16
+		if multimesh.instance_count < count:
+			multimesh.instance_count = nearest_po2(count)
+		buffer.resize(multimesh.instance_count * 16)
+		multimesh.buffer = buffer
+		multimesh.visible_instance_count = count
 
 
-## A tractor (yellow) or lorry (white) cab pulling a chassis, facing +Z, with
-## a box on the chassis that _draw_vehicles shows, sizes and paints.
-func _vehicle_model(kind: String) -> Node3D:
-	var model := Node3D.new()
-	var cab := _box(Vector3(0.24, 0.2, 0.16), Color(0.95, 0.75, 0.1) if kind == "tractor" else Color(0.9, 0.9, 0.86))
-	cab.position = Vector3(0, 0.14, 0.24)
-	model.add_child(cab)
-	var chassis := _box(Vector3(0.22, 0.04, 0.52), Color(0.2, 0.2, 0.22))
-	chassis.position = Vector3(0, 0.06, -0.06)
-	model.add_child(chassis)
-	var box := MeshInstance3D.new()
-	box.name = "Box"
-	box.position = Vector3(0, 0.2, -0.06)
-	box.rotation.y = PI / 2
-	box.material_override = StandardMaterial3D.new()
-	model.add_child(box)
-	add_child(model)
-	return model
+## Appends `placed` and `color` to `buffer` in MultiMesh layout: the
+## transform's 3x4 matrix row by row, then the colour.
+static func _put(buffer: PackedFloat32Array, placed: Transform3D, color: Color) -> void:
+	var b := placed.basis
+	var o := placed.origin
+	buffer.append_array([b.x.x, b.y.x, b.z.x, o.x, b.x.y, b.y.y, b.z.y, o.y, b.x.z, b.y.z, b.z.z, o.z, color.r, color.g, color.b, color.a])
+
+
+func _vehicle_part(mesh: Mesh) -> MultiMeshInstance3D:
+	var part := MultiMeshInstance3D.new()
+	part.multimesh = MultiMesh.new()
+	part.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	part.multimesh.use_colors = true
+	part.multimesh.mesh = mesh
+	add_child(part)
+	return part
 
 
 ## Each yard block's machines: one over each box being handled, the rest

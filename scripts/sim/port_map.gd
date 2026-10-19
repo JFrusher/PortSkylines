@@ -16,6 +16,12 @@ var entry: Vector2i
 ## Bumped on every change so views know to redraw.
 var version := 0
 
+## Bumped only when a tile becomes or stops being road, which is all routes depend on.
+var road_version := 0
+
+## Every change of one tile, after it is made, so the yard can update its blocks.
+signal tile_changed(cell: Vector2i, was: int, now: int)
+
 var _tiles := PackedByteArray()
 var _roads := AStarGrid2D.new()
 ## Tile indices per kind, kept sorted so cells_of() returns map order, the
@@ -23,6 +29,9 @@ var _roads := AStarGrid2D.new()
 var _index := {}
 ## Routes already found, keyed by their two road ends; cleared on any change.
 var _route_cache := {}
+## Road distances from a road tile to every tile, by source, for road_version.
+var _fields := {}
+var _fields_version := -1
 
 
 func _init(map_size: Vector2i, sea: int) -> void:
@@ -78,10 +87,14 @@ func place(kind: int, cell: Vector2i) -> void:
 	old.remove_at(old.bsearch(i))
 	var new: PackedInt32Array = _index[kind]
 	new.insert(new.bsearch(i), i)
+	var was := _tiles[i]
 	_tiles[i] = kind
 	_roads.set_point_solid(cell, not is_road(kind))
 	_route_cache.clear()
 	version += 1
+	if is_road(was) != is_road(kind):
+		road_version += 1
+	tile_changed.emit(cell, was, kind)
 
 
 ## The first side of `cell` holding `kind`, or NONE.
@@ -148,6 +161,52 @@ func route(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 		_route_cache[key] = _roads.get_id_path(a, b)
 	var path: Array[Vector2i] = _route_cache[key]
 	return path.duplicate()
+
+
+## Road tiles between `from`'s access road and `to`'s, or -1 when no road
+## joins them: one less than the length of route(from, to), without
+## searching. Looked up in `to`'s distance field, so put the fixed place
+## (a gate, the highway, a crane's road) second.
+func distance(from: Vector2i, to: Vector2i) -> int:
+	var a := access_road(from)
+	var b := access_road(to)
+	if a == NONE or b == NONE:
+		return -1
+	return distances_from(b)[a.x + a.y * size.x]
+
+
+## Road distances from road tile `source` to every tile (-1 where no road
+## reaches), by breadth-first search, kept until the roads change. Routes
+## to and from fixed places (gates, block entrances, the highway) look up
+## their lengths here instead of searching each time.
+func distances_from(source: Vector2i) -> PackedInt32Array:
+	if _fields_version != road_version:
+		_fields.clear()
+		_fields_version = road_version
+	if source in _fields:
+		return _fields[source]
+	var dist := PackedInt32Array()
+	dist.resize(size.x * size.y)
+	dist.fill(-1)
+	var queue := PackedInt32Array([source.x + source.y * size.x])
+	dist[queue[0]] = 0
+	var head := 0
+	while head < queue.size():
+		var i := queue[head]
+		head += 1
+		var x := i % size.x
+		var y := i / size.x
+		for side: Vector2i in SIDES:
+			var nx := x + side.x
+			var ny := y + side.y
+			if nx < 0 or ny < 0 or nx >= size.x or ny >= size.y:
+				continue
+			var j := nx + ny * size.x
+			if dist[j] == -1 and is_road(_tiles[j]):
+				dist[j] = dist[i] + 1
+				queue.append(j)
+	_fields[source] = dist
+	return dist
 
 
 ## A road route from road tile `from` to `to`'s access road that does not pass

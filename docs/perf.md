@@ -76,3 +76,85 @@ one MultiMesh per chunk and gear brought it back to 80. Draw calls stay
 chunk-bound again. Frame time rose with the extra triangles, which on
 llvmpipe is CPU rasterisation; the 60 fps exit criterion still needs a run
 on a GTX 1660-class GPU.
+
+## M5 baseline profile (2026-10-19)
+
+`bench/profile_sim.gd` builds the endgame port (`bench/endgame_port.gd`: a
+160² map, 6 berths of 3 cranes, a road grid with 25 gates, RTG yard bands
+holding 20,000 imports) and times the sim's per-tick functions while
+lorries flow in at one a tick. Same container as earlier entries.
+**Command:** `godot --headless --script res://bench/profile_sim.gd -- 300`.
+
+300 ticks: **78.6 ms a tick** with only 47 vehicles on the map at the end,
+against a 1 ms budget. At this cost the endgame save's 2,000 lorries can't
+even be generated, so the hot spots go first.
+
+| Function | Share of the tick (inclusive) | Calls | Per call | Why |
+|---|---:|---:|---:|---|
+| `_route_via_gate` | 69% | 1,373 | 11.9 ms | A* to and from each of 25 gates for every lorry route |
+| `_queue_at` | 66% | 34,325 | 0.45 ms | scans every vehicle's remaining path, once per gate per route |
+| `_dispatch_import_lorry` | 56% | 300 | 43.9 ms | walks every stacked box, routing to each block |
+| `_dispatch_export_lorry` | 43% | 300 | 34.0 ms | mostly `_yard_tile_for` |
+| `_yard_tile_for` | 30% | 303 | 23.4 ms | routes to every yard block to find the nearest |
+
+Vehicle movement (`_drive_lorry`, `_advance`) is under 1%: the cost is
+routing and searching, not kinematics. Each M5 step below names the hot
+spot it removes and is re-measured with the same command.
+
+### Routing hot spots removed (M5 step 7, distance fields)
+
+Same command. The sim's state hash after 30,000 ticks of the soak ports and
+300 ticks of the endgame port is identical before and after: every choice
+is the same, only found faster.
+
+| Change | Hot spot removed | ms a tick |
+|---|---|---:|
+| Baseline | | 78.6 |
+| Gate queues counted in one pass per route, not one per gate; gates tried from the shortest road distance (cached BFS fields from each gate, rebuilt only when roads change) and searched only while one could win | `_queue_at`, `_route_via_gate` | 37.6 |
+| Nearest block with room found by road distance, scanning blocks for room only from the nearest; gate reachability for dispatch read from the fields; each path's gate steps found once | `_yard_tile_for`, `_dispatch_import_lorry`, `_gate_queues` | 3.0 |
+
+The soak port's sim bench dropped from 0.20 to 0.12 ms a tick.
+
+### Vehicles drawn as MultiMeshes (M5 step 4)
+
+`bench/endgame_bench.gd -- 1` on `bench/endgame.bin` (about 2,000
+vehicles), software GL under xvfb at 1920x1080, so only the draw calls and
+the ratio of render CPU time carry over to a real GPU.
+
+| | Draw calls | Render CPU ms | Frame ms |
+|---|---:|---:|---:|
+| A node per vehicle (cab, chassis, box) | 4,981 | 276 | 668 |
+| Cabs, chassis, 20 ft and 40 ft boxes as one MultiMesh each | 329 | 184 | 541 |
+
+Vehicle draw calls are now four, whatever the vehicle count. The frame is
+still sim-bound at this load (about 9 ticks a frame at 27 ms each), which
+the later M5 steps take on.
+
+### What render time is spent on (M5 steps 5 and 6)
+
+Endgame save, sim paused, render CPU with one group hidden at a time
+(software GL, so ratios only):
+
+| Hidden | Instances | Render CPU saved |
+|---|---:|---:|
+| Ground tiles | 23,882 | 69 ms of 168 |
+| Stacked boxes | 19,767 | 48 ms |
+| Yard machines | 2,016 | 44 ms |
+| Ships and cranes (162 draw calls) | | 5 ms |
+
+Cost follows instances drawn: swapping every container for a 12-triangle
+box saved nothing, and a quarter of the resolution saved nothing. So step 5
+(ships and cranes in a MultiMesh) is not justified by the counts and is
+skipped. Step 6 draws chunks with less detail as the camera pulls back, the
+way Cities: Skylines does: past 60 units from a chunk's centre each yard
+tile's stack is one slab in its top box's livery, and past 80 the yard
+machines are not drawn. Chunks out of view are culled whole, as before.
+
+`bench/endgame_bench.gd -- 0 90` (paused, the game's farthest zoom):
+
+| | Render CPU ms | Draw calls | Primitives |
+|---|---:|---:|---:|
+| Every box and machine at every distance | 264 | 313 | 578,321 |
+| Fidelity by distance | 164 | 282 | 430,013 |
+
+Ground tiles are now the largest cost and are drawn as before.
