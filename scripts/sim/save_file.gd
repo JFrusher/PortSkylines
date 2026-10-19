@@ -172,7 +172,7 @@ static func _valid_sim(data: Variant) -> bool:
 		}) or not _all_cells(vehicle.path, true):
 			return false
 	for id: Variant in data.claimed:
-		if not id is int or not data.claimed[id] is bool:
+		if not (id is int and data.claimed[id] is bool and data.claimed[id]):
 			return false
 	for id: Variant in data.boxes:
 		if not id is int or not data.boxes[id] is Dictionary:

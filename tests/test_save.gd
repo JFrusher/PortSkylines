@@ -126,7 +126,7 @@ func _test_malformed_payloads_are_refused() -> void:
 		var bad := valid.duplicate(true)
 		bad[collection] = [42]
 		_expect_payload_refused(bad, "non-dictionary in %s" % collection)
-	for claimed: Dictionary in [{"bad key": true}, {Vector2i(14, 23): true}, {7: "yes"}]:
+	for claimed: Dictionary in [{"bad key": true}, {Vector2i(14, 23): true}, {7: "yes"}, {7: false}]:
 		var bad := valid.duplicate(true)
 		bad.claimed = claimed
 		_expect_payload_refused(bad, "mistyped entries in claimed")
