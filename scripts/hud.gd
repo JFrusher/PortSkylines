@@ -21,6 +21,9 @@ const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-9.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
 const FLASH_SECONDS := 2.5
+## UI scales the settings button steps through, and where the choice is kept.
+const UI_SCALES: Array[float] = [1.0, 1.25, 1.5]
+const SETTINGS_PATH := "user://settings.cfg"
 const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 var sim: PortSim
@@ -103,6 +106,16 @@ func _ready() -> void:
 		button.text = "New creative" if creative else "New game"
 		button.pressed.connect(func() -> void: new_game_pressed.emit(creative))
 		menu.add_child(button)
+	var settings := ConfigFile.new()
+	settings.load(SETTINGS_PATH)  # A missing file leaves the defaults.
+	var scale_button := Button.new()
+	scale_button.tooltip_text = "Interface size"
+	scale_button.pressed.connect(func() -> void:
+		_set_ui_scale(UI_SCALES[(UI_SCALES.find(get_tree().root.content_scale_factor) + 1) % UI_SCALES.size()], scale_button)
+		settings.set_value("ui", "scale", get_tree().root.content_scale_factor)
+		settings.save(SETTINGS_PATH))
+	menu.add_child(scale_button)
+	_set_ui_scale(settings.get_value("ui", "scale", 1.0), scale_button)
 
 	var guide := _panel(right, "Getting started")
 	_guide_step.theme_type_variation = "MutedLabel"
@@ -156,6 +169,11 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_category_buttons[i].button_pressed = true
 
 
+func _set_ui_scale(factor: float, button: Button) -> void:
+	get_tree().root.content_scale_factor = factor
+	button.text = "UI %d%%" % roundi(factor * 100)
+
+
 ## Opens the inspect panel on whatever is at `cell`.
 func inspect(cell: Vector2i) -> void:
 	_inspected = Inspect.pick(sim, cell)
@@ -192,6 +210,7 @@ func _process(dt: float) -> void:
 		if not lines.is_empty():
 			_inspect_name.text = lines[0]
 			_inspect_lines.text = "\n".join(lines.slice(1))
+			_inspect_lines.visible = lines.size() > 1
 	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
 		_draw_contracts()
 	_flash_left -= dt

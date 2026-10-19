@@ -56,7 +56,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `bailout.days` | int | Midnights in a row below zero before a bailout clears the debt |
 | `bailout.reputation` | number | Change in every line's reputation at a bailout |
 | `bailout.no_loans_days` | int | Days after a bailout with no new loans |
-| `lines.<key>.name`, `.livery` | text | A fictional shipping line and its hull colour (`#rrggbb`) |
+| `lines.<key>.name`, `.livery` | text | A fictional shipping line and its hull colour (`#rrggbb`). Base lines use the Okabe-Ito colour-blind-safe palette |
 | `lines.<key>.classes.<class>` | number | Relative weight of each ship class the line offers; classes must exist |
 | `lines.<key>.sensitivity` | number >0 | Multiplies every change in this line's reputation |
 | `contracts.offer_check_minutes` | number >0 | How often lines consider offering a service |

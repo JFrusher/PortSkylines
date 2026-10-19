@@ -1,8 +1,8 @@
 {
 	"lines": {
-		"aurora": {"name": "Aurora Lines", "livery": "#d0473a", "classes": {"feeder": 3, "panamax": 1}, "sensitivity": 1.0},
-		"kestrel": {"name": "Kestrel Shipping", "livery": "#2f7fb8", "classes": {"feeder": 1}, "sensitivity": 1.5},
-		"meridian": {"name": "Meridian Box", "livery": "#e0b030", "classes": {"panamax": 2, "feeder": 1}, "sensitivity": 0.7}
+		"aurora": {"name": "Aurora Lines", "livery": "#d55e00", "classes": {"feeder": 3, "panamax": 1}, "sensitivity": 1.0},
+		"kestrel": {"name": "Kestrel Shipping", "livery": "#0072b2", "classes": {"feeder": 1}, "sensitivity": 1.5},
+		"meridian": {"name": "Meridian Box", "livery": "#f0e442", "classes": {"panamax": 2, "feeder": 1}, "sensitivity": 0.7}
 	},
 	"contracts": {"offer_check_minutes": 60, "offer_chance": 0.35, "max_offers": 3, "offer_days": 3, "max_services_per_berth": 12},
 	"reputation": {
