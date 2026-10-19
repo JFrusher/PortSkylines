@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_area_settings()
 	_test_terminals()
 	_test_unconnected_areas()
+	_test_handovers()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -331,6 +332,42 @@ func _test_unconnected_areas() -> void:
 	sim.apply({"op": "build_road", "from": Vector2i(100, 120), "to": Vector2i(100, 160), "type": "terminal_1_1"})
 	_expect(sim.areas.idle_reason(1), "", "a road along part of its front reconnects it")
 	_expect(Inspect.describe(sim, {"area": 9}), [] as Array[String], "an area that went shows nothing")
+
+
+func _test_handovers() -> void:
+	var sim := PortSim.new(0, Content.base(), true)
+	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 140), "type": "terminal_1_1"})
+	# 12 cells: 4 bays, so 4 slots and room for 4 in the buffer strip.
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 11}), "", "a 4-bay yard block is built")
+	var block := 1
+	var handovers := Handovers.new(sim.areas)
+	var got := []
+	for id in range(1, 11):
+		got.append(handovers.arrive(block, id))
+	_expect(got, ["slot", "slot", "slot", "slot", "buffer", "buffer", "buffer", "buffer", "road", "road"], "vehicles take slots, then the buffer strip, then queue on the road")
+	_expect(handovers.waiting(block), {"buffer": [5, 6, 7, 8], "road": [9, 10]}, "a full block shows a road queue")
+	handovers.leave(block, 2)
+	_expect(handovers.slot_of(block, 5), 1, "a freed slot goes to the first vehicle in the buffer")
+	_expect(handovers.waiting(block), {"buffer": [6, 7, 8, 9], "road": [10]}, "and the first on the road moves into the buffer")
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	var holding := [1, 3, 4, 5]
+	var next_id := 11
+	var too_many := false
+	var doubled := false
+	for i in 300:
+		if rng.randf() < 0.5:
+			handovers.arrive(block, next_id)
+			next_id += 1
+		elif not holding.is_empty():
+			handovers.leave(block, holding[rng.randi() % holding.size()])
+		holding = range(1, next_id).filter(func(id: int) -> bool: return handovers.slot_of(block, id) >= 0)
+		var slots := holding.map(func(id: int) -> int: return handovers.slot_of(block, id))
+		doubled = doubled or slots.size() != Dictionary(slots.reduce(func(seen: Dictionary, s: int) -> Dictionary:
+			seen[s] = true
+			return seen, {})).size()
+		too_many = too_many or holding.size() > 4
+	_expect(doubled or too_many, false, "no slot ever holds two vehicles, and no more vehicles hold slots than there are slots")
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`
