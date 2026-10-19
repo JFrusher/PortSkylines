@@ -41,6 +41,12 @@ func _initialize() -> void:
 			var now := WorldView.crane_pose(step / 100.0, discharging)
 			_expect(absf(now[0] - before[0]) < 0.05 and absf(now[1] - before[1]) < 0.1, true, "the trolley moves smoothly at %.2f" % (step / 100.0))
 			before = now
+	# Two 40s then three 20s: the 40s on the ground and tier 1, the 20s paired above.
+	var spots: Array = range(5).map(func(i: int) -> Vector2: return WorldView.stack_spot(2, i))
+	_expect(spots.map(func(p: Vector2) -> float: return p.y), [0.0, 1.0, 2.0, 2.0, 3.0], "40s first, then 20s two to a tier")
+	_expect([spots[0].x, spots[1].x], [0.0, 0.0], "a 40 fills the slot's length")
+	_expect(spots[2].x < 0.0 and spots[3].x > 0.0 and is_equal_approx(spots[2].x, -spots[3].x), true, "a pair of 20s sits end to end")
+	_expect(absf(spots[2].x) * 2.0 >= WorldView.BOX_LENGTH[1], true, "paired 20s do not overlap")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 

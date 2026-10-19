@@ -217,21 +217,36 @@ func _draw_stacks() -> void:
 		colors[part] = PackedColorArray()
 	for cell: Vector2i in sim.yard.stacks:
 		var chunk := ChunkedMeshes.chunk_of(cell)
-		var level := 0
-		for id: int in sim.yard.stacks[cell]:
-			var box: Dictionary = sim.boxes[id]
-			var part := [chunk, box.teu]
+		var ids: Array = sim.yard.stacks[cell]
+		var forties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 2)
+		var twenties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 1)
+		for i in ids.size():
+			var forty := i < forties.size()
+			var id: int = forties[i] if forty else twenties[i - forties.size()]
+			var spot := stack_spot(forties.size(), i)
+			var part := [chunk, 2 if forty else 1]
 			if part not in transforms:
 				transforms[part] = [] as Array[Transform3D]
 				colors[part] = PackedColorArray()
-			transforms[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5, 0.08 + (level + 0.5) * BOX_HEIGHT, cell.y + 0.5)))
-			colors[part].append(_livery(box.line, id))
-			level += 1
+			transforms[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5 + spot.x, 0.08 + (spot.y + 0.5) * BOX_HEIGHT, cell.y + 0.5)))
+			colors[part].append(_livery(sim.boxes[id].line, id))
 	_stack_parts.clear()
 	for part: Array in transforms:
 		_stacks.show_part(part, _stack_meshes[part[1]], transforms[part], colors[part])
 		if not transforms[part].is_empty():
 			_stack_parts[part] = true
+
+
+## Where the `i`th box of a yard tile with `forties` 40 ft boxes sits, as
+## (offset along the tile, tier). The sim only knows which tile a box is on,
+## so the view lays each tile out as one 40 ft slot the way yards stack: the
+## 40s at the bottom, then the 20s in pairs end to end above them, so a 40
+## never rests on a 20.
+static func stack_spot(forties: int, i: int) -> Vector2:
+	if i < forties:
+		return Vector2(0, i)
+	var k := i - forties
+	return Vector2((BOX_LENGTH[1] / 2.0 + 0.01) * (-1 if k % 2 == 0 else 1), forties + k / 2)
 
 
 ## `line`'s livery, a touch lighter or darker per box so a stack reads as
