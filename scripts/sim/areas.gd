@@ -155,6 +155,17 @@ func area_at(cell: Vector2i) -> int:
 	return 0
 
 
+## How many cells along area `id` `cell` lies, or -1 when it is not in it.
+func along(id: int, cell: Vector2i) -> int:
+	var area: Dictionary = list[id]
+	var front := RoadNet.line(area.start, area.end)
+	for k in front.size():
+		for d: int in types[area.type].depth:
+			if front[k] + area.out * d == cell:
+				return k
+	return -1
+
+
 ## The cells an area of `type` would cover beside `segment`: rows parallel to
 ## the road, starting just past its outermost lane on `side`.
 func cells_of(type: String, segment: int, side: int, from: int, to: int) -> Array[Vector2i]:

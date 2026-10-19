@@ -163,7 +163,7 @@ func _test_sim_commands() -> void:
 	var cost: int = sim.rules.road_types.terminal_2_2.cost_per_cell
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(10, 10), "to": Vector2i(30, 10), "type": "terminal_2_2"}), "", "a road is built by command")
 	_expect(money - sim.money, 20 * cost, "a road costs its length in cells")
-	_expect(sim.daily_upkeep() - upkeep, 20 * sim.rules.road_types.terminal_2_2.upkeep_per_cell, "roads add their upkeep")
+	_expect(sim.daily_upkeep() - upkeep, roundi(20 * sim.rules.road_types.terminal_2_2.upkeep_per_cell), "roads add their upkeep")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(15, 10), "to": Vector2i(25, 10), "type": "terminal_1_1"}), "A road already runs here", "a refused road")
 	_expect(money - sim.money, 20 * cost, "costs nothing")
 	_expect(sim.lanes.route(Vector2i(10, 10), Vector2i(30, 10), true).size(), 21, "the sim routes on its roads")
@@ -229,7 +229,7 @@ func _test_area_tool() -> void:
 	var block: Dictionary = sim.rules.area_types.yard_block
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": 1, "from": 10, "to": 29}), "", "a yard block is built by command")
 	_expect(money - sim.money, 20 * block.depth * block.cost_per_cell, "an area costs its cells")
-	_expect(sim.daily_upkeep() - upkeep, 20 * block.depth * block.upkeep_per_cell, "areas add their upkeep")
+	_expect(sim.daily_upkeep() - upkeep, roundi(20 * block.depth * block.upkeep_per_cell), "areas add their upkeep")
 	sim.apply({"op": "build_road", "from": Vector2i(100, 120), "to": Vector2i(120, 120), "type": "terminal_1_1"})
 	_expect(sim.areas.cells(1).size(), 20 * block.depth, "a road joining later doesn't move the area")
 	_expect(sim.apply({"op": "remove_area", "id": 7}), "No area there", "removing a missing area is refused")
@@ -338,7 +338,10 @@ func _test_unconnected_areas() -> void:
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
 	_expect(sim.areas.idle_reason(1), "", "a yard block along its road works")
 	var lines := Inspect.describe(sim, Inspect.pick(sim, PortMap.NONE, sim.areas.cells(1)[5]))
-	_expect(lines, ["Yard block", "Terminal 1", "Import block, reach stacker", "Working"] as Array[String], "inspecting an area shows its type, terminal, rules and state")
+	_expect(lines, ["Yard block", "Terminal 1", "Terminal 1 needs a quay apron", "Import block, reach stacker", "Working"] as Array[String], "inspecting an area shows its type, its terminal and what that lacks, its rules and state")
+	var area: Dictionary = sim.areas.list[1]
+	_expect(sim.areas.along(1, area.start + (area.end - area.start).sign() * 7 + area.out * 3), 7, "a cell's place along an area, from any row")
+	_expect(sim.areas.along(1, Vector2i(5, 5)), -1, "and none off it")
 	sim.apply({"op": "remove_road", "segment": 1})
 	_expect(sim.areas.idle_reason(1), "No road runs along this yard block", "with its road gone it does no work, and says why")
 	_expect(Inspect.describe(sim, {"area": 1})[-1], "No road runs along this yard block", "the inspect panel shows why")

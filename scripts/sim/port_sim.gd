@@ -853,11 +853,14 @@ func daily_upkeep() -> int:
 	for name: String in rules.upkeep:
 		if name in rules.build_cost:
 			total += rules.upkeep[name] * map.cells_of(PortMap.Tile[name.to_upper()]).size()
+	# Roads and areas cost a fraction of a dollar a cell, so they are summed before rounding.
+	var cells := 0.0
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		total += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		cells += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
 	for id: int in areas.list:
-		total += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
+		cells += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
+	total += roundi(cells)
 	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for machine: Dictionary in machines.list.values():
 		total += rules.yard_gear[machine.gear].upkeep_per_machine

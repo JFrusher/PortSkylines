@@ -214,12 +214,13 @@ func _test_upkeep_at_midnight() -> void:
 	var rules := RandomPort.quick()
 	var sim := AreaPort.base(rules, "")
 	sim.tick()  # the yard block's machines are fitted on the first tick
-	var expected := 0
+	var cells := 0.0
 	for segment: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[segment]
-		expected += RoadNet.length(sim.roads.nodes[road.a], sim.roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		cells += RoadNet.length(sim.roads.nodes[road.a], sim.roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
 	for id: int in sim.areas.list:
-		expected += sim.areas.cells(id).size() * rules.area_types[sim.areas.list[id].type].upkeep_per_cell
+		cells += sim.areas.cells(id).size() * rules.area_types[sim.areas.list[id].type].upkeep_per_cell
+	var expected := roundi(cells)
 	expected += rules.upkeep.road * sim.map.cells_of(PortMap.Tile.ROAD).size()  # the tile map's highway, until step 22.2
 	expected += rules.upkeep.sts_crane * 2 + rules.upkeep.tractor * 6 + rules.land.upkeep * sim.land.size()
 	expected += rules.yard_gear.reach_stacker.upkeep_per_machine * sim.machines.list.size()

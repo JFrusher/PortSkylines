@@ -104,6 +104,9 @@ static func _crane(sim: PortSim, crane: PortSim.Crane) -> Array[String]:
 static func _area(sim: PortSim, id: int) -> Array[String]:
 	var area: Dictionary = sim.areas.list[id]
 	var lines: Array[String] = [sim.rules.area_types[area.type].name, sim.areas.terminals[area.terminal].name]
+	var unready := sim.areas.terminal_error(area.terminal)
+	if unready:
+		lines.append(unready)
 	var settings: Dictionary = area.settings
 	if settings.has("role"):
 		lines.append("%s block, %s" % [settings.role.capitalize(), settings.gear.replace("_", " ")])

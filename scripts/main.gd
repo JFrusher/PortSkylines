@@ -169,6 +169,9 @@ func _command(cell: Vector2i) -> Dictionary:
 			var road := sim.roads.segment_at(_hovered_grid_cell())
 			return {"op": "remove_road", "segment": road} if road else {"op": "bulldoze", "cell": cell}
 		Hud.CRANE:
+			var apron := _apron_at(_hovered_grid_cell())
+			if apron:
+				return {"op": "place_sts", "apron": apron, "along": sim.areas.along(apron, _hovered_grid_cell())}
 			return {"op": "place_crane", "cell": cell}
 		Hud.BUY_LAND:
 			return {"op": "buy_land", "tile": sim.land_tile(cell)}
@@ -178,6 +181,12 @@ func _command(cell: Vector2i) -> Dictionary:
 				return {"op": "set_area", "id": area, "settings": _yard_settings()}
 			return {"op": "set_yard", "cell": cell, "settings": _yard_settings()}
 	return {"op": "build", "kind": hud.tool, "cell": cell}
+
+
+## The quay apron covering grid cell `cell`, or 0.
+func _apron_at(cell: Vector2i) -> int:
+	var area := sim.areas.area_at(cell)
+	return area if area and sim.areas.list[area].type == "quay_apron" else 0
 
 
 func _yard_settings() -> Dictionary:
@@ -204,7 +213,8 @@ func _order_error(cell: Vector2i) -> String:
 			var grid := _hovered_grid_cell()
 			return "" if sim.areas.area_at(grid) or sim.roads.segment_at(grid) else sim.bulldoze_error(cell)
 		Hud.CRANE:
-			return sim.crane_error(cell)
+			var apron := _apron_at(_hovered_grid_cell())
+			return AreaFlow.sts_error(sim, apron, sim.areas.along(apron, _hovered_grid_cell())) if apron else sim.crane_error(cell)
 		Hud.BUY_LAND:
 			return sim.buy_land_error(sim.land_tile(cell))
 		Hud.IMPORT_YARD, Hud.EXPORT_YARD, Hud.RTG:

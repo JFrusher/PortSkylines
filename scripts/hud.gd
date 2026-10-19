@@ -61,6 +61,9 @@ var _category_buttons: Array[Button] = []
 var _inspected: Variant
 var _inspect_name := Label.new()
 var _inspect_lines := Label.new()
+## Buttons for the inspected area's terminal, and what they were last built for.
+var _inspect_actions := HBoxContainer.new()
+var _actions_drawn := []
 var _guide_step := Label.new()
 var _guide_text := Label.new()
 
@@ -95,6 +98,7 @@ func _ready() -> void:
 	_inspect_name.theme_type_variation = "ClockLabel"
 	inspect_panel.add_child(_inspect_name)
 	inspect_panel.add_child(_inspect_lines)
+	inspect_panel.add_child(_inspect_actions)
 	_panel_of(inspect_panel).visible = false
 
 	# Top right: the clock and speeds, then the panels and the game menu.
@@ -231,6 +235,8 @@ func _process(dt: float) -> void:
 			_inspect_name.text = lines[0]
 			_inspect_lines.text = "\n".join(lines.slice(1))
 			_inspect_lines.visible = lines.size() > 1
+		if _actions_drawn != [sim, sim.areas.version, _inspected]:
+			_draw_inspect_actions()
 	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
 		_draw_contracts()
 	_flash_left -= dt
@@ -337,6 +343,22 @@ func _draw_contracts() -> void:
 	_contracts.add_child(_label("Services" if not contracts.services.is_empty() else "No services yet"))
 	for service in contracts.services:
 		_contracts.add_child(_label("    " + _service_text(service)))
+
+
+## For an inspected area: join each other terminal, or split off into a new one.
+func _draw_inspect_actions() -> void:
+	_actions_drawn = [sim, sim.areas.version, _inspected]
+	for child in _inspect_actions.get_children():
+		child.queue_free()
+	if not (_inspected is Dictionary and _inspected.area in sim.areas.list):
+		return
+	var id: int = _inspected.area
+	var own: int = sim.areas.list[id].terminal
+	for terminal: int in sim.areas.terminals:
+		if terminal != own:
+			_action_button(_inspect_actions, "Join %s" % sim.areas.terminals[terminal].name, {"op": "set_terminal", "id": id, "terminal": terminal})
+	if sim.areas.list.values().filter(func(a: Dictionary) -> bool: return a.terminal == own).size() > 1:
+		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
 
 
 func _service_text(service: Dictionary) -> String:
