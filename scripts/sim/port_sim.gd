@@ -13,14 +13,16 @@ var map: PortMap
 var clock := SimClock.new()
 ## The only source of randomness in the sim, so a seed and a command log replay exactly.
 var rng := RandomNumberGenerator.new()
-var money := 0
+## Every change of cash goes through it; see Ledger.
+var ledger: Ledger
+var money: int:
+	get:
+		return ledger.cash
 ## Boxes through the highway: imports out and exports in.
 var delivered := 0
 ## Things worth telling the player, newest last: {"minute", "text"}. A
 ## message repeated tick after tick is kept once.
 var events: Array[Dictionary] = []
-## Money spent on daily upkeep so far.
-var upkeep_paid := 0
 ## The latest ships to sail: {"kind", "moves", "hours", "cranes"}, newest last.
 var ship_log: Array[Dictionary] = []
 ## Boxes through the gate in the last full game day.
@@ -56,7 +58,7 @@ func _init(seed_value := 0, game_rules := Content.base()) -> void:
 	rules = game_rules
 	map = PortMap.new(Vector2i(rules.map.width, rules.map.height), rules.map.sea_width)
 	yard = Yard.new(map, rules)
-	money = rules.start_money
+	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	_until_ship = rules.first_ship_minutes
 	rng.seed = seed_value
 	_event("Run a road from the highway to the coast through a gate, then build a quay, cranes, tractors and a yard")
@@ -138,10 +140,9 @@ func to_dict() -> Dictionary:
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
-		"money": money,
+		"ledger": ledger.to_dict(),
 		"delivered": delivered,
 		"events": events.duplicate(true),
-		"upkeep_paid": upkeep_paid,
 		"ship_log": ship_log.duplicate(true),
 		"delivered_yesterday": delivered_yesterday,
 		"delivered_at_midnight": _delivered_at_midnight,
@@ -169,10 +170,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
-	sim.money = d.money
+	sim.ledger = Ledger.from_dict(d.ledger, sim.rules.ledger_categories)
 	sim.delivered = d.delivered
 	sim.events.assign(d.events)
-	sim.upkeep_paid = d.upkeep_paid
 	sim.ship_log.assign(d.ship_log)
 	sim.delivered_yesterday = d.delivered_yesterday
 	sim._delivered_at_midnight = d.delivered_at_midnight
@@ -232,7 +232,7 @@ func build_error(kind: int, cell: Vector2i) -> String:
 func build(kind: int, cell: Vector2i) -> String:
 	var err := build_error(kind, cell)
 	if err == "":
-		money -= _price(kind, cell)
+		ledger.post("construction", -_price(kind, cell))
 		var settings_from := _joined_block(kind, cell)
 		if settings_from != PortMap.NONE:
 			yard.role[cell] = yard.role_of(settings_from)
@@ -271,7 +271,7 @@ func crane_error(cell: Vector2i) -> String:
 func place_crane(cell: Vector2i) -> String:
 	var err := crane_error(cell)
 	if err == "":
-		money -= rules.sts_crane.cost
+		ledger.post("equipment", -rules.sts_crane.cost)
 		cranes.append(Crane.new(cell))
 	return err
 
@@ -281,7 +281,7 @@ func buy_tractors(count: int) -> String:
 		return "Buy at least one tractor"
 	if money < rules.tractor.cost * count:
 		return "Not enough money"
-	money -= rules.tractor.cost * count
+	ledger.post("equipment", -rules.tractor.cost * count)
 	tractors += count
 	return ""
 
@@ -298,7 +298,7 @@ func set_yard(cell: Vector2i, settings: Dictionary) -> String:
 	var err := set_yard_error(cell, settings)
 	if err == "":
 		if settings.has("gear"):
-			money -= yard.gear_cost(cell, settings.gear)
+			ledger.post("equipment", -yard.gear_cost(cell, settings.gear))
 		yard.apply_settings(cell, settings)
 	return err
 
@@ -404,8 +404,8 @@ func _event(text: String) -> void:
 
 func _end_of_day() -> void:
 	var upkeep := daily_upkeep()
-	money -= upkeep
-	upkeep_paid += upkeep
+	ledger.post("upkeep", -upkeep)
+	ledger.close_day(clock.game_day() - 1)
 	delivered_yesterday = delivered - _delivered_at_midnight
 	_delivered_at_midnight = delivered
 	_event("Day %d: upkeep $%d, %d boxes through the gate" % [clock.game_day(), upkeep, delivered_yesterday])
@@ -817,7 +817,7 @@ func _queue_at(gate: Vector2i, lane: Vector3i) -> int:
 
 
 func _paid() -> void:
-	money += rules.fee_per_box
+	ledger.post("gate_fees", rules.fee_per_box)
 	delivered += 1
 
 

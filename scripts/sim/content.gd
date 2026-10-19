@@ -20,6 +20,8 @@ const SCHEMA := {
 	"import_dwell_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
 	"give_up_seconds": TYPE_FLOAT,
+	# Every way cash can move, with the label the ledger panel shows.
+	"ledger_categories": {"*": TYPE_STRING},
 	# "*" means any key, each holding the record that follows.
 	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "weight": TYPE_FLOAT}},
 	"water_depth": TYPE_FLOAT,
@@ -98,6 +100,8 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 			if err:
 				return err
 		return ""
+	if want == TYPE_STRING:
+		return "" if got is String else "%s: must be text" % where
 	if not (got is float or got is int):
 		return "%s: must be a number" % where
 	if want == TYPE_INT:

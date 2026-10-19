@@ -1,13 +1,15 @@
 extends SceneTree
-## 10,000 ticks of a seeded random port, with the sim's invariants checked
-## after every tick: money only changes through commands and fees, yards stay
+## Two game days of a seeded random port, with the sim's invariants checked
+## after every tick: cash moves only through the ledger and every closed day
+## adds up to its change in cash, yards stay
 ## within capacity, every box is in exactly one place, busy yard machines match
 ## the vehicles they serve, every vehicle drives on road, and no two vehicles
 ## ever share a lane.
 ## godot --headless --script res://tests/test_soak.gd
 
 const RandomPort := preload("res://tests/random_port.gd")
-const TICKS := 10000
+# Two game days and a bit, so midnight closes the books twice.
+const TICKS := SimClock.TICKS_PER_DAY * 2 + 1000
 
 var _failures := 0
 
@@ -28,16 +30,13 @@ func _initialize() -> void:
 func _soak(rules: Dictionary) -> PortSim:
 	var sim := PortSim.new(2, rules)
 	var log := RandomPort.command_log(11, TICKS, 400)
-	var spent := 0
 	var next := 0
 	while sim.clock.ticks < TICKS and _failures == 0:
 		while next < log.size() and log[next].tick == sim.clock.ticks:
-			var before := sim.money
 			sim.apply(log[next].command)
-			spent += before - sim.money
 			next += 1
 		sim.tick()
-		_check(sim, spent)
+		_check(sim)
 	return sim
 
 
@@ -47,9 +46,15 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
 
 
-func _check(sim: PortSim, spent: int) -> void:
+func _check(sim: PortSim) -> void:
 	var at := "at tick %d" % sim.clock.ticks
-	_expect(sim.money, sim.rules.start_money - spent + sim.delivered * sim.rules.fee_per_box - sim.upkeep_paid, "money adds up " + at)
+	_expect(sim.ledger.today_total(), sim.money - sim.ledger.opened, "today's ledger lines add up to the change in cash " + at)
+	if sim.clock.ticks % SimClock.TICKS_PER_DAY == 0:
+		var day: Dictionary = sim.ledger.days[-1]
+		var total := 0
+		for category: String in day.lines:
+			total += day.lines[category]
+		_expect(total, day.closed - day.opened, "day %d's ledger adds up to its change in cash" % day.day)
 	# Every box is in exactly one place: a yard stack or a vehicle's load.
 	var seen := {}
 	for tile: Vector2i in sim.yard.stacks:

@@ -22,6 +22,7 @@ var speed := 1
 var _readout := Label.new()
 var _kpis := Label.new()
 var _message := Label.new()
+var _ledger := Label.new()
 var _flash_left := 0.0
 
 
@@ -38,8 +39,15 @@ func _ready() -> void:
 		_button(top, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
 	_action(top, "Save", save_pressed)
 	_action(top, "Load", load_pressed)
+	var ledger_button := Button.new()
+	ledger_button.text = "Ledger"
+	ledger_button.toggle_mode = true
+	ledger_button.toggled.connect(func(on: bool) -> void: _ledger.visible = on)
+	top.add_child(ledger_button)
 	root.add_child(_outlined(_kpis))
 	root.add_child(_outlined(_message))
+	_ledger.visible = false
+	root.add_child(_outlined(_ledger))
 
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -72,9 +80,31 @@ func _process(dt: float) -> void:
 	var k := sim.kpis()
 	_kpis.text = "Berth %.0f moves/h    Crane %.0f moves/h    Gate turn %.0f min    Yard %d%% full    %d boxes/day    Upkeep $%d/day" % [
 		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]
+	if _ledger.visible:
+		_ledger.text = _ledger_text()
 	_flash_left -= dt
 	if _flash_left <= 0.0:
 		_message.text = "\n".join(sim.events.slice(-5).map(func(e: Dictionary) -> String: return "Day %d %02d:%02d  %s" % [int(e.minute / 1440), int(e.minute / 60) % 24, int(e.minute) % 60, e.text]))
+
+
+## Today by category, then each of the last days, all read from the ledger.
+func _ledger_text() -> String:
+	var ledger := sim.ledger
+	var lines: Array[String] = ["Today"]
+	for category: String in ledger.categories:
+		if ledger.today.has(category):
+			lines.append("    %s  %+d" % [ledger.categories[category], ledger.today[category]])
+	lines.append("    Net  %+d" % ledger.today_total())
+	if not ledger.days.is_empty():
+		lines.append("Recent days")
+	for i in range(ledger.days.size() - 1, -1, -1):
+		var day: Dictionary = ledger.days[i]
+		var parts: Array[String] = []
+		for category: String in ledger.categories:
+			if day.lines.has(category):
+				parts.append("%s %+d" % [ledger.categories[category], day.lines[category]])
+		lines.append("    Day %d  net %+d   %s" % [day.day, day.closed - day.opened, "   ".join(parts)])
+	return "\n".join(lines)
 
 
 func _row(parent: Control) -> HBoxContainer:

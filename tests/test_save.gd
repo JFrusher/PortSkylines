@@ -12,6 +12,7 @@ func _initialize() -> void:
 	_test_failed_save_preserves_destination()
 	_test_malformed_payloads_are_refused()
 	_test_malformed_v1_is_refused()
+	_test_v2_cash_moves_into_the_ledger()
 	_test_every_fixture_loads()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -65,7 +66,7 @@ func _test_save_replaces_existing() -> void:
 	var path := "user://replace.bin"
 	var sim := PortSim.new(7)
 	_expect(SaveFile.save(path, sim), "", "initial save")
-	sim.money += 123
+	sim.ledger.post("gate_fees", 123)
 	_expect(SaveFile.save(path, sim), "", "replace an existing save")
 	var loaded := SaveFile.load_from(path)
 	_expect(loaded.has("sim"), true, "replacement loads")
@@ -83,7 +84,7 @@ func _test_failed_save_preserves_destination() -> void:
 	var before := FileAccess.get_file_as_bytes(path)
 	# A directory at the temporary path prevents opening it for writing.
 	DirAccess.make_dir_absolute(path + ".tmp")
-	sim.money += 1
+	sim.ledger.post("gate_fees", 1)
 	_expect(SaveFile.save(path, sim).is_empty(), false, "temporary open failure is reported")
 	_expect(FileAccess.get_file_as_bytes(path), before, "open failure preserves the existing save")
 	DirAccess.remove_absolute(path + ".tmp")
@@ -112,7 +113,7 @@ func _test_malformed_payloads_are_refused() -> void:
 	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
 	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
 	# Every field each deserialiser reads, through the public load path.
-	for section: Array in [[], ["map"], ["yard"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
+	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
 		var original := _section(valid, section)
 		for key: String in original:
 			var missing := valid.duplicate(true)
@@ -157,6 +158,14 @@ func _test_malformed_v1_is_refused() -> void:
 		bad.sim.stacked = stacked
 		_write_payload("user://bad_v1.bin", bad)
 		_expect(SaveFile.load_from("user://bad_v1.bin").get("error", "").contains("not a Port Skylines save"), true, "v1 stacked %s is refused" % [stacked])
+
+
+func _test_v2_cash_moves_into_the_ledger() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v2.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var raw: Dictionary = file.get_var(false)
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v2.bin").sim
+	_expect([sim.money, sim.ledger.opened, sim.ledger.today_total()], [raw.sim.money, raw.sim.money, 0], "v2 cash opens the ledger")
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:

@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 2
+const VERSION := 3
 const MAGIC := "PSKY"
 
 
@@ -63,6 +63,19 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		if not _valid_v1(data.sim):
 			return {}
 		data = _v1_to_v2(data)
+	if data.version == 2:
+		data = _v2_to_v3(data)
+	return data
+
+
+## v3 (M3) moved cash into the ledger, which also records upkeep.
+static func _v2_to_v3(data: Dictionary) -> Dictionary:
+	if not _has_fields(data.sim, {"money": TYPE_INT}):
+		return {}
+	data.sim.ledger = {"cash": data.sim.money, "opened": data.sim.money, "today": {}, "days": []}
+	data.sim.erase("money")
+	data.sim.erase("upkeep_paid")
+	data.version = 3
 	return data
 
 
@@ -123,8 +136,8 @@ static func _v1_to_v2(data: Dictionary) -> Dictionary:
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
 		"map": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
-		"rng_state": TYPE_INT, "money": TYPE_INT, "delivered": TYPE_INT,
-		"events": TYPE_ARRAY, "upkeep_paid": TYPE_INT, "ship_log": TYPE_ARRAY,
+		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
+		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"yard": TYPE_DICTIONARY, "boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
@@ -144,6 +157,10 @@ static func _valid_sim(data: Variant) -> bool:
 	for tile: int in map.tiles:
 		if tile not in PortMap.Tile.values():
 			return false
+	if not _has_fields(data.ledger, {
+		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "days": TYPE_ARRAY,
+	}):
+		return false
 	if not _has_fields(data.yard, {
 		"stacks": TYPE_DICTIONARY, "reserved": TYPE_DICTIONARY, "role": TYPE_DICTIONARY,
 		"gear": TYPE_DICTIONARY, "busy": TYPE_DICTIONARY,

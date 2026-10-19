@@ -12,5 +12,11 @@
 	"export_lorry_interval_minutes": 2,
 	"import_dwell_minutes": 1440,
 	"lorry_speed": 5,
-	"give_up_seconds": 30
+	"give_up_seconds": 30,
+	"ledger_categories": {
+		"gate_fees": "Gate fees",
+		"construction": "Construction",
+		"equipment": "Equipment",
+		"upkeep": "Upkeep"
+	}
 }

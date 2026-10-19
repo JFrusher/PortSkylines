@@ -36,6 +36,7 @@ func _initialize() -> void:
 	_test_new_yard_tile_keeps_block_settings()
 	_test_unreachable_block_does_not_stall_imports()
 	_test_gate_is_an_access_road()
+	_test_only_the_ledger_moves_cash()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -83,7 +84,7 @@ func _test_build_rules() -> void:
 	_expect(sim.build(QUAY, Vector2i(12, 0)), "", "quay on the north edge faces the sea")
 	_expect(sim.build(QUAY, Vector2i(30, 0)), "A quay must face the water", "map edge is not water")
 	_expect(sim.money, sim.rules.start_money - 400, "quays cost money")
-	sim.money = 5
+	sim.ledger.cash = 5
 	_expect(sim.build(ROAD, Vector2i(30, 3)), "Not enough money", "building while broke")
 
 
@@ -416,7 +417,7 @@ func _test_upkeep_at_midnight() -> void:
 		sim.tick()
 	var before := sim.money
 	sim.tick()
-	_expect([before - sim.money, sim.upkeep_paid], [upkeep, upkeep], "upkeep is charged exactly at midnight")
+	_expect([before - sim.money, -sim.ledger.days[-1].lines.upkeep], [upkeep, upkeep], "upkeep is charged exactly at midnight")
 	_expect(sim.last_event().begins_with("Day 1: upkeep"), true, "and reported (%s)" % sim.last_event())
 
 
@@ -435,7 +436,7 @@ func _test_ships_never_overlap() -> void:
 	var top := sim.map.entry.y - 7
 	sim.ships.clear()
 	sim.call("_call_ship")
-	sim.money = 100000
+	sim.ledger.cash = 100000
 	_expect(sim.build(QUAY, Vector2i(coast, top)), "", "quay at the berth start")
 	_expect(sim.build(ROAD, Vector2i(coast + 1, top)), "", "apron at the berth start")
 	sim.call("_call_ship")
@@ -446,7 +447,7 @@ func _test_ships_never_overlap() -> void:
 ## A tile that becomes a block's anchor must not reset its role and gear.
 func _test_new_yard_tile_keeps_block_settings() -> void:
 	var sim := _port()
-	sim.money = 100000
+	sim.ledger.cash = 100000
 	var tile := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 2)
 	_expect(sim.apply({"op": "set_yard", "cell": tile, "settings": {"role": "export", "gear": "rtg"}}), "", "export RTG block")
 	_expect(sim.build(YARD, tile + Vector2i.UP), "", "yard tile above the anchor")
@@ -456,7 +457,7 @@ func _test_new_yard_tile_keeps_block_settings() -> void:
 	var before := sim.money
 	_expect(sim.build(YARD, tile + Vector2i.UP * 2), "", "another tile on the RTG block")
 	_expect(before - sim.money, sim.cost(YARD) + sim.rules.yard_gear.rtg.cost_per_tile, "joining an RTG block pays for its gear")
-	sim.money = sim.cost(YARD)
+	sim.ledger.cash = sim.cost(YARD)
 	_expect(sim.build(YARD, tile + Vector2i.UP * 3), "Not enough money", "the gear must be affordable")
 
 
@@ -482,3 +483,14 @@ func _test_gate_is_an_access_road() -> void:
 	_expect(sim.build(YARD, beside), "", "a yard tile beside the gate")
 	_expect(sim.yard.entrance(beside), beside, "the block has an entrance")
 	_expect(sim.map.access_road(beside), gate, "it is entered from the gate")
+
+
+## Cash changes only through Ledger.post, so the books always add up.
+func _test_only_the_ledger_moves_cash() -> void:
+	var dir := "res://scripts/sim"
+	for file: String in DirAccess.get_files_at(dir):
+		if not file.ends_with(".gd") or file == "ledger.gd":
+			continue
+		var text := FileAccess.get_file_as_string(dir.path_join(file))
+		for pattern: String in ["money +=", "money -=", "cash +=", "cash -=", "cash ="]:
+			_expect(text.contains(pattern), false, "%s has no '%s'" % [file, pattern])
