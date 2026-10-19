@@ -49,6 +49,14 @@ const AREA_COLOR := {
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
 }
 const AREA_TOP := 0.2
+## A container's real size in metres, by TEU, for things drawn on areas.
+const REAL_BOX_LENGTH := {1: 6.06, 2: 12.19}
+const REAL_BOX_HEIGHT := 2.59
+const REAL_BOX_WIDTH := 2.44
+## An RTG's real height in metres, one over five boxes high.
+const REAL_RTG_HEIGHT := 20.0
+## Vehicles on areas narrowed and lowered to lorry proportions (across, up, along).
+const AREA_VEHICLE_SCALE := Vector3(0.45, 0.6, 1.0)
 ## A laid-out area's driven parts: the buffer strip, and handover slots in
 ## two alternating shades so each slot reads on its own.
 const BUFFER_COLOR := Color(0.3, 0.3, 0.32)
@@ -114,6 +122,16 @@ var _headings := {}
 var _vehicle_box := Transform3D(Basis(Vector3.UP, PI / 2).scaled_local(Vector3(0.65, 0.75, 0.8)), Vector3(0, 0.2, -0.06))
 var _cranes := {}  # PortSim.Crane -> Node3D
 var _machines := ChunkedMeshes.new()
+## Yard machines on areas, by machine id, and how tall each gear's model is.
+var _area_machines := {}
+var _machine_heights := {}
+## Boxes stacked in yard areas, a MultiMesh per box length, redrawn when the
+## sim has ticked or the areas changed.
+var _area_stacks := {}
+var _area_stacks_drawn := []
+## Each box model scaled to real size, by TEU: the tile view stretches boxes
+## to read at a distance, while areas are drawn true to the 4 m grid.
+var _real_box := {}
 var _machine_meshes := {}  # gear -> Mesh
 ## Machine parts ([chunk, gear]) drawn last frame, so emptied ones get cleared.
 var _machine_parts_drawn := {}
@@ -163,10 +181,14 @@ func _ready() -> void:
 	_slab_mesh = _merged([[Vector3.ONE, Vector3(0, 0.5, 0), Color.WHITE]])
 	for gear: String in sim.rules.yard_gear:
 		_machine_meshes[gear] = _machine_mesh(gear)
+		_machine_heights[gear] = _machine_meshes[gear].get_aabb().end.y
 	for kind: int in TILE_HEIGHT:
 		_tile_meshes[kind] = _box_mesh(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
 	for teu: int in BOX_LENGTH:
 		_stack_meshes[teu] = _container_mesh(teu)
+		var real := Vector3(REAL_BOX_LENGTH[teu], REAL_BOX_HEIGHT, REAL_BOX_WIDTH) / METRES_PER_UNIT
+		_real_box[teu] = real / _stack_meshes[teu].get_aabb().size
+		_area_stacks[teu] = _vehicle_part(_stack_meshes[teu])
 	for shape: String in ROAD_SHAPES:
 		_road_meshes[shape] = _road_mesh(shape)
 	# A dashed centre line, two dashes a tile, just above a straight road.
@@ -228,6 +250,8 @@ func _process(_dt: float) -> void:
 	_draw_cranes()
 	_draw_vehicles()
 	_draw_machines()
+	_draw_area_machines()
+	_draw_area_stacks()
 
 
 func _draw_roads() -> void:
@@ -752,13 +776,15 @@ func _draw_vehicles() -> void:
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
 		headings[vehicle.id] = heading
 		var at: Vector2 = pose[0] + Vector2(0.5, 0.5)
+		var basis := Basis(Vector3.UP, atan2(heading.x, heading.y))
 		if vehicle in sim.area_vehicles:
 			# On the 4 m grid each lane is its own cell, so no keep-right offset.
 			at *= Grid.CELL / METRES_PER_UNIT
+			basis = basis.scaled_local(AREA_VEHICLE_SCALE)
 		else:
 			# Keep right: each direction drives in its own half of the road.
 			at += Vector2(-heading.y, heading.x) * LANE_OFFSET
-		var placed := Transform3D(Basis(Vector3.UP, atan2(heading.x, heading.y)), Vector3(at.x, 0.04, at.y))
+		var placed := Transform3D(basis, Vector3(at.x, 0.04, at.y))
 		_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
 		_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
 		if vehicle.loaded:
@@ -792,6 +818,90 @@ func _vehicle_part(mesh: Mesh) -> MultiMeshInstance3D:
 	part.multimesh.mesh = mesh
 	add_child(part)
 	return part
+
+
+## Every box stacked in a yard area at real size: each stack position is a
+## 12 m bay of one row, tiers from the ground up, a pair of 20 ft boxes end
+## to end in a tier, each in its line's livery.
+func _draw_area_stacks() -> void:
+	if _area_stacks_drawn == [sim.clock.ticks, sim.areas.version]:
+		return
+	_area_stacks_drawn = [sim.clock.ticks, sim.areas.version]
+	var buffers := {1: PackedFloat32Array(), 2: PackedFloat32Array()}
+	for area: int in sim.area_stacks:
+		if area not in sim.areas.list:
+			continue
+		var geometry: Dictionary = sim.areas.list[area]
+		var along := Vector2((geometry.end - geometry.start).sign())
+		var turned := Basis(Vector3.UP, atan2(-along.normalized().y, along.normalized().x))
+		var layout := sim.areas.layout(area)
+		var stacks: AreaStacks = sim.area_stacks[area]
+		for position in stacks.stacks.size():
+			var middle: Vector2i = layout.stacks[position].cells[1]
+			var centre := (Vector2(middle) + Vector2(0.5, 0.5)) * Grid.CELL
+			for tier: int in stacks.stacks[position].size():
+				var ids: Array = stacks.stacks[position][tier]
+				for i in ids.size():
+					var teu: int = sim.boxes[ids[i]].teu
+					var shift := 0.0 if teu == 2 else (-0.5 if i == 0 else 0.5) * (REAL_BOX_LENGTH[1] + 0.05)
+					var at := centre + along.normalized() * shift
+					var origin := Vector3(at.x, AREA_TOP + (tier + 0.5) * REAL_BOX_HEIGHT, at.y) / METRES_PER_UNIT
+					_put(buffers[teu], Transform3D(turned.scaled_local(_real_box[teu]), origin), _livery(sim.boxes[ids[i]].line, ids[i]))
+	for teu: int in buffers:
+		var multimesh: MultiMesh = _area_stacks[teu].multimesh
+		var buffer: PackedFloat32Array = buffers[teu]
+		var count := buffer.size() / 16
+		if multimesh.instance_count < count:
+			multimesh.instance_count = nearest_po2(count)
+		buffer.resize(multimesh.instance_count * 16)
+		multimesh.buffer = buffer
+		multimesh.visible_instance_count = count
+
+
+## Every yard machine on an area as its own node, with the box on its spreader
+## while it lifts, carries and sets one down: an RTG over the stack rows, a
+## reach stacker in the truck lane, sliding between bays as it travels.
+## shortcut: a node per machine, fine at the few dozen one terminal has; MultiMesh them if ports grow past ~200.
+func _draw_area_machines() -> void:
+	for id: int in _area_machines.keys():
+		if id not in sim.machines.list:
+			_area_machines[id].queue_free()
+			_area_machines.erase(id)
+	var depth: int = sim.rules.area_types.yard_block.depth
+	for id: int in sim.machines.list:
+		var machine: Dictionary = sim.machines.list[id]
+		if machine.area not in sim.areas.list:
+			continue
+		if id not in _area_machines:
+			var node := MeshInstance3D.new()
+			node.mesh = _machine_meshes[machine.gear]
+			var box := MeshInstance3D.new()
+			box.name = "Box"
+			box.mesh = _stack_meshes[2]
+			box.material_override = StandardMaterial3D.new()
+			node.add_child(box)
+			add_child(node)
+			_area_machines[id] = node
+		var model: MeshInstance3D = _area_machines[id]
+		var area: Dictionary = sim.areas.list[machine.area]
+		var along := Vector2((area.end - area.start).sign())
+		var out := Vector2(area.out)
+		var row: float = (2 + depth - 1) / 2.0 if machine.gear == "rtg" else 1.0
+		var k := sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
+		var at := (Vector2(area.start) + along * k + out * row + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
+		model.rotation.y = atan2(-out.normalized().y, out.normalized().x)
+		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights.rtg if machine.gear == "rtg" else 1.0
+		model.scale = Vector3(1.0, tall, 1.0)
+		var job: Dictionary = machine.job
+		var box: MeshInstance3D = model.get_node("Box")
+		box.visible = not job.is_empty() and (job.phases[0].kind == "lift" or job.get("carrying", false))
+		if box.visible:
+			# Counter the machine's height scale so the box keeps its real size.
+			box.scale = _real_box[2] / Vector3(1.0, tall, 1.0)
+			box.position = Vector3(0, lerpf(0.05, _machine_heights[machine.gear] * 0.85, sim.machines.spreader(id)), 0)
+			box.rotation.y = PI / 2
+			(box.material_override as StandardMaterial3D).albedo_color = PLAIN_BOX
 
 
 ## Each yard block's machines: one over each box being handled, the rest
