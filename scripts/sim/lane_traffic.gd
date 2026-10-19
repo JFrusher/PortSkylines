@@ -44,6 +44,19 @@ func leave(vehicle: Vehicle) -> void:
 	_held.erase(vehicle.id)
 
 
+func to_dict() -> Dictionary:
+	return _held.duplicate(true)
+
+
+static func from_dict(d: Dictionary, lanes: LaneGraph) -> LaneTraffic:
+	var traffic := LaneTraffic.new(lanes)
+	for id: int in d:
+		traffic._held[id] = d[id].duplicate()
+		for cell: Vector2i in d[id]:
+			traffic._holders[cell] = id
+	return traffic
+
+
 func holder(cell: Vector2i) -> int:
 	return _holders.get(cell, 0)
 

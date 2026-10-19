@@ -41,6 +41,14 @@ func fits(position: int, teu: int) -> bool:
 	return teu == 1 or tiers.is_empty() or _teu[tiers[-1][0]] == 2
 
 
+## The first stack position a box of `teu` fits on, in layout order, or -1.
+func place_spot(teu: int) -> int:
+	for position in stacks.size():
+		if fits(position, teu):
+			return position
+	return -1
+
+
 func place_at(position: int, id: int, teu: int) -> void:
 	assert(fits(position, teu), "box %d doesn't fit on stack %d" % [id, position])
 	_teu[id] = teu
@@ -105,6 +113,27 @@ func housekeep(due: Dictionary) -> bool:
 				place_at(to, top, teu)
 				return true
 	return false
+
+
+func to_dict() -> Dictionary:
+	return {"stacks": stacks.duplicate(true), "tiers": _tiers, "teu": _teu.duplicate(), "where": _where.duplicate()}
+
+
+static func from_dict(d: Dictionary) -> AreaStacks:
+	var area := AreaStacks.new(0, d.tiers)
+	area.stacks = d.stacks.duplicate(true)
+	area._teu = d.teu.duplicate()
+	area._where = d.where.duplicate()
+	return area
+
+
+## How many more boxes fit, counting 40 ft places: a rough room check before
+## a tractor is sent, not a promise of a spot.
+func room() -> int:
+	var free := 0
+	for position in stacks.size():
+		free += _tiers - stacks[position].size()
+	return free
 
 
 ## Every box in the area.

@@ -747,13 +747,18 @@ func _draw_vehicles() -> void:
 	for part: Variant in _vehicle_parts:
 		buffers[part] = PackedFloat32Array()
 	var headings := {}
-	for vehicle: Vehicle in sim.vehicles:
+	for vehicle: Vehicle in sim.vehicles + sim.area_vehicles:
 		var pose := path_pose(vehicle.path, lerpf(vehicle.prev_t, vehicle.t, alpha))
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
 		headings[vehicle.id] = heading
-		# Keep right: each direction drives in its own half of the road.
-		var right := Vector2(-heading.y, heading.x) * LANE_OFFSET
-		var placed := Transform3D(Basis(Vector3.UP, atan2(heading.x, heading.y)), Vector3(pose[0].x + 0.5 + right.x, 0.04, pose[0].y + 0.5 + right.y))
+		var at: Vector2 = pose[0] + Vector2(0.5, 0.5)
+		if vehicle in sim.area_vehicles:
+			# On the 4 m grid each lane is its own cell, so no keep-right offset.
+			at *= Grid.CELL / METRES_PER_UNIT
+		else:
+			# Keep right: each direction drives in its own half of the road.
+			at += Vector2(-heading.y, heading.x) * LANE_OFFSET
+		var placed := Transform3D(Basis(Vector3.UP, atan2(heading.x, heading.y)), Vector3(at.x, 0.04, at.y))
 		_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
 		_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
 		if vehicle.loaded:

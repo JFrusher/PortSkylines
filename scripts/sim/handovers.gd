@@ -48,6 +48,29 @@ func waiting(area: int) -> Dictionary:
 	return {"buffer": at.buffer.duplicate(), "road": at.road.duplicate()}
 
 
+## Every holder of slot `slot` per area: {area id: [vehicle id or 0 per slot]}.
+func slots() -> Dictionary:
+	var found := {}
+	for area: int in _at:
+		found[area] = _at[area].slots.duplicate()
+	return found
+
+
+## Lets go of everything at an area that's gone.
+func forget(area: int) -> void:
+	_at.erase(area)
+
+
+func to_dict() -> Dictionary:
+	return _at.duplicate(true)
+
+
+static func from_dict(d: Dictionary, areas: Areas) -> Handovers:
+	var handovers := Handovers.new(areas)
+	handovers._at = d.duplicate(true)
+	return handovers
+
+
 func _state(area: int) -> Dictionary:
 	if area not in _at:
 		var slots := []

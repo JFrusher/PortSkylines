@@ -1,4 +1,6 @@
 extends SceneTree
+
+const AreaPort := preload("res://tests/area_port.gd")
 ## Headless tests for roads and areas on the 4 m grid.
 ## godot --headless --script res://tests/test_roads.gd
 
@@ -24,6 +26,7 @@ func _initialize() -> void:
 	_test_area_stacks()
 	_test_driveways()
 	_test_apron_berths()
+	_test_discharge()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -391,7 +394,7 @@ func _test_machine_jobs() -> void:
 		ticks += 1
 		if not machines.tick().is_empty():
 			break
-	_expect(ticks, ceili(seconds / SimClock.TICK_SECONDS), "one move takes the data's time (%.1f s)" % seconds)
+	_expect(ticks, ceili(seconds / Machines.SECONDS_PER_TICK), "one move takes the data's time in game seconds (%.1f s)" % seconds)
 	_expect(phases, ["travel", "lift", "travel", "set_down"], "in the phases travel, lift, travel and set down")
 	_expect(machines.list[rtg].bay, 8, "the machine ends where it set the box down")
 	_expect(machines.phase(rtg), "", "and is idle")
@@ -400,7 +403,7 @@ func _test_machine_jobs() -> void:
 	var lift_only := 0
 	while machines.tick().is_empty():
 		lift_only += 1
-	_expect(lift_only + 1, ceili((gear.reach_stacker.lift_seconds + gear.reach_stacker.set_down_seconds) / SimClock.TICK_SECONDS), "a move within one bay is just lift and set down")
+	_expect(lift_only + 1, ceili((gear.reach_stacker.lift_seconds + gear.reach_stacker.set_down_seconds) / Machines.SECONDS_PER_TICK), "a move within one bay is just lift and set down")
 
 
 func _test_area_stacks() -> void:
@@ -469,23 +472,8 @@ func _test_driveways() -> void:
 	_expect(sim.lanes.route(inbound, under_crane, true), [] as Array[Vector2i], "a lorry can't drive onto an apron")
 
 
-## A terminal on the coast: a 1+1 road south along x = 85 from y = 100 to the
-## site entry's row and on east to the entry; a quay apron `apron_length`
-## cells long west of it, and a gate east of it in the same terminal.
-func _terminal(apron_length: int) -> PortSim:
-	var sim := PortSim.new(0, Content.base(), true)
-	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, entry.y), "type": "terminal_1_1"})
-	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"})
-	var coast := sim.roads.segment_at(Vector2i(85, 150))
-	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 0, "to": apron_length - 1}), "", "the terminal's apron is built")
-	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": coast, "side": -1, "from": 0, "to": 14}), "", "the terminal's gate is built")
-	sim.apply({"op": "set_terminal", "id": 2, "terminal": 1})
-	return sim
-
-
 func _test_apron_berths() -> void:
-	var sim := _terminal(60)
+	var sim := AreaPort.terminal(60)
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane off the apron's rails is refused")
 	_expect(sim.apply({"op": "place_sts", "apron": 2, "along": 3}), "STS cranes stand on a quay apron's rails", "a crane on a gate is refused")
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 20}), "", "a crane is ordered on the apron")
@@ -503,9 +491,34 @@ func _test_apron_berths() -> void:
 	var panamax := PortSim.Ship.new("panamax", sim.rules.lines.keys()[0], 0.0, 1, 0)
 	_expect(sim._berth(panamax), false, "a ship too long for the apron waits at anchor")
 	_expect(AreaFlow.could_berth(sim, "panamax"), false, "and no apron could ever take it")
-	var lonely := _terminal(60)
+	var lonely := AreaPort.terminal(60)
 	lonely.apply({"op": "set_terminal", "id": 2, "terminal": 0})
 	_expect(lonely._berth(PortSim.Ship.new("feeder", lonely.rules.lines.keys()[0], 0.0, 1, 0)), false, "an apron in a terminal without a gate takes no ships")
+
+
+func _test_discharge() -> void:
+	var sim := AreaPort.working_terminal(3)
+	var ship := sim.ships[0]
+	var crane_ticks := ceili(60.0 / (sim.rules.sts_crane.rate * sim.rules.crane_interference) / SimClock.CALENDAR_MINUTES_PER_TICK)
+	var gear: Dictionary = sim.rules.yard_gear.reach_stacker
+	var machine_ticks := ceili((gear.lift_seconds + gear.set_down_seconds) / Machines.SECONDS_PER_TICK)
+	var first := -1
+	var sailed := false
+	for i in 6000:
+		sim.tick()
+		sailed = sailed or ship.state == PortSim.Ship.State.LEAVING
+		if first < 0 and not sim.area_stacks[3].boxes().is_empty():
+			first = i + 1
+		if sim.area_stacks[3].boxes().size() == 3:
+			break
+	_expect(sim.area_stacks[3].boxes().size(), 3, "every box goes from the ship into the import block's stacks")
+	_expect(first >= crane_ticks + machine_ticks, true, "a box takes at least a crane move and a machine's lift and set-down (%d >= %d ticks)" % [first, crane_ticks + machine_ticks])
+	_expect(sailed, true, "the ship sails once its cranes are done")
+	_expect(sim.area_stacks[3].boxes().all(func(b: int) -> bool: return sim.boxes[b].in >= 0.0), true, "stacked boxes start their storage clock")
+	for i in 400:
+		sim.tick()
+	_expect(sim.area_vehicles.is_empty(), true, "tractors return to the pool once their box is stacked")
+	_expect(sim.handovers.slots()[3].all(func(v: int) -> bool: return v == 0), true, "leaving every slot free")
 
 
 ## A lane cell at the site entry a vehicle can drive in from.

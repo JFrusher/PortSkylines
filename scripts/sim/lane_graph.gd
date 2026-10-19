@@ -14,6 +14,7 @@ var _all := AStar2D.new()
 var _lorries := AStar2D.new()
 var _at := {}  # cell -> point ids of lane cells there
 var _junction := {}  # cells where routes from different roads meet or cross
+var _flows := {}  # area id -> 1 or -1, the way traffic runs along it
 
 
 func _init(net: RoadNet) -> void:
@@ -25,6 +26,13 @@ func _init(net: RoadNet) -> void:
 func is_junction(cell: Vector2i) -> bool:
 	_refresh()
 	return cell in _junction
+
+
+## Which way traffic runs along area `id`: 1 from its start to its end, -1
+## the other way, 0 when no road lane runs beside it.
+func flow_of(id: int) -> int:
+	_refresh()
+	return _flows.get(id, 0)
 
 
 ## The cells from `from` to `to` along lanes, both ends included, or [] when
@@ -66,6 +74,7 @@ func _rebuild() -> void:
 	_lorries.clear()
 	_at.clear()
 	_junction.clear()
+	_flows.clear()
 	var ends := {}  # node -> [segment, last point] of lanes arriving there
 	var starts := {}  # node -> [segment, first point] of lanes leaving there
 	var next_id := 0
@@ -118,6 +127,7 @@ func _add_area(id: int, next_id: int) -> int:
 	var flow := _flow(area, along, length)
 	if flow == 0:
 		return next_id
+	_flows[id] = flow
 	var lorries: bool = area.type != "quay_apron"
 	var layout := areas.layout(id)
 	var at := {}  # cell -> this area's point there

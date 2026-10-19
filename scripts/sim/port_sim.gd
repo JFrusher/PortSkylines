@@ -50,6 +50,17 @@ var delivered_yesterday := 0
 var ships: Array[Ship] = []
 var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
+## Vehicles on roads and areas, moved by the area flow; beside `vehicles` on
+## tiles until M5 step 22.
+var area_vehicles: Array[Vehicle] = []
+## The area flow's state: who holds each lane cell, each area's handover
+## slots and queues, the yard machines and what each is carrying, and the
+## boxes stacked in each yard block (area id -> AreaStacks).
+var lane_traffic: LaneTraffic
+var handovers: Handovers
+var machines: Machines
+var machine_jobs := {}
+var area_stacks := {}
 var traffic := Traffic.new()
 var yard: Yard
 ## The rules each area type takes, and what a new area starts with.
@@ -112,6 +123,9 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	lanes = LaneGraph.new(roads)
 	areas = Areas.new(rules.area_types, roads, rules.site)
 	lanes.areas = areas
+	lane_traffic = LaneTraffic.new(lanes)
+	handovers = Handovers.new(areas)
+	machines = Machines.new(rules.yard_gear)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
@@ -251,7 +265,20 @@ func to_dict() -> Dictionary:
 		"until_export": _until_export,
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
+		"area_vehicles": area_vehicles.map(func(vehicle: Vehicle) -> Dictionary: return vehicle.to_dict()),
+		"lane_traffic": lane_traffic.to_dict(),
+		"handovers": handovers.to_dict(),
+		"machines": machines.to_dict(),
+		"machine_jobs": machine_jobs.duplicate(true),
+		"area_stacks": _area_stacks_dict(),
 	}
+
+
+func _area_stacks_dict() -> Dictionary:
+	var found := {}
+	for area: int in area_stacks:
+		found[area] = area_stacks[area].to_dict()
+	return found
 
 
 static func from_dict(d: Dictionary) -> PortSim:
@@ -301,6 +328,14 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._until_export = d.until_export
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
+	for data: Dictionary in d.area_vehicles:
+		sim.area_vehicles.append(Vehicle.from_dict(data))
+	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes)
+	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
+	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
+	sim.machine_jobs = d.machine_jobs.duplicate(true)
+	for area: int in d.area_stacks:
+		sim.area_stacks[area] = AreaStacks.from_dict(d.area_stacks[area])
 	return sim
 
 
@@ -442,7 +477,7 @@ func set_area(id: int, settings: Dictionary) -> String:
 func remove_area(id: int) -> String:
 	if id not in areas.list:
 		return "No area there"
-	areas.remove(id)
+	AreaFlow.remove(self, id)
 	return ""
 
 
@@ -806,6 +841,7 @@ func tick() -> void:
 			_drive_lorry(vehicle)
 		else:
 			_drive_tractor(vehicle)
+	AreaFlow.tick(self)
 
 
 ## What the port costs to keep each day: tiles, cranes, tractors and yard machines.
@@ -1004,7 +1040,8 @@ func _work(ship: Ship) -> void:
 				_event("A %s is unloading" % ship.kind)
 		Ship.State.WORKING:
 			if ship.apron:
-				return  # worked by the area flow from M5 step 19.3
+				AreaFlow.work(self, ship)
+				return
 			var working := _cranes_for(ship)
 			if working.is_empty():
 				_event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rules.ship_classes[ship.kind].outreach])
@@ -1209,7 +1246,7 @@ func _release_idle_tractors(ship: Ship) -> void:
 
 
 func _tractors_out() -> int:
-	return vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor").size()
+	return (vehicles + area_vehicles).filter(func(v: Vehicle) -> bool: return v.kind == "tractor").size()
 
 
 func _vehicle(id: int) -> Vehicle:

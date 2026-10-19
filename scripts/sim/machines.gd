@@ -2,8 +2,12 @@ class_name Machines
 extends RefCounted
 ## Yard machines, each belonging to one area, working one job at a time. A
 ## job moves a box between two bays of the area in fixed phases, each with a
-## time from the data: travel to the box, lift it, travel to its place, set
-## it down. The sim owns the times; the view only animates the phase in progress.
+## time from the data in game seconds: travel to the box, lift it, travel to
+## its place, set it down. The sim owns the times; the view only animates the
+## phase in progress.
+
+## Game seconds in one tick: machines work on the calendar clock, like cranes.
+const SECONDS_PER_TICK := SimClock.CALENDAR_MINUTES_PER_TICK * 60.0
 
 ## Machine id -> {"area", "gear", "bay": where it stands, "job": {} or
 ## {"phases": [{"kind", "seconds", "bay"}], "left": seconds left of the first phase}}.
@@ -50,7 +54,7 @@ func tick() -> Array[int]:
 		var job: Dictionary = list[id].job
 		if job.is_empty():
 			continue
-		var time := SimClock.TICK_SECONDS
+		var time := SECONDS_PER_TICK
 		while time > 0.0 and not job.phases.is_empty():
 			var spent := minf(time, job.left)
 			job.left -= spent
@@ -69,6 +73,17 @@ func tick() -> Array[int]:
 func phase(id: int) -> String:
 	var job: Dictionary = list[id].job
 	return "" if job.is_empty() else job.phases[0].kind
+
+
+func to_dict() -> Dictionary:
+	return {"list": list.duplicate(true), "next_id": _next_id}
+
+
+static func from_dict(d: Dictionary, yard_gear: Dictionary) -> Machines:
+	var machines := Machines.new(yard_gear)
+	machines.list = d.list.duplicate(true)
+	machines._next_id = d.next_id
+	return machines
 
 
 static func _travel(gear: Dictionary, from: int, to: int) -> float:

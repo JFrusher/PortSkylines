@@ -207,10 +207,10 @@ func flash(text: String) -> void:
 
 
 func _process(dt: float) -> void:
-	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
+	var lorries := (sim.vehicles + sim.area_vehicles).filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
 	var anchored := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state == PortSim.Ship.State.ANCHORED).size()
 	_money.text = _dollars(sim.money)
-	_readout.text = "Boxes %d   Ships %d (%d at anchor)   Tractors %d/%d   Lorries %d   Channel %.0f m" % [sim.delivered, sim.ships.size() - anchored, anchored, sim.vehicles.size() - lorries, sim.tractors, lorries, sim.channel_depth]
+	_readout.text = "Boxes %d   Ships %d (%d at anchor)   Tractors %d/%d   Lorries %d   Channel %.0f m" % [sim.delivered, sim.ships.size() - anchored, anchored, sim._tractors_out(), sim.tractors, lorries, sim.channel_depth]
 	var k := sim.kpis()
 	_kpis.text = "Berth %.0f moves/h   Crane %.0f moves/h   Gate turn %.0f min\nYard %d%% full   %d boxes/day   Upkeep $%d/day" % [
 		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]

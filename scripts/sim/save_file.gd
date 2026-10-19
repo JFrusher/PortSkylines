@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 9
+const VERSION := 10
 const MAGIC := "PSKY"
 
 
@@ -77,6 +77,25 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _v7_to_v8(data)
 	if data.version == 8:
 		data = _v8_to_v9(data)
+	if data.version == 9:
+		data = _v9_to_v10(data)
+	return data
+
+
+## v10 (M5) moves boxes on roads and areas: vehicles there, the cells they
+## hold, handover slots, yard machines and the stacks in yard blocks. Older
+## ports have none, and their tile vehicles serve no area.
+static func _v9_to_v10(data: Dictionary) -> Dictionary:
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.area = 0
+		vehicle.slot = -1
+	data.sim.area_vehicles = []
+	data.sim.lane_traffic = {}
+	data.sim.handovers = {}
+	data.sim.machines = {"list": {}, "next_id": 1}
+	data.sim.machine_jobs = {}
+	data.sim.area_stacks = {}
+	data.version = 10
 	return data
 
 
@@ -256,7 +275,9 @@ static func _valid_sim(data: Variant) -> bool:
 		"yard": TYPE_DICTIONARY, "boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
 		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
-		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
+		"next_vehicle": TYPE_INT, "next_box": TYPE_INT, "area_vehicles": TYPE_ARRAY,
+		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY,
+		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
 	}):
 		return false
 	var map: Dictionary = data.map
@@ -319,9 +340,11 @@ static func _valid_sim(data: Variant) -> bool:
 			"waited": TYPE_INT, "replanned": TYPE_BOOL, "state": TYPE_STRING,
 			"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
 			"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "block": TYPE_VECTOR2I,
-			"gate_in": TYPE_FLOAT,
+			"gate_in": TYPE_FLOAT, "area": TYPE_INT, "slot": TYPE_INT,
 		}) or not _all_cells(vehicle.path, true):
 			return false
+	if not _valid_area_flow(data):
+		return false
 	for id: Variant in data.claimed:
 		if not (id is int and data.claimed[id] is bool and data.claimed[id]):
 			return false
@@ -332,6 +355,43 @@ static func _valid_sim(data: Variant) -> bool:
 
 
 ## True when `cells` holds only Vector2i, and some unless `may_be_empty`.
+## The area flow's state: vehicles like tile ones, cells held by known
+## vehicles, slots and machines at known areas, stacks of known boxes.
+static func _valid_area_flow(data: Dictionary) -> bool:
+	var ids := {}
+	for vehicle: Variant in data.area_vehicles:
+		if not vehicle is Dictionary or not _has_fields(vehicle, {
+			"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT, "prev_t": TYPE_FLOAT,
+			"waited": TYPE_INT, "state": TYPE_STRING, "box": TYPE_INT, "loaded": TYPE_BOOL,
+			"target": TYPE_VECTOR2I, "area": TYPE_INT, "slot": TYPE_INT,
+		}) or not _all_cells(vehicle.path, false):
+			return false
+		ids[vehicle.id] = true
+	for id: Variant in data.lane_traffic:
+		if not (id in ids and data.lane_traffic[id] is Array and _all_cells(data.lane_traffic[id], true)):
+			return false
+	for area: Variant in data.handovers:
+		var at: Variant = data.handovers[area]
+		if not (area in data.areas.list and at is Dictionary and _has_fields(at, {"slots": TYPE_ARRAY, "buffer": TYPE_ARRAY, "road": TYPE_ARRAY})):
+			return false
+	if not _has_fields(data.machines, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT}):
+		return false
+	for machine: Variant in data.machines.list.values():
+		if not (machine is Dictionary and _has_fields(machine, {"area": TYPE_INT, "gear": TYPE_STRING, "bay": TYPE_INT, "job": TYPE_DICTIONARY}) and machine.gear in Content.base().yard_gear):
+			return false
+	for machine: Variant in data.machine_jobs:
+		var job: Variant = data.machine_jobs[machine]
+		if not (machine in data.machines.list and job is Dictionary and _has_fields(job, {"vehicle": TYPE_INT, "position": TYPE_INT})):
+			return false
+	for area: Variant in data.area_stacks:
+		var stacks: Variant = data.area_stacks[area]
+		if not (area in data.areas.list and stacks is Dictionary and _has_fields(stacks, {"stacks": TYPE_ARRAY, "tiers": TYPE_INT, "teu": TYPE_DICTIONARY, "where": TYPE_DICTIONARY})):
+			return false
+		if not stacks.where.keys().all(func(box: Variant) -> bool: return box in data.boxes):
+			return false
+	return true
+
+
 ## Roads: nodes on cells, and segments joining two known nodes with a known road type.
 static func _valid_roads(roads: Dictionary) -> bool:
 	if not _has_fields(roads, {"nodes": TYPE_DICTIONARY, "segments": TYPE_DICTIONARY, "next_node": TYPE_INT, "next_segment": TYPE_INT}):

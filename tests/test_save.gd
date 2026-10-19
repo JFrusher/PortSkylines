@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_every_fixture_loads()
 	_test_v3_boxes_belong_to_no_line()
 	_test_v4_has_no_roads_and_v5_keeps_them()
+	_test_area_flow_round_trips()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -211,3 +212,21 @@ func _test_v4_has_no_roads_and_v5_keeps_them() -> void:
 	_expect(v6.areas.cells(1).size(), 16 * v6.rules.area_types.yard_block.depth, "with its cells")
 	_expect(v6.areas.list[1].settings, {"role": "import", "gear": "reach_stacker", "lines": []}, "a v6 yard block gets a new block's rules")
 	_expect([v6.areas.list[1].terminal, v6.areas.terminals], [1, {1: {"name": "Terminal 1"}}], "and joins Terminal 1")
+
+
+## A port mid-discharge on roads and areas saves and loads to the same state,
+## then plays on the same as one never saved.
+func _test_area_flow_round_trips() -> void:
+	var sim: PortSim = preload("res://tests/area_port.gd").working_terminal(3)
+	for i in 2000:
+		sim.tick()
+		if not (sim.area_vehicles.is_empty() or sim.machine_jobs.is_empty()):
+			break
+	_expect(sim.area_vehicles.is_empty() or sim.machine_jobs.is_empty(), false, "tractors and machines are busy at save time")
+	_expect(SaveFile.save("user://area_flow.bin", sim), "", "a port mid-discharge saves")
+	var loaded: PortSim = SaveFile.load_from("user://area_flow.bin").sim
+	_expect(loaded.to_dict(), sim.to_dict(), "and loads to the same state")
+	for i in 300:
+		sim.tick()
+		loaded.tick()
+	_expect(loaded.state_hash(), sim.state_hash(), "then plays on the same")

@@ -36,6 +36,10 @@ var timer := 0.0
 var block := PortMap.NONE
 ## Calendar minute a lorry came in through a gate, or -1 before it has.
 var gate_in := -1.0
+## On roads and areas: the area it is going to or working at, and the
+## handover slot it holds there (-1 for none).
+var area := 0
+var slot := -1
 
 
 func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector2i]) -> void:
@@ -61,6 +65,7 @@ func to_dict() -> Dictionary:
 		"id": id, "kind": kind, "path": path.duplicate(), "t": t, "prev_t": prev_t, "lane": lane, "ahead": ahead,
 		"waited": waited, "replanned": replanned, "state": state, "box": box, "loaded": loaded,
 		"target": target, "home": home, "timer": timer, "block": block, "gate_in": gate_in,
+		"area": area, "slot": slot,
 	}
 
 
@@ -82,4 +87,6 @@ static func from_dict(d: Dictionary) -> Vehicle:
 	vehicle.timer = d.timer
 	vehicle.block = d.block
 	vehicle.gate_in = d.gate_in
+	vehicle.area = d.area
+	vehicle.slot = d.slot
 	return vehicle
