@@ -18,6 +18,16 @@
 		"storage": "Storage",
 		"construction": "Construction",
 		"equipment": "Equipment",
-		"upkeep": "Upkeep"
-	}
+		"upkeep": "Upkeep",
+		"loans": "Loans",
+		"loan_payments": "Loan payments",
+		"bailout": "Bailout"
+	},
+	"loans": {
+		"small": {"amount": 10000, "yearly_rate": 0.08, "days": 30},
+		"medium": {"amount": 25000, "yearly_rate": 0.1, "days": 60},
+		"large": {"amount": 60000, "yearly_rate": 0.12, "days": 120}
+	},
+	"max_loans": 3,
+	"bailout": {"days": 3, "reputation": -20, "no_loans_days": 14}
 }

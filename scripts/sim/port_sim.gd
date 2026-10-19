@@ -23,6 +23,11 @@ var money: int:
 var delivered := 0
 ## Shipping lines, their services and offers, and their reputation of the port.
 var contracts: Contracts
+## Loans and the bailout.
+var finance: Finance
+## Creative mode: cash never limits building and there are no bailouts; the
+## ledger still records everything.
+var creative := false
 ## Things worth telling the player, newest last: {"minute", "text"}. A
 ## message repeated tick after tick is kept once.
 var events: Array[Dictionary] = []
@@ -62,12 +67,14 @@ var _next_box := 1
 var _delivered_at_midnight := 0
 
 
-func _init(seed_value := 0, game_rules := Content.base()) -> void:
+func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false) -> void:
 	rules = game_rules
+	creative = creative_mode
 	map = PortMap.new(Vector2i(rules.map.width, rules.map.height), rules.map.sea_width)
 	yard = Yard.new(map, rules)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
+	finance = Finance.new(rules)
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
 	_event("Run a road from the highway to the coast through a gate, then build a quay, cranes, tractors and a yard")
@@ -157,6 +164,8 @@ func to_dict() -> Dictionary:
 		"rng_state": rng.state,
 		"ledger": ledger.to_dict(),
 		"contracts": contracts.to_dict(),
+		"finance": finance.to_dict(),
+		"creative": creative,
 		"delivered": delivered,
 		"events": events.duplicate(true),
 		"ship_log": ship_log.duplicate(true),
@@ -189,6 +198,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.rng.state = d.rng_state
 	sim.ledger = Ledger.from_dict(d.ledger, sim.rules.ledger_categories)
 	sim.contracts = Contracts.from_dict(d.contracts, sim.rules)
+	sim.finance = Finance.from_dict(d.finance, sim.rules)
+	sim.creative = d.creative
 	sim.delivered = d.delivered
 	sim.events.assign(d.events)
 	sim.ship_log.assign(d.ship_log)
@@ -244,12 +255,14 @@ func apply(command: Dictionary) -> String:
 			return contracts.decline(command.id)
 		"set_storage":
 			return set_storage(command.free_days, command.fee)
+		"take_loan":
+			return finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
 	return "Unknown command: %s" % command.get("op")
 
 
 func build_error(kind: int, cell: Vector2i) -> String:
 	var err := map.build_error(kind, cell)
-	if err == "" and money < _price(kind, cell):
+	if err == "" and not _afford(_price(kind, cell)):
 		err = "Not enough money"
 	return err
 
@@ -288,7 +301,7 @@ func crane_error(cell: Vector2i) -> String:
 		return "Cranes stand on quay tiles"
 	if _crane_at(cell):
 		return "There is a crane here already"
-	if money < rules.sts_crane.cost:
+	if not _afford(rules.sts_crane.cost):
 		return "Not enough money"
 	return ""
 
@@ -304,7 +317,7 @@ func place_crane(cell: Vector2i) -> String:
 func buy_tractors(count: int) -> String:
 	if count < 1:
 		return "Buy at least one tractor"
-	if money < rules.tractor.cost * count:
+	if not _afford(rules.tractor.cost * count):
 		return "Not enough money"
 	ledger.post("equipment", -rules.tractor.cost * count)
 	tractors += count
@@ -313,7 +326,7 @@ func buy_tractors(count: int) -> String:
 
 func set_yard_error(cell: Vector2i, settings: Dictionary) -> String:
 	var err := yard.settings_error(cell, settings)
-	if err == "" and settings.has("gear") and money < yard.gear_cost(cell, settings.gear):
+	if err == "" and settings.has("gear") and not _afford(yard.gear_cost(cell, settings.gear)):
 		err = "Not enough money"
 	return err
 
@@ -326,6 +339,11 @@ func set_yard(cell: Vector2i, settings: Dictionary) -> String:
 			ledger.post("equipment", -yard.gear_cost(cell, settings.gear))
 		yard.apply_settings(cell, settings)
 	return err
+
+
+## Whether the port can pay `amount` now: always, in creative mode.
+func _afford(amount: int) -> bool:
+	return creative or money >= amount
 
 
 func set_storage(free_days: int, fee: int) -> String:
@@ -453,6 +471,8 @@ func _end_of_day() -> void:
 	var storage_paid: int = _storage_due() * storage.fee
 	if storage_paid > 0:
 		ledger.post("storage", storage_paid)
+	for text in finance.end_of_day(clock.calendar_minutes(), ledger, contracts, not creative):
+		_event(text)
 	ledger.close_day(clock.game_day() - 1)
 	delivered_yesterday = delivered - _delivered_at_midnight
 	_delivered_at_midnight = delivered

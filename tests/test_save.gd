@@ -113,7 +113,7 @@ func _test_malformed_payloads_are_refused() -> void:
 	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
 	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
 	# Every field each deserialiser reads, through the public load path.
-	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["contracts"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
+	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["contracts"], ["finance"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
 		var original := _section(valid, section)
 		for key: String in original:
 			var missing := valid.duplicate(true)

@@ -45,6 +45,11 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `yard_gear.<name>.cost_per_tile` | int | Paid per tile when a block switches to this gear |
 | `yard_gear.<name>.upkeep_per_machine` | int | Paid per machine at midnight |
 | `ledger_categories.<key>` | text | A ledger category and the label the ledger panel shows |
+| `loans.<kind>.amount`, `.yearly_rate`, `.days` | int >0, number, int >0 | A loan: paid in at once, paid back with interest at the yearly rate in equal daily payments over its term |
+| `max_loans` | int | Loans open at once |
+| `bailout.days` | int | Midnights in a row below zero before a bailout clears the debt |
+| `bailout.reputation` | number | Change in every line's reputation at a bailout |
+| `bailout.no_loans_days` | int | Days after a bailout with no new loans |
 | `lines.<key>.name`, `.livery` | text | A fictional shipping line and its hull colour (`#rrggbb`) |
 | `lines.<key>.classes.<class>` | number | Relative weight of each ship class the line offers; classes must exist |
 | `lines.<key>.sensitivity` | number >0 | Multiplies every change in this line's reputation |

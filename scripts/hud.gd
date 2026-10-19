@@ -7,6 +7,8 @@ signal save_pressed
 signal load_pressed
 ## A command for PortSim.apply, such as accepting an offer.
 signal command_issued(command: Dictionary)
+## shortcut: two buttons stand in for the new-game screen until M11 builds it.
+signal new_game_pressed(creative: bool)
 
 const BULLDOZE := -1
 const CRANE := -2
@@ -25,6 +27,7 @@ var _readout := Label.new()
 var _kpis := Label.new()
 var _message := Label.new()
 var _ledger := Label.new()
+var _borrow := HBoxContainer.new()
 var _contracts := VBoxContainer.new()
 ## The contracts version, sim and storage terms the contracts panel was last built for.
 var _contracts_drawn := [-1, null, {}]
@@ -42,22 +45,38 @@ func _ready() -> void:
 	var speeds := ButtonGroup.new()
 	for s: int in SPEEDS:
 		_button(top, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
-	_action(top, "Save", save_pressed)
-	_action(top, "Load", load_pressed)
 	var ledger_button := Button.new()
 	ledger_button.text = "Ledger"
 	ledger_button.toggle_mode = true
-	ledger_button.toggled.connect(func(on: bool) -> void: _ledger.visible = on)
+	ledger_button.toggled.connect(func(on: bool) -> void:
+		_ledger.visible = on
+		_borrow.visible = on)
 	top.add_child(ledger_button)
 	var contracts_button := Button.new()
 	contracts_button.text = "Contracts"
 	contracts_button.toggle_mode = true
 	contracts_button.toggled.connect(func(on: bool) -> void: _contracts.visible = on)
 	top.add_child(contracts_button)
+	var game := _row(root)
+	_action(game, "Save", save_pressed)
+	_action(game, "Load", load_pressed)
+	for creative: bool in [false, true]:
+		var button := Button.new()
+		button.text = "New creative game" if creative else "New game"
+		button.pressed.connect(func() -> void: new_game_pressed.emit(creative))
+		game.add_child(button)
 	root.add_child(_outlined(_kpis))
 	root.add_child(_outlined(_message))
 	_ledger.visible = false
 	root.add_child(_outlined(_ledger))
+	_borrow.visible = false
+	root.add_child(_borrow)
+	for kind: String in sim.rules.loans:
+		var terms: Dictionary = sim.rules.loans[kind]
+		var button := Button.new()
+		button.text = "Borrow $%d  (%d days, %d%% a year)" % [terms.amount, terms.days, roundi(terms.yearly_rate * 100)]
+		button.pressed.connect(func() -> void: command_issued.emit({"op": "take_loan", "kind": kind}))
+		_borrow.add_child(button)
 	_contracts.visible = false
 	root.add_child(_contracts)
 
@@ -108,11 +127,13 @@ func _process(dt: float) -> void:
 ## Today by category, then each of the last days, all read from the ledger.
 func _ledger_text() -> String:
 	var ledger := sim.ledger
-	var lines: Array[String] = ["Today"]
+	var lines: Array[String] = ["Creative mode: cash never limits building" if sim.creative else "Today"]
 	for category: String in ledger.categories:
 		if ledger.today.has(category):
 			lines.append("    %s  %+d" % [ledger.categories[category], ledger.today[category]])
 	lines.append("    Net  %+d" % ledger.today_total())
+	for loan in sim.finance.loans:
+		lines.append("Loan (%s): $%d owed, $%d a day for %d days" % [loan.kind, loan.owed, mini(loan.payment, loan.owed), loan.days_left])
 	if not ledger.days.is_empty():
 		lines.append("Recent days")
 	for i in range(ledger.days.size() - 1, -1, -1):

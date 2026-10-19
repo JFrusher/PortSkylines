@@ -114,6 +114,11 @@ func missed(line: String) -> String:
 	return _change(line, rules.reputation.missed)
 
 
+## Any other knock to a line's opinion, such as a bailout.
+func penalise(line: String, change: float) -> String:
+	return _change(line, change)
+
+
 func name_of(line: String) -> String:
 	return rules.lines[line].name
 

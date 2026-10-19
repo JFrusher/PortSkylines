@@ -45,6 +45,9 @@ func _initialize() -> void:
 	_test_reputation_cancels_and_recovers()
 	_test_storage_is_charged_per_day()
 	_test_a_call_earns_its_moves()
+	_test_loans_are_paid_back_with_interest()
+	_test_bailout_fires_once()
+	_test_creative_mode_builds_without_cash()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -592,3 +595,47 @@ func _test_a_call_earns_its_moves() -> void:
 		if ship == null and not sim.ships.is_empty():
 			ship = sim.ships[0]
 	_expect(sim.ledger.today.moves, ship.moves * roundi(rules.move_price.per_20ft * 1.8), "%d moves at $180" % ship.moves)
+
+
+func _test_loans_are_paid_back_with_interest() -> void:
+	var sim := PortSim.new()
+	var terms: Dictionary = sim.rules.loans.small
+	var before := sim.money
+	for i: int in sim.rules.max_loans:
+		_expect(sim.apply({"op": "take_loan", "kind": "small"}), "", "take loan %d" % (i + 1))
+	_expect(sim.apply({"op": "take_loan", "kind": "small"}), "Pay back a loan first: %d at once at most" % sim.rules.max_loans, "a loan too many")
+	_expect(sim.money - before, terms.amount * sim.rules.max_loans, "the loans are paid in")
+	var paid := 0
+	for day: int in terms.days + 5:
+		var cash := sim.money
+		sim.finance.end_of_day(0.0, sim.ledger, sim.contracts, true)
+		paid += cash - sim.money
+	var interest := roundi(terms.amount * terms.yearly_rate * terms.days / 365.0)
+	_expect(paid, (terms.amount + interest) * sim.rules.max_loans, "payments add up to principal plus interest")
+	_expect(sim.finance.loans.is_empty(), true, "and the loans are paid off")
+
+
+## Three midnights below zero bring one bailout: debt cleared, every line's
+## reputation knocked, no loans for a while.
+func _test_bailout_fires_once() -> void:
+	var sim := PortSim.new()
+	sim.ledger.cash = -5000
+	var said: Array[String] = []
+	for day: int in sim.rules.bailout.days:
+		said.append_array(sim.finance.end_of_day(day * 1440.0, sim.ledger, sim.contracts, true))
+	_expect(said.size(), 1, "one bailout at the third midnight (%s)" % [said])
+	_expect([sim.money, sim.ledger.today.get("bailout", 0)], [0, 5000], "it clears the debt through the ledger")
+	_expect(sim.contracts.reputation.aurora, sim.rules.reputation.start + sim.rules.bailout.reputation, "and costs reputation")
+	_expect(sim.finance.loan_error("small", 1440.0 * 5).begins_with("No lender"), true, "lenders stay away")
+	sim.ledger.cash = -5000
+	_expect(sim.finance.end_of_day(1440.0 * 3, sim.ledger, sim.contracts, true), [] as Array[String], "the count starts again after a bailout")
+	_expect(sim.finance.end_of_day(1440.0 * 3, sim.ledger, sim.contracts, false).is_empty() and sim.finance.end_of_day(1440.0 * 3, sim.ledger, sim.contracts, false).is_empty(), true, "creative mode has no bailouts")
+
+
+func _test_creative_mode_builds_without_cash() -> void:
+	for creative: bool in [false, true]:
+		var sim := PortSim.new(0, Content.base(), creative)
+		sim.ledger.cash = 0
+		_expect(sim.build(QUAY, Vector2i(12, 3)), "" if creative else "Not enough money", "building at $0 in %s mode" % ("creative" if creative else "normal"))
+	var copy := PortSim.from_dict(PortSim.new(0, Content.base(), true).to_dict())
+	_expect(copy.creative, true, "creative mode survives a save")

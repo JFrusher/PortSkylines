@@ -30,6 +30,7 @@ func _ready() -> void:
 	hud.save_pressed.connect(_save)
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
+	hud.new_game_pressed.connect(func(creative: bool) -> void: _use(PortSim.new(randi(), Content.base(), creative)))
 	add_child(hud)
 
 
@@ -38,13 +39,18 @@ func _save() -> void:
 	hud.flash(err if err else "Saved")
 
 
-## Swaps in the saved sim and a fresh view of it.
 func _load() -> void:
 	var loaded := SaveFile.load_from(SAVE_PATH)
 	if loaded.has("error"):
 		hud.flash(loaded.error)
 		return
-	sim = loaded.sim
+	_use(loaded.sim)
+	hud.flash("Loaded")
+
+
+## Swaps in `new_sim` and a fresh view of it.
+func _use(new_sim: PortSim) -> void:
+	sim = new_sim
 	_painting = false
 	rig.bounds = Rect2(Vector2.ZERO, Vector2(sim.map.size))
 	_accumulated = 0.0
@@ -53,7 +59,6 @@ func _load() -> void:
 	view.sim = sim
 	add_child(view)
 	hud.sim = sim
-	hud.flash("Loaded")
 
 
 func _process(dt: float) -> void:

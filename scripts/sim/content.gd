@@ -26,6 +26,12 @@ const SCHEMA := {
 	"give_up_seconds": TYPE_FLOAT,
 	# Every way cash can move, with the label the ledger panel shows.
 	"ledger_categories": {"*": TYPE_STRING},
+	# Loans the port can take, up to max_loans at once, paid back daily.
+	"loans": {"*": {"amount": TYPE_INT, "yearly_rate": TYPE_FLOAT, "days": TYPE_INT}},
+	"max_loans": TYPE_INT,
+	# After `days` midnights below zero the debt is cleared, every line's
+	# reputation changes by `reputation`, and no loans for `no_loans_days`.
+	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
 	# "*" means any key, each holding the record that follows.
 	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT}},
 	# Fictional shipping lines: the classes they sail (relative weights) and how
@@ -45,7 +51,7 @@ const SCHEMA := {
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
 
 static var _base := {}
 
