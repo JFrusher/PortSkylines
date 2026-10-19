@@ -64,9 +64,14 @@ var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
 var _stack_parts := {}
 ## The tick and map version the stacks were drawn for; bulldozing a stack changes the map.
 var _stacks_drawn := []
-# shortcut: ships and vehicles are one node each, fine under ~100; MultiMesh them in M5.
+# shortcut: ships are one node each, fine at the handful a port works at once; MultiMesh them if berths grow past ~20.
 var _ships := {}  # PortSim.Ship -> Node3D
-var _vehicles := {}  # Vehicle -> Node3D
+## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
+var _vehicle_parts := {}
+## Each vehicle's last heading by id, kept while it waits on a one-tile path.
+var _headings := {}
+## A box on a vehicle's chassis: a container model turned along the vehicle and scaled to it.
+var _vehicle_box := Transform3D(Basis(Vector3.UP, PI / 2).scaled_local(Vector3(0.65, 0.75, 0.8)), Vector3(0, 0.2, -0.06))
 var _cranes := {}  # PortSim.Crane -> Node3D
 var _machines := ChunkedMeshes.new()
 var _machine_meshes := {}  # gear -> Mesh
@@ -448,48 +453,61 @@ func _ship_beside(cell: Vector2i) -> PortSim.Ship:
 	return null
 
 
+## Every vehicle as four MultiMeshes (cabs tinted by kind, chassis, and
+## boxes by length in their line's livery), each filled with one buffer
+## write a frame, so draw calls stay the same however many vehicles there are.
 func _draw_vehicles() -> void:
-	_forget_gone(_vehicles, sim.vehicles)
+	if _vehicle_parts.is_empty():
+		_vehicle_parts = {
+			"cab": _vehicle_part(_merged([[Vector3(0.24, 0.2, 0.16), Vector3.ZERO, Color.WHITE]])),
+			"chassis": _vehicle_part(_merged([[Vector3(0.22, 0.04, 0.52), Vector3.ZERO, Color(0.2, 0.2, 0.22)]])),
+			1: _vehicle_part(_stack_meshes[1]),
+			2: _vehicle_part(_stack_meshes[2]),
+		}
+	var buffers := {}
+	for part: Variant in _vehicle_parts:
+		buffers[part] = PackedFloat32Array()
+	var headings := {}
 	for vehicle: Vehicle in sim.vehicles:
-		if vehicle not in _vehicles:
-			_vehicles[vehicle] = _vehicle_model(vehicle.kind)
-		var model: Node3D = _vehicles[vehicle]
 		var pose := path_pose(vehicle.path, lerpf(vehicle.prev_t, vehicle.t, alpha))
-		var at := pose[0]
-		var heading := pose[1].normalized()
+		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
+		headings[vehicle.id] = heading
 		# Keep right: each direction drives in its own half of the road.
 		var right := Vector2(-heading.y, heading.x) * LANE_OFFSET
-		model.position = Vector3(at.x + 0.5 + right.x, 0.04, at.y + 0.5 + right.y)
-		if heading != Vector2.ZERO:
-			model.rotation.y = atan2(heading.x, heading.y)
-		var box: MeshInstance3D = model.get_node("Box")
-		box.visible = vehicle.loaded
-		if vehicle.loaded and box.get_meta("id", 0) != vehicle.box:
-			box.set_meta("id", vehicle.box)
-			var spec: Dictionary = sim.boxes[vehicle.box]
-			box.mesh = _stack_meshes[spec.teu]
-			box.scale = Vector3(0.65, 0.75, 0.8)
-			(box.material_override as StandardMaterial3D).albedo_color = _livery(spec.line, vehicle.box)
+		var placed := Transform3D(Basis(Vector3.UP, atan2(heading.x, heading.y)), Vector3(pose[0].x + 0.5 + right.x, 0.04, pose[0].y + 0.5 + right.y))
+		_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
+		_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
+		if vehicle.loaded:
+			var box: Dictionary = sim.boxes[vehicle.box]
+			_put(buffers[box.teu], placed * _vehicle_box, _livery(box.line, vehicle.box))
+	_headings = headings
+	for part: Variant in _vehicle_parts:
+		var multimesh: MultiMesh = _vehicle_parts[part].multimesh
+		var buffer: PackedFloat32Array = buffers[part]
+		var count := buffer.size() / 16
+		if multimesh.instance_count < count:
+			multimesh.instance_count = nearest_po2(count)
+		buffer.resize(multimesh.instance_count * 16)
+		multimesh.buffer = buffer
+		multimesh.visible_instance_count = count
 
 
-## A tractor (yellow) or lorry (white) cab pulling a chassis, facing +Z, with
-## a box on the chassis that _draw_vehicles shows, sizes and paints.
-func _vehicle_model(kind: String) -> Node3D:
-	var model := Node3D.new()
-	var cab := _box(Vector3(0.24, 0.2, 0.16), Color(0.95, 0.75, 0.1) if kind == "tractor" else Color(0.9, 0.9, 0.86))
-	cab.position = Vector3(0, 0.14, 0.24)
-	model.add_child(cab)
-	var chassis := _box(Vector3(0.22, 0.04, 0.52), Color(0.2, 0.2, 0.22))
-	chassis.position = Vector3(0, 0.06, -0.06)
-	model.add_child(chassis)
-	var box := MeshInstance3D.new()
-	box.name = "Box"
-	box.position = Vector3(0, 0.2, -0.06)
-	box.rotation.y = PI / 2
-	box.material_override = StandardMaterial3D.new()
-	model.add_child(box)
-	add_child(model)
-	return model
+## Appends `placed` and `color` to `buffer` in MultiMesh layout: the
+## transform's 3x4 matrix row by row, then the colour.
+static func _put(buffer: PackedFloat32Array, placed: Transform3D, color: Color) -> void:
+	var b := placed.basis
+	var o := placed.origin
+	buffer.append_array([b.x.x, b.y.x, b.z.x, o.x, b.x.y, b.y.y, b.z.y, o.y, b.x.z, b.y.z, b.z.z, o.z, color.r, color.g, color.b, color.a])
+
+
+func _vehicle_part(mesh: Mesh) -> MultiMeshInstance3D:
+	var part := MultiMeshInstance3D.new()
+	part.multimesh = MultiMesh.new()
+	part.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	part.multimesh.use_colors = true
+	part.multimesh.mesh = mesh
+	add_child(part)
+	return part
 
 
 ## Each yard block's machines: one over each box being handled, the rest

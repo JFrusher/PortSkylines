@@ -114,3 +114,18 @@ is the same, only found faster.
 | Nearest block with room found by road distance, scanning blocks for room only from the nearest; gate reachability for dispatch read from the fields; each path's gate steps found once | `_yard_tile_for`, `_dispatch_import_lorry`, `_gate_queues` | 3.0 |
 
 The soak port's sim bench dropped from 0.20 to 0.12 ms a tick.
+
+### Vehicles drawn as MultiMeshes (M5 step 4)
+
+`bench/endgame_bench.gd -- 1` on `bench/endgame.bin` (about 2,000
+vehicles), software GL under xvfb at 1920x1080, so only the draw calls and
+the ratio of render CPU time carry over to a real GPU.
+
+| | Draw calls | Render CPU ms | Frame ms |
+|---|---:|---:|---:|
+| A node per vehicle (cab, chassis, box) | 4,981 | 276 | 668 |
+| Cabs, chassis, 20 ft and 40 ft boxes as one MultiMesh each | 329 | 184 | 541 |
+
+Vehicle draw calls are now four, whatever the vehicle count. The frame is
+still sim-bound at this load (about 9 ticks a frame at 27 ms each), which
+the later M5 steps take on.
