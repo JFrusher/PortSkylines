@@ -12,6 +12,7 @@ func _initialize() -> void:
 	_test_routes()
 	_test_editing()
 	_test_sim_commands()
+	_test_areas()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -154,6 +155,44 @@ func _test_sim_commands() -> void:
 	_expect(sim.apply({"op": "remove_road", "segment": 99}), "No road there", "removing a missing road is refused")
 	_expect(sim.apply({"op": "remove_road", "segment": 1}), "", "a road is removed by command")
 	_expect(sim.roads.segments.is_empty(), true, "and is gone")
+
+
+func _test_areas() -> void:
+	var rules := Content.base()
+	var net := RoadNet.new(rules.road_types)
+	var areas := Areas.new(rules.area_types, net, rules.site)
+	# Drawn south, so its right is west, towards the sea (x < 75). The 1+1 lanes are x = 85 and 86.
+	net.add(Vector2i(85, 100), Vector2i(85, 200), "terminal_1_1")
+	var road := 1
+	_expect(areas.add("quay_apron", road, 1, 0, 40), "", "an apron between the road and the sea is built")
+	_expect(areas.cells(1).size(), 41 * rules.area_types.quay_apron.depth, "an area covers its length times its type's depth")
+	_expect(areas.cells(1).all(func(c: Vector2i) -> bool: return c.x >= 75 and c.x <= 84), true, "an apron reaches from the road's edge to the water")
+	_expect(areas.area_at(Vector2i(80, 120)), 1, "a cell finds its area")
+	_expect(areas.add("yard_block", road, -1, 0, 30), "", "a yard block is built on the road's other side")
+	_expect(areas.cells(2).all(func(c: Vector2i) -> bool: return c.x >= 87 and c.x < 87 + rules.area_types.yard_block.depth), true, "it starts just past the road's last lane")
+	_expect(areas.add("depot", road, -1, 20, 40), "Something is already built here", "areas can't overlap")
+	_expect(areas.add("yard_block", road, -1, 31, 35), "A yard block is at least 40 m long", "areas have a shortest length")
+	_expect(areas.add("yard_block", 99, 1, 0, 20), "Areas are built along a road's edge", "an area needs a road")
+	_expect(areas.add("yard_block", road, -1, 90, 120), "Areas are built along a road's edge", "an area stays along its road")
+	_expect(areas.add("yard_block", road, 0, 50, 70), "Areas are built along a road's edge", "an area is on one side of its road")
+	_expect(areas.add("garden", road, -1, 50, 70), "Unknown area type \"garden\"", "unknown area types are refused")
+	net.add(Vector2i(85, 180), Vector2i(110, 180), "terminal_1_1")
+	var south := net.segment_at(Vector2i(85, 190))
+	# Its first cell is the junction, beside the new road's lanes on row 180.
+	_expect(areas.add("yard_block", south, -1, 0, net.cells(south).size() - 1), "Something is already built here", "an area can't reach into a joining road")
+	_expect(areas.add("yard_block", south, -1, 1, net.cells(south).size() - 1), "", "an area is built on a road's split end")
+	var north := net.segment_at(Vector2i(85, 150))
+	_expect(areas.add("depot", north, -1, 60, net.cells(north).size() - 1), "Something is already built here", "an area can't cover a road")
+	var inland := RoadNet.new(rules.road_types)
+	var inland_areas := Areas.new(rules.area_types, inland, rules.site)
+	inland.add(Vector2i(90, 100), Vector2i(90, 200), "terminal_1_1")
+	_expect(inland_areas.add("quay_apron", 1, 1, 0, 40), "A quay apron runs along the water's edge", "an apron must reach the water")
+	var coast := RoadNet.new(rules.road_types)
+	var coast_areas := Areas.new(rules.area_types, coast, rules.site)
+	coast.add(Vector2i(78, 100), Vector2i(78, 200), "terminal_1_1")
+	_expect(coast_areas.add("yard_block", 1, 1, 0, 40), "Areas can't be built on water", "areas stay out of the sea")
+	coast.add(Vector2i(595, 100), Vector2i(595, 200), "terminal_1_1")
+	_expect(coast_areas.add("yard_block", 2, -1, 0, 40), "Areas must stay on the site", "areas stay on the site")
 
 
 func _steps_are_single(cells: Array[Vector2i]) -> bool:
