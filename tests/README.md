@@ -21,6 +21,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | `test_save.gd` | Save files, atomic replace, refusing bad files and payloads, and every committed fixture |
 | `test_view.gd` | Road pieces chosen from neighbours, vehicles drawn along corner arcs without jumps, the STS crane's move cycle, and deck stacks |
 | `test_crash_report.gd` | Errors, not warnings, ask for a crash report; a report holds the log, a loadable save and the content hash |
+| `test_assets.gd` | Every model in `assets/` imports with LODs |
 | `test_content.gd` | The game data loader and its error messages |
 | `test_economy_scenarios.gd` | M3's scripted scenarios: overbooking makes calls late, higher storage fees lower dwell, and dredging lets a Panamax call |
 | `test_soak.gd` | Two game days of calm and congested ports under random commands, with ledger, capacity, box and lane invariants checked every tick and every midnight |

@@ -40,6 +40,8 @@ const SHIP_BOW := 1.1
 const DECK_BAY := 0.48
 const DECK_ROWS := 3
 const DECK_TIERS := 4
+## A 40 ft box turned along the ship and sized to a deck bay.
+var _deck_box := Basis(Vector3.UP, PI / 2) * Basis.from_scale(Vector3((DECK_BAY - 0.04) / 0.78, 0.8, 1.27))
 const SEA_START := -18.0  # how far the water reaches past the map
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
@@ -91,9 +93,7 @@ func _ready() -> void:
 	for kind: int in TILE_HEIGHT:
 		_tile_meshes[kind] = _box_mesh(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
 	for teu: int in BOX_LENGTH:
-		var mesh := _box_mesh(Vector3(BOX_LENGTH[teu] - 0.04, BOX_HEIGHT - 0.02, 0.32), Color.WHITE)
-		(mesh.material as StandardMaterial3D).vertex_color_use_as_albedo = true
-		_stack_meshes[teu] = mesh
+		_stack_meshes[teu] = _container_mesh(teu)
 	for shape: String in ROAD_SHAPES:
 		_road_meshes[shape] = _road_mesh(shape)
 	# A dashed centre line, two dashes a tile, just above a straight road.
@@ -323,7 +323,7 @@ func _draw_ships() -> void:
 			deck.instance_count = maxi(deck.instance_count, slots.size())
 			deck.visible_instance_count = slots.size()
 			for i in slots.size():
-				deck.set_instance_transform(i, Transform3D(Basis(), slots[i]))
+				deck.set_instance_transform(i, Transform3D(_deck_box, slots[i]))
 				deck.set_instance_color(i, _livery(ship.line, i))
 
 
@@ -361,9 +361,7 @@ func _ship_model(ship: PortSim.Ship, length: int) -> Node3D:
 	deck.multimesh = MultiMesh.new()
 	deck.multimesh.transform_format = MultiMesh.TRANSFORM_3D
 	deck.multimesh.use_colors = true
-	var box := _box_mesh(Vector3(0.38, BOX_HEIGHT * 0.8 - 0.02, DECK_BAY - 0.04), Color.WHITE)
-	(box.material as StandardMaterial3D).vertex_color_use_as_albedo = true
-	deck.multimesh.mesh = box
+	deck.multimesh.mesh = _stack_meshes[2]
 	model.add_child(deck)
 	add_child(model)
 	return model
@@ -463,7 +461,8 @@ func _draw_vehicles() -> void:
 		if vehicle.loaded and box.get_meta("id", 0) != vehicle.box:
 			box.set_meta("id", vehicle.box)
 			var spec: Dictionary = sim.boxes[vehicle.box]
-			box.scale.z = 1.0 if spec.teu == 2 else 0.5
+			box.mesh = _stack_meshes[spec.teu]
+			box.scale = Vector3(0.65, 0.75, 0.8)
 			(box.material_override as StandardMaterial3D).albedo_color = _livery(spec.line, vehicle.box)
 
 
@@ -477,9 +476,10 @@ func _vehicle_model(kind: String) -> Node3D:
 	var chassis := _box(Vector3(0.22, 0.04, 0.52), Color(0.2, 0.2, 0.22))
 	chassis.position = Vector3(0, 0.06, -0.06)
 	model.add_child(chassis)
-	var box := _box(Vector3(0.24, 0.2, 0.5), Color.WHITE)
+	var box := MeshInstance3D.new()
 	box.name = "Box"
-	box.position = Vector3(0, 0.18, -0.06)
+	box.position = Vector3(0, 0.2, -0.06)
+	box.rotation.y = PI / 2
 	box.material_override = StandardMaterial3D.new()
 	model.add_child(box)
 	add_child(model)
@@ -599,6 +599,18 @@ func _prism(outline: PackedVector2Array, height: float, color: Color) -> Mesh:
 	material.albedo_color = color
 	tool.set_material(material)
 	return tool.commit()
+
+
+## The `teu` container model from assets/, painted by per-instance colour.
+func _container_mesh(teu: int) -> Mesh:
+	var scene: Node = load("res://assets/container_%dft.glb" % (teu * 20)).instantiate()
+	var mesh: ArrayMesh = (scene.get_node("Body") as MeshInstance3D).mesh.duplicate()
+	scene.free()
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.roughness = 0.7
+	mesh.surface_set_material(0, material)
+	return mesh
 
 
 ## One mesh of boxes, each [size, centre, colour], lit by vertex colour.

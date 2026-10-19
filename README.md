@@ -44,6 +44,7 @@ godot --export-release "Windows" build/windows/PortSkylines.exe
 
 | Path | Role |
 |---|---|
+| `art/`, `assets/` | Blender sources (Git LFS), and the `.glb` models exported from them; see `art/README.md` |
 | `data/base/*.json` | Every tunable number (rules, ships, equipment); keys in `docs/content.md` |
 | `scripts/sim/content.gd` | Loads and checks the game data |
 | `scripts/sim/sim_clock.gd` | Fixed ticks: vehicle seconds and calendar minutes |

@@ -22,3 +22,9 @@ gdscript/warnings/untyped_declaration=2
 [gui]
 
 theme/custom="res://ui/theme.tres"
+
+[importer_defaults]
+
+scene={
+"meshes/generate_lods": true
+}
