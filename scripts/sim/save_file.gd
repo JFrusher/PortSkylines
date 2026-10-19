@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 7
+const VERSION := 8
 const MAGIC := "PSKY"
 
 
@@ -73,6 +73,19 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _v5_to_v6(data)
 	if data.version == 6:
 		data = _v6_to_v7(data)
+	if data.version == 7:
+		data = _v7_to_v8(data)
+	return data
+
+
+## v8 (M5) groups areas into terminals; every older area joins Terminal 1.
+static func _v7_to_v8(data: Dictionary) -> Dictionary:
+	var areas: Dictionary = data.sim.areas
+	for area: Dictionary in areas.list.values():
+		area.terminal = 1
+	areas.terminals = {1: {"name": "Terminal 1"}} if not areas.list.is_empty() else {}
+	areas.next_terminal = 2 if not areas.list.is_empty() else 1
+	data.version = 8
 	return data
 
 

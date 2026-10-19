@@ -76,6 +76,8 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 			command = {"op": "remove_area", "id": rng.randi_range(1, 10)}
 		elif roll >= 0.42 and roll < 0.46:
 			command = {"op": "set_area", "id": rng.randi_range(1, 10), "settings": {"role": PortSim.AREA_ROLES[rng.randi() % PortSim.AREA_ROLES.size()]}}
+		elif roll >= 0.46 and roll < 0.48:
+			command = {"op": "set_terminal", "id": rng.randi_range(1, 10), "terminal": rng.randi_range(0, 3)}
 		# The economy: offers are numbered from 1, so some answers find one and
 		# some are refused; loans, land and dredging are refused without the cash.
 		if roll > 0.88:

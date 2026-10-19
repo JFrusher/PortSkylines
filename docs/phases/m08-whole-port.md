@@ -13,8 +13,8 @@
 ## Steps
 
 ### Terminals as units
-1. **Terminal entity.** A terminal is a set of owned tiles, berths, yard blocks and a gate, named by the player. Each terminal has its own KPIs and its own section in the ledger. Test: KPIs and ledger split correctly across two terminals.
-2. **Assign tiles to a terminal.** A paint command; tiles shared between terminals are refused. Test: refused overlaps.
+1. **Terminal KPIs and ledger.** Terminals are named groups of areas from M5 step 14. Each gets its own KPIs and its own section in the ledger. Test: KPIs and ledger split correctly across two terminals.
+2. **Name terminals.** The player renames a terminal; moving areas between terminals is already M5's `set_terminal`. Test: a renamed terminal keeps its areas.
 3. **Contracts belong to a terminal.** A service is signed for one terminal. Test: calls go only to that terminal's berths.
 4. **Port-level overview.** A panel listing terminals, plus total and per-terminal KPIs. Check: screenshot.
 

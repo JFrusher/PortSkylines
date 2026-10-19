@@ -8,8 +8,13 @@ extends RefCounted
 
 ## Area id -> {"type": a key of area_types, "start" and "end": the ends of
 ## its front row, beside the road, "out": one cell away from the road,
-## "settings": the player's rules for it, checked by PortSim.set_area}.
+## "settings": the player's rules for it, checked by PortSim.set_area,
+## "terminal": the terminal it belongs to}.
 var list := {}
+## Terminal id -> {"name"}. A terminal is a named group of areas: a new area
+## joins the terminal of an area it touches, or starts its own. Roads belong
+## to no terminal, so terminals can share them.
+var terminals := {}
 var types: Dictionary
 ## Bumped on every change, so the view knows to redraw.
 var version := 0
@@ -17,6 +22,7 @@ var _roads: RoadNet
 var _size: Vector2i
 var _sea: int
 var _next_id := 1
+var _next_terminal := 1
 
 
 func _init(area_types: Dictionary, roads: RoadNet, site: Dictionary) -> void:
@@ -32,6 +38,8 @@ func add(type: String, segment: int, side: int, from: int, to: int, settings := 
 	if err == "":
 		list[_next_id] = _placed(type, segment, side, from, to)
 		list[_next_id].settings = settings.duplicate(true)
+		var touching := _terminals_touching(_cells(list[_next_id]))
+		list[_next_id].terminal = touching.min() if not touching.is_empty() else _new_terminal()
 		_next_id += 1
 		version += 1
 	return err
@@ -63,7 +71,31 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 
 func remove(id: int) -> void:
 	list.erase(id)
+	_forget_empty_terminals()
 	version += 1
+
+
+## Moves area `id` into `terminal`, or into a new terminal when it is 0.
+func set_terminal(id: int, terminal: int) -> String:
+	if id not in list:
+		return "No area there"
+	if terminal != 0 and terminal not in terminals:
+		return "No such terminal"
+	list[id].terminal = terminal if terminal != 0 else _new_terminal()
+	_forget_empty_terminals()
+	version += 1
+	return ""
+
+
+## Why `terminal` can't take contracts yet, or "": it needs a gate for lorries
+## and a quay apron for ships.
+func terminal_error(terminal: int) -> String:
+	var kinds := list.values().filter(func(a: Dictionary) -> bool: return a.terminal == terminal).map(func(a: Dictionary) -> String: return a.type)
+	if "quay_apron" not in kinds:
+		return "%s needs a quay apron" % terminals[terminal].name
+	if "gate" not in kinds:
+		return "%s needs a gate" % terminals[terminal].name
+	return ""
 
 
 ## The cells `id` covers.
@@ -123,14 +155,41 @@ func index_near(segment: int, cell: Vector2i) -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"list": list.duplicate(true), "next_id": _next_id}
+	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal}
 
 
 static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, site: Dictionary) -> Areas:
 	var areas := Areas.new(area_types, roads, site)
 	areas.list = d.list.duplicate(true)
 	areas._next_id = d.next_id
+	areas.terminals = d.terminals.duplicate(true)
+	areas._next_terminal = d.next_terminal
 	return areas
+
+
+## The terminals of areas sharing an edge with any of `cells`.
+func _terminals_touching(cells: Array[Vector2i]) -> Array:
+	var near := {}
+	for cell in cells:
+		for side: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			near[cell + side] = true
+	var found := {}
+	for id: int in list:
+		if list[id].has("terminal") and _cells(list[id]).any(func(c: Vector2i) -> bool: return c in near):
+			found[list[id].terminal] = true
+	return found.keys()
+
+
+func _new_terminal() -> int:
+	terminals[_next_terminal] = {"name": "Terminal %d" % _next_terminal}
+	_next_terminal += 1
+	return _next_terminal - 1
+
+
+func _forget_empty_terminals() -> void:
+	for terminal: int in terminals.keys():
+		if not list.values().any(func(a: Dictionary) -> bool: return a.terminal == terminal):
+			terminals.erase(terminal)
 
 
 ## An area's own geometry beside `segment`, from index `from` to `to`.

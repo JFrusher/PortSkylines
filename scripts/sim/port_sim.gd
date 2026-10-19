@@ -334,10 +334,12 @@ func apply(command: Dictionary) -> String:
 			return remove_area(command.id)
 		"set_area":
 			return set_area(command.id, command.settings)
+		"set_terminal":
+			return areas.set_terminal(command.id, command.terminal)
 	return "Unknown command: %s" % command.get("op")
 
 
-## shortcut: roads ignore land ownership, which is counted in 25 m tiles; areas bring ownership onto the grid in M5 step 14.
+## shortcut: roads and areas ignore land ownership, which is counted in 25 m tiles; it moves onto the grid when M5 step 22 removes the tile model.
 func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
 	var err := roads.add_error(from, to, type)
 	if err == "" and not _afford(road_price(from, to, type)):

@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_yard_layout()
 	_test_apron_and_gate_layouts()
 	_test_area_settings()
+	_test_terminals()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -293,6 +294,27 @@ func _test_area_settings() -> void:
 	locked.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 160), "type": "terminal_1_1"})
 	locked.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 15})
 	_expect(locked.apply({"op": "set_area", "id": 1, "settings": {"gear": "rtg"}}), locked.lock_error("rtg"), "RTGs wait for their milestone")
+
+
+func _test_terminals() -> void:
+	var sim := PortSim.new(0, Content.base(), true)
+	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, 200), "type": "terminal_1_1"})
+	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
+	_expect(sim.areas.list[1].terminal, 1, "the first area starts Terminal 1")
+	_expect(sim.areas.terminal_error(1), "Terminal 1 needs a gate", "a terminal with only an apron can't take contracts")
+	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 30, "to": 59})
+	_expect(sim.areas.list[2].terminal, 1, "an area touching another joins its terminal")
+	sim.apply({"op": "build_area", "type": "gate", "segment": 1, "side": -1, "from": 80, "to": 95})
+	_expect(sim.areas.list[3].terminal, 2, "an area touching none starts its own terminal")
+	_expect(sim.areas.terminal_error(2), "Terminal 2 needs a quay apron", "a terminal needs an apron too")
+	_expect(sim.apply({"op": "set_terminal", "id": 3, "terminal": 1}), "", "an area is moved to another terminal")
+	_expect(sim.areas.terminal_error(1), "", "a terminal with a gate and an apron takes contracts")
+	_expect(sim.areas.terminals.has(2), false, "a terminal left with no areas goes")
+	_expect(sim.apply({"op": "set_terminal", "id": 3, "terminal": 0}), "", "an area is split off into a new terminal")
+	_expect(sim.areas.list[3].terminal, 3, "which gets the next number")
+	_expect(sim.apply({"op": "set_terminal", "id": 3, "terminal": 7}), "No such terminal", "a missing terminal is refused")
+	sim.apply({"op": "remove_area", "id": 3})
+	_expect(sim.areas.terminals.keys(), [1], "removing a terminal's last area removes the terminal")
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`
