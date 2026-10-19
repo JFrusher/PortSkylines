@@ -115,7 +115,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_road_from = _hovered_grid_cell()
 			return
 		if hud.tool == Hud.INSPECT:
-			hud.inspect(_hovered_cell())
+			hud.inspect(_hovered_cell(), _hovered_grid_cell())
 			return
 		_painting = true
 		_order(_hovered_cell(), true)

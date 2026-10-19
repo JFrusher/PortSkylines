@@ -103,6 +103,22 @@ func cells(id: int) -> Array[Vector2i]:
 	return _cells(list[id])
 
 
+## Why area `id` does no work, or "": a road must still run along its front,
+## since vehicles reach it from there. The box flow sends nothing to an area
+## with a reason.
+func idle_reason(id: int) -> String:
+	var area: Dictionary = list[id]
+	var lanes := {}
+	for segment: int in _roads.segments:
+		for lane in _roads.lanes(segment):
+			for cell: Vector2i in lane.cells:
+				lanes[cell] = true
+	for cell in RoadNet.line(area.start, area.end):
+		if cell - area.out in lanes:
+			return ""
+	return "No road runs along this %s" % types[area.type].name.to_lower()
+
+
 ## What `id` holds, laid out by AreaLayout for its type.
 func layout(id: int) -> Dictionary:
 	var area: Dictionary = list[id]

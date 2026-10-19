@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_apron_and_gate_layouts()
 	_test_area_settings()
 	_test_terminals()
+	_test_unconnected_areas()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -315,6 +316,21 @@ func _test_terminals() -> void:
 	_expect(sim.apply({"op": "set_terminal", "id": 3, "terminal": 7}), "No such terminal", "a missing terminal is refused")
 	sim.apply({"op": "remove_area", "id": 3})
 	_expect(sim.areas.terminals.keys(), [1], "removing a terminal's last area removes the terminal")
+
+
+func _test_unconnected_areas() -> void:
+	var sim := PortSim.new(0, Content.base(), true)
+	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 140), "type": "terminal_1_1"})
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
+	_expect(sim.areas.idle_reason(1), "", "a yard block along its road works")
+	var lines := Inspect.describe(sim, Inspect.pick(sim, PortMap.NONE, sim.areas.cells(1)[5]))
+	_expect(lines, ["Yard block", "Terminal 1", "Import block, reach stacker", "Working"] as Array[String], "inspecting an area shows its type, terminal, rules and state")
+	sim.apply({"op": "remove_road", "segment": 1})
+	_expect(sim.areas.idle_reason(1), "No road runs along this yard block", "with its road gone it does no work, and says why")
+	_expect(Inspect.describe(sim, {"area": 1})[-1], "No road runs along this yard block", "the inspect panel shows why")
+	sim.apply({"op": "build_road", "from": Vector2i(100, 120), "to": Vector2i(100, 160), "type": "terminal_1_1"})
+	_expect(sim.areas.idle_reason(1), "", "a road along part of its front reconnects it")
+	_expect(Inspect.describe(sim, {"area": 9}), [] as Array[String], "an area that went shows nothing")
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`

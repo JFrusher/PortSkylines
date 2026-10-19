@@ -56,6 +56,8 @@ const SLOT_COLORS: Array[Color] = [Color(0.24, 0.24, 0.26), Color(0.33, 0.33, 0.
 const RAIL_COLOR := Color(0.16, 0.16, 0.17)
 ## The quay edge's fender line, in safety yellow.
 const EDGE_COLOR := Color(0.85, 0.7, 0.15)
+## Mixed into an idle area's ground, so an area cut off from its road stands out.
+const IDLE_TINT := Color(0.85, 0.2, 0.15)
 ## Camera distances to a chunk's centre past which it is drawn with less
 ## detail, as Cities: Skylines does: each tile's stack as one slab instead of
 ## every box, then no yard machines. Instances drawn cost the most render time.
@@ -121,7 +123,8 @@ var _road_marks := MeshInstance3D.new()
 var _roads_drawn := -1
 ## Every area's ground as one mesh, redrawn when the areas change.
 var _areas := MeshInstance3D.new()
-var _areas_drawn := -1
+## The area and road versions the areas were drawn for: idle tints follow the roads.
+var _areas_drawn := []
 var _area_preview := MeshInstance3D.new()
 ## The road being dragged out, tinted by whether it can be built.
 var _road_preview := MeshInstance3D.new()
@@ -212,7 +215,7 @@ func show_area_preview(cells: Array[Vector2i], ok: bool) -> void:
 func _process(_dt: float) -> void:
 	if sim.roads.version != _roads_drawn:
 		_draw_roads()
-	if sim.areas.version != _areas_drawn:
+	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
 	var channel: Dictionary = sim.rules.channel
 	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
@@ -247,7 +250,7 @@ func _draw_roads() -> void:
 
 
 func _draw_areas() -> void:
-	_areas_drawn = sim.areas.version
+	_areas_drawn = [sim.areas.version, sim.roads.version]
 	var tool := _road_tool()
 	for id: int in sim.areas.list:
 		var colors := {}
@@ -267,8 +270,9 @@ func _draw_areas() -> void:
 		for i: int in layout.get("slots", []).size():
 			for cell: Vector2i in layout.slots[i]:
 				colors[cell] = SLOT_COLORS[i % 2]
+		var idle := sim.areas.idle_reason(id) != ""
 		for cell: Vector2i in colors:
-			tool.set_color(colors[cell])
+			tool.set_color(colors[cell].lerp(IDLE_TINT, 0.4) if idle else colors[cell])
 			_cell_quad(tool, cell, AREA_TOP)
 	_areas.mesh = tool.commit()
 

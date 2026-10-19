@@ -195,8 +195,8 @@ func _set_ui_scale(factor: float, button: Button) -> void:
 
 
 ## Opens the inspect panel on whatever is at `cell`.
-func inspect(cell: Vector2i) -> void:
-	_inspected = Inspect.pick(sim, cell)
+func inspect(cell: Vector2i, grid_cell: Vector2i) -> void:
+	_inspected = Inspect.pick(sim, cell, grid_cell)
 	_panel_of(_inspect_name).visible = true
 
 

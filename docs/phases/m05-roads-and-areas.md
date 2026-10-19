@@ -31,7 +31,7 @@ The new model is built beside the tile model, in its own sim classes with headle
 12. **Quay apron and gate layouts.** Crane rails, tractor lanes under the cranes and a buffer on the apron; lanes and booths at the gate. Test: each layout comes out as expected for a given length.
 13. **Area rules.** Role (import, export, empty or reefer), equipment type, and line or berth priority. Test: invalid settings are refused.
 14. **Terminals as groups of areas.** A new area joins the terminal it touches; a terminal needs a gate and a quay apron to take contracts. Test: both rules.
-15. **An area without a road does no work and shows why.** Test: an unconnected yard block takes no boxes and reports the reason.
+15. **An area without a road does no work and shows why.** The inspect tool shows an area's type, terminal, rules and state. Test: a yard block whose road is removed reports the reason; step 19's box flow sends nothing to an area with one.
 
 ### Moves
 16. **Slot booking.** A vehicle books a handover slot; overflow waits in the buffer strip, then queues on the road. Test: no slot ever holds two vehicles, and a full block shows a road queue.

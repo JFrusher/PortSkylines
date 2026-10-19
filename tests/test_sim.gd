@@ -813,11 +813,11 @@ func _test_inspect_each_entity() -> void:
 	var crane := sim.cranes[0]
 	var vehicle := sim.vehicles[0]
 	var yard := sim.map.cells_of(YARD)[0]
-	_expect(Inspect.pick(sim, ship.cells[0] + ship.side), ship, "a click on the water beside a quay picks its ship")
+	_expect(Inspect.pick(sim, ship.cells[0] + ship.side, PortMap.NONE), ship, "a click on the water beside a quay picks its ship")
 	_expect(Inspect.describe(sim, ship)[0], "%s feeder" % sim.contracts.name_of(ship.line), "a ship is named by line and class")
-	_expect(Inspect.pick(sim, crane.cell), crane, "a click on a crane's quay tile picks the crane")
+	_expect(Inspect.pick(sim, crane.cell, PortMap.NONE), crane, "a click on a crane's quay tile picks the crane")
 	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
-	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
+	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round()), PortMap.NONE), vehicle, "a click on a vehicle picks it")
 	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
 	_expect(Inspect.describe(sim, yard).slice(0, 2), ["Yard", "Import block, reach stacker"] as Array[String], "a yard tile shows its block")
 	sim.vehicles.erase(vehicle)

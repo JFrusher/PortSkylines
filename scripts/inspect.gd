@@ -10,8 +10,9 @@ const STATES := {
 const SHIP_STATES := ["Arriving", "Working", "Leaving", "At anchor"]
 
 
-## The vehicle, ship or crane at `cell`, else the cell itself.
-static func pick(sim: PortSim, cell: Vector2i) -> Variant:
+## The vehicle, ship or crane at `cell`, else an area at `grid_cell` on the
+## 4 m grid as {"area": id}, else the cell itself.
+static func pick(sim: PortSim, cell: Vector2i, grid_cell: Vector2i) -> Variant:
 	for vehicle in sim.vehicles:
 		if Vector2i(vehicle.position(1.0).round()) == cell:
 			return vehicle
@@ -22,6 +23,9 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for crane in sim.cranes:
 		if crane.cell == cell:
 			return crane
+	var area := sim.areas.area_at(grid_cell)
+	if area:
+		return {"area": area}
 	return cell
 
 
@@ -33,6 +37,8 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		return _ship(sim, thing) if thing in sim.ships else []
 	if thing is PortSim.Crane:
 		return _crane(sim, thing) if thing in sim.cranes else []
+	if thing is Dictionary:
+		return _area(sim, thing.area) if thing.area in sim.areas.list else []
 	return _cell(sim, thing)
 
 
@@ -58,6 +64,19 @@ static func _ship(sim: PortSim, ship: PortSim.Ship) -> Array[String]:
 static func _crane(sim: PortSim, crane: PortSim.Crane) -> Array[String]:
 	var lines: Array[String] = ["STS crane", "Idle" if crane.tractor == 0 else "Working with tractor %d" % crane.tractor]
 	lines.append("%d moves an hour, %d rows outreach" % [sim.rules.sts_crane.rate, sim.rules.sts_crane.outreach])
+	return lines
+
+
+static func _area(sim: PortSim, id: int) -> Array[String]:
+	var area: Dictionary = sim.areas.list[id]
+	var lines: Array[String] = [sim.rules.area_types[area.type].name, sim.areas.terminals[area.terminal].name]
+	var settings: Dictionary = area.settings
+	if settings.has("role"):
+		lines.append("%s block, %s" % [settings.role.capitalize(), settings.gear.replace("_", " ")])
+	if settings.has("lines") and not settings.lines.is_empty():
+		lines.append("Favours " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
+	var idle := sim.areas.idle_reason(id)
+	lines.append(idle if idle else "Working")
 	return lines
 
 
