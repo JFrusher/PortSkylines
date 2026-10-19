@@ -37,7 +37,13 @@ The new model is built beside the tile model, in its own sim classes with headle
 16. **Slot booking.** A vehicle books a handover slot; overflow waits in the buffer strip, then queues on the road. Test: no slot ever holds two vehicles, and a full block shows a road queue.
 17. **Machine jobs with phase times from the data** (travel, lift, set down). Each machine belongs to one area. Test: one move takes the data time.
 18. **Stacks per area.** Rows, bays and tiers, with no 40 ft box on a 20 ft box. Digging out a buried box costs extra moves, and cranes reshuffle in quiet periods. Test: a buried box costs the expected extra moves.
-19. **Box flow on slots and jobs.** Replaces the tile-based `_dispatch_*` and `_drive_*` code. Test: a scripted port works its first ship end to end.
+19. **Box flow on slots and jobs.** Replaces the tile-based `_dispatch_*` and `_drive_*` code, in parts that each leave the tile game working; the area flow runs beside it until step 22.
+    1. **Site entry and area driveways.** The highway meets the site at the middle of its east edge. Areas join the lane graph: traffic in an area runs the way of the road lane beside it; a yard block's buffer strip runs along its front with each slot entered and left sideways; apron and gate lanes are entered from the buffer at the area's start and leave back to it at the end; aprons are for tractors only. Test: a lorry routes from the site entry into a yard slot and back out; a lorry can't route onto an apron.
+    2. **Berths on quay aprons.** A ship berths along an apron long enough for its class, and STS cranes stand on an apron's rails. Test: a ship too long for an apron waits; a crane off an apron's rails is refused.
+    3. **Discharge.** A crane lifts a box onto a tractor in an apron slot; the tractor books a slot at an import block of its terminal that has no idle reason, drives there, and the block's machine stacks the box. Test: a box goes from ship to stack with the data's times.
+    4. **Delivery.** A lorry comes in at the site entry, stops at a gate booth for the gate time, books a yard slot, takes its box (with any rehandles), and leaves through the gate. Test: a box goes from stack to the site exit.
+    5. **Exports and loading.** Export lorries bring boxes to export blocks; tractors fetch them to the cranes, which load the ship. Test: a ship sails with its exports.
+    6. **Give-up valve and end to end.** A vehicle stuck past the give-up time is taken off and counted, as in M2. Test: a scripted port works its first ship end to end.
 
 ### View and close
 20. **Main-motion animations** from the job phases, reusing the M4 art. Check: screenshots of each phase.
