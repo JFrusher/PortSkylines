@@ -66,6 +66,10 @@ Rules this sketch assumes:
 | A2 | Grid size | 4 m cells, about one lane wide |
 | A3 | First road types | Terminal road 1+1, terminal road 2+2, one-way road, and an AGV/tractor-only lane |
 | B4 | First area types | Yard block, gate, quay apron, and depot or parking |
+| D4 | Rehandles | Simulated. Digging out a buried box costs extra crane moves, and cranes reshuffle boxes in quiet periods |
+| D3 | Dual cycling | Not in the first slice. It arrives later as an M10 automation policy |
+| E4 | Follow camera | In the first slice: click a box or machine to follow it from ship to gate |
+| G2 | Scope | Nothing is cut. The total time to 1.0 grows |
 | G3 | First playable slice | One full chain: draw roads, then drag a quay apron, one RTG yard block and a gate. A box goes STS → tractor → RTG lane → stack → lorry → gate, with main-motion animations |
 
 What these change **[Inference]**:
