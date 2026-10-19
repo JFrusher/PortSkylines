@@ -28,6 +28,8 @@ jobs:
               exit 1
             fi
           done
+      - name: Sim stays within its performance budget
+        run: timeout 300 $GODOT --headless --script res://bench/sim_bench.gd
       - name: Main scene runs without script errors
         run: |
           timeout 300 $GODOT --headless --quit-after 600 2>&1 | tee run.log

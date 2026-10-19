@@ -37,3 +37,23 @@ cells. Same machine, renderer and command as the M1 baseline, run with `96`.
 baselines. This run's frame times came out below the 64² baseline's, so this
 box's timings drift by more than the gap between those two map sizes. Treat
 the frame times as noise and keep the draw-call count as the result.
+
+## M4 budget (2026-10-19)
+
+`bench/sim_bench.gd` runs the soak test's port in headless timing mode for
+half a game day and fails when the sim goes over budget. CI runs it on every
+push. The render budget is checked by hand with `bench/bench.gd`.
+
+| Entity | Measured (this box) | Budget |
+|---|---:|---:|
+| Whole tick, bench port | 0.18–0.20 ms | 1.0 ms |
+| Per vehicle per tick | 21–23 µs | 100 µs |
+
+**Machine:** the same cloud container as the M1 baseline. **Command:**
+`godot --headless --script res://bench/sim_bench.gd`. The bench port holds
+8.5 vehicles on average, 14 ships and 17 boxes, so the per-vehicle figure
+still carries the tick's fixed cost; it is a regression guard, not a
+measure of scale. The budgets leave about 5× headroom for slower CI
+runners. At 21 µs per vehicle, 2,000 lorries would cost about 42 ms a tick,
+far over the M5 target; packed vehicle state and threaded paths in M5 are
+what close that gap.

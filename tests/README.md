@@ -28,9 +28,15 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 
 `tests/fixtures/save_v<N>.bin` is a save written at version N. When `SaveFile.VERSION` goes up, run `godot --headless --script res://tests/make_fixtures.gd` once and commit the new file. Never regenerate a fixture once its version is on `main`: they prove that old saves still load. While a PR is still changing the format of the new version, regenerate that version's fixture in the same PR.
 
-## Benchmark
+## Benchmarks
 
-Needs a renderer, so use a display or `xvfb-run`:
+`bench/sim_bench.gd` times the sim headless and fails when it goes over the budget in `docs/perf.md`. CI runs it on every push:
+
+```bash
+godot --headless --script res://bench/sim_bench.gd
+```
+
+The render bench needs a renderer, so use a display or `xvfb-run`:
 
 ```bash
 xvfb-run -a godot --rendering-method gl_compatibility --resolution 1280x720 --script res://bench/bench.gd -- 256
