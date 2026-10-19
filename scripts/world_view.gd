@@ -53,6 +53,9 @@ var _drawn_tiles := PackedByteArray()
 var _tiles := ChunkedMeshes.new()
 var _tile_meshes := {}  # tile kind -> Mesh
 var _road_meshes := {}  # road shape -> Mesh
+var _marks_mesh: Mesh
+var _quay_edge_mesh: Mesh
+var _water := ShaderMaterial.new()
 var _stacks := ChunkedMeshes.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
 ## Stack parts ([chunk, teu]) drawn last time, so emptied ones get cleared.
@@ -72,8 +75,11 @@ var _drawn_land := -1
 
 func _ready() -> void:
 	var map := sim.map
-	var water := _box(Vector3(map.size.x - SEA_START * 2, 0.1, map.size.y - SEA_START * 2), Color(0.12, 0.3, 0.45))
+	var water := _box(Vector3(map.size.x - SEA_START * 2, 0.1, map.size.y - SEA_START * 2), Color.WHITE)
 	water.position = Vector3(map.size.x / 2.0, -0.35, map.size.y / 2.0)
+	_water.shader = load("res://shaders/water.gdshader")
+	_water.set_shader_parameter("coast_x", float(map.sea_width))
+	water.material_override = _water
 	add_child(water)
 	var land_width := map.size.x - map.sea_width
 	var land := _box(Vector3(land_width, 1, map.size.y), Color(0.36, 0.42, 0.3))
@@ -90,6 +96,17 @@ func _ready() -> void:
 		_stack_meshes[teu] = mesh
 	for shape: String in ROAD_SHAPES:
 		_road_meshes[shape] = _road_mesh(shape)
+	# A dashed centre line, two dashes a tile, just above a straight road.
+	var top: float = TILE_HEIGHT[PortMap.Tile.ROAD] / 2.0 + 0.003
+	_marks_mesh = _merged([[Vector3(0.04, 0.004, 0.22), Vector3(0, top, -0.25), Color(0.92, 0.92, 0.85)], [Vector3(0.04, 0.004, 0.22), Vector3(0, top, 0.25), Color(0.92, 0.92, 0.85)]])
+	# A dark fender along the water's edge and two bollards, facing +Z.
+	var deck: float = TILE_HEIGHT[PortMap.Tile.QUAY] / 2.0
+	_quay_edge_mesh = _merged([
+		[Vector3(1.0, 0.18, 0.06), Vector3(0, deck - 0.12, 0.52), Color(0.12, 0.12, 0.13)],
+		[Vector3(1.0, 0.01, 0.08), Vector3(0, deck + 0.005, 0.44), Color(0.95, 0.75, 0.1)],
+		[Vector3(0.07, 0.08, 0.07), Vector3(-0.3, deck + 0.04, 0.36), Color(0.15, 0.15, 0.16)],
+		[Vector3(0.07, 0.08, 0.07), Vector3(0.3, deck + 0.04, 0.36), Color(0.15, 0.15, 0.16)],
+	])
 
 
 func show_hover(cell: Vector2i, ok: bool) -> void:
@@ -99,6 +116,8 @@ func show_hover(cell: Vector2i, ok: bool) -> void:
 
 
 func _process(_dt: float) -> void:
+	var channel: Dictionary = sim.rules.channel
+	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
 	if sim.map.version != _drawn_version:
 		_draw_tiles()
 	if sim.land.size() != _drawn_land:
@@ -153,19 +172,31 @@ func _draw_tiles() -> void:
 		var by_shape := {}
 		for shape: String in ROAD_SHAPES:
 			by_shape[shape] = [] as Array[Transform3D]
+		var marks: Array[Transform3D] = []
+		var edges: Array[Transform3D] = []
 		for y in range(chunk.y * ChunkedMeshes.CHUNK, mini((chunk.y + 1) * ChunkedMeshes.CHUNK, map.size.y)):
 			for x in range(chunk.x * ChunkedMeshes.CHUNK, mini((chunk.x + 1) * ChunkedMeshes.CHUNK, map.size.x)):
 				var cell := Vector2i(x, y)
 				var kind := map.tile(cell)
+				var centre := Vector3(x + 0.5, TILE_HEIGHT.get(kind, 0.0) / 2.0, y + 0.5)
 				if kind == PortMap.Tile.ROAD:
 					var piece := road_piece(map, cell)
-					by_shape[piece[0]].append(Transform3D(Basis(Vector3.UP, piece[1] * PI / 2), Vector3(x + 0.5, TILE_HEIGHT[kind] / 2.0, y + 0.5)))
+					var placed := Transform3D(Basis(Vector3.UP, piece[1] * PI / 2), centre)
+					by_shape[piece[0]].append(placed)
+					if piece[0] == "straight":
+						marks.append(placed)
 				elif kind in TILE_HEIGHT:
-					by_kind[kind].append(Transform3D(Basis(), Vector3(x + 0.5, TILE_HEIGHT[kind] / 2.0, y + 0.5)))
+					by_kind[kind].append(Transform3D(Basis(), centre))
+				if kind == PortMap.Tile.QUAY:
+					for side: Vector2i in PortMap.SIDES:
+						if map.tile(cell + side) == PortMap.Tile.WATER:
+							edges.append(Transform3D(Basis(Vector3.UP, atan2(side.x, side.y)), centre))
 		for kind: int in by_kind:
 			_tiles.show_part(Vector3i(chunk.x, chunk.y, kind), _tile_meshes[kind], by_kind[kind])
 		for shape: String in by_shape:
 			_tiles.show_part([chunk, shape], _road_meshes[shape], by_shape[shape])
+		_tiles.show_part([chunk, "marks"], _marks_mesh, marks)
+		_tiles.show_part([chunk, "quay edge"], _quay_edge_mesh, edges)
 
 
 ## The road piece for `cell`: [shape, quarter turns about +Y] whose turned
@@ -566,6 +597,27 @@ func _prism(outline: PackedVector2Array, height: float, color: Color) -> Mesh:
 	tool.generate_normals()
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
+	tool.set_material(material)
+	return tool.commit()
+
+
+## One mesh of boxes, each [size, centre, colour], lit by vertex colour.
+func _merged(boxes: Array) -> Mesh:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for part: Array in boxes:
+		var box := BoxMesh.new()
+		box.size = part[0]
+		var arrays := box.get_mesh_arrays()
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		for index in indices:
+			tool.set_color(part[2])
+			tool.set_normal(normals[index])
+			tool.add_vertex(vertices[index] + part[1])
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
 	tool.set_material(material)
 	return tool.commit()
 
