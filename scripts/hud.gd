@@ -44,7 +44,7 @@ func _ready() -> void:
 	add_child(root)
 
 	var top := _row(root)
-	top.add_child(_outlined(_readout))
+	top.add_child(_readout)
 	var speeds := ButtonGroup.new()
 	for s: int in SPEEDS:
 		_button(top, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
@@ -70,10 +70,10 @@ func _ready() -> void:
 		button.text = "New creative game" if creative else "New game"
 		button.pressed.connect(func() -> void: new_game_pressed.emit(creative))
 		game.add_child(button)
-	root.add_child(_outlined(_kpis))
-	root.add_child(_outlined(_message))
+	root.add_child(_kpis)
+	root.add_child(_message)
 	_ledger.visible = false
-	root.add_child(_outlined(_ledger))
+	root.add_child(_ledger)
 	_borrow.visible = false
 	root.add_child(_borrow)
 	for kind: String in sim.rules.loans:
@@ -187,11 +187,11 @@ func _draw_contracts() -> void:
 	var standing: Array[String] = []
 	for line: String in contracts.reputation:
 		standing.append("%s %d" % [contracts.name_of(line), roundi(contracts.reputation[line])])
-	_contracts.add_child(_outlined(_label("Reputation   " + "    ".join(standing))))
+	_contracts.add_child(_label("Reputation   " + "    ".join(standing)))
 	var terms := _row(_contracts)
 	var free: int = sim.storage.free_days
 	var fee: int = sim.storage.fee
-	terms.add_child(_outlined(_label("Storage: %d free days, then $%d a box a day" % [free, fee])))
+	terms.add_child(_label("Storage: %d free days, then $%d a box a day" % [free, fee]))
 	for change: Array in [["- day", -1, 0], ["+ day", 1, 0], ["- $10", 0, -10], ["+ $10", 0, 10]]:
 		var button := Button.new()
 		button.text = change[0]
@@ -199,10 +199,10 @@ func _draw_contracts() -> void:
 		var new_fee: int = fee + change[2]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_storage", "free_days": free_days, "fee": new_fee}))
 		terms.add_child(button)
-	_contracts.add_child(_outlined(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services while reputation is good and berths have room")))
+	_contracts.add_child(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services while reputation is good and berths have room"))
 	for offer in contracts.offers:
 		var row := _row(_contracts)
-		row.add_child(_outlined(_label("    " + _service_text(offer) + "   offer ends day %d" % int(offer.expires / SimClock.MINUTES_PER_DAY))))
+		row.add_child(_label("    " + _service_text(offer) + "   offer ends day %d" % int(offer.expires / SimClock.MINUTES_PER_DAY)))
 		var id: int = offer.id
 		var accept := Button.new()
 		accept.text = "Accept"
@@ -212,9 +212,9 @@ func _draw_contracts() -> void:
 		decline.text = "Decline"
 		decline.pressed.connect(func() -> void: command_issued.emit({"op": "decline_offer", "id": id}))
 		row.add_child(decline)
-	_contracts.add_child(_outlined(_label("Services" if not contracts.services.is_empty() else "No services yet")))
+	_contracts.add_child(_label("Services" if not contracts.services.is_empty() else "No services yet"))
 	for service in contracts.services:
-		_contracts.add_child(_outlined(_label("    " + _service_text(service))))
+		_contracts.add_child(_label("    " + _service_text(service)))
 
 
 func _service_text(service: Dictionary) -> String:
@@ -253,9 +253,3 @@ func _action(row: HBoxContainer, text: String, pressed_signal: Signal) -> void:
 	button.text = text
 	button.pressed.connect(pressed_signal.emit)
 	row.add_child(button)
-
-
-func _outlined(label: Label) -> Label:
-	label.add_theme_constant_override("outline_size", 6)
-	label.add_theme_color_override("font_outline_color", Color.BLACK)
-	return label
