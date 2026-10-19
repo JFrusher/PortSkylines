@@ -13,12 +13,14 @@ static func chunk_of(cell: Vector2i) -> Vector2i:
 	return Vector2i(floori(cell.x / float(CHUNK)), floori(cell.y / float(CHUNK)))
 
 
-## Draws `transforms` copies of `mesh` for `key`, replacing what `key` drew before.
-func show_part(key: Variant, mesh: Mesh, transforms: Array[Transform3D]) -> void:
+## Draws `transforms` copies of `mesh` for `key`, replacing what `key` drew
+## before, tinted per copy by `colors` when given (a key always or never has them).
+func show_part(key: Variant, mesh: Mesh, transforms: Array[Transform3D], colors := PackedColorArray()) -> void:
 	if key not in _parts:
 		var part := MultiMeshInstance3D.new()
 		part.multimesh = MultiMesh.new()
 		part.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		part.multimesh.use_colors = not colors.is_empty()
 		part.multimesh.mesh = mesh
 		add_child(part)
 		_parts[key] = part
@@ -28,3 +30,5 @@ func show_part(key: Variant, mesh: Mesh, transforms: Array[Transform3D]) -> void
 	multimesh.visible_instance_count = transforms.size()
 	for i in transforms.size():
 		multimesh.set_instance_transform(i, transforms[i])
+		if not colors.is_empty():
+			multimesh.set_instance_color(i, colors[i])

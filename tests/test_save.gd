@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_malformed_v1_is_refused()
 	_test_v2_cash_moves_into_the_ledger()
 	_test_every_fixture_loads()
+	_test_v3_boxes_belong_to_no_line()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -186,3 +187,9 @@ func _write_payload(path: String, data: Variant) -> void:
 	file.store_buffer(SaveFile.MAGIC.to_ascii_buffer())
 	file.store_var(data, false)
 	file.close()
+
+
+func _test_v3_boxes_belong_to_no_line() -> void:
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v3.bin").sim
+	_expect(sim.boxes.is_empty(), false, "the v3 fixture has boxes")
+	_expect(sim.boxes.values().all(func(b: Dictionary) -> bool: return b.line == ""), true, "v3 boxes migrate to no line")

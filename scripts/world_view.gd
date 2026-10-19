@@ -20,6 +20,11 @@ const TILE_COLOR := {
 	PortMap.Tile.GATE: Color(0.2, 0.45, 0.7),
 }
 const BOX_HEIGHT := 0.3
+## A box's length along the tile by TEU: 20 ft and 40 ft, at 1 tile = 25 m
+## stretched a little so a lone 20 ft box still reads at a distance.
+const BOX_LENGTH := {1: 0.4, 2: 0.8}
+## Boxes not yet booked on a line.
+const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const LANE_OFFSET := 0.22
 const BOX_COLOR := Color(0.85, 0.4, 0.15)
 const SEA_START := -18.0  # how far the water reaches past the map
@@ -36,9 +41,11 @@ var _tiles := ChunkedMeshes.new()
 var _tile_meshes := {}  # tile kind -> Mesh
 var _road_meshes := {}  # road shape -> Mesh
 var _stacks := ChunkedMeshes.new()
-var _stack_mesh := _box_mesh(Vector3(0.8, BOX_HEIGHT, 0.4), BOX_COLOR)
-## Chunks that held stacks last frame, so emptied ones get cleared.
-var _stack_chunks := {}
+var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
+## Stack parts ([chunk, teu]) drawn last time, so emptied ones get cleared.
+var _stack_parts := {}
+## The tick and map version the stacks were drawn for; bulldozing a stack changes the map.
+var _stacks_drawn := []
 # shortcut: ships and vehicles are one node each, fine under ~100; MultiMesh them in M5.
 var _ships := {}  # PortSim.Ship -> Node3D
 var _vehicles := {}  # Vehicle -> Node3D
@@ -63,6 +70,10 @@ func _ready() -> void:
 	add_child(_stacks)
 	for kind: int in TILE_HEIGHT:
 		_tile_meshes[kind] = _box_mesh(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
+	for teu: int in BOX_LENGTH:
+		var mesh := _box_mesh(Vector3(BOX_LENGTH[teu] - 0.04, BOX_HEIGHT - 0.02, 0.32), Color.WHITE)
+		(mesh.material as StandardMaterial3D).vertex_color_use_as_albedo = true
+		_stack_meshes[teu] = mesh
 	for shape: String in ROAD_SHAPES:
 		_road_meshes[shape] = _road_mesh(shape)
 
@@ -188,23 +199,41 @@ static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
 	return [Vector2(path[i]).lerp(Vector2(path[i + 1]), f), Vector2(path[i + 1] - path[i])]
 
 
+## Every stacked box, in its line's livery, redrawn when the sim has ticked
+## or the map has changed.
 func _draw_stacks() -> void:
-	var by_chunk := {}
-	for chunk: Vector2i in _stack_chunks:
-		by_chunk[chunk] = [] as Array[Transform3D]
+	if _stacks_drawn == [sim.clock.ticks, sim.map.version]:
+		return
+	_stacks_drawn = [sim.clock.ticks, sim.map.version]
+	var transforms := {}
+	var colors := {}
+	for part: Array in _stack_parts:
+		transforms[part] = [] as Array[Transform3D]
+		colors[part] = PackedColorArray()
 	for cell: Vector2i in sim.yard.stacks:
-		var count := sim.yard.count(cell)
-		if count == 0:
-			continue
 		var chunk := ChunkedMeshes.chunk_of(cell)
-		if chunk not in by_chunk:
-			by_chunk[chunk] = [] as Array[Transform3D]
-		by_chunk[chunk].append(Transform3D(Basis.from_scale(Vector3(1, count, 1)), Vector3(cell.x + 0.5, 0.08 + count * BOX_HEIGHT / 2.0, cell.y + 0.5)))
-	_stack_chunks.clear()
-	for chunk: Vector2i in by_chunk:
-		_stacks.show_part(chunk, _stack_mesh, by_chunk[chunk])
-		if not by_chunk[chunk].is_empty():
-			_stack_chunks[chunk] = true
+		var level := 0
+		for id: int in sim.yard.stacks[cell]:
+			var box: Dictionary = sim.boxes[id]
+			var part := [chunk, box.teu]
+			if part not in transforms:
+				transforms[part] = [] as Array[Transform3D]
+				colors[part] = PackedColorArray()
+			transforms[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5, 0.08 + (level + 0.5) * BOX_HEIGHT, cell.y + 0.5)))
+			colors[part].append(_livery(box.line, id))
+			level += 1
+	_stack_parts.clear()
+	for part: Array in transforms:
+		_stacks.show_part(part, _stack_meshes[part[1]], transforms[part], colors[part])
+		if not transforms[part].is_empty():
+			_stack_parts[part] = true
+
+
+## `line`'s livery, a touch lighter or darker per box so a stack reads as
+## separate boxes. shortcut: a shade stands in for M4's wear texture until the box model has UVs.
+func _livery(line: String, id: int) -> Color:
+	var color: Color = PLAIN_BOX if line == "" else Color.html(sim.rules.lines[line].livery)
+	return color.darkened((id * 37 % 100) / 100.0 * 0.25)
 
 
 func _draw_ships() -> void:

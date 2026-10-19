@@ -418,7 +418,7 @@ func _test_gate() -> void:
 	for x in range(gateless.map.sea_width + 1, gateless.map.entry.x):
 		gateless.build(ROAD, Vector2i(x, row))
 	gateless.build(YARD, Vector2i(gateless.map.sea_width + 3, row - 1))
-	gateless.yard.add(Vector2i(gateless.map.sea_width + 3, row - 1), gateless._new_box("import", 0.0))
+	gateless.yard.add(Vector2i(gateless.map.sea_width + 3, row - 1), gateless._new_box("import", 0.0, ""))
 	_run(gateless, 5)
 	_expect(gateless.vehicles.is_empty(), true, "no lorry comes in without a gate")
 	_expect(gateless.last_event().contains("build a gate"), true, "the status says so (%s)" % gateless.last_event())
@@ -616,7 +616,7 @@ func _test_storage_is_charged_per_day() -> void:
 	_expect(sim.apply({"op": "set_storage", "free_days": 4, "fee": 30}), "Free days run from 0 to 3", "free days are capped")
 	var tile := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 1)
 	for i in 2:
-		sim.call("_stack", tile, sim._new_box("export", 0.0))
+		sim.call("_stack", tile, sim._new_box("export", 0.0, ""))
 	_run(sim, 3 * SimClock.MINUTES_PER_DAY)
 	# Stacked at minute 0: the first midnight is within the free day.
 	var storage: Array = sim.ledger.days.map(func(day: Dictionary) -> int: return day.lines.get("storage", 0))

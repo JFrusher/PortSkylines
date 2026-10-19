@@ -54,9 +54,10 @@ var traffic := Traffic.new()
 var yard: Yard
 ## Every box in the port by id: {"kind": "import" or "export", "due": the
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
-## "reefer": bool, "in": the calendar minute it was stacked, or -1}. A box
-## is always in exactly one place: on a vehicle or in a yard stack (boxes on
-## ships are only counted).
+## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
+## the line that owns it, a key of rules.lines, or "" for an export not yet
+## loaded}. A box is always in exactly one place: on a vehicle or in a yard
+## stack (boxes on ships are only counted).
 var boxes := {}
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
@@ -879,7 +880,7 @@ func _discharge(crane: Crane, ship: Ship, move_minutes: float) -> void:
 		return
 	crane.timer = 0.0
 	crane.tractor = 0
-	var id := _new_box("import", clock.calendar_minutes() + rules.import_dwell_minutes * _dwell_factor())
+	var id := _new_box("import", clock.calendar_minutes() + rules.import_dwell_minutes * _dwell_factor(), ship.line)
 	ship.boxes -= 1
 	ship.moves += 1
 	_moved(boxes[id])
@@ -914,11 +915,11 @@ func _load(crane: Crane, ship: Ship, move_minutes: float) -> void:
 	_leave(tractor)
 
 
-func _new_box(kind: String, due: float) -> int:
+func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line}
 	return id
 
 
@@ -1101,7 +1102,8 @@ func _dispatch_export_lorry() -> bool:
 	var lorry := _new_lorry(yard.entrance(tile))
 	if lorry == null:
 		return false
-	lorry.box = _new_box("export", 0.0)
+	# shortcut: an export is booked on no line until a ship loads it, so it shows no livery; give exports a line when lines book export cargo.
+	lorry.box = _new_box("export", 0.0, "")
 	lorry.loaded = true
 	lorry.target = tile
 	yard.reserve(tile, 1)
