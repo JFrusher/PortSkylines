@@ -68,7 +68,10 @@ var _stacks_drawn := []
 var _ships := {}  # PortSim.Ship -> Node3D
 var _vehicles := {}  # Vehicle -> Node3D
 var _cranes := {}  # PortSim.Crane -> Node3D
-var _machines := {}  # [block anchor, index] -> Node3D
+var _machines := ChunkedMeshes.new()
+var _machine_meshes := {}  # gear -> Mesh
+## Machine parts ([chunk, gear]) drawn last frame, so emptied ones get cleared.
+var _machine_parts_drawn := {}
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
 ## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _unowned := {}  # land tile -> Node3D
@@ -90,6 +93,9 @@ func _ready() -> void:
 	add_child(_hover)
 	add_child(_tiles)
 	add_child(_stacks)
+	add_child(_machines)
+	for gear: String in sim.rules.yard_gear:
+		_machine_meshes[gear] = _machine_mesh(gear)
 	for kind: int in TILE_HEIGHT:
 		_tile_meshes[kind] = _box_mesh(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
 	for teu: int in BOX_LENGTH:
@@ -488,7 +494,7 @@ func _vehicle_model(kind: String) -> Node3D:
 
 ## Each yard block's machines: one over each box being handled, the rest
 ## parked along the block. RTGs straddle the stacks; reach stackers drive
-## beside them.
+## beside them. One MultiMesh per chunk and gear, as a port can have hundreds.
 func _draw_machines() -> void:
 	var working := {}  # block anchor -> tiles being handled
 	for vehicle: Vehicle in sim.vehicles:
@@ -496,56 +502,44 @@ func _draw_machines() -> void:
 			if vehicle.block not in working:
 				working[vehicle.block] = []
 			working[vehicle.block].append(vehicle.target)
-	var live := {}
+	var parts := {}
+	for part: Array in _machine_parts_drawn:
+		parts[part] = [] as Array[Transform3D]
 	for anchor in sim.yard.anchors():
 		var gear := sim.yard.gear_of(anchor)
 		var tiles := sim.yard.block(anchor)
 		var busy: Array = working.get(anchor, [])
 		var count := sim.yard.machines(anchor)
 		for i in count:
-			var key := [anchor, i]
-			live[key] = true
-			if key in _machines and _machines[key].get_meta("gear") != gear:
-				_machines[key].queue_free()
-				_machines.erase(key)
-			if key not in _machines:
-				_machines[key] = _machine_model(gear)
 			var cell: Vector2i = busy[i] if i < busy.size() else tiles[i * tiles.size() / count]
-			_machines[key].position = Vector3(cell.x + 0.5, 0.08, cell.y + 0.5 + (0.0 if gear == "rtg" else 0.38))
-	for key: Array in _machines.keys():
-		if key not in live:
-			_machines[key].queue_free()
-			_machines.erase(key)
+			var part := [ChunkedMeshes.chunk_of(cell), gear]
+			if part not in parts:
+				parts[part] = [] as Array[Transform3D]
+			parts[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5, 0.08, cell.y + 0.5 + (0.0 if gear == "rtg" else 0.38))))
+	_machine_parts_drawn.clear()
+	for part: Array in parts:
+		_machines.show_part(part, _machine_meshes[part[1]], parts[part])
+		if not parts[part].is_empty():
+			_machine_parts_drawn[part] = true
 
 
-func _machine_model(gear: String) -> Node3D:
-	var model := Node3D.new()
-	model.set_meta("gear", gear)
-	if gear == "rtg":
-		# Tall enough to clear a tile stacked to the gear's capacity.
-		var height: float = 0.3 + ceili(sim.rules.yard_gear.rtg.capacity / float(YARD_ROWS)) * BOX_HEIGHT
-		for x: float in [-0.56, 0.56]:
-			for z: float in [-0.3, 0.3]:
-				var leg := _box(Vector3(0.08, height, 0.08), Color(0.95, 0.95, 0.92))
-				leg.position = Vector3(x, height / 2.0, z)
-				model.add_child(leg)
-			var wheels := _box(Vector3(0.14, 0.1, 0.72), Color(0.2, 0.2, 0.22))
-			wheels.position = Vector3(x, 0.05, 0)
-			model.add_child(wheels)
+## One mesh per kind of yard gear, standing on its origin.
+func _machine_mesh(gear: String) -> Mesh:
+	if gear != "rtg":
+		return _merged([
+			[Vector3(0.26, 0.2, 0.4), Vector3(0, 0.12, 0), Color(0.85, 0.35, 0.15)],
+			[Vector3(0.06, 0.06, 0.4), Vector3(0, 0.36, -0.1), Color(0.2, 0.2, 0.22)],
+		])
+	# Tall enough to clear a tile stacked to the gear's capacity.
+	var height: float = 0.3 + ceili(sim.rules.yard_gear.rtg.capacity / float(YARD_ROWS)) * BOX_HEIGHT
+	var parts := []
+	for x: float in [-0.56, 0.56]:
 		for z: float in [-0.3, 0.3]:
-			var beam := _box(Vector3(1.24, 0.1, 0.1), Color(0.95, 0.75, 0.1))
-			beam.position = Vector3(0, height, z)
-			model.add_child(beam)
-	else:
-		var body := _box(Vector3(0.26, 0.2, 0.4), Color(0.85, 0.35, 0.15))
-		body.position.y = 0.12
-		model.add_child(body)
-		var boom := _box(Vector3(0.06, 0.06, 0.5), Color(0.2, 0.2, 0.22))
-		boom.position = Vector3(0, 0.4, -0.12)
-		boom.rotation.x = 0.6
-		model.add_child(boom)
-	add_child(model)
-	return model
+			parts.append([Vector3(0.08, height, 0.08), Vector3(x, height / 2.0, z), Color(0.95, 0.95, 0.92)])
+		parts.append([Vector3(0.14, 0.1, 0.72), Vector3(x, 0.05, 0), Color(0.2, 0.2, 0.22)])
+	for z: float in [-0.3, 0.3]:
+		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), Color(0.95, 0.75, 0.1)])
+	return _merged(parts)
 
 
 ## Frees the nodes of things the sim no longer has.
