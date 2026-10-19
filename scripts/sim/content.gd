@@ -56,7 +56,9 @@ const SCHEMA := {
 	# The map is split into square land tiles of `cells` cells; the port owns
 	# the `start` block of tiles and buys the rest at `price`, paying `upkeep` a day each.
 	"land": {"cells": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
-	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT},
+	# An STS crane: its price, moves an hour, outreach in box rows, days from
+	# order to standing, and width along the quay in metres.
+	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
 	# Roads the player draws: lanes each way along the drawn direction, whether
@@ -71,7 +73,7 @@ const SCHEMA := {
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "cells", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "cells", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
 
 static var _base := {}
 

@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_machine_jobs()
 	_test_area_stacks()
 	_test_driveways()
+	_test_apron_berths()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -466,6 +467,45 @@ func _test_driveways() -> void:
 	var under_crane: Vector2i = apron.slots[7][1]
 	_expect(sim.lanes.route(inbound, under_crane, false).is_empty(), false, "a tractor routes under the cranes")
 	_expect(sim.lanes.route(inbound, under_crane, true), [] as Array[Vector2i], "a lorry can't drive onto an apron")
+
+
+## A terminal on the coast: a 1+1 road south along x = 85 from y = 100 to the
+## site entry's row and on east to the entry; a quay apron `apron_length`
+## cells long west of it, and a gate east of it in the same terminal.
+func _terminal(apron_length: int) -> PortSim:
+	var sim := PortSim.new(0, Content.base(), true)
+	var entry := sim.site_entry()
+	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, entry.y), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"})
+	var coast := sim.roads.segment_at(Vector2i(85, 150))
+	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 0, "to": apron_length - 1}), "", "the terminal's apron is built")
+	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": coast, "side": -1, "from": 0, "to": 14}), "", "the terminal's gate is built")
+	sim.apply({"op": "set_terminal", "id": 2, "terminal": 1})
+	return sim
+
+
+func _test_apron_berths() -> void:
+	var sim := _terminal(60)
+	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane off the apron's rails is refused")
+	_expect(sim.apply({"op": "place_sts", "apron": 2, "along": 3}), "STS cranes stand on a quay apron's rails", "a crane on a gate is refused")
+	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 20}), "", "a crane is ordered on the apron")
+	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 24}), "Too close to another crane", "cranes keep their width apart")
+	_expect(sim.cranes.size(), 0, "a crane takes its lead time to arrive")
+	for i in roundi(sim.rules.sts_crane.lead_days * SimClock.TICKS_PER_DAY):
+		sim.tick()
+	_expect(sim.cranes.size() == 1 and sim.cranes[0].apron == 1 and sim.cranes[0].along == 20, true, "then stands on the apron's rails")
+	_expect(AreaFlow.offer_berths(sim), 1, "an apron with a crane in a ready terminal is a berth lines may offer for")
+	var feeder := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 1, 0)
+	_expect(AreaFlow.ship_cells(sim, "feeder"), 50, "a feeder needs 200 m of quay, 50 cells")
+	_expect(sim._berth(feeder), true, "a feeder berths along a 60-cell apron")
+	_expect([feeder.apron, feeder.from], [1, 0], "at the apron's first free stretch")
+	_expect(AreaFlow.cranes_for(sim, feeder).size(), 1, "the crane within its length works it")
+	var panamax := PortSim.Ship.new("panamax", sim.rules.lines.keys()[0], 0.0, 1, 0)
+	_expect(sim._berth(panamax), false, "a ship too long for the apron waits at anchor")
+	_expect(AreaFlow.could_berth(sim, "panamax"), false, "and no apron could ever take it")
+	var lonely := _terminal(60)
+	lonely.apply({"op": "set_terminal", "id": 2, "terminal": 0})
+	_expect(lonely._berth(PortSim.Ship.new("feeder", lonely.rules.lines.keys()[0], 0.0, 1, 0)), false, "an apron in a terminal without a gate takes no ships")
 
 
 ## A lane cell at the site entry a vehicle can drive in from.

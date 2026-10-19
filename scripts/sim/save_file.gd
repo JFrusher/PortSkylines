@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 8
+const VERSION := 9
 const MAGIC := "PSKY"
 
 
@@ -75,6 +75,21 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _v6_to_v7(data)
 	if data.version == 7:
 		data = _v7_to_v8(data)
+	if data.version == 8:
+		data = _v8_to_v9(data)
+	return data
+
+
+## v9 (M5) lets ships berth along quay aprons and cranes stand on them; older
+## ships and cranes are on quay tiles.
+static func _v8_to_v9(data: Dictionary) -> Dictionary:
+	for ship: Dictionary in data.sim.ships:
+		ship.apron = 0
+		ship.from = 0
+	for crane: Dictionary in data.sim.cranes:
+		crane.apron = 0
+		crane.along = 0
+	data.version = 9
 	return data
 
 
@@ -279,19 +294,24 @@ static func _valid_sim(data: Variant) -> bool:
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT, "cells": TYPE_ARRAY,
 			"side": TYPE_VECTOR2I, "boxes": TYPE_INT, "exports": TYPE_INT, "state": TYPE_INT,
 			"sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
-		}) or not _all_cells(ship.cells, ship.state == PortSim.Ship.State.ANCHORED):
+			"apron": TYPE_INT, "from": TYPE_INT,
+		}) or not _all_cells(ship.cells, ship.state == PortSim.Ship.State.ANCHORED or ship.apron != 0):
+			return false
+		if ship.apron != 0 and not (ship.apron in data.areas.list and data.areas.list[ship.apron].type == "quay_apron"):
 			return false
 	for tile: Variant in data.land:
 		if not (tile is Vector2i and data.land[tile] is bool):
 			return false
 	for order: Variant in data.crane_orders:
-		if not order is Dictionary or not _has_fields(order, {"cell": TYPE_VECTOR2I, "due": TYPE_FLOAT}):
+		if not order is Dictionary or not (_has_fields(order, {"cell": TYPE_VECTOR2I, "due": TYPE_FLOAT}) or _has_fields(order, {"apron": TYPE_INT, "along": TYPE_INT, "due": TYPE_FLOAT})):
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {
-			"cell": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "tractor": TYPE_INT,
+			"cell": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT,
 		}):
 			return false
+	if not (_valid_roads(data.roads) and _valid_areas(data.areas)):
+		return false
 	for vehicle: Variant in data.vehicles:
 		if not vehicle is Dictionary or not _has_fields(vehicle, {
 			"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
@@ -312,6 +332,30 @@ static func _valid_sim(data: Variant) -> bool:
 
 
 ## True when `cells` holds only Vector2i, and some unless `may_be_empty`.
+## Roads: nodes on cells, and segments joining two known nodes with a known road type.
+static func _valid_roads(roads: Dictionary) -> bool:
+	if not _has_fields(roads, {"nodes": TYPE_DICTIONARY, "segments": TYPE_DICTIONARY, "next_node": TYPE_INT, "next_segment": TYPE_INT}):
+		return false
+	if not roads.nodes.keys().all(func(id: Variant) -> bool: return id is int and roads.nodes[id] is Vector2i):
+		return false
+	var types: Dictionary = Content.base().road_types
+	return roads.segments.keys().all(func(id: Variant) -> bool:
+		var road: Variant = roads.segments[id]
+		return id is int and road is Dictionary and _has_fields(road, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING}) and road.a in roads.nodes and road.b in roads.nodes and road.type in types)
+
+
+## Areas: each of a known type, placed on cells, with rules, in a known terminal.
+static func _valid_areas(areas: Dictionary) -> bool:
+	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT}):
+		return false
+	if not areas.terminals.keys().all(func(id: Variant) -> bool: return id is int and areas.terminals[id] is Dictionary and _has_fields(areas.terminals[id], {"name": TYPE_STRING})):
+		return false
+	var types: Dictionary = Content.base().area_types
+	return areas.list.keys().all(func(id: Variant) -> bool:
+		var area: Variant = areas.list[id]
+		return id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and area.terminal in areas.terminals)
+
+
 static func _all_cells(cells: Array, may_be_empty: bool) -> bool:
 	if cells.is_empty() and not may_be_empty:
 		return false

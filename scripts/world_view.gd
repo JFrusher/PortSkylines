@@ -560,14 +560,14 @@ func _draw_ships() -> void:
 		# shortcut: ships at anchorage are only counted in the HUD; draw them offshore if players miss them.
 		if ship.state == PortSim.Ship.State.ANCHORED:
 			continue
-		var length := ship.cells.size()
+		var length: int = sim.rules.ship_classes[ship.kind].length if ship.apron else ship.cells.size()
 		if ship not in _ships:
 			_ships[ship] = _ship_model(ship, length)
 		var model: Node3D = _ships[ship]
 		var sail := lerpf(ship.prev_sail, ship.sail, alpha)
-		var middle := (Vector2(ship.cells[0]) + Vector2(ship.cells[-1])) / 2.0 + Vector2(ship.side) + Vector2(0.5, 0.5)
-		var alongside := Vector3(middle.x, 0.0, middle.y)
-		var at_sea := alongside + Vector3(ship.side.x, 0, ship.side.y) * SEA_DISTANCE
+		var frame := _berth_frame(ship)
+		var alongside := Vector3(frame[0].x, 0.0, frame[0].y)
+		var at_sea := alongside + Vector3(frame[1].x, 0, frame[1].y) * SEA_DISTANCE
 		model.position = at_sea.lerp(alongside, ease(sail, -2.0))
 		var spec: Dictionary = sim.rules.ship_classes[ship.kind]
 		# Imports still aboard, plus the exports loaded so far.
@@ -581,6 +581,20 @@ func _draw_ships() -> void:
 			for i in slots.size():
 				deck.set_instance_transform(i, Transform3D(_deck_box, slots[i]))
 				deck.set_instance_color(i, _livery(ship.line, i))
+
+
+## Where `ship` lies alongside in world units, and the way out to sea:
+## [middle, side]. A ship's middle is a tile out from the quay's edge.
+func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
+	if not ship.apron:
+		return [(Vector2(ship.cells[0]) + Vector2(ship.cells[-1])) / 2.0 + Vector2(ship.side) + Vector2(0.5, 0.5), Vector2(ship.side)]
+	var area: Dictionary = sim.areas.list[ship.apron]
+	var along := Vector2((area.end - area.start).sign())
+	var side := Vector2(area.out).normalized()
+	var span := AreaFlow.ship_cells(sim, ship.kind)
+	var depth: int = sim.rules.area_types.quay_apron.depth
+	var edge := (Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * (depth - 1) + Vector2(0.5, 0.5)) * Grid.CELL
+	return [edge / METRES_PER_UNIT + side, side]
 
 
 ## Where the first `count` boxes on deck of a ship `length` tiles long sit,
@@ -602,7 +616,11 @@ static func deck_slots(length: int, count: int) -> Array[Vector3]:
 ## and a deck of boxes, turned so its length lies along the quay.
 func _ship_model(ship: PortSim.Ship, length: int) -> Node3D:
 	var model := Node3D.new()
-	model.rotation.y = 0.0 if ship.side.x != 0 else PI / 2
+	if ship.apron:
+		var side := Vector2(sim.areas.list[ship.apron].out)
+		model.rotation.y = atan2(-side.y, side.x)
+	else:
+		model.rotation.y = 0.0 if ship.side.x != 0 else PI / 2
 	var half := length / 2.0 - 0.2
 	var outline := PackedVector2Array([Vector2(-0.7, -half), Vector2(0.7, -half), Vector2(0.7, half - 1.0), Vector2(0, half), Vector2(-0.7, half - 1.0)])
 	var hull := MeshInstance3D.new()
@@ -650,7 +668,7 @@ func _draw_cranes() -> void:
 		if crane not in _cranes:
 			_cranes[crane] = _crane_model(crane)
 		var model: Node3D = _cranes[crane]
-		var ship := _ship_beside(crane.cell)
+		var ship := _ship_beside(crane.cell) if not crane.apron else _ship_over(crane)
 		var phase := crane.timer / move_minutes if crane.tractor != 0 else 0.0
 		var pose := crane_pose(phase, ship != null and ship.boxes > 0)
 		var trolley: Node3D = model.get_node("Trolley")
@@ -665,9 +683,17 @@ func _draw_cranes() -> void:
 ## The crane's model, turned so +Z points out to the water.
 func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var model := Node3D.new()
-	var water := sim.map.neighbor(crane.cell, PortMap.Tile.WATER) - crane.cell
-	model.position = Vector3(crane.cell.x + 0.5, 0.25, crane.cell.y + 0.5)
-	model.rotation.y = atan2(water.x, water.y)
+	if crane.apron:
+		# Between an apron's rails, facing its water.
+		var area: Dictionary = sim.areas.list[crane.apron]
+		var depth: int = sim.rules.area_types.quay_apron.depth
+		var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
+		model.rotation.y = atan2(area.out.x, area.out.y)
+	else:
+		var water := sim.map.neighbor(crane.cell, PortMap.Tile.WATER) - crane.cell
+		model.position = Vector3(crane.cell.x + 0.5, 0.25, crane.cell.y + 0.5)
+		model.rotation.y = atan2(water.x, water.y)
 	for x: float in [-0.35, 0.35]:
 		for z: float in [-0.35, 0.35]:
 			var leg := _box(Vector3(0.1, CRANE_HEIGHT, 0.1), CRANE_COLOR)
@@ -691,6 +717,14 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 
 
 ## The ship alongside the quay tile `cell`, or null.
+## The ship along apron crane `crane`'s stretch of quay, or null.
+func _ship_over(crane: PortSim.Crane) -> PortSim.Ship:
+	for ship: PortSim.Ship in sim.ships:
+		if crane in AreaFlow.cranes_for(sim, ship):
+			return ship
+	return null
+
+
 func _ship_beside(cell: Vector2i) -> PortSim.Ship:
 	for ship: PortSim.Ship in sim.ships:
 		if cell in ship.cells:

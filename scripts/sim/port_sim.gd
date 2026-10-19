@@ -100,7 +100,7 @@ var _delivered_at_midnight := 0
 ## changes, so until then looking again would find nothing; a new arrival
 ## resets it to look once.
 var _departures := 0
-var _berths_seen := Vector2i(-1, -1)
+var _berths_seen := Vector3i(-1, -1, -1)
 
 
 func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false) -> void:
@@ -139,8 +139,12 @@ class Ship:
 	var line: String
 	## The calendar minute its berth window closes; sailing later is late.
 	var due: float
-	## The quay tiles it lies along, in order; empty while anchored.
+	## The quay tiles it lies along, in order; empty while anchored or at an apron.
 	var cells: Array[Vector2i]
+	## The quay apron it lies along (0 for a tile berth), and the cell along
+	## the apron its length starts at.
+	var apron := 0
+	var from := 0
 	## The step from those quay tiles to the water the ship is in.
 	var side: Vector2i
 	## Import boxes still on board, and exports it still has room for.
@@ -164,7 +168,7 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "cells": cells.duplicate(), "side": side, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed}
+		return {"kind": kind, "line": line, "due": due, "cells": cells.duplicate(), "side": side, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
@@ -175,6 +179,8 @@ class Ship:
 		ship.prev_sail = d.prev_sail
 		ship.moves = d.moves
 		ship.berthed = d.berthed
+		ship.apron = d.apron
+		ship.from = d.from
 		return ship
 
 
@@ -183,6 +189,9 @@ class Ship:
 ## tractor beneath it.
 class Crane:
 	var cell: Vector2i
+	## The quay apron it stands on (0 for a quay tile), and how many cells along it.
+	var apron := 0
+	var along := 0
 	## Calendar minutes into the current move.
 	var timer := 0.0
 	## The tractor sent to it (a vehicle id), or 0.
@@ -192,12 +201,14 @@ class Crane:
 		cell = at
 
 	func to_dict() -> Dictionary:
-		return {"cell": cell, "timer": timer, "tractor": tractor}
+		return {"cell": cell, "timer": timer, "tractor": tractor, "apron": apron, "along": along}
 
 	static func from_dict(d: Dictionary) -> Crane:
 		var crane := Crane.new(d.cell)
 		crane.timer = d.timer
 		crane.tractor = d.tractor
+		crane.apron = d.apron
+		crane.along = d.along
 		return crane
 
 
@@ -309,6 +320,8 @@ func apply(command: Dictionary) -> String:
 			return bulldoze(command.cell)
 		"place_crane":
 			return place_crane(command.cell)
+		"place_sts":
+			return place_sts(command.apron, command.along)
 		"buy_tractors":
 			return buy_tractors(command.count)
 		"set_yard":
@@ -492,6 +505,18 @@ func place_crane(cell: Vector2i) -> String:
 	return err
 
 
+## Orders an STS crane for apron `apron`, `along` cells along its rails.
+func place_sts(apron: int, along: int) -> String:
+	var err := AreaFlow.sts_error(self, apron, along)
+	if err == "" and not _afford(rules.sts_crane.cost):
+		err = "Not enough money"
+	if err == "":
+		ledger.post("equipment", -rules.sts_crane.cost)
+		crane_orders.append({"apron": apron, "along": along, "due": clock.calendar_minutes() + rules.sts_crane.lead_days * SimClock.MINUTES_PER_DAY})
+		_deliver_cranes()
+	return err
+
+
 ## Puts up the cranes whose order is due. One whose quay has gone is refunded.
 func _deliver_cranes() -> void:
 	var now := clock.calendar_minutes()
@@ -499,6 +524,17 @@ func _deliver_cranes() -> void:
 		if order.due > now:
 			continue
 		crane_orders.erase(order)
+		if order.has("apron"):
+			if order.apron in areas.list:
+				var crane := Crane.new(PortMap.NONE)
+				crane.apron = order.apron
+				crane.along = order.along
+				cranes.append(crane)
+				_event("A new STS crane is up on %s" % areas.terminals[areas.list[order.apron].terminal].name)
+			else:
+				ledger.post("equipment", rules.sts_crane.cost)
+				_event("A crane arrived with no quay apron to stand on; it went back, refunded")
+			continue
 		if map.tile(order.cell) == PortMap.Tile.QUAY and not _crane_at(order.cell):
 			cranes.append(Crane.new(order.cell))
 			_event("A new STS crane is up at %s" % order.cell)
@@ -753,7 +789,7 @@ func tick() -> void:
 		_call(service)
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
-	var berths_now := Vector2i(map.version, _departures)
+	var berths_now := Vector3i(map.version, _departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
 		if ship.state == Ship.State.ANCHORED and berths_now == _berths_seen:
 			continue
@@ -884,7 +920,7 @@ func _call(service: Dictionary) -> void:
 		return
 	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
 	ships.append(Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves))
-	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
+	_berths_seen = Vector3i(-1, -1, -1)  # the new ship has not looked yet
 	_event("%s's %s has arrived" % [who, service.kind])
 
 
@@ -902,7 +938,7 @@ func _berth(ship: Ship) -> bool:
 			ship.side = berth.side
 			ship.state = Ship.State.ARRIVING
 			return true
-	return false
+	return AreaFlow.berth(self, ship)
 
 
 ## Whether some berth is long enough for `kind`, busy or not.
@@ -913,7 +949,7 @@ func _could_berth(kind: String) -> bool:
 	for berth: Dictionary in map.berths():
 		if berth.cells.size() >= spec.length and _apron(berth.cells) != PortMap.NONE:
 			return true
-	return false
+	return AreaFlow.could_berth(self, kind)
 
 
 ## Lines may offer a new service while the port has berths for it.
@@ -922,7 +958,7 @@ func _offer_service() -> void:
 	contracts.expire(now)
 	# A berth counts once lorries can reach it and a crane stands on it, so a
 	# first call never arrives before the port can work it.
-	var berths := map.berths().filter(func(b: Dictionary) -> bool: return _apron(b.cells) != PortMap.NONE and cranes.any(func(c: Crane) -> bool: return c.cell in b.cells)).size()
+	var berths := map.berths().filter(func(b: Dictionary) -> bool: return _apron(b.cells) != PortMap.NONE and cranes.any(func(c: Crane) -> bool: return c.cell in b.cells)).size() + AreaFlow.offer_berths(self)
 	var offered := contracts.offer(rng, now, berths, func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind))
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
@@ -967,6 +1003,8 @@ func _work(ship: Ship) -> void:
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind)
 		Ship.State.WORKING:
+			if ship.apron:
+				return  # worked by the area flow from M5 step 19.3
 			var working := _cranes_for(ship)
 			if working.is_empty():
 				_event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rules.ship_classes[ship.kind].outreach])

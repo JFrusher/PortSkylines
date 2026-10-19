@@ -115,7 +115,7 @@ func _test_malformed_payloads_are_refused() -> void:
 	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
 	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
 	# Every field each deserialiser reads, through the public load path.
-	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["contracts"], ["finance"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
+	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["contracts"], ["finance"], ["ships", 0], ["cranes", 0], ["vehicles", 0], ["roads"], ["areas"], ["roads", "segments", 1], ["areas", "list", 1]]:
 		var original := _section(valid, section)
 		for key: String in original:
 			var missing := valid.duplicate(true)
@@ -137,6 +137,9 @@ func _test_malformed_payloads_are_refused() -> void:
 		var bad := valid.duplicate(true)
 		bad.vehicles[0].path = route_value
 		_expect_payload_refused(bad, "invalid route %s" % [route_value])
+	var unknown_apron := valid.duplicate(true)
+	unknown_apron.ships[0].apron = 99
+	_expect_payload_refused(unknown_apron, "a ship at a quay apron that isn't there")
 	var no_cells := valid.duplicate(true)
 	no_cells.ships[0].cells = []
 	_expect_payload_refused(no_cells, "a berthed ship with no cells")
