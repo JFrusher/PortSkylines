@@ -23,6 +23,8 @@ func _initialize() -> void:
 		_expect(_error_for({key: 1}), "", "%s accepts a positive whole number" % key)
 	_expect(_error_for({"sail_seconds": 0.5}), "", "a positive fractional duration is valid")
 	_expect(_error_for({"import_dwell_minutes": 0}), "", "imports may leave at once")
+	_expect(_error_for({"site": {"width": 2402, "height": 2400, "sea_width": 300}}), "site.width: must be a positive multiple of 4 m", "the site is whole grid cells")
+	_expect(_error_for({"site": {"width": 2400, "height": 0, "sea_width": 300}}), "site.height: must be a positive multiple of 4 m", "the site has a size")
 	var lines: Dictionary = Content.base().lines.duplicate(true)
 	lines.aurora.classes["cruise"] = 1
 	_expect(_error_for({"lines": lines}, "lines.json"), "lines.aurora.classes: unknown ship class \"cruise\"", "a line can only sail known ship classes")

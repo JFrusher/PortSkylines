@@ -12,6 +12,8 @@
 
 ## Steps
 
+The new model is built beside the tile model, in its own sim classes with headless tests, so every step leaves the tile game playable. Step 19 moves the box flow onto it, and steps 22 and 23 remove the tile model.
+
 ### Grid and roads
 1. **4 m sim grid.** Map sizes in the data become 4 m cells, and every world position comes from the cell. Test: map sizes round-trip between metres and cells.
 2. **Road segments.** Roads are nodes and segments snapped to 0°, 45° and 90°, with arc corners, and each segment is turned into lane cells. Test: a 45° segment becomes a connected diagonal run, and an arc fills the expected cells.

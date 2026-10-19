@@ -7,6 +7,8 @@ extends RefCounted
 const BASE_DIR := "res://data/base"
 const SCHEMA := {
 	"map": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
+	# The site for roads and areas, in metres, each a whole number of Grid cells.
+	"site": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
 	"start_money": TYPE_INT,
 	# What a line pays per crane move: by box size, plus a reefer premium.
 	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
@@ -104,8 +106,12 @@ static func load_dir(dir: String) -> Dictionary:
 	return _cross_check(rules)
 
 
-## Checks that need more than one key: every line sails known ship classes.
+## Checks that need more than one key: the site is whole grid cells, and
+## every line sails known ship classes.
 static func _cross_check(rules: Dictionary) -> Dictionary:
+	for key: String in rules.site:
+		if rules.site[key] <= 0 or rules.site[key] % Grid.CELL != 0:
+			return {"error": "site.%s: must be a positive multiple of %d m" % [key, Grid.CELL]}
 	for line: String in rules.lines:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):

@@ -1,5 +1,6 @@
 {
 	"map": {"width": 96, "height": 96, "sea_width": 12},
+	"site": {"width": 2400, "height": 2400, "sea_width": 300},
 	"land": {"cells": 32, "price": 20000, "upkeep": 100, "start": {"x": 0, "y": 1, "width": 3, "height": 1}},
 	"start_money": 20000,
 	"move_price": {"per_20ft": 100, "forty_factor": 1.8, "reefer_premium": 60},

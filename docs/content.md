@@ -8,6 +8,8 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 |---|---|---|
 | `map.width`, `map.height` | int | Map size in tiles |
 | `map.sea_width` | int | Tiles of sea along the west edge |
+| `site.width`, `site.height` | int | Site size in metres for roads and areas, a multiple of the 4 m grid cell |
+| `site.sea_width` | int | Metres of sea along the west edge, a multiple of 4 |
 | `start_money` | int | Money at the start of a new game |
 | `move_price.per_20ft` | int >0 | What a line pays per crane move of a 20 ft box |
 | `move_price.forty_factor` | number >0 | A 40 ft box's move price as a multiple of a 20 ft one |
