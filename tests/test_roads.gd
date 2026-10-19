@@ -8,6 +8,7 @@ var _failures := 0
 func _initialize() -> void:
 	_test_segments()
 	_test_lanes()
+	_test_junctions()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -52,6 +53,33 @@ func _test_lanes() -> void:
 	for d: Vector2i in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]:
 		var right := RoadNet.right_of(d)
 		_expect(Vector2(right).dot(Vector2(-d.y, d.x)) > 0, true, "right_of %s is on the right" % d)
+
+
+func _test_junctions() -> void:
+	var net := RoadNet.new(Content.base().road_types)
+	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
+	_expect(net.add(Vector2i(5, 0), Vector2i(5, 10), "terminal_1_1"), "", "a road may cross another")
+	var crossing := _node(net, Vector2i(5, 5))
+	_expect(net.degree(crossing), 4, "a crossing makes a 4-way node")
+	_expect(net.segments.size(), 4, "both roads split at the crossing")
+	_expect(net.add(Vector2i(8, 5), Vector2i(8, 9), "terminal_1_1"), "", "a road may end on another")
+	_expect(net.degree(_node(net, Vector2i(8, 5))), 3, "a T join makes a 3-way node")
+	_expect(net.add(Vector2i(2, 5), Vector2i(4, 5), "terminal_1_1"), "A road already runs here", "a road can't run along another")
+	_expect(net.add(Vector2i(10, 5), Vector2i(10, 0), "terminal_1_1"), "", "a road may start at another's end")
+	_expect(net.degree(_node(net, Vector2i(10, 5))), 2, "a bend is a 2-way node")
+	var diagonal := RoadNet.new(Content.base().road_types)
+	diagonal.add(Vector2i(0, 0), Vector2i(6, 6), "terminal_1_1")
+	_expect(diagonal.add(Vector2i(0, 5), Vector2i(5, 0), "terminal_1_1"), "Roads must cross at a cell, not between two", "45° roads that miss each other's cells are refused")
+	_expect(diagonal.add(Vector2i(0, 6), Vector2i(6, 0), "terminal_1_1"), "", "45° roads crossing at a cell are built")
+	_expect(diagonal.degree(_node(diagonal, Vector2i(3, 3))), 4, "45° roads crossing at a cell make a 4-way node")
+	var lengths := 0
+	for id: int in net.segments:
+		lengths += net.cells(id).size() - 1
+	_expect(lengths, 10 + 10 + 4 + 5, "splitting keeps every cell of road")
+
+
+func _node(net: RoadNet, cell: Vector2i) -> int:
+	return net.nodes.find_key(cell)
 
 
 func _expect(actual: Variant, expected: Variant, what: String) -> void:
