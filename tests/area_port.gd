@@ -21,19 +21,24 @@ static func terminal(apron_length: int) -> PortSim:
 	return sim
 
 
-## `terminal` with an import yard block, a crane, tractors,
-## and a feeder alongside carrying `imports` boxes.
-static func working_terminal(imports: int) -> PortSim:
+## `terminal` with an import yard block, a crane, tractors, and a feeder
+## alongside carrying `imports` boxes with room for `exports`; with exports
+## there is an export block too, filled by export lorries while the crane comes.
+static func working_terminal(imports: int, exports := 0) -> PortSim:
 	var sim := terminal(60)
 	# South of the east road, fed by the eastbound lane tractors come off the coast road on.
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the terminal's yard block is built")
 	sim.apply({"op": "set_terminal", "id": 3, "terminal": 1})
+	if exports > 0:
+		_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "the terminal's export block is built")
+		sim.apply({"op": "set_area", "id": 4, "settings": {"role": "export"}})
+		sim.apply({"op": "set_terminal", "id": 4, "terminal": 1})
 	sim.apply({"op": "place_sts", "apron": 1, "along": 20})
 	for i in roundi(sim.rules.sts_crane.lead_days * SimClock.TICKS_PER_DAY):
 		sim.tick()
 	sim.apply({"op": "buy_tractors", "count": 4})
-	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], sim.clock.calendar_minutes() + 600.0, imports, 0)
+	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], sim.clock.calendar_minutes() + 600.0, imports, exports)
 	sim.ships.append(ship)
 	_built("" if sim._berth(ship) else "refused", "the feeder berths")
 	ship.state = PortSim.Ship.State.WORKING

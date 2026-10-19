@@ -28,6 +28,7 @@ func _initialize() -> void:
 	_test_apron_berths()
 	_test_discharge()
 	_test_delivery()
+	_test_exports()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -550,6 +551,23 @@ func _test_delivery() -> void:
 	for i in 600:
 		sim.tick()
 	_expect(sim.area_vehicles.is_empty(), true, "every vehicle has left")
+
+
+func _test_exports() -> void:
+	var sim := AreaPort.working_terminal(1, 2)
+	var ship := sim.ships[0]
+	var export_block: int = 4
+	var stacked := 0
+	for i in 40000:
+		sim.tick()
+		if export_block in sim.area_stacks:
+			stacked = maxi(stacked, sim.area_stacks[export_block].boxes().size())
+		if ship.state == PortSim.Ship.State.LEAVING:
+			break
+	_expect(stacked >= 1, true, "export lorries stack boxes in the export block")
+	_expect(ship.exports, 0, "tractors fetch exports to the crane, which loads them all")
+	_expect(ship.moves, 3, "the ship counts its import and both exports")
+	_expect(ship.state, PortSim.Ship.State.LEAVING, "and sails fully loaded")
 
 
 ## A lane cell at the site entry a vehicle can drive in from.

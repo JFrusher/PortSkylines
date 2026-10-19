@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_ring_waits()
 	_test_never_stops_in_a_junction()
 	_test_merge_at_45()
+	_test_coming_back_frees_the_cell()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -112,6 +113,18 @@ func _test_merge_at_45() -> void:
 	_expect(waiting.is_empty(), true, "every vehicle from both roads gets on")
 	_expect(vehicles.all(func(v: Vehicle) -> bool: return v.at_end()), true, "every vehicle gets through the 45° merge")
 	_expect(shared, false, "no two vehicles are ever in one cell")
+
+
+func _test_coming_back_frees_the_cell() -> void:
+	var lanes := LaneGraph.new(_net([]))
+	var traffic := LaneTraffic.new(lanes)
+	# A route that passes (1, 0) twice, as one turning back at a bend does.
+	var loop: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(2, 1), Vector2i(1, 1), Vector2i(1, 0), Vector2i(0, 0)]
+	var vehicle := _vehicle(traffic, loop)
+	while int(vehicle.t) < 2:
+		traffic.advance(vehicle, SPEED)
+	_expect(traffic.holder(Vector2i(1, 0)), 0, "a cell left behind is free, even though the route comes back to it")
+	_expect(traffic.holder(Vector2i(2, 0)), vehicle.id, "the cell it is in is held")
 
 
 ## Runs `vehicles` for `ticks`, removing each at its end. Returns the longest wait.

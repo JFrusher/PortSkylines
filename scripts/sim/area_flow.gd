@@ -101,10 +101,15 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 	for crane in working:
 		if ship.boxes > 0:
 			_discharge(sim, crane, ship, move_minutes)
+		else:
+			_load(sim, crane, ship, move_minutes)
 	if ship.boxes == 0 and working.all(func(c: PortSim.Crane) -> bool: return c.tractor == 0):
-		# shortcut: loading exports from areas comes in M5 step 19.5; until then ships sail without them.
-		sim._sail(ship, working.size())
-		sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports] if ship.exports > 0 else "A %s is sailing, fully loaded" % ship.kind)
+		if ship.exports == 0:
+			sim._sail(ship, working.size())
+			sim._event("A %s is sailing, fully loaded" % ship.kind)
+		elif _export_box(sim, sim.areas.list[ship.apron].terminal) == 0:
+			sim._sail(ship, working.size())
+			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports])
 
 
 ## One crane's tick discharging: a tractor waits in the apron slot below it
@@ -127,19 +132,83 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	_go_to(sim, tractor, tractor.area)
 
 
+## One crane's tick loading: while the ship has room for more exports than
+## are already being fetched, it sends a tractor for one, then lifts the box
+## aboard once the tractor is back beneath it.
+static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_minutes: float) -> void:
+	if crane.tractor == 0:
+		var fetching := cranes_for(sim, ship).filter(func(c: PortSim.Crane) -> bool: return c.tractor != 0).size()
+		if ship.exports > fetching:
+			_send_fetcher(sim, crane, ship)
+		return
+	var tractor := _vehicle(sim, crane.tractor)
+	if tractor.state != "under_crane":
+		return
+	crane.timer += SimClock.CALENDAR_MINUTES_PER_TICK
+	if crane.timer < move_minutes:
+		return
+	crane.timer = 0.0
+	crane.tractor = 0
+	sim._moved(sim.boxes[tractor.box])
+	sim.boxes.erase(tractor.box)
+	ship.exports -= 1
+	ship.moves += 1
+	_gone(sim, tractor)
+
+
+## Sends a tractor from the pool, starting in the apron slot under `crane`,
+## to fetch an export from its terminal's export blocks and bring it back.
+static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> void:
+	if sim._tractors_out() >= sim.tractors:
+		return
+	var box := _export_box(sim, sim.areas.list[ship.apron].terminal)
+	if box == 0:
+		return
+	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
+	if not sim.lane_traffic.place(tractor):
+		return
+	sim._next_vehicle += 1
+	tractor.home = tractor.path[0]
+	tractor.box = box
+	sim._claimed[box] = true
+	sim.area_vehicles.append(tractor)
+	crane.tractor = tractor.id
+	_go_to(sim, tractor, _block_of(sim, box))
+
+
+## The least buried export box waiting in a working export block of
+## `terminal`, or 0, so loading digs out as few boxes as it can.
+static func _export_box(sim: PortSim, terminal: int) -> int:
+	var best := 0
+	var fewest := 0
+	for block: int in sim.area_stacks:
+		if block not in sim.areas.list or sim.areas.list[block].terminal != terminal or sim.areas.idle_reason(block) != "":
+			continue
+		var stacks: AreaStacks = sim.area_stacks[block]
+		for box: int in stacks.boxes():
+			if box not in sim._claimed and sim.boxes[box].kind == "export" and (best == 0 or stacks.above(box) < fewest):
+				best = box
+				fewest = stacks.above(box)
+	return best
+
+
+## The middle cell of the apron slot under `crane`, in the lane nearest the road.
+static func _crane_slot(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> Vector2i:
+	var depth: int = sim.rules.area_types.quay_apron.depth
+	return sim.areas.layout(ship.apron).slots[crane.along / AreaLayout.BAY * (depth - 4)][1]
+
+
 ## Puts a tractor from the pool in the apron slot under `crane`, bound for an
 ## import block of the ship's terminal with room. False when there is no free
 ## tractor, slot or block yet.
 static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> bool:
 	if sim._tractors_out() >= sim.tractors:
 		return false
-	var block := _import_block(sim, sim.areas.list[ship.apron].terminal)
+	var block := _block_for(sim, "import", sim.areas.list[ship.apron].terminal)
 	if block == 0:
 		sim._event("A ship is waiting: no import yard block with room and a road in its terminal")
 		return false
-	var depth: int = sim.rules.area_types.quay_apron.depth
-	var slot: Array = sim.areas.layout(ship.apron).slots[crane.along / AreaLayout.BAY * (depth - 4)]
-	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [slot[1]] as Array[Vector2i])
+	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
 	if not sim.lane_traffic.place(tractor):
 		return false
 	sim._next_vehicle += 1
@@ -150,12 +219,12 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	return true
 
 
-## The first import yard block of `terminal` that works and has room for one
-## more box than is already on its way, or 0.
-static func _import_block(sim: PortSim, terminal: int) -> int:
+## The first yard block of `role` in `terminal` that works and has room for
+## one more box than is already on its way, or 0.
+static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
-		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != "import" or sim.areas.idle_reason(id) != "":
+		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != role or sim.areas.idle_reason(id) != "":
 			continue
 		var coming := sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and v.loaded).size()
 		if _stacks(sim, id).room() > coming:
@@ -188,6 +257,43 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 			_go_to(sim, lorry, gate)
 			return true
 	return false
+
+
+## Sends a lorry in from the site entry with an export box, to a terminal
+## with a gate whose export blocks have room for more than the export lorries
+## already on their way; false when there is none or the way in is busy.
+static func dispatch_export_lorry(sim: PortSim) -> bool:
+	for terminal: int in sim.areas.terminals:
+		var gate := _gate_of(sim, terminal)
+		if gate == 0 or _export_room(sim, terminal) <= 0:
+			continue
+		var entry := _entry_cell(sim)
+		if entry == PortMap.NONE:
+			return false
+		var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
+		sim.lane_traffic.place(lorry)
+		sim._next_vehicle += 1
+		# shortcut: an export is booked on no line until a ship loads it, as on tiles.
+		lorry.box = sim._new_box("export", 0.0, "")
+		lorry.loaded = true
+		sim.area_vehicles.append(lorry)
+		_go_to(sim, lorry, gate)
+		return true
+	return false
+
+
+## Room left in `terminal`'s working export blocks, less the export lorries
+## bound for it.
+static func _export_room(sim: PortSim, terminal: int) -> int:
+	var room := 0
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if area.type == "yard_block" and area.terminal == terminal and area.settings.role == "export" and sim.areas.idle_reason(id) == "":
+			room += _stacks(sim, id).room()
+	for vehicle: Vehicle in sim.area_vehicles:
+		if vehicle.kind == "lorry" and vehicle.loaded and sim.boxes[vehicle.box].kind == "export" and vehicle.area in sim.areas.list and sim.areas.list[vehicle.area].terminal == terminal:
+			room -= 1
+	return room
 
 
 ## A free lane cell at the site entry heading into the site, or NONE.
@@ -233,15 +339,24 @@ static func _block_of(sim: PortSim, box: int) -> int:
 	return 0
 
 
-## Books `vehicle` a handover slot at `area` and heads there; with no slot
-## free it drives into the buffer strip and waits its turn.
+## Sends `vehicle` to the start of `area`'s buffer strip. It books a
+## handover slot only on getting there, so slots go in the order vehicles
+## arrive; with none free it waits at the start of the strip, and others
+## queue behind it on the road. Vehicles leave slots back into the strip
+## ahead of it, so waiting never blocks the way out.
 static func _go_to(sim: PortSim, vehicle: Vehicle, area: int) -> void:
 	vehicle.area = area
 	vehicle.slot = -1
-	if sim.handovers.arrive(area, vehicle.id) == "slot":
+	var buffer: Array = sim.areas.layout(area).buffer
+	_head(sim, vehicle, buffer[0] if sim.lanes.flow_of(area) > 0 else buffer[-1], "arriving")
+
+
+## `vehicle` reached the start of its area's buffer strip: it books a slot.
+static func _book(sim: PortSim, vehicle: Vehicle) -> void:
+	if sim.handovers.arrive(vehicle.area, vehicle.id) == "slot":
 		_head_to_slot(sim, vehicle)
-		return
-	_head(sim, vehicle, _buffer_end(sim, area), "queued")
+	else:
+		vehicle.state = "queued"
 
 
 static func _head_to_slot(sim: PortSim, vehicle: Vehicle) -> void:
@@ -281,19 +396,23 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		if vehicle.timer <= 0.0:
 			_gate_done(sim, vehicle)
 		return
-	if vehicle.state not in ["to_slot", "queued", "returning", "leaving"]:
+	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
 		return
 	if not sim.lane_traffic.advance(vehicle, _speed(sim, vehicle)):
 		return
 	match vehicle.state:
+		"arriving":
+			_book(sim, vehicle)
 		"to_slot":
 			_arrived(sim, vehicle)
 		"returning":
 			_gone(sim, vehicle)
+		"to_crane":
+			vehicle.state = "under_crane"
 		"leaving":
-			if vehicle.loaded and sim.boxes[vehicle.box].kind == "import":
+			if vehicle.loaded:
+				sim.delivered += 1 if sim.boxes[vehicle.box].kind == "import" else 0
 				sim.boxes.erase(vehicle.box)
-				sim.delivered += 1
 			_gone(sim, vehicle)
 
 
@@ -324,16 +443,25 @@ static func _arrived(sim: PortSim, vehicle: Vehicle) -> void:
 	vehicle.gate_in = -1.0
 
 
-## Done at the gate: in, a lorry heads for the block holding its box; out,
-## it heads for the site exit.
+## Done at the gate: on the way in (its turn clock running) a lorry heads for
+## an export block with its box, or the block holding the box it collects;
+## on the way out it heads for the site exit.
 static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 	var gate := vehicle.area
 	sim.handovers.leave(gate, vehicle.id)
 	_promote(sim, gate)
-	if vehicle.loaded:
+	if vehicle.gate_in < 0.0:
 		vehicle.area = 0
 		vehicle.slot = -1
 		_head(sim, vehicle, _exit_cell(sim), "leaving")
+	elif vehicle.loaded:
+		var block := _block_for(sim, "export", sim.areas.list[gate].terminal)
+		if block:
+			_go_to(sim, vehicle, block)
+		else:
+			# The export blocks filled while it queued: it takes its box away.
+			vehicle.gate_in = -1.0
+			_go_out(sim, vehicle, 0)
 	else:
 		_go_to(sim, vehicle, _block_of(sim, vehicle.box))
 
@@ -386,26 +514,44 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 		sim.boxes[vehicle.box].in = sim.clock.calendar_minutes()
 		vehicle.box = 0
 		vehicle.loaded = false
+		if vehicle.kind == "lorry":
+			# An export delivered, as on tiles; out through the gate.
+			sim.delivered += 1
+			_go_out(sim, vehicle, sim.areas.list[block].terminal)
+		else:
+			vehicle.area = 0
+			vehicle.slot = -1
+			_head(sim, vehicle, _buffer_end(sim, block), "returning")
+	elif vehicle.kind == "tractor":
+		# An export fetched for a crane: back to the slot under it.
+		sim._claimed.erase(vehicle.box)
+		vehicle.loaded = true
 		vehicle.area = 0
 		vehicle.slot = -1
-		_head(sim, vehicle, _buffer_end(sim, block), "returning")
+		_head(sim, vehicle, vehicle.home, "to_crane")
 	else:
 		sim.dwell_times.append(sim.clock.calendar_minutes() - sim.boxes[vehicle.box].in)
 		if sim.dwell_times.size() > 50:
 			sim.dwell_times.pop_front()
 		sim._claimed.erase(vehicle.box)
 		vehicle.loaded = true
-		var gate := _gate_of(sim, sim.areas.list[block].terminal)
-		if gate:
-			_go_to(sim, vehicle, gate)
-		else:
-			vehicle.area = 0
-			vehicle.slot = -1
-			_head(sim, vehicle, _exit_cell(sim), "leaving")
+		_go_out(sim, vehicle, sim.areas.list[block].terminal)
 	_promote(sim, block)
 	for other: Vehicle in sim.area_vehicles:
 		if other.area == block and other.state == "handling":
 			_start_handling(sim, other)
+
+
+## Sends a lorry out through `terminal`'s gate, or straight to the site
+## exit when there is no gate to pass.
+static func _go_out(sim: PortSim, vehicle: Vehicle, terminal: int) -> void:
+	var gate := _gate_of(sim, terminal) if terminal else 0
+	if gate:
+		_go_to(sim, vehicle, gate)
+		return
+	vehicle.area = 0
+	vehicle.slot = -1
+	_head(sim, vehicle, _exit_cell(sim), "leaving")
 
 
 ## Sends the vehicles just given a slot at `area` on to it.

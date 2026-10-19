@@ -834,7 +834,7 @@ func tick() -> void:
 	if _until_lorry <= 0.0 and (_dispatch_import_lorry() or AreaFlow.dispatch_import_lorry(self)):
 		_until_lorry = rules.lorry_interval_minutes
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_export <= 0.0 and _dispatch_export_lorry():
+	if _until_export <= 0.0 and (_dispatch_export_lorry() or AreaFlow.dispatch_export_lorry(self)):
 		_until_export = rules.export_lorry_interval_minutes
 	for vehicle: Vehicle in vehicles.duplicate():
 		if vehicle.kind == "lorry":

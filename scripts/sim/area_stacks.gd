@@ -132,13 +132,16 @@ static func from_dict(d: Dictionary) -> AreaStacks:
 	return area
 
 
-## How many more boxes fit, counting 40 ft places: a rough room check before
-## a tractor is sent, not a promise of a spot.
+## How many more 40 ft boxes fit, keeping a stack's height spare so a buried
+## box can always be dug out: stacks topped with 20s take only 20s, so they
+## count none. Any box fits while this is above zero.
 func room() -> int:
 	var free := 0
 	for position in stacks.size():
-		free += _tiers - stacks[position].size()
-	return free
+		var tiers: Array = stacks[position]
+		if tiers.is_empty() or _teu[tiers[-1][0]] == 2:
+			free += _tiers - tiers.size()
+	return free - _tiers
 
 
 ## Every box in the area.

@@ -62,7 +62,9 @@ func holder(cell: Vector2i) -> int:
 
 
 ## Takes path[i] for `vehicle`, and if it is a junction cell, every junction
-## cell after it and the first cell past them too; then lets go of the cells behind.
+## cell after it and the first cell past them too; then lets go of every other
+## cell, including ones its route passes again later, so a route that comes
+## back the same way never holds a cell it has left.
 func _enter(vehicle: Vehicle, i: int) -> bool:
 	var want: Array[Vector2i] = [vehicle.path[i]]
 	var j := i
@@ -72,7 +74,7 @@ func _enter(vehicle: Vehicle, i: int) -> bool:
 	if not _take(vehicle.id, want):
 		return false
 	var keep := {}
-	for cell: Vector2i in vehicle.path.slice(i):
+	for cell in want:
 		keep[cell] = true
 	var held: Array = _held[vehicle.id]
 	for cell: Vector2i in held.duplicate():
