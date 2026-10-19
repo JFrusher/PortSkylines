@@ -10,6 +10,7 @@ The roadmap's M1–M7 table assumed an Early Access release with a single termin
 | M2 | [m02-terminal-loop.md](m02-terminal-loop.md) | Berths, cranes, yard equipment, gate, reservation traffic | 3–5 mo |
 | M3 | [m03-economy-progression.md](m03-economy-progression.md) | Contracts, ledger, loans, milestones, map tiles, dredging | 3–4 mo |
 | M4 | [m04-vertical-slice.md](m04-vertical-slice.md) | Semi-realistic art pass, UI, tutorial, first public build | 3–5 mo |
+| — | [roads-and-areas.md](roads-and-areas.md) | *Proposed, undecided:* roads first, then areas and assets, with full handling animations. Would sit between M4 and M5 | not estimated |
 | M5 | [m05-scale-and-rail.md](m05-scale-and-rail.md) | Packed data, threaded paths, on-dock rail, reefers | 4–6 mo |
 | M6 | [m06-cost-routing.md](m06-cost-routing.md) | CS2-style lane graph and cost routing | 3–5 mo |
 | M7 | [m07-whole-port.md](m07-whole-port.md) | Several terminals, shared channel, pilots, tugs, anchorage | 4–6 mo |

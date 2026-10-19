@@ -163,7 +163,7 @@ The developer answered most of the open questions below. These answers override 
 | 30 | Saves | Every old save migrates forever |
 | 31–32 | Brands and repo | Fictional shipping lines and ports. The repo stays public |
 
-**Still open:** 33 (localisation and accessibility) and 34 (public roadmap cadence).
+**Still open:** 33 (localisation and accessibility), 34 (public roadmap cadence) and 35 (roads, areas and assets).
 
 The step-by-step plan that follows these decisions is in [docs/phases/](phases/README.md): eleven phase files, M1 to M11.
 
@@ -219,6 +219,7 @@ Each answer changes phase content, ordering or duration. Answers given so far ar
 32. **Repository visibility and licensing.** The repo is on GitHub. Public code invites contributions but also clones of the concept before launch. Options: keep private until EA; open source the engine and keep assets proprietary; fully open.
 33. **Localisation and accessibility at EA.** It adds M7 work and affects reach. Options: English only at EA; top 5 Steam languages at 1.0; colour-blind palettes and screen-reader support (Godot 4.5 added the latter) from M7.
 34. **Public roadmap and update cadence.** Promises create EA obligations. Options: rolling "next update" only; a quarterly public roadmap; a dated roadmap to 1.0.
+35. **Roads first, then areas and assets.** The developer proposed replacing square-by-square building with roads drawn first, areas laid out along them, and assets inside each area (for example a handover lane where an AGV waits), with full crane animations for each move. It would change decision 11, the build tools, and the base of M5 and M6. The proposal and its questions are in [docs/phases/roads-and-areas.md](phases/roads-and-areas.md).
 
 ## Conclusion
 
