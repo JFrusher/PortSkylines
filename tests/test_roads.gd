@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_handovers()
 	_test_machine_jobs()
 	_test_area_stacks()
+	_test_driveways()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -431,6 +432,56 @@ func _test_area_stacks() -> void:
 	_expect(kept.housekeep(due), true, "in a quiet period a box burying one due out sooner is moved")
 	_expect(kept.above(20), 0, "so the box due first is on top")
 	_expect(kept.housekeep(due), false, "and then there is nothing to do")
+
+
+func _test_driveways() -> void:
+	var sim := PortSim.new(0, Content.base(), true)
+	var entry := sim.site_entry()
+	# A 1+1 road from the site entry west to the coast. Drawn west, its right is
+	# north: the westbound lane is the drawn row 300 and the eastbound lane row 301.
+	sim.apply({"op": "build_road", "from": entry, "to": Vector2i(85, entry.y), "type": "terminal_1_1"})
+	var road := sim.roads.segment_at(Vector2i(200, entry.y))
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": road, "side": -1, "from": 100, "to": 129})
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": road, "side": 1, "from": 100, "to": 129})
+	var south: Dictionary = sim.areas.layout(1)
+	var north: Dictionary = sim.areas.layout(2)
+	var slot: Vector2i = south.slots[4][1]
+	var inbound := _inbound(sim, entry)
+	var there := sim.lanes.route(inbound, slot, true)
+	_expect(there.is_empty(), false, "a lorry routes from the site entry into a yard slot")
+	_expect(there.any(func(c: Vector2i) -> bool: return c in south.buffer), true, "through the block's buffer strip")
+	_expect(_steps_are_single(there), true, "a cell at a time")
+	var back := sim.lanes.route(slot, _outbound(sim, entry), true)
+	_expect(back.is_empty(), false, "and from the slot back out to the site exit")
+	var other := sim.lanes.route(inbound, north.slots[2][1], true)
+	_expect(other.is_empty(), false, "blocks on both sides of a road are reached, each with its own flow")
+	var parked: Vector2i = north.slots[3][1]
+	var past := sim.lanes.route(inbound, north.slots[5][1], true)
+	_expect(parked in past, false, "a slot is never driven through on the way to another")
+	# Drawn south at x = 85, its right (west) side reaches the sea.
+	sim.apply({"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, 300), "type": "terminal_1_1"})
+	var coast := sim.roads.segment_at(Vector2i(85, 250))
+	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 39}), "", "an apron is built on the coast")
+	var apron: Dictionary = sim.areas.layout(sim.areas.list.keys()[-1])
+	var under_crane: Vector2i = apron.slots[7][1]
+	_expect(sim.lanes.route(inbound, under_crane, false).is_empty(), false, "a tractor routes under the cranes")
+	_expect(sim.lanes.route(inbound, under_crane, true), [] as Array[Vector2i], "a lorry can't drive onto an apron")
+
+
+## A lane cell at the site entry a vehicle can drive in from.
+func _inbound(sim: PortSim, entry: Vector2i) -> Vector2i:
+	for y in range(entry.y - 4, entry.y + 5):
+		if not sim.lanes.route(Vector2i(entry.x, y), Vector2i(entry.x - 3, y), true).is_empty():
+			return Vector2i(entry.x, y)
+	return PortMap.NONE
+
+
+## A lane cell at the site entry a vehicle can drive out on.
+func _outbound(sim: PortSim, entry: Vector2i) -> Vector2i:
+	for y in range(entry.y - 4, entry.y + 5):
+		if not sim.lanes.route(Vector2i(entry.x - 3, y), Vector2i(entry.x, y), true).is_empty():
+			return Vector2i(entry.x, y)
+	return PortMap.NONE
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`

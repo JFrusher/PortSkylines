@@ -111,6 +111,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	roads = RoadNet.new(rules.road_types)
 	lanes = LaneGraph.new(roads)
 	areas = Areas.new(rules.area_types, roads, rules.site)
+	lanes.areas = areas
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
@@ -249,6 +250,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
 	sim.lanes = LaneGraph.new(sim.roads)
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
+	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
@@ -337,6 +339,13 @@ func apply(command: Dictionary) -> String:
 		"set_terminal":
 			return areas.set_terminal(command.id, command.terminal)
 	return "Unknown command: %s" % command.get("op")
+
+
+## Where the highway meets the site: the middle of its east edge. A road
+## with a lane on this cell connects the port to the outside world.
+func site_entry() -> Vector2i:
+	var size := Grid.size(rules.site)
+	return Vector2i(size.x - 1, size.y / 2)
 
 
 ## shortcut: roads and areas ignore land ownership, which is counted in 25 m tiles; it moves onto the grid when M5 step 22 removes the tile model.

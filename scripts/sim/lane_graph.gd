@@ -3,10 +3,13 @@ extends RefCounted
 ## Routes over the lanes of a RoadNet: each lane cell is a point, joined one
 ## way to the next cell in its driving direction, across to the next cell of a
 ## neighbouring lane going the same way, and at nodes to the lanes leading on.
-## Lorries route on a graph without the roads they may not use.
+## Areas join it too: traffic in an area runs the way of the road lane beside
+## its front. Lorries route on a graph without the roads and areas they may not use.
 
 var _net: RoadNet
-var _version := -1
+## The areas whose driveways join the graph; set once the sim has them.
+var areas: Areas
+var _version := []
 var _all := AStar2D.new()
 var _lorries := AStar2D.new()
 var _at := {}  # cell -> point ids of lane cells there
@@ -20,16 +23,14 @@ func _init(net: RoadNet) -> void:
 ## Whether `cell` is in a junction: crossing traffic shares it, so a vehicle
 ## books through it to the cell beyond before entering.
 func is_junction(cell: Vector2i) -> bool:
-	if _version != _net.version:
-		_rebuild()
+	_refresh()
 	return cell in _junction
 
 
 ## The cells from `from` to `to` along lanes, both ends included, or [] when
 ## no lane route exists. Junctions are crossed one cell at a time.
 func route(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
-	if _version != _net.version:
-		_rebuild()
+	_refresh()
 	var graph := _lorries if lorry else _all
 	var best := PackedVector2Array()
 	var best_length := INF
@@ -53,8 +54,14 @@ func route(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
 	return cells
 
 
+func _refresh() -> void:
+	var now := [_net.version, areas.version if areas else -1]
+	if now != _version:
+		_version = now
+		_rebuild()
+
+
 func _rebuild() -> void:
-	_version = _net.version
 	_all.clear()
 	_lorries.clear()
 	_at.clear()
@@ -97,6 +104,82 @@ func _rebuild() -> void:
 						var to := Vector2i(_all.get_point_position(leaving[1]))
 						for cell: Vector2i in [from, to] + _steps(from, to):
 							_junction[cell] = true
+	if areas:
+		for id: int in areas.list:
+			next_id = _add_area(id, next_id)
+
+
+## Adds area `id`'s driveways from point id `next_id` on; returns the next free
+## id. An area with no road lane along its front adds none.
+func _add_area(id: int, next_id: int) -> int:
+	var area: Dictionary = areas.list[id]
+	var along: Vector2i = (area.end - area.start).sign()
+	var length := RoadNet.length(area.start, area.end) + 1
+	var flow := _flow(area, along, length)
+	if flow == 0:
+		return next_id
+	var lorries: bool = area.type != "quay_apron"
+	var layout := areas.layout(id)
+	var at := {}  # cell -> this area's point there
+	# The k-th cell along in driving order, in row `row`.
+	var cell := func(row: int, k: int) -> Vector2i:
+		return area.start + along * (k if flow > 0 else length - 1 - k) + area.out * row
+	# Lambdas copy captured locals, so the next id lives in an array they share.
+	var next := [next_id]
+	var point := func(c: Vector2i) -> int:
+		if c not in at:
+			at[c] = next[0]
+			_add_point(next[0], c, lorries)
+			next[0] += 1
+		return at[c]
+	# The buffer strip, in from the road at its first cell and out at its last.
+	for k in length:
+		point.call(cell.call(0, k))
+		if k > 0:
+			_connect(at[cell.call(0, k - 1)], at[cell.call(0, k)], lorries)
+	for road_point: int in _at.get(cell.call(0, 0) - area.out, []):
+		if not at.values().has(road_point):
+			_connect(road_point, at[cell.call(0, 0)], lorries)
+	for road_point: int in _at.get(cell.call(0, length - 1) - area.out, []):
+		if not at.values().has(road_point):
+			_connect(at[cell.call(0, length - 1)], road_point, lorries)
+	if area.type == "yard_block":
+		# Each slot is entered sideways from the buffer and left sideways back
+		# into it, so a parked vehicle never blocks the way to another slot.
+		for slot: Array in layout.slots:
+			var ks := range(length).filter(func(k: int) -> bool: return cell.call(1, k) in slot)
+			for k: int in ks:
+				point.call(cell.call(1, k))
+				if k > ks[0]:
+					_connect(at[cell.call(1, k - 1)], at[cell.call(1, k)], lorries)
+			_connect(at[cell.call(0, ks[0])], at[cell.call(1, ks[0])], lorries)
+			_connect(at[cell.call(1, ks[-1])], at[cell.call(0, mini(ks[-1] + 1, length - 1))], lorries)
+	elif area.type in ["quay_apron", "gate"]:
+		# Drive-through lanes: out from the buffer down the area's first column,
+		# along each lane, and back to the buffer up its last column.
+		var lane_rows: Array = range(2, areas.types.quay_apron.depth - 2) if area.type == "quay_apron" else range(1, areas.types.gate.depth - 1)
+		for row in range(1, lane_rows[-1] + 1):
+			_connect(point.call(cell.call(row - 1, 0)), point.call(cell.call(row, 0)), lorries)
+			_connect(point.call(cell.call(row, length - 1)), point.call(cell.call(row - 1, length - 1)), lorries)
+		for row: int in lane_rows:
+			for k in range(1, length):
+				_connect(point.call(cell.call(row, k - 1)), point.call(cell.call(row, k)), lorries)
+	return next[0]
+
+
+## Which way traffic runs in `area`: 1 along `along`, -1 against it, the way
+## of the road lane beside its front; 0 when no road lane runs there.
+func _flow(area: Dictionary, along: Vector2i, length: int) -> int:
+	for k in length:
+		var beside: Vector2i = area.start + along * k - area.out
+		for road_point: int in _at.get(beside, []):
+			for next: int in _all.get_point_connections(road_point):
+				var step := Vector2i(_all.get_point_position(next)) - beside
+				if step == along:
+					return 1
+				if step == -along:
+					return -1
+	return 0
 
 
 func _add_point(id: int, cell: Vector2i, lorries: bool) -> void:
