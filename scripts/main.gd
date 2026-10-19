@@ -154,7 +154,11 @@ func _sun() -> DirectionalLight3D:
 
 func _environment() -> WorldEnvironment:
 	var sky := Sky.new()
-	sky.sky_material = ProceduralSkyMaterial.new()
+	var material := ProceduralSkyMaterial.new()
+	# Below the horizon is land, so the view past the map's edge reads as countryside.
+	material.ground_horizon_color = Color(0.42, 0.5, 0.36)
+	material.ground_bottom_color = Color(0.36, 0.42, 0.3)
+	sky.sky_material = material
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
