@@ -88,6 +88,9 @@ func _initialize() -> void:
 	var ticks := int(OS.get_cmdline_user_args()[0]) if OS.get_cmdline_user_args().size() > 0 else 400
 	var sim := ProfiledSim.new(5, EndgamePort.rules(), true)
 	EndgamePort.build(sim)
+	for i in 300:
+		sim.tick()
+	EndgamePort.place_lorries(sim, 2000)
 	sim.spent.clear()
 	sim.calls.clear()
 	for i in ticks:

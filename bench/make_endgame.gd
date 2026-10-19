@@ -3,23 +3,29 @@ extends SceneTree
 ## lorries, 20,000 stacked boxes and 6 berths) for bench/endgame_bench.gd.
 ## godot --headless --script res://bench/make_endgame.gd
 ## The yard is filled directly, since unloading 20,000 boxes from ships would
-## take game months; lorries then flow in under fast spawn rules until the
-## target count is on the roads. Trains join when rail exists (M5 step 13).
+## take game months. Lorries are placed directly too, already through a gate
+## and heading for an import box: one highway entry lets in a lorry every few
+## ticks and they finish their trips about as fast, so traffic alone levels
+## off near 500. Trains join when rail exists (M5 step 13).
 
 const EndgamePort := preload("res://bench/endgame_port.gd")
 const LORRIES := 2000
 const PATH := "res://bench/endgame.bin"
+const SETTLE := 300
 
 
 func _initialize() -> void:
 	var sim := PortSim.new(5, EndgamePort.rules(), true)
 	EndgamePort.build(sim)
 	_phase("built")
-	var start := Time.get_ticks_msec()
-	while _lorries(sim) < LORRIES and sim.clock.ticks < 40000:
+	# A few hundred ticks first, so ships are in and tractors are working.
+	for i in SETTLE:
 		sim.tick()
-		if sim.clock.ticks % 1000 == 0:
-			_phase("tick %d: %d lorries, %d vehicles, %d boxes, %d ships (%.0f s)" % [sim.clock.ticks, _lorries(sim), sim.vehicles.size(), sim.boxes.size(), sim.ships.size(), (Time.get_ticks_msec() - start) / 1000.0])
+	EndgamePort.place_lorries(sim, LORRIES - _lorries(sim))
+	_phase("placed lorries")
+	for i in SETTLE:
+		sim.tick()
+	_phase("settled: %d lorries, %d vehicles, %d boxes, %d ships" % [_lorries(sim), sim.vehicles.size(), sim.boxes.size(), sim.ships.size()])
 	var err := SaveFile.save(PATH, sim)
 	print(err if err else "wrote %s: %d lorries, %d vehicles, %d boxes, %d berths, tick %d" % [PATH, _lorries(sim), sim.vehicles.size(), sim.boxes.size(), sim.map.berths().size(), sim.clock.ticks])
 	quit(1 if err or _lorries(sim) < LORRIES else 0)

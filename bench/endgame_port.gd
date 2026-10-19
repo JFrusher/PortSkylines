@@ -23,7 +23,8 @@ static func rules() -> Dictionary:
 
 ## Builds the port on `sim`, made with rules(), and fills its yard.
 static func build(sim: PortSim) -> void:
-	RandomPort.calls(sim, "panamax", 10, 60, 64)
+	# A Panamax for each berth within the first minutes, then weekly.
+	RandomPort.calls(sim, "panamax", 1, 2, BERTHS)
 	_own_all_land(sim)
 	_build(sim)
 	_fill_yard(sim)
@@ -97,3 +98,51 @@ static func _fill_yard(sim: PortSim) -> void:
 			placed += 1
 		if placed == BOXES:
 			return
+
+
+## Puts `count` lorries on the yard roads, one per westbound lane, each
+## through its gate and driving to collect an import box from the nearest
+## block, booked the way the sim books one it dispatches.
+static func place_lorries(sim: PortSim, count: int) -> void:
+	var boxes := {}  # block entrance -> unclaimed import box ids there
+	for tile: Vector2i in sim.yard.stacks:
+		var way_in := sim.yard.entrance(tile)
+		for id: int in sim.yard.stacks[tile]:
+			if id not in sim._claimed:
+				if way_in not in boxes:
+					boxes[way_in] = []
+				boxes[way_in].append([id, tile])
+	var placed := 0
+	for y in range(10, SIZE - BAND + 1, BAND):
+		for x in range(COLUMNS[-1] - 2, sim.map.sea_width + 2, -1):
+			if placed == count:
+				return
+			var here := Vector2i(x, y)
+			var way_in := _nearest(sim, boxes, here)
+			if way_in == PortMap.NONE:
+				return
+			var path := sim.map.route(here, way_in)
+			var lorry := Vehicle.new(sim._next_vehicle, "lorry", path)
+			lorry.lane = Traffic.lane(sim.map, path, 0)
+			if path.size() < 2 or not sim.traffic.claim(lorry.lane, lorry.id):
+				continue
+			var box: Array = boxes[way_in].pop_back()
+			lorry.box = box[0]
+			lorry.target = box[1]
+			lorry.gate_in = sim.clock.calendar_minutes()
+			sim._claimed[box[0]] = true
+			sim._next_vehicle += 1
+			sim.vehicles.append(lorry)
+			placed += 1
+
+
+## The block entrance with boxes left nearest `here` by road, or NONE.
+static func _nearest(sim: PortSim, boxes: Dictionary, here: Vector2i) -> Vector2i:
+	var best := PortMap.NONE
+	var best_length := 1 << 30
+	for way_in: Vector2i in boxes:
+		var length := sim.map.distance(here, way_in)
+		if not boxes[way_in].is_empty() and length > 0 and length < best_length:
+			best = way_in
+			best_length = length
+	return best

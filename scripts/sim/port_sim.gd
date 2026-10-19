@@ -74,6 +74,9 @@ var storage := {}
 var _claimed := {}
 ## Derived, not saved: per vehicle id, [its path, the steps of that path on a gate].
 var _gate_steps_of := {}
+## Derived, not saved: gate queues as counted on tick _queues_tick.
+var _queues := {}
+var _queues_tick := -1
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
@@ -1241,9 +1244,12 @@ func _through_a_gate(from: Vector2i, to: Vector2i) -> bool:
 	return false
 
 
-## Lorries yet to cross each gate lane, by lane: one pass over the lorries.
-## A lorry crossing the same gate lane twice counts once.
+## Lorries yet to cross each gate lane, by lane, as at the start of this
+## tick: one pass over the lorries a tick, shared by every route chosen in
+## it. A lorry crossing the same gate lane twice counts once.
 func _gate_queues() -> Dictionary:
+	if _queues_tick == clock.ticks:
+		return _queues
 	var counts := {"": 0}  # never empty, so callers can tell it has been made
 	for vehicle in vehicles:
 		if vehicle.kind != "lorry":
@@ -1255,6 +1261,8 @@ func _gate_queues() -> Dictionary:
 				if lane not in counted:
 					counted[lane] = true
 					counts[lane] = counts.get(lane, 0) + 1
+	_queues = counts
+	_queues_tick = clock.ticks
 	return counts
 
 
