@@ -6,6 +6,7 @@ var _failures := 0
 
 
 func _initialize() -> void:
+	_expect(WorldView.grid_cell(Vector3(1, 0, 0.5)), Vector2i(6, 3), "a world point finds its 4 m cell (25 m a unit)")
 	var map := PortMap.new(Vector2i(16, 16), 2)
 	var road := PortMap.Tile.ROAD
 	for cell: Vector2i in [Vector2i(5, 5), Vector2i(6, 5), Vector2i(7, 5), Vector2i(7, 6), Vector2i(7, 7), Vector2i(8, 6), Vector2i(3, 9)]:

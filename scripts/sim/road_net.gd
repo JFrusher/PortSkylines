@@ -25,6 +25,82 @@ func _init(road_types: Dictionary) -> void:
 ## to its left. Where it meets or crosses another road, both split at a shared
 ## node, so junctions form by themselves. Returns "" or why it can't be built.
 func add(from: Vector2i, to: Vector2i, type: String) -> String:
+	var found: Variant = _meets(from, to, type)
+	if found is String:
+		return found
+	var meets: Dictionary = found
+	for cell: Vector2i in meets:
+		_split(meets[cell], cell)
+	var stops: Array[Vector2i] = [from]
+	for cell: Vector2i in line(from, to).slice(1, -1):
+		if cell in meets:
+			stops.append(cell)
+	stops.append(to)
+	for i in stops.size() - 1:
+		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type}
+		_next_segment += 1
+	version += 1
+	return ""
+
+
+## Why `add` would refuse this road, or "".
+func add_error(from: Vector2i, to: Vector2i, type: String) -> String:
+	var found: Variant = _meets(from, to, type)
+	return found if found is String else ""
+
+
+## Takes `segment` out, and any node left with no road.
+func remove(segment: int) -> void:
+	var road: Dictionary = segments[segment]
+	segments.erase(segment)
+	for node: int in [road.a, road.b]:
+		if degree(node) == 0:
+			nodes.erase(node)
+	version += 1
+
+
+## The segment whose lanes cover `cell`, or 0.
+func segment_at(cell: Vector2i) -> int:
+	for id: int in segments:
+		for lane in lanes(id):
+			if cell in lane.cells:
+				return id
+	return 0
+
+
+## A road's length in cells from `from` to `to`, which costs are counted in.
+static func length(from: Vector2i, to: Vector2i) -> int:
+	var d := (to - from).abs()
+	return maxi(d.x, d.y)
+
+
+## `to` moved onto the nearest straight or 45° line from `from`, as the draw tool snaps.
+static func snap(from: Vector2i, to: Vector2i) -> Vector2i:
+	var d := to - from
+	if absi(d.x) > 2 * absi(d.y):
+		return from + Vector2i(d.x, 0)
+	if absi(d.y) > 2 * absi(d.x):
+		return from + Vector2i(0, d.y)
+	var run := roundi((absi(d.x) + absi(d.y)) / 2.0)
+	return from + d.sign() * run
+
+
+func to_dict() -> Dictionary:
+	return {"nodes": nodes.duplicate(), "segments": segments.duplicate(true), "next_node": _next_node, "next_segment": _next_segment}
+
+
+static func from_dict(d: Dictionary, road_types: Dictionary) -> RoadNet:
+	var net := RoadNet.new(road_types)
+	net.nodes = d.nodes.duplicate()
+	net.segments = d.segments.duplicate(true)
+	net._next_node = d.next_node
+	net._next_segment = d.next_segment
+	return net
+
+
+## Where a road from `from` to `to` meets the roads already built, as cell ->
+## the segment it splits; or why it can't be built.
+func _meets(from: Vector2i, to: Vector2i, type: String) -> Variant:
 	if type not in types:
 		return "Unknown road type \"%s\"" % type
 	var d := to - from
@@ -36,7 +112,7 @@ func add(from: Vector2i, to: Vector2i, type: String) -> String:
 	var on_drawn := {}
 	for cell in drawn:
 		on_drawn[cell] = true
-	var meets := {}  # cell -> segment it splits, or 0 at an existing node
+	var meets := {}
 	for id: int in segments:
 		var shared := cells(id).filter(func(c: Vector2i) -> bool: return c in on_drawn)
 		if shared.size() > 1:
@@ -45,18 +121,7 @@ func add(from: Vector2i, to: Vector2i, type: String) -> String:
 			meets[shared[0]] = id
 		elif _crosses_between_cells(drawn, id):
 			return "Roads must cross at a cell, not between two"
-	for cell: Vector2i in meets:
-		_split(meets[cell], cell)
-	var stops: Array[Vector2i] = [from]
-	for cell: Vector2i in drawn.slice(1, -1):
-		if cell in meets:
-			stops.append(cell)
-	stops.append(to)
-	for i in stops.size() - 1:
-		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type}
-		_next_segment += 1
-	version += 1
-	return ""
+	return meets
 
 
 ## How many segments end at `node`: 2 on a bend, 3 at a T, 4 at a crossing.

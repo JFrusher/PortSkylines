@@ -17,6 +17,8 @@ const SAVE_PATH := "user://save.bin"
 var _accumulated := 0.0
 var _painting := false
 var _last_cell := PortMap.NONE
+## Where a road drag started on the 4 m grid, or NONE.
+var _road_from := PortMap.NONE
 var _reported := false
 
 
@@ -87,7 +89,14 @@ func _process(dt: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != PortMap.NONE:
+		_report(sim.apply({"op": "build_road", "from": _road_from, "to": _road_to(), "type": hud.road_type}))
+		_road_from = PortMap.NONE
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if hud.tool == Hud.DRAW_ROAD:
+			_road_from = _hovered_grid_cell()
+			return
 		if hud.tool == Hud.INSPECT:
 			hud.inspect(_hovered_cell())
 			return
@@ -113,7 +122,8 @@ func _report(err: String) -> void:
 func _command(cell: Vector2i) -> Dictionary:
 	match hud.tool:
 		Hud.BULLDOZE:
-			return {"op": "bulldoze", "cell": cell}
+			var road := sim.roads.segment_at(_hovered_grid_cell())
+			return {"op": "remove_road", "segment": road} if road else {"op": "bulldoze", "cell": cell}
 		Hud.CRANE:
 			return {"op": "place_crane", "cell": cell}
 		Hud.BUY_LAND:
@@ -136,8 +146,10 @@ func _order_error(cell: Vector2i) -> String:
 	match hud.tool:
 		Hud.INSPECT:
 			return ""
+		Hud.DRAW_ROAD:
+			return "" if _road_from == PortMap.NONE else sim.build_road_error(_road_from, _road_to(), hud.road_type)
 		Hud.BULLDOZE:
-			return sim.bulldoze_error(cell)
+			return "" if sim.roads.segment_at(_hovered_grid_cell()) else sim.bulldoze_error(cell)
 		Hud.CRANE:
 			return sim.crane_error(cell)
 		Hud.BUY_LAND:
@@ -148,11 +160,25 @@ func _order_error(cell: Vector2i) -> String:
 
 
 func _hovered_cell() -> Vector2i:
+	var hit: Variant = _hovered_point()
+	return PortMap.NONE if hit == null else Vector2i(floori(hit.x), floori(hit.z))
+
+
+## The 4 m grid cell under the mouse.
+func _hovered_grid_cell() -> Vector2i:
+	var hit: Variant = _hovered_point()
+	return PortMap.NONE if hit == null else WorldView.grid_cell(hit)
+
+
+## Where a road drag from _road_from ends, snapped straight or to 45°.
+func _road_to() -> Vector2i:
+	return RoadNet.snap(_road_from, _hovered_grid_cell())
+
+
+## Where the mouse points on the ground, or null.
+func _hovered_point() -> Variant:
 	var mouse := get_viewport().get_mouse_position()
-	var hit: Variant = Plane(Vector3.UP, 0).intersects_ray(rig.camera.project_ray_origin(mouse), rig.camera.project_ray_normal(mouse))
-	if hit == null:
-		return PortMap.NONE
-	return Vector2i(floori(hit.x), floori(hit.z))
+	return Plane(Vector3.UP, 0).intersects_ray(rig.camera.project_ray_origin(mouse), rig.camera.project_ray_normal(mouse))
 
 
 ## Writes one crash report a run and shows its folder to the player.

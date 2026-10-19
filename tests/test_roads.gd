@@ -10,6 +10,8 @@ func _initialize() -> void:
 	_test_lanes()
 	_test_junctions()
 	_test_routes()
+	_test_editing()
+	_test_sim_commands()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -110,6 +112,48 @@ func _test_routes() -> void:
 	_expect(_steps_are_single(across), true, "junction crossings move one cell at a time")
 	# East along row 0's eastbound lane to column 25, then down its southbound lane.
 	_expect(across.size() - 1, 25 + 20, "a route across a road grid is the shortest by hand")
+
+
+func _test_editing() -> void:
+	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(10, 2)), Vector2i(10, 0), "a nearly level drag snaps straight")
+	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(1, -9)), Vector2i(0, -9), "a nearly upright drag snaps straight")
+	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(6, 4)), Vector2i(5, 5), "an in-between drag snaps to 45°")
+	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(-4, 6)), Vector2i(-5, 5), "45° snapping keeps the drag's direction")
+	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
+	var net := RoadNet.new(Content.base().road_types)
+	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
+	_expect(net.add_error(Vector2i(2, 5), Vector2i(4, 5), "terminal_1_1"), "A road already runs here", "add_error gives add's refusal")
+	_expect(net.add_error(Vector2i(5, 0), Vector2i(5, 10), "terminal_1_1"), "", "add_error passes a road add would build")
+	_expect(net.segments.size(), 1, "add_error changes nothing")
+	net.add(Vector2i(5, 0), Vector2i(5, 10), "terminal_1_1")
+	var copy := RoadNet.from_dict(net.to_dict(), net.types)
+	_expect(copy.to_dict(), net.to_dict(), "roads round-trip through a dictionary")
+	_expect(net.segment_at(Vector2i(8, 4)), net.segment_at(Vector2i(8, 5)), "both lanes of a road find its segment")
+	_expect(net.segment_at(Vector2i(8, 7)), 0, "a cell off every road finds none")
+	var version := net.version
+	net.remove(net.segment_at(Vector2i(5, 1)))
+	_expect(net.version > version, true, "removing a road bumps the version")
+	_expect(net.nodes.values().has(Vector2i(5, 0)), false, "a node left with no road goes")
+	_expect(net.degree(_node(net, Vector2i(5, 5))), 3, "the crossing becomes a T")
+
+
+func _test_sim_commands() -> void:
+	var sim := PortSim.new()
+	var money := sim.money
+	var upkeep := sim.daily_upkeep()
+	var cost: int = sim.rules.road_types.terminal_2_2.cost_per_cell
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(10, 10), "to": Vector2i(30, 10), "type": "terminal_2_2"}), "", "a road is built by command")
+	_expect(money - sim.money, 20 * cost, "a road costs its length in cells")
+	_expect(sim.daily_upkeep() - upkeep, 20 * sim.rules.road_types.terminal_2_2.upkeep_per_cell, "roads add their upkeep")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(15, 10), "to": Vector2i(25, 10), "type": "terminal_1_1"}), "A road already runs here", "a refused road")
+	_expect(money - sim.money, 20 * cost, "costs nothing")
+	_expect(sim.lanes.route(Vector2i(10, 10), Vector2i(30, 10), true).size(), 21, "the sim routes on its roads")
+	var poor := PortSim.new()
+	poor.ledger.post("construction", -poor.money)
+	_expect(poor.apply({"op": "build_road", "from": Vector2i(10, 10), "to": Vector2i(30, 10), "type": "terminal_2_2"}), "Not enough money", "roads need the money")
+	_expect(sim.apply({"op": "remove_road", "segment": 99}), "No road there", "removing a missing road is refused")
+	_expect(sim.apply({"op": "remove_road", "segment": 1}), "", "a road is removed by command")
+	_expect(sim.roads.segments.is_empty(), true, "and is gone")
 
 
 func _steps_are_single(cells: Array[Vector2i]) -> bool:

@@ -28,6 +28,8 @@ const YARD_ROWS := 2
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const LANE_OFFSET := 0.22
+## Metres in one world unit. shortcut: the tile view is drawn at 25 m a unit, so roads on the 4 m grid are scaled down to it; becomes 1 when M5 step 22 removes the tile model.
+const METRES_PER_UNIT := 25.0
 ## Camera distances to a chunk's centre past which it is drawn with less
 ## detail, as Cities: Skylines does: each tile's stack as one slab instead of
 ## every box, then no yard machines. Instances drawn cost the most render time.
@@ -253,6 +255,11 @@ static func _turn(side: Vector2i, turns: int) -> Vector2i:
 ## Where along `path` a vehicle `at` tiles in is drawn, as [position in tile
 ## coordinates, heading]. Through a tile where the path turns it follows a
 ## quarter circle between the middles of the tile's edges, so it never snaps.
+## The 4 m grid cell at world point `at`.
+static func grid_cell(at: Vector3) -> Vector2i:
+	return Vector2i(floori(at.x * METRES_PER_UNIT / Grid.CELL), floori(at.z * METRES_PER_UNIT / Grid.CELL))
+
+
 static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
 	var i := clampi(int(at), 0, path.size() - 1)
 	var f := at - i

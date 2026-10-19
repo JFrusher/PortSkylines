@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_v2_cash_moves_into_the_ledger()
 	_test_every_fixture_loads()
 	_test_v3_boxes_belong_to_no_line()
+	_test_v4_has_no_roads_and_v5_keeps_them()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -193,3 +194,11 @@ func _test_v3_boxes_belong_to_no_line() -> void:
 	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v3.bin").sim
 	_expect(sim.boxes.is_empty(), false, "the v3 fixture has boxes")
 	_expect(sim.boxes.values().all(func(b: Dictionary) -> bool: return b.line == ""), true, "v3 boxes migrate to no line")
+
+
+func _test_v4_has_no_roads_and_v5_keeps_them() -> void:
+	var old: PortSim = SaveFile.load_from("res://tests/fixtures/save_v4.bin").sim
+	_expect(old.roads.segments.is_empty(), true, "a v4 port has no 4 m roads")
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v5.bin").sim
+	_expect(sim.roads.segments.size(), 4, "a v5 port keeps its two crossing roads, split in two at the crossing")
+	_expect(sim.lanes.route(Vector2i(100, 120), Vector2i(140, 120), true).is_empty(), false, "and routes on them after loading")

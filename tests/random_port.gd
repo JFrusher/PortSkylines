@@ -62,6 +62,13 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 		var cell := Vector2i(rng.randi_range(map.sea_width - 1, map.sea_width + 8), rng.randi_range(map.entry.y - 5, map.entry.y + 5))
 		var roll := rng.randf()
 		var command := {"op": "bulldoze", "cell": cell} if roll < 0.2 else {"op": "build", "kind": kinds[rng.randi() % kinds.size()], "cell": cell}
+		# Roads on the 4 m grid: drawn at any angle (some refused), and taken out again.
+		if roll >= 0.2 and roll < 0.3:
+			var from := Vector2i(rng.randi_range(80, 120), rng.randi_range(80, 120))
+			var to := from + Vector2i(rng.randi_range(-12, 12), rng.randi_range(-12, 12))
+			command = {"op": "build_road", "from": from, "to": to, "type": Content.base().road_types.keys()[rng.randi() % Content.base().road_types.size()]}
+		elif roll >= 0.3 and roll < 0.33:
+			command = {"op": "remove_road", "segment": rng.randi_range(1, 20)}
 		# The economy: offers are numbered from 1, so some answers find one and
 		# some are refused; loans, land and dredging are refused without the cash.
 		if roll > 0.88:

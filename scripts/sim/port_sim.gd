@@ -52,6 +52,10 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var traffic := Traffic.new()
 var yard: Yard
+## The roads drawn on the 4 m grid, beside the tile map until M5 step 19
+## moves the box flow onto them, and the lanes routed over them.
+var roads: RoadNet
+var lanes: LaneGraph
 ## Every box in the port by id: {"kind": "import" or "export", "due": the
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
@@ -96,6 +100,8 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	creative = creative_mode
 	map = PortMap.new(Vector2i(rules.map.width, rules.map.height), rules.map.sea_width)
 	yard = Yard.new(map, rules)
+	roads = RoadNet.new(rules.road_types)
+	lanes = LaneGraph.new(roads)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
@@ -189,6 +195,7 @@ class Crane:
 func to_dict() -> Dictionary:
 	return {
 		"map": map.to_dict(),
+		"roads": roads.to_dict(),
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
@@ -229,6 +236,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
 	sim.map = PortMap.from_dict(d.map)
 	sim.yard = Yard.from_dict(d.yard, sim.map, sim.rules)
+	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
+	sim.lanes = LaneGraph.new(sim.roads)
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
@@ -304,7 +313,38 @@ func apply(command: Dictionary) -> String:
 			return buy_land(command.tile)
 		"dredge":
 			return dredge(command.metres)
+		"build_road":
+			return build_road(command.from, command.to, command.type)
+		"remove_road":
+			return remove_road(command.segment)
 	return "Unknown command: %s" % command.get("op")
+
+
+## shortcut: roads ignore land ownership, which is counted in 25 m tiles; areas bring ownership onto the grid in M5 step 14.
+func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
+	var err := roads.add_error(from, to, type)
+	if err == "" and not _afford(road_price(from, to, type)):
+		err = "Not enough money"
+	return err
+
+
+func build_road(from: Vector2i, to: Vector2i, type: String) -> String:
+	var err := build_road_error(from, to, type)
+	if err == "":
+		ledger.post("construction", -road_price(from, to, type))
+		roads.add(from, to, type)
+	return err
+
+
+func road_price(from: Vector2i, to: Vector2i, type: String) -> int:
+	return RoadNet.length(from, to) * rules.road_types[type].cost_per_cell
+
+
+func remove_road(segment: int) -> String:
+	if segment not in roads.segments:
+		return "No road there"
+	roads.remove(segment)
+	return ""
 
 
 func build_error(kind: int, cell: Vector2i) -> String:
@@ -652,6 +692,9 @@ func daily_upkeep() -> int:
 	for name: String in rules.upkeep:
 		if name in rules.build_cost:
 			total += rules.upkeep[name] * map.cells_of(PortMap.Tile[name.to_upper()]).size()
+	for segment: int in roads.segments:
+		var road: Dictionary = roads.segments[segment]
+		total += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
 	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for block_anchor in yard.anchors():
 		total += rules.yard_gear[yard.gear_of(block_anchor)].upkeep_per_machine * yard.machines(block_anchor)
