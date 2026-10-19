@@ -55,6 +55,10 @@ Rules this sketch assumes:
 | B1 | How an area is made | Dragged along a road edge, CS2-zoning style. The area takes the road's direction |
 | C1 | Placed or generated assets | Fully automatic: area type and size decide the layout, and the player only sets rules |
 | E1 | Animation detail | Main motions only: travel, lift and set down |
+| D1 | Where vehicles meet the crane | It depends on the equipment type. In RTG and reach-stacker areas, vehicles drive a lane beside the rows. In automated (ASC) areas, they stop at transfer points at the block end |
+| D6 | All handover slots full | The vehicle waits in a buffer strip that the auto layout includes. Overflow beyond the buffer waits on the road and forms a visible queue |
+| G1 | Placement | Its own phase after M4. M5–M11 renumber when this proposal gets its steps |
+| F1 | Old saves | Tile saves are dropped. Decision 30 ("migrate forever") applies from the first public build in the new format |
 
 What these change **[Inference]**:
 - With a grid under the roads and areas laid out automatically, D7 is answered (the sim stays on a grid), and B2 mostly is (yard areas are strips beside a road, so rows run parallel to it).
