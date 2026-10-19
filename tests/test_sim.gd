@@ -16,6 +16,7 @@ var _failures := 0
 func _initialize() -> void:
 	_test_build_rules()
 	_test_bulldoze_rules()
+	_test_bulldoze_in_use()
 	_test_no_ship_without_a_road()
 	_test_ships_unload_and_lorries_pay()
 	_test_commands()
@@ -113,11 +114,42 @@ func _test_bulldoze_rules() -> void:
 	var yard := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 1)
 	_expect(sim.bulldoze(sim.map.entry), "That's the highway", "bulldoze highway")
 	_expect(sim.bulldoze(Vector2i(30, 40)), "Nothing to bulldoze", "bulldoze empty land")
-	sim.yard.add(yard, 999)
-	_expect(sim.bulldoze(yard), "The yard still holds boxes", "bulldoze a full yard")
-	sim.yard.take(yard, 999)
 	_expect(sim.bulldoze(yard), "", "bulldoze an empty yard")
 	_expect(sim.map.tile(yard), PortMap.Tile.LAND, "bulldozed yard is land again")
+
+
+## As in Cities: Skylines, anything in use can be bulldozed; what used it is
+## scrapped, rerouted or sent away, and the books of boxes, yard space,
+## machines and lanes stay straight.
+func _test_bulldoze_in_use() -> void:
+	var sim := _port()
+	_run(sim, FIRST_SHIP + 120)
+	var ship := sim.ships[0]
+	_expect(ship.state, PortSim.Ship.State.WORKING, "the first ship is being worked")
+	var stacked := sim.yard.stacks.keys().filter(func(t: Vector2i) -> bool: return sim.yard.count(t) > 0)
+	_expect(stacked.is_empty(), false, "imports are stacked")
+	var tile: Vector2i = stacked[0]
+	var lost := sim.yard.count(tile)
+	var before := sim.boxes.size()
+	_expect(sim.bulldoze(tile), "", "a yard tile holding boxes can be bulldozed")
+	_expect(sim.boxes.size() <= before - lost, true, "its boxes are lost")
+	_expect(sim.vehicles.all(func(v: Vehicle) -> bool: return v.target != tile), true, "nothing still heads for it")
+	var crane := sim.cranes[0]
+	_expect(sim.bulldoze(crane.cell), "", "a working crane can be bulldozed")
+	_expect(sim.cranes.has(crane), false, "the crane is gone")
+	var road := sim.map.access_road(sim.cranes[0].cell)
+	_expect(sim.bulldoze(road), "", "the road behind a working crane can be bulldozed")
+	_expect(sim.vehicles.all(func(v: Vehicle) -> bool: return v.home != road and road not in v.path), true, "no vehicle parks on or drives over it")
+	_expect(sim.bulldoze(ship.cells[0]), "", "a quay with a ship alongside can be bulldozed")
+	_expect(ship.state, PortSim.Ship.State.LEAVING, "the ship sails at once")
+	_run(sim, 120)
+	_expect(sim.vehicles.all(func(v: Vehicle) -> bool: return v.path.all(func(c: Vector2i) -> bool: return PortMap.is_road(sim.map.tile(c)))), true, "every vehicle still drives on road")
+	var reserved := {}
+	for v in sim.vehicles:
+		if v.state != "handling":
+			continue
+		reserved[v.block] = reserved.get(v.block, 0) + 1
+	_expect(reserved, sim.yard.busy, "busy machines match the vehicles being handled")
 
 
 func _test_no_ship_without_a_road() -> void:

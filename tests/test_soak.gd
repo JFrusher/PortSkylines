@@ -89,7 +89,8 @@ func _check(sim: PortSim) -> void:
 			lanes[vehicle.ahead] = vehicle.id
 		_expect(Vector2i(vehicle.lane.x, vehicle.lane.y), vehicle.path[int(vehicle.t)], "vehicle %d holds the lane of the tile it is on %s" % [vehicle.id, at])
 		_expect(sim.traffic.holder(vehicle.lane), vehicle.id, "traffic agrees vehicle %d holds its lane %s" % [vehicle.id, at])
-		for cell: Vector2i in vehicle.path:
+		# Road already driven may since have been bulldozed; the road ahead may not.
+		for cell: Vector2i in vehicle.path.slice(int(vehicle.t)):
 			if not PortMap.is_road(sim.map.tile(cell)):
 				_expect(sim.map.tile(cell), PortMap.Tile.ROAD, "vehicle path cell %s is road %s" % [cell, at])
 				return

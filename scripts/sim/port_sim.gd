@@ -517,35 +517,98 @@ func move_price(box: Dictionary) -> int:
 	return roundi(price) + (rules.move_price.reefer_premium if box.reefer else 0)
 
 
-## Bulldozing a quay tile with a crane removes the crane first.
+## Why `cell` can't be bulldozed, or "". Anything built can be, in use or
+## not, as in Cities: Skylines; bulldoze() deals with what was using it.
 func bulldoze_error(cell: Vector2i) -> String:
-	var crane := _crane_at(cell)
-	if crane and (_ship_at(cell) or crane.tractor != 0):
-		return "The crane is working a ship"
-	if crane:
-		return ""
-	var err := map.bulldoze_error(cell)
+	return "" if _crane_at(cell) else map.bulldoze_error(cell)
+
+
+## Clears `cell`: a crane first if one stands there, else the tile. Boxes
+## stacked there are lost; vehicles bound for it, standing on it or parked
+## behind it are scrapped with their loads; vehicles that would drive over
+## it find another way or are scrapped; a ship alongside sails at once.
+func bulldoze(cell: Vector2i) -> String:
+	var err := bulldoze_error(cell)
 	if err != "":
 		return err
-	if yard.count(cell) > 0 or yard.reserved.get(cell, 0) > 0:
-		return "The yard still holds boxes"
-	if _ship_at(cell):
-		return "A ship is alongside"
-	for vehicle in vehicles:
-		if cell in vehicle.path or cell == vehicle.target:
-			return "Vehicles are using this road"
+	var boxes_before := boxes.size()
+	var vehicles_before := vehicles.size()
+	var crane := _crane_at(cell)
+	if crane:
+		if crane.tractor != 0:
+			_scrap(_vehicle(crane.tractor))
+		cranes.erase(crane)
+	else:
+		for ship: Ship in ships.duplicate():
+			if cell in ship.cells:
+				_send_off(ship)
+		for vehicle: Vehicle in vehicles.duplicate():
+			if vehicle.target == cell or vehicle.home == cell or vehicle.path[int(vehicle.t)] == cell:
+				_scrap(vehicle)
+		for id: int in yard.stacks.get(cell, []):
+			boxes.erase(id)
+			_claimed.erase(id)
+		yard.stacks.erase(cell)
+		yard.reserved.erase(cell)
+		map.place(PortMap.Tile.LAND, cell)
+		yard.forget_tile(cell)
+		for vehicle: Vehicle in vehicles.duplicate():
+			if vehicle.state in ["drive", "gate", "no_route"] and cell in vehicle.path.slice(int(vehicle.t)):
+				_reroute(vehicle)
+	if boxes.size() < boxes_before or vehicles.size() < vehicles_before:
+		_event("Bulldozing scrapped %d vehicles and lost %d boxes" % [vehicles_before - vehicles.size(), boxes_before - boxes.size()])
 	return ""
 
 
-func bulldoze(cell: Vector2i) -> String:
-	var err := bulldoze_error(cell)
-	var crane := _crane_at(cell)
-	if err == "" and crane:
-		cranes.erase(crane)
-	elif err == "":
-		map.place(PortMap.Tile.LAND, cell)
-		yard.forget_tile(cell)
-	return err
+## A ship whose berth is bulldozed: alongside, it sails at once with what it
+## has; still coming in, it turns back to anchor to wait for another berth.
+func _send_off(ship: Ship) -> void:
+	match ship.state:
+		Ship.State.WORKING:
+			var working := _cranes_for(ship)
+			for crane in working:
+				if crane.tractor != 0:
+					_scrap(_vehicle(crane.tractor))
+			_sail(ship, working.size())
+			_event("A %s sailed early: its berth was bulldozed" % ship.kind)
+		Ship.State.ARRIVING:
+			ship.state = Ship.State.ANCHORED
+			ship.cells.clear()
+			ship.sail = 0.0
+			ship.prev_sail = 0.0
+
+
+## Takes `vehicle` off the map at once: its load is lost, and the yard space,
+## box, yard machine and crane it had booked are let go.
+func _scrap(vehicle: Vehicle) -> void:
+	if vehicle.state == "handling":
+		vehicle.timer = 0.0
+		_handled(vehicle)
+	var importing := vehicle.state == "under_crane" and vehicle.box == 0
+	if importing or (vehicle.loaded and boxes[vehicle.box].kind == ("import" if vehicle.kind == "tractor" else "export")):
+		yard.reserve(vehicle.target, -1)
+	if vehicle.loaded:
+		boxes.erase(vehicle.box)
+	elif vehicle.box != 0:
+		_claimed.erase(vehicle.box)
+	for crane in cranes:
+		if crane.tractor == vehicle.id:
+			crane.tractor = 0
+			crane.timer = 0.0
+	_leave(vehicle)
+
+
+## Sends `vehicle` a new way to where it is going after the road ahead of it
+## was bulldozed, or scraps it when there is none.
+func _reroute(vehicle: Vehicle) -> void:
+	var to := _destination(vehicle)
+	if _route(vehicle, vehicle.path[int(vehicle.t)], to).is_empty():
+		_scrap(vehicle)
+		return
+	traffic.release(vehicle.ahead, vehicle.id)
+	vehicle.ahead = Traffic.NO_LANE
+	# shortcut: a lorry rerouted while stopped at a gate skips the rest of its stop; rare, fine until gates get queues of their own.
+	_head_for(vehicle, to)
 
 
 func tick() -> void:
@@ -965,10 +1028,7 @@ func _release_idle_tractors(ship: Ship) -> void:
 	for crane in _cranes_for(ship):
 		var tractor := _vehicle(crane.tractor)
 		if tractor and tractor.state == "under_crane" and not tractor.loaded:
-			yard.reserve(tractor.target, -1)
-			_leave(tractor)
-			crane.tractor = 0
-			crane.timer = 0.0
+			_scrap(tractor)
 
 
 func _tractors_out() -> int:
@@ -1106,7 +1166,7 @@ func _drive_lorry(lorry: Vehicle) -> void:
 			if lorry.timer <= 0.0:
 				lorry.state = "drive"
 		"no_route":
-			_head_for(lorry, map.entry)
+			_head_for(lorry, _destination(lorry))
 
 
 ## The cheapest road route from `from` to `to` through a gate, counting each
@@ -1174,8 +1234,7 @@ func _drive_tractor(tractor: Vehicle) -> void:
 				tractor.loaded = true
 			_head_for(tractor, tractor.home)
 		"no_route":
-			var going := yard.entrance(tractor.target) if (tractor.loaded and boxes[tractor.box].kind == "import") else tractor.home
-			_head_for(tractor, going)
+			_head_for(tractor, _destination(tractor))
 
 
 ## Starts a machine of the vehicle's target block working for it, if one is
@@ -1208,12 +1267,7 @@ func _handled(vehicle: Vehicle) -> bool:
 ## With no such road, or its first lane taken, it waits in "no_route" and
 ## tries again next tick.
 func _head_for(vehicle: Vehicle, to: Vector2i) -> void:
-	var here := vehicle.path[int(vehicle.t)]
-	var path: Array[Vector2i] = []
-	if vehicle.kind == "lorry":
-		path = _route_via_gate(here, to)
-	elif to != PortMap.NONE:
-		path = map.route(here, to)
+	var path := _route(vehicle, vehicle.path[int(vehicle.t)], to)
 	if path.is_empty() or not _move_to_lane(vehicle, Traffic.lane(map, path, 0)):
 		vehicle.state = "no_route"
 		return
@@ -1223,6 +1277,30 @@ func _head_for(vehicle: Vehicle, to: Vector2i) -> void:
 	vehicle.waited = 0
 	vehicle.replanned = false
 	vehicle.state = "drive"
+
+
+## Where `vehicle` is heading: a lorry to the highway once it is done with
+## the yard, else to its block; a tractor to its block while it carries an
+## import or fetches an export, else home behind its crane.
+func _destination(vehicle: Vehicle) -> Vector2i:
+	if vehicle.kind == "lorry":
+		return map.entry if _outbound(vehicle) else yard.entrance(vehicle.target)
+	var to_yard: bool = vehicle.box != 0 and (not vehicle.loaded or boxes[vehicle.box].kind == "import")
+	return yard.entrance(vehicle.target) if to_yard else vehicle.home
+
+
+func _outbound(lorry: Vehicle) -> bool:
+	return lorry.box == 0 or (lorry.loaded and boxes[lorry.box].kind == "import")
+
+
+## The road route for `vehicle` from `from` to `to`, or empty. A lorry goes
+## through a gate on its way in, and again on its way out until it has.
+func _route(vehicle: Vehicle, from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	if to == PortMap.NONE:
+		return []
+	if vehicle.kind == "lorry" and (vehicle.gate_in < 0.0) != _outbound(vehicle):
+		return _route_via_gate(from, to)
+	return map.route(from, to)
 
 
 ## Moves `vehicle` up to one tile along its path at `speed` tiles per vehicle
