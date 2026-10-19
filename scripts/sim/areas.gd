@@ -75,6 +75,10 @@ func layout(id: int) -> Dictionary:
 	match area.type:
 		"yard_block":
 			return AreaLayout.yard_block(area, types.yard_block.depth)
+		"quay_apron":
+			return AreaLayout.quay_apron(area, types.quay_apron.depth)
+		"gate":
+			return AreaLayout.gate(area, types.gate.depth)
 	return {}
 
 

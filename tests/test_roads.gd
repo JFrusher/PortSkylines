@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_areas()
 	_test_area_tool()
 	_test_yard_layout()
+	_test_apron_and_gate_layouts()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -246,6 +247,40 @@ func _test_yard_layout() -> void:
 	_expect(overlap, false, "no cell is used twice")
 	_expect(used.keys().all(func(c: Vector2i) -> bool: return c in sim.areas.cells(1)), true, "every part lies inside the block")
 	_expect(sim.areas.layout(1), layout, "the same block lays out the same every time")
+
+
+func _test_apron_and_gate_layouts() -> void:
+	var sim := PortSim.new(0, Content.base(), true)
+	# Drawn south at x = 85, its right (west) side reaches the sea: the apron covers x = 84 down to 75.
+	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, 160), "type": "terminal_1_1"})
+	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29}), "", "an apron is built on the coast")
+	var depth: int = sim.rules.area_types.quay_apron.depth
+	var apron := sim.areas.layout(1)
+	_expect(apron.buffer.all(func(c: Vector2i) -> bool: return c.x == 84), true, "the apron's buffer strip is beside the road")
+	_expect(apron.rails[0].all(func(c: Vector2i) -> bool: return c.x == 83) and apron.rails[1].all(func(c: Vector2i) -> bool: return c.x == 76), true, "crane rails run landside and waterside")
+	_expect(apron.edge.all(func(c: Vector2i) -> bool: return c.x == 75), true, "the quay edge is on the water")
+	_expect(apron.slots.size(), 10 * (depth - 4), "a handover slot per bay in each tractor lane between the rails")
+	_expect(_covers_once(apron, sim.areas.cells(1)), true, "the apron's parts cover it with no cell used twice")
+	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": 1, "side": -1, "from": 0, "to": 14}), "", "a gate is built across the road")
+	var gate_depth: int = sim.rules.area_types.gate.depth
+	var gate := sim.areas.layout(2)
+	_expect(gate.lanes.size(), gate_depth - 2, "a gate's lanes fill the rows between its buffer strip and kerb")
+	_expect(gate.slots.size(), gate.lanes.size(), "one booth slot per lane")
+	_expect(gate.slots.all(func(s: Array) -> bool: return s[0].y == 106), true, "booths sit at the gate's middle bay")
+	_expect(gate.lanes.all(func(l: Array) -> bool: return l.size() == 15), true, "gate lanes run the gate's length")
+
+
+## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`
+## exactly once each.
+func _covers_once(layout: Dictionary, cells: Array[Vector2i]) -> bool:
+	var used := {}
+	var parts: Array = [layout.buffer, layout.edge] + layout.rails + layout.slots
+	for part: Array in parts:
+		for cell: Vector2i in part:
+			if cell in used:
+				return false
+			used[cell] = true
+	return cells.all(func(c: Vector2i) -> bool: return c in used)
 
 
 func _steps_are_single(cells: Array[Vector2i]) -> bool:

@@ -53,6 +53,9 @@ const AREA_TOP := 0.2
 ## two alternating shades so each slot reads on its own.
 const BUFFER_COLOR := Color(0.3, 0.3, 0.32)
 const SLOT_COLORS: Array[Color] = [Color(0.24, 0.24, 0.26), Color(0.33, 0.33, 0.35)]
+const RAIL_COLOR := Color(0.16, 0.16, 0.17)
+## The quay edge's fender line, in safety yellow.
+const EDGE_COLOR := Color(0.85, 0.7, 0.15)
 ## Camera distances to a chunk's centre past which it is drawn with less
 ## detail, as Cities: Skylines does: each tile's stack as one slab instead of
 ## every box, then no yard machines. Instances drawn cost the most render time.
@@ -253,6 +256,14 @@ func _draw_areas() -> void:
 		var layout := sim.areas.layout(id)
 		for cell: Vector2i in layout.get("buffer", []):
 			colors[cell] = BUFFER_COLOR
+		for lane: Array in layout.get("lanes", []):
+			for cell: Vector2i in lane:
+				colors[cell] = ASPHALT
+		for rail: Array in layout.get("rails", []):
+			for cell: Vector2i in rail:
+				colors[cell] = RAIL_COLOR
+		for cell: Vector2i in layout.get("edge", []):
+			colors[cell] = EDGE_COLOR
 		for i: int in layout.get("slots", []).size():
 			for cell: Vector2i in layout.slots[i]:
 				colors[cell] = SLOT_COLORS[i % 2]

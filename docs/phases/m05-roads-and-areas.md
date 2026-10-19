@@ -43,7 +43,7 @@ The new model is built beside the tile model, in its own sim classes with headle
 20. **Main-motion animations** from the job phases, reusing the M4 art. Check: screenshots of each phase.
 21. **Follow camera.** Click a box or machine to follow it. Check: following a box from ship to gate.
 22. **New save format.** Tile saves are refused with a clear message, fixtures are rebuilt, and the soak test runs on the new model. Test: `test_save` and `test_soak`.
-23. **Guided start rewritten** for roads, then areas. Test: `test_guide`.
+23. **Guided start rewritten** for roads, then areas, with area costs tuned so the start money builds the first chain (a 120 m quay apron costs $45,000 at the step 9 prices, against $20,000 to start). Test: `test_guide`.
 24. **First slice playtest: one full chain.** Notes go in `docs/playtests/m5.md`. Tag `m5`.
 
 The depot or parking area and the reach-stacker equipment option follow the first slice.
