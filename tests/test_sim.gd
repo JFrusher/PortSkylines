@@ -452,6 +452,11 @@ func _test_new_yard_tile_keeps_block_settings() -> void:
 	var anchor := sim.yard.anchor(tile)
 	_expect(anchor, tile + Vector2i.UP, "the new tile anchors the block")
 	_expect([sim.yard.role_of(anchor), sim.yard.gear_of(anchor)], ["export", "rtg"], "the block keeps its settings")
+	var before := sim.money
+	_expect(sim.build(YARD, tile + Vector2i.UP * 2), "", "another tile on the RTG block")
+	_expect(before - sim.money, sim.cost(YARD) + sim.rules.yard_gear.rtg.cost_per_tile, "joining an RTG block pays for its gear")
+	sim.money = sim.cost(YARD)
+	_expect(sim.build(YARD, tile + Vector2i.UP * 3), "Not enough money", "the gear must be affordable")
 
 
 ## Imports in a block lorries can't reach must not hold up imports elsewhere.

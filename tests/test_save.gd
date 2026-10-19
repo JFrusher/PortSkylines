@@ -103,13 +103,14 @@ func _test_failed_save_preserves_destination() -> void:
 func _test_malformed_payloads_are_refused() -> void:
 	# A busy port, so ships, cranes and vehicles all have entries to break.
 	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v2.bin").sim
-	for i in 20000:
-		if not (sim.ships.is_empty() or sim.cranes.is_empty() or sim.vehicles.is_empty()):
+	for i in 40000:
+		if not (sim.ships.is_empty() or sim.cranes.is_empty() or sim.vehicles.is_empty() or sim.get("_claimed").is_empty()):
 			break
 		sim.tick()
 	var valid := sim.to_dict()
 	_write_payload("user://valid.bin", {"version": SaveFile.VERSION, "sim": valid})
-	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane and vehicle payload loads")
+	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
+	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
 	# Every field each deserialiser reads, through the public load path.
 	for section: Array in [[], ["map"], ["yard"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
 		var original := _section(valid, section)
@@ -125,7 +126,7 @@ func _test_malformed_payloads_are_refused() -> void:
 		var bad := valid.duplicate(true)
 		bad[collection] = [42]
 		_expect_payload_refused(bad, "non-dictionary in %s" % collection)
-	for claimed: Dictionary in [{"bad key": 1}, {Vector2i(14, 23): "bad count"}]:
+	for claimed: Dictionary in [{"bad key": true}, {Vector2i(14, 23): true}, {7: "yes"}]:
 		var bad := valid.duplicate(true)
 		bad.claimed = claimed
 		_expect_payload_refused(bad, "mistyped entries in claimed")

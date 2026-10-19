@@ -224,7 +224,7 @@ func apply(command: Dictionary) -> String:
 
 func build_error(kind: int, cell: Vector2i) -> String:
 	var err := map.build_error(kind, cell)
-	if err == "" and money < cost(kind):
+	if err == "" and money < _price(kind, cell):
 		err = "Not enough money"
 	return err
 
@@ -232,15 +232,30 @@ func build_error(kind: int, cell: Vector2i) -> String:
 func build(kind: int, cell: Vector2i) -> String:
 	var err := build_error(kind, cell)
 	if err == "":
-		money -= cost(kind)
-		# A tile joining a block keeps that block's settings, whichever tile anchors it.
-		var joined := map.neighbor(cell, PortMap.Tile.YARD) if kind == PortMap.Tile.YARD else PortMap.NONE
-		if joined != PortMap.NONE:
-			var settings_from := yard.anchor(joined)
+		money -= _price(kind, cell)
+		var settings_from := _joined_block(kind, cell)
+		if settings_from != PortMap.NONE:
 			yard.role[cell] = yard.role_of(settings_from)
 			yard.gear[cell] = yard.gear_of(settings_from)
 		map.place(kind, cell)
 	return err
+
+
+## The tile's build cost, plus the per-tile gear cost of a yard block it joins.
+func _price(kind: int, cell: Vector2i) -> int:
+	var settings_from := _joined_block(kind, cell)
+	if settings_from == PortMap.NONE:
+		return cost(kind)
+	return cost(kind) + rules.yard_gear[yard.gear_of(settings_from)].cost_per_tile
+
+
+## The anchor of the yard block a new yard tile at `cell` joins, or NONE. The
+## tile takes that block's settings, whichever tile anchors it afterwards.
+func _joined_block(kind: int, cell: Vector2i) -> Vector2i:
+	if kind != PortMap.Tile.YARD:
+		return PortMap.NONE
+	var next := map.neighbor(cell, PortMap.Tile.YARD)
+	return PortMap.NONE if next == PortMap.NONE else yard.anchor(next)
 
 
 func crane_error(cell: Vector2i) -> String:

@@ -171,8 +171,8 @@ static func _valid_sim(data: Variant) -> bool:
 			"gate_in": TYPE_FLOAT,
 		}) or not _all_cells(vehicle.path, true):
 			return false
-	for cell: Variant in data.claimed:
-		if not cell is Vector2i or not data.claimed[cell] is int:
+	for id: Variant in data.claimed:
+		if not id is int or not data.claimed[id] is bool:
 			return false
 	for id: Variant in data.boxes:
 		if not id is int or not data.boxes[id] is Dictionary:
