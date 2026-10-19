@@ -29,6 +29,12 @@ const SCHEMA := {
 	# Loans the port can take, up to max_loans at once, paid back daily.
 	"loans": {"*": {"amount": TYPE_INT, "yearly_rate": TYPE_FLOAT, "days": TYPE_INT}},
 	"max_loans": TYPE_INT,
+	# Milestones on TEU moved across the quay; each unlocks named content
+	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
+	# "contracts"), shown to the player with the given description.
+	"milestones": {"*": {"teu": TYPE_INT, "unlocks": {"*": TYPE_STRING}}},
+	# A game year, for the year-end scoreboard.
+	"year_days": TYPE_INT,
 	# After `days` midnights below zero the debt is cleared, every line's
 	# reputation changes by `reputation`, and no loans for `no_loans_days`.
 	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
@@ -55,7 +61,7 @@ const SCHEMA := {
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["cells", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["year_days", "cells", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
 
 static var _base := {}
 

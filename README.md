@@ -8,7 +8,9 @@ when the berths are full. Cranes work them at a set rate, tractors shuttle
 boxes to import and export blocks, and lorries queue at the gate to collect
 imports and bring exports. Lines pay per crane move, boxes kept past their
 free days pay storage, and upkeep is paid every midnight. Every dollar is in
-the ledger.
+the ledger; loans tide the port over, and a bailout catches it if it stays
+in the red. Milestones on TEU moved unlock RTGs, loans, land, dredging and
+Panamax services. Creative mode lifts the money limit.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the researched roadmap and open questions.
 
@@ -36,6 +38,7 @@ Open `project.godot` in Godot and press F5.
 | `scripts/sim/port_sim.gd` | Money, ships, cranes, boxes, vehicles, upkeep, KPIs. Changed only through `apply(command)` and `tick()` |
 | `scripts/sim/ledger.gd` | The books: every change of cash, by category and day |
 | `scripts/sim/contracts.gd` | Shipping lines, offers, agreed services and reputation |
+| `scripts/sim/finance.gd` | Loans and the bailout |
 | `scripts/sim/vehicle.gd` | A tractor or lorry: path, lane, state, box |
 | `scripts/sim/traffic.gd` | Lane reservations, one vehicle per lane, junction look-ahead |
 | `scripts/sim/yard.gd` | Yard blocks, their role and gear, stacks and reservations |

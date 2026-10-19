@@ -31,6 +31,12 @@ var land := {}
 var channel_depth := 0.0
 ## STS cranes ordered and not yet delivered: {"cell", "due" (calendar minute)}.
 var crane_orders: Array[Dictionary] = []
+## TEU moved across the quay so far; milestones unlock content as it grows.
+var teu_handled := 0
+## This game year's calls so far: {"calls", "berth_hours", "moves", "turns", "turn_minutes"}.
+var year := {}
+## Closed years, oldest first: {"year", "port_hours", "moves_per_hour", "turn_minutes"}.
+var scoreboard: Array[Dictionary] = []
 ## Creative mode: cash never limits building and there are no bailouts; the
 ## ledger still records everything.
 var creative := false
@@ -87,6 +93,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
+	year = _new_year()
 	channel_depth = rules.channel.start_depth
 	var start: Dictionary = rules.land.start
 	for x in range(start.x, start.x + start.width):
@@ -183,6 +190,9 @@ func to_dict() -> Dictionary:
 		"contracts": contracts.to_dict(),
 		"finance": finance.to_dict(),
 		"land": land.duplicate(),
+		"teu_handled": teu_handled,
+		"year": year.duplicate(),
+		"scoreboard": scoreboard.duplicate(true),
 		"channel_depth": channel_depth,
 		"crane_orders": crane_orders.duplicate(true),
 		"creative": creative,
@@ -220,6 +230,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.contracts = Contracts.from_dict(d.contracts, sim.rules)
 	sim.finance = Finance.from_dict(d.finance, sim.rules)
 	sim.land = d.land.duplicate()
+	sim.teu_handled = d.teu_handled
+	sim.year = d.year.duplicate()
+	sim.scoreboard.assign(d.scoreboard)
 	sim.channel_depth = d.channel_depth
 	sim.crane_orders.assign(d.crane_orders)
 	sim.creative = d.creative
@@ -279,7 +292,8 @@ func apply(command: Dictionary) -> String:
 		"set_storage":
 			return set_storage(command.free_days, command.fee)
 		"take_loan":
-			return finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
+			var locked := lock_error("loans")
+			return locked if locked else finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
 		"buy_land":
 			return buy_land(command.tile)
 		"dredge":
@@ -370,7 +384,55 @@ func owns(cell: Vector2i) -> bool:
 	return land.has(land_tile(cell))
 
 
+## The milestones reached so far, as indices into the data's list in TEU order.
+func milestones_reached() -> int:
+	var reached := 0
+	for milestone in milestones():
+		if teu_handled >= milestone.teu:
+			reached += 1
+	return reached
+
+
+## Whether the milestones reached unlock `name` (a key of some milestone's unlocks).
+func unlocked(name: String) -> bool:
+	var milestones := milestones()
+	for i in milestones.size():
+		if milestones[i].unlocks.has(name):
+			return i < milestones_reached()
+	return true
+
+
+## Why `name` can't be used yet, or "".
+func lock_error(name: String) -> String:
+	var milestones := milestones()
+	for i in milestones.size():
+		if milestones[i].unlocks.has(name) and i >= milestones_reached():
+			return "Unlocked at milestone %d: %d TEU across the quay" % [i + 1, milestones[i].teu]
+	return ""
+
+
+## rules.milestones in TEU order.
+func milestones() -> Array[Dictionary]:
+	var list: Array[Dictionary] = []
+	list.assign(rules.milestones.values())
+	list.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.teu < b.teu)
+	return list
+
+
+## Counts a crane move of `box`: the line pays for it, and milestones may unlock.
+func _moved(box: Dictionary) -> void:
+	ledger.post("moves", move_price(box))
+	var before := milestones_reached()
+	teu_handled += box.teu
+	if milestones_reached() > before:
+		var milestone: Dictionary = milestones()[before]
+		_event("Milestone %d: %d TEU across the quay. Unlocked: %s" % [before + 1, milestone.teu, ", ".join(milestone.unlocks.values())])
+
+
 func buy_land_error(tile: Vector2i) -> String:
+	var locked := lock_error("land")
+	if locked:
+		return locked
 	var tiles: Vector2i = (map.size + Vector2i.ONE * (rules.land.cells - 1)) / rules.land.cells
 	if tile.x < 0 or tile.y < 0 or tile.x >= tiles.x or tile.y >= tiles.y:
 		return "Off the map"
@@ -391,6 +453,9 @@ func buy_land(tile: Vector2i) -> String:
 
 ## Deepens the channel by whole metres, up to rules.channel.max_depth.
 func dredge(metres: int) -> String:
+	var locked := lock_error("dredging")
+	if locked:
+		return locked
 	if metres < 1:
 		return "Dredge at least a metre"
 	if channel_depth + metres > rules.channel.max_depth:
@@ -414,6 +479,8 @@ func buy_tractors(count: int) -> String:
 
 func set_yard_error(cell: Vector2i, settings: Dictionary) -> String:
 	var err := yard.settings_error(cell, settings)
+	if err == "" and settings.has("gear"):
+		err = lock_error(settings.gear)
 	if err == "" and settings.has("gear") and not _afford(yard.gear_cost(cell, settings.gear)):
 		err = "Not enough money"
 	return err
@@ -571,9 +638,32 @@ func _end_of_day() -> void:
 	for text in finance.end_of_day(clock.calendar_minutes(), ledger, contracts, not creative):
 		_event(text)
 	ledger.close_day(clock.game_day() - 1)
+	if clock.game_day() % rules.year_days == 0:
+		_end_of_year()
 	delivered_yesterday = delivered - _delivered_at_midnight
 	_delivered_at_midnight = delivered
 	_event("Day %d: upkeep $%d, %d boxes through the gate" % [clock.game_day(), upkeep, delivered_yesterday])
+
+
+func _new_year() -> Dictionary:
+	return {"calls": 0, "berth_hours": 0.0, "moves": 0, "turns": 0, "turn_minutes": 0.0}
+
+
+## Closes the game year into the scoreboard and reports it against the year before.
+func _end_of_year() -> void:
+	var closed := {
+		"year": scoreboard.size() + 1,
+		"port_hours": year.berth_hours / year.calls if year.calls else 0.0,
+		"moves_per_hour": year.moves / year.berth_hours if year.berth_hours > 0.0 else 0.0,
+		"turn_minutes": year.turn_minutes / year.turns if year.turns else 0.0,
+	}
+	var text := "Year %d: %.1f h in port per call, %.1f moves an hour, %.0f min gate turn" % [closed.year, closed.port_hours, closed.moves_per_hour, closed.turn_minutes]
+	if not scoreboard.is_empty():
+		var last: Dictionary = scoreboard[-1]
+		text += " (year before: %.1f h, %.1f, %.0f min)" % [last.port_hours, last.moves_per_hour, last.turn_minutes]
+	scoreboard.append(closed)
+	year = _new_year()
+	_event(text)
 
 
 ## A service's ship arrives for its window. It berths at the first free
@@ -630,7 +720,7 @@ func _offer_service() -> void:
 	var now := clock.calendar_minutes()
 	contracts.expire(now)
 	var berths := map.berths().filter(func(b: Dictionary) -> bool: return _apron(b.cells) != PortMap.NONE).size()
-	var offered := contracts.offer(rng, now, berths, _could_berth)
+	var offered := contracts.offer(rng, now, berths, func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind))
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
 
@@ -706,6 +796,9 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	ship_log.append({"kind": ship.kind, "line": ship.line, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
 	if ship_log.size() > 10:
 		ship_log.pop_front()
+	year.calls += 1
+	year.berth_hours += hours
+	year.moves += ship.moves
 	# Shippers dislike storage fees above the fair rate, and the line hears it.
 	var fees: float = rules.storage.satisfaction_per_dollar * maxf(storage.fee - rules.storage.fair_fee, 0.0)
 	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, kpis().gate_turn_minutes, fees))
@@ -725,7 +818,7 @@ func _discharge(crane: Crane, ship: Ship, move_minutes: float) -> void:
 	var id := _new_box("import", clock.calendar_minutes() + rules.import_dwell_minutes * _dwell_factor())
 	ship.boxes -= 1
 	ship.moves += 1
-	ledger.post("moves", move_price(boxes[id]))
+	_moved(boxes[id])
 	tractor.box = id
 	tractor.loaded = true
 	_head_for(tractor, yard.entrance(tractor.target))
@@ -750,7 +843,7 @@ func _load(crane: Crane, ship: Ship, move_minutes: float) -> void:
 		return
 	crane.timer = 0.0
 	crane.tractor = 0
-	ledger.post("moves", move_price(boxes[tractor.box]))
+	_moved(boxes[tractor.box])
 	boxes.erase(tractor.box)
 	ship.exports -= 1
 	ship.moves += 1
@@ -1164,6 +1257,8 @@ func _at_gate(lorry: Vehicle) -> void:
 		lorry.gate_in = now
 		return
 	turn_times.append(now - lorry.gate_in)
+	year.turns += 1
+	year.turn_minutes += now - lorry.gate_in
 	if turn_times.size() > 50:
 		turn_times.pop_front()
 	lorry.gate_in = -1.0

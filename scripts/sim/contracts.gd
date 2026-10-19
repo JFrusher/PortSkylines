@@ -46,8 +46,9 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable) 
 	var spec: Dictionary = rules.ship_classes[kind]
 	var service := {
 		"id": _next_id, "line": line, "kind": kind,
-		# Whole hours, so every call starts exactly on a tick.
-		"start": rng.randi_range(0, 7 * 24 - 1) * 60,
+		# Its first call comes 2 to 48 hours from now; whole hours, so every
+		# call starts exactly on a tick.
+		"start": (floori(now / 60.0) + rng.randi_range(2, 48)) % (7 * 24) * 60,
 		"window_hours": spec.window_hours,
 		"moves": spec.import_moves + spec.export_moves,
 		"expires": now + terms.offer_days * SimClock.MINUTES_PER_DAY,

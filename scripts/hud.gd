@@ -29,6 +29,8 @@ var _kpis := Label.new()
 var _message := Label.new()
 var _ledger := Label.new()
 var _borrow := HBoxContainer.new()
+## Controls shown only once a milestone unlocks them: name -> controls.
+var _gated := {}
 var _contracts := VBoxContainer.new()
 ## The contracts version, sim and storage terms the contracts panel was last built for.
 var _contracts_drawn := [-1, null, {}]
@@ -53,11 +55,13 @@ func _ready() -> void:
 		_ledger.visible = on
 		_borrow.visible = on)
 	top.add_child(ledger_button)
+	_gate("ledger", ledger_button)
 	var contracts_button := Button.new()
 	contracts_button.text = "Contracts"
 	contracts_button.toggle_mode = true
 	contracts_button.toggled.connect(func(on: bool) -> void: _contracts.visible = on)
 	top.add_child(contracts_button)
+	_gate("contracts", contracts_button)
 	var game := _row(root)
 	_action(game, "Save", save_pressed)
 	_action(game, "Load", load_pressed)
@@ -78,6 +82,7 @@ func _ready() -> void:
 		button.text = "Borrow $%d  (%d days, %d%% a year)" % [terms.amount, terms.days, roundi(terms.yearly_rate * 100)]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "take_loan", "kind": kind}))
 		_borrow.add_child(button)
+		_gate("loans", button)
 	_contracts.visible = false
 	root.add_child(_contracts)
 
@@ -95,16 +100,17 @@ func _ready() -> void:
 	_button(bar, "Crane $%d" % sim.rules.sts_crane.cost, tools, false, func() -> void: tool = CRANE)
 	_button(bar, "Import", tools, false, func() -> void: tool = IMPORT_YARD)
 	_button(bar, "Export", tools, false, func() -> void: tool = EXPORT_YARD)
-	_button(bar, "RTG $%d" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG)
+	_gate("rtg", _button(bar, "RTG $%d" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG))
 	var tractors := Button.new()
 	tractors.text = "+2 tractors $%d" % (sim.rules.tractor.cost * 2)
 	tractors.pressed.connect(func() -> void: command_issued.emit({"op": "buy_tractors", "count": 2}))
 	bar.add_child(tractors)
-	_button(bar, "Land $%d" % sim.rules.land.price, tools, false, func() -> void: tool = BUY_LAND)
+	_gate("land", _button(bar, "Land $%d" % sim.rules.land.price, tools, false, func() -> void: tool = BUY_LAND))
 	var dredge := Button.new()
 	dredge.text = "Dredge 1 m $%d" % sim.rules.channel.cost_per_metre
 	dredge.pressed.connect(func() -> void: command_issued.emit({"op": "dredge", "metres": 1}))
 	bar.add_child(dredge)
+	_gate("dredging", dredge)
 	_button(bar, "Bulldoze", tools, false, func() -> void: tool = BULLDOZE)
 
 
@@ -119,8 +125,11 @@ func _process(dt: float) -> void:
 	var anchored := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state == PortSim.Ship.State.ANCHORED).size()
 	_readout.text = "$%d    Boxes %d    Ships %d (%d at anchorage)    Tractors %d/%d    Lorries %d    Channel %.0f m" % [sim.money, sim.delivered, sim.ships.size() - anchored, anchored, sim.vehicles.size() - lorries, sim.tractors, lorries, sim.channel_depth]
 	var k := sim.kpis()
-	_kpis.text = "Berth %.0f moves/h    Crane %.0f moves/h    Gate turn %.0f min    Yard %d%% full    %d boxes/day    Upkeep $%d/day" % [
+	_kpis.text = _milestone_text() + "    Berth %.0f moves/h    Crane %.0f moves/h    Gate turn %.0f min    Yard %d%% full    %d boxes/day    Upkeep $%d/day" % [
 		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]
+	for name: String in _gated:
+		for control: Control in _gated[name]:
+			control.visible = sim.unlocked(name)
 	if _ledger.visible:
 		_ledger.text = _ledger_text()
 	if _contracts.visible and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
@@ -128,6 +137,21 @@ func _process(dt: float) -> void:
 	_flash_left -= dt
 	if _flash_left <= 0.0:
 		_message.text = "\n".join(sim.events.slice(-5).map(func(e: Dictionary) -> String: return "Day %d %02d:%02d  %s" % [int(e.minute / 1440), int(e.minute / 60) % 24, int(e.minute) % 60, e.text]))
+
+
+func _gate(name: String, control: Control) -> Control:
+	if not _gated.has(name):
+		_gated[name] = []
+	_gated[name].append(control)
+	return control
+
+
+func _milestone_text() -> String:
+	var reached := sim.milestones_reached()
+	var milestones := sim.milestones()
+	if reached >= milestones.size():
+		return "Milestone %d/%d  %d TEU" % [reached, milestones.size(), sim.teu_handled]
+	return "Milestone %d/%d  %d/%d TEU" % [reached, milestones.size(), sim.teu_handled, milestones[reached].teu]
 
 
 ## Today by category, then each of the last days, all read from the ledger.
@@ -140,6 +164,8 @@ func _ledger_text() -> String:
 	lines.append("    Net  %+d" % ledger.today_total())
 	for loan in sim.finance.loans:
 		lines.append("Loan (%s): $%d owed, $%d a day for %d days" % [loan.kind, loan.owed, mini(loan.payment, loan.owed), loan.days_left])
+	for closed: Dictionary in sim.scoreboard.slice(-2):
+		lines.append("Year %d: %.1f h in port per call, %.1f moves an hour, %.0f min gate turn" % [closed.year, closed.port_hours, closed.moves_per_hour, closed.turn_minutes])
 	if not ledger.days.is_empty():
 		lines.append("Recent days")
 	for i in range(ledger.days.size() - 1, -1, -1):
@@ -210,7 +236,7 @@ func _row(parent: Control) -> HBoxContainer:
 	return row
 
 
-func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool, on_press: Callable) -> void:
+func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool, on_press: Callable) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.toggle_mode = true
@@ -218,6 +244,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 	button.button_pressed = pressed
 	button.pressed.connect(on_press)
 	row.add_child(button)
+	return button
 
 
 ## A plain button that reports a press through `pressed_signal`.

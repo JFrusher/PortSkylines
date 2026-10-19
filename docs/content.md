@@ -72,5 +72,8 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `reputation.moves_per_hour_target`, `.per_move_per_hour` | number | Change per berth move per hour above (or below) the target |
 | `reputation.turn_target_minutes`, `.per_turn_minute` | number | Change per minute of gate turn time above (or below) the target |
 | `reputation.missed` | number | Change when a call finds no berth that could ever take it |
+| `milestones.<key>.teu` | int | TEU moved across the quay (all time) that reaches this milestone |
+| `milestones.<key>.unlocks.<name>` | text | Content the milestone unlocks, with the words the player sees: a ship class, a yard gear, `loans`, `land`, `dredging`, `ledger` or `contracts`. Names in no milestone are never locked |
+| `year_days` | int >0 | Days in a game year, for the year-end scoreboard |
 
 **Time units.** At 1×, one vehicle second is one real second, and one calendar minute is one real second (one game hour per real minute). See `SimClock`.

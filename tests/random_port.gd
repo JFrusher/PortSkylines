@@ -1,17 +1,19 @@
 extends RefCounted
 ## Seeded command logs for tests: a working port (road from the highway,
 ## quay, cranes, tractors, an import and an export block), then random builds
-## and bulldozes near the coast and offer answers at random ticks. Many are
-## refused; that is part of the log.
+## and bulldozes near the coast, and offer answers, loans, land, dredging and
+## storage terms, at random ticks. Many are refused; that is part of the log.
 
 
 ## A copy of `game_rules` for a port that works at once: cranes stand the
-## moment they are ordered, and the channel is M2's 14 m, deep enough for
-## every class.
+## moment they are ordered, the channel is M2's 14 m, deep enough for every
+## class, and every milestone is already reached.
 static func quick(game_rules := Content.base()) -> Dictionary:
 	var copy := game_rules.duplicate(true)
 	copy.sts_crane.lead_days = 0.0
 	copy.channel.start_depth = 14.0
+	for milestone: Dictionary in copy.milestones.values():
+		milestone.teu = 0
 	return copy
 
 
@@ -60,9 +62,18 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 		var cell := Vector2i(rng.randi_range(map.sea_width - 1, map.sea_width + 8), rng.randi_range(map.entry.y - 5, map.entry.y + 5))
 		var roll := rng.randf()
 		var command := {"op": "bulldoze", "cell": cell} if roll < 0.2 else {"op": "build", "kind": kinds[rng.randi() % kinds.size()], "cell": cell}
-		# Offers are numbered from 1, so some of these find one and some are refused.
-		if roll > 0.9:
-			command = {"op": "accept_offer" if roll > 0.95 else "decline_offer", "id": rng.randi_range(1, 10)}
+		# The economy: offers are numbered from 1, so some answers find one and
+		# some are refused; loans, land and dredging are refused without the cash.
+		if roll > 0.88:
+			var economy: Array[Dictionary] = [
+				{"op": "accept_offer", "id": rng.randi_range(1, 10)},
+				{"op": "decline_offer", "id": rng.randi_range(1, 10)},
+				{"op": "take_loan", "kind": ["small", "medium"][rng.randi() % 2]},
+				{"op": "buy_land", "tile": Vector2i(rng.randi_range(0, 2), rng.randi_range(0, 2))},
+				{"op": "dredge", "metres": 1},
+				{"op": "set_storage", "free_days": rng.randi_range(0, 3), "fee": rng.randi_range(0, 20) * 10},
+			]
+			command = economy[rng.randi() % economy.size()]
 		extra.append({"tick": rng.randi_range(0, ticks - 1), "command": command})
 	extra.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.tick < b.tick)
 	log.append_array(extra)

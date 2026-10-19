@@ -1,7 +1,7 @@
 extends SceneTree
 ## Two game days of a seeded random port, with the sim's invariants checked
 ## after every tick: cash moves only through the ledger and every closed day
-## adds up to its change in cash, yards stay
+## adds up to its change in cash (loans, land and dredging included), yards stay
 ## within capacity, every box is in exactly one place, busy yard machines match
 ## the vehicles they serve, every vehicle drives on road, and no two vehicles
 ## ever share a lane.
@@ -50,6 +50,8 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 func _check(sim: PortSim) -> void:
 	var at := "at tick %d" % sim.clock.ticks
 	_expect(sim.ledger.today_total(), sim.money - sim.ledger.opened, "today's ledger lines add up to the change in cash " + at)
+	for loan in sim.finance.loans:
+		_expect(loan.owed >= 0 and loan.days_left > 0, true, "loan %s is being paid down %s" % [loan, at])
 	if sim.clock.ticks % SimClock.TICKS_PER_DAY == 0:
 		var day: Dictionary = sim.ledger.days[-1]
 		var total := 0

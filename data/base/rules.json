@@ -32,5 +32,11 @@
 		"large": {"amount": 60000, "yearly_rate": 0.12, "days": 120}
 	},
 	"max_loans": 3,
+	"milestones": {
+		"harbour": {"teu": 0, "unlocks": {"contracts": "contracts with shipping lines", "feeder": "feeder services", "reach_stacker": "reach stackers", "ledger": "the ledger"}},
+		"terminal": {"teu": 200, "unlocks": {"loans": "loans", "rtg": "RTG cranes for yard blocks"}},
+		"gateway": {"teu": 600, "unlocks": {"land": "buying land", "dredging": "dredging the channel", "panamax": "Panamax services"}}
+	},
+	"year_days": 28,
 	"bailout": {"days": 3, "reputation": -20, "no_loans_days": 14}
 }

@@ -74,7 +74,7 @@ static func _migrate(data: Dictionary) -> Dictionary:
 ## Boxes become 20 ft dry boxes, and those in the yard start storage now.
 ## The channel starts at the new data's depth.
 static func _v2_to_v3(data: Dictionary) -> Dictionary:
-	if not (_has_fields(data.sim, {"money": TYPE_INT, "ticks": TYPE_INT, "ships": TYPE_ARRAY, "boxes": TYPE_DICTIONARY, "yard": TYPE_DICTIONARY, "events": TYPE_ARRAY, "map": TYPE_DICTIONARY})
+	if not (_has_fields(data.sim, {"money": TYPE_INT, "ticks": TYPE_INT, "ships": TYPE_ARRAY, "boxes": TYPE_DICTIONARY, "yard": TYPE_DICTIONARY, "events": TYPE_ARRAY, "map": TYPE_DICTIONARY, "delivered": TYPE_INT})
 			and data.sim.map.get("size") is Vector2i
 			and data.sim.ships.all(func(s: Variant) -> bool: return s is Dictionary)
 			and data.sim.boxes.values().all(func(b: Variant) -> bool: return b is Dictionary)
@@ -96,6 +96,11 @@ static func _v2_to_v3(data: Dictionary) -> Dictionary:
 	data.sim.land = land
 	data.sim.channel_depth = rules.channel.start_depth
 	data.sim.crane_orders = []
+	# Boxes through the gate stand in for TEU across the quay, so a v2 port
+	# keeps roughly the progress it had.
+	data.sim.teu_handled = data.sim.delivered
+	data.sim.year = {"calls": 0, "berth_hours": 0.0, "moves": 0, "turns": 0, "turn_minutes": 0.0}
+	data.sim.scoreboard = []
 	data.sim.creative = false
 	for ship: Dictionary in data.sim.ships:
 		ship.line = rules.lines.keys()[0]
@@ -178,7 +183,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"yard": TYPE_DICTIONARY, "boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 	}):
 		return false
@@ -198,6 +203,8 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	if not _has_fields(data.storage, {"free_days": TYPE_INT, "fee": TYPE_INT}):
+		return false
+	if not _has_fields(data.year, {"calls": TYPE_INT, "berth_hours": TYPE_FLOAT, "moves": TYPE_INT, "turns": TYPE_INT, "turn_minutes": TYPE_FLOAT}):
 		return false
 	if not _has_fields(data.finance, {"loans": TYPE_ARRAY, "days_negative": TYPE_INT, "blocked_until": TYPE_FLOAT}):
 		return false

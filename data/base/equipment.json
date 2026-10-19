@@ -1,5 +1,5 @@
 {
-	"sts_crane": {"cost": 1500, "rate": 25, "outreach": 13, "lead_days": 14},
+	"sts_crane": {"cost": 1500, "rate": 25, "outreach": 13, "lead_days": 1},
 	"crane_interference": 0.9,
 	"tractor": {"cost": 400, "speed": 6},
 	"yard_gear": {

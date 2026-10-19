@@ -51,6 +51,8 @@ func _initialize() -> void:
 	_test_land_must_be_bought()
 	_test_cranes_arrive_after_their_lead_time()
 	_test_dredging()
+	_test_milestones_unlock_content()
+	_test_year_end_scoreboard()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -601,7 +603,7 @@ func _test_a_call_earns_its_moves() -> void:
 
 
 func _test_loans_are_paid_back_with_interest() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.quick())
 	var terms: Dictionary = sim.rules.loans.small
 	var before := sim.money
 	for i: int in sim.rules.max_loans:
@@ -645,7 +647,7 @@ func _test_creative_mode_builds_without_cash() -> void:
 
 
 func _test_land_must_be_bought() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.quick())
 	sim.ledger.cash = 100000
 	var north := Vector2i(40, 10)
 	_expect(sim.build(ROAD, north), "Buy this land first", "no building outside the port's land")
@@ -689,3 +691,67 @@ func _test_dredging() -> void:
 	_expect(sim.dredge(100), "The channel can't go below %.0f m" % channel.max_depth, "dredging stops at the limit")
 	_run(sim, SimClock.MINUTES_PER_DAY)
 	_expect(sim.ledger.days[-1].lines.dredging, -2 * channel.cost_per_metre - 2 * channel.maintenance_per_metre, "the dredged metres need maintenance at midnight")
+
+
+## Below a milestone its content stays locked; crossing it unlocks it all.
+func _test_milestones_unlock_content() -> void:
+	var sim := PortSim.new()
+	sim.ledger.cash = 1000000
+	var tile := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 1)
+	sim.build(YARD, tile)
+	var terminal: Dictionary = sim.milestones()[1]
+	var gateway: Dictionary = sim.milestones()[2]
+	_expect(sim.milestones_reached(), 1, "the first milestone is reached at the start")
+	for name: String in ["rtg", "loans", "land", "dredging", "panamax"]:
+		_expect(sim.unlocked(name), false, "%s starts locked" % name)
+	_expect(sim.set_yard(tile, {"gear": "rtg"}), "Unlocked at milestone 2: %d TEU across the quay" % terminal.teu, "RTGs wait for milestone 2")
+	_expect(sim.apply({"op": "take_loan", "kind": "small"}).begins_with("Unlocked at milestone 2"), true, "so do loans")
+	_expect(sim.apply({"op": "dredge", "metres": 1}).begins_with("Unlocked at milestone 3"), true, "dredging waits for milestone 3")
+	var box := {"teu": 2, "reefer": false}
+	while sim.teu_handled < terminal.teu - 2:
+		sim.call("_moved", box)
+	_expect(sim.unlocked("rtg"), false, "still locked 2 TEU short")
+	sim.call("_moved", box)
+	_expect(sim.last_event().begins_with("Milestone 2"), true, "crossing it is announced (%s)" % sim.last_event())
+	_expect([sim.set_yard(tile, {"gear": "rtg"}), sim.apply({"op": "take_loan", "kind": "small"})], ["", ""], "RTGs and loans are unlocked")
+	_expect(sim.unlocked("land"), false, "land waits for milestone 3")
+	while sim.teu_handled < gateway.teu:
+		sim.call("_moved", box)
+	_expect(["land", "dredging", "panamax"].all(sim.unlocked), true, "milestone 3 unlocks land, dredging and Panamax services")
+	var rules := Content.base().duplicate(true)
+	rules.contracts.offer_chance = 1.0
+	rules.contracts.max_offers = 100
+	var offering := _port(rules, "")
+	# _port's quick rules reach every milestone; put the real ones back.
+	offering.rules.milestones = Content.base().milestones.duplicate(true)
+	_run(offering, 40 * 60)
+	_expect(offering.contracts.offers.size() >= 10, true, "lines made offers (%d)" % offering.contracts.offers.size())
+	_expect(offering.contracts.offers.any(func(o: Dictionary) -> bool: return o.kind == "panamax"), false, "no Panamax is offered before milestone 3")
+
+
+## Each game year closes with port hours per call, moves an hour and gate
+## turn, computed from that year's calls.
+func _test_year_end_scoreboard() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.year_days = 1
+	rules.import_dwell_minutes = 30.0
+	var sim := _port(rules)
+	var sailed: Array[Dictionary] = []
+	var seen := 0
+	for i in SimClock.TICKS_PER_DAY:
+		sim.tick()
+		var logged := sim.ship_log.size()
+		if logged > seen or (logged == 10 and not sailed.is_empty() and sim.ship_log[-1] != sailed[-1]):
+			sailed.append(sim.ship_log[-1])
+		seen = logged
+	var hours := 0.0
+	var moves := 0
+	for call in sailed:
+		hours += call.hours
+		moves += call.moves
+	_expect(sim.scoreboard.size(), 1, "the year closed at midnight")
+	var closed: Dictionary = sim.scoreboard[0]
+	_expect(sailed.size() > 3, true, "calls sailed in the year (%d)" % sailed.size())
+	_expect(absf(closed.port_hours - hours / sailed.size()) < 1e-6 and absf(closed.moves_per_hour - moves / hours) < 1e-6, true, "the scoreboard matches the year's calls (%s)" % closed)
+	_expect(closed.turn_minutes > 2 * rules.gate_minutes, true, "and reports the gate turn")
+	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.begins_with("Year 1: ")), true, "the year is reported")
