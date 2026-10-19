@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 3
+const VERSION := 4
 const MAGIC := "PSKY"
 
 
@@ -65,6 +65,19 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _v1_to_v2(data)
 	if data.version == 2:
 		data = _v2_to_v3(data)
+	if data.version == 3:
+		data = _v3_to_v4(data)
+	return data
+
+
+## v4 (M4) records each box's line, for its livery. Older boxes belong to no
+## line and are drawn plain.
+static func _v3_to_v4(data: Dictionary) -> Dictionary:
+	if not (data.get("sim") is Dictionary and data.sim.get("boxes") is Dictionary and data.sim.boxes.values().all(func(b: Variant) -> bool: return b is Dictionary)):
+		return {}
+	for box: Dictionary in data.sim.boxes.values():
+		box.line = ""
+	data.version = 4
 	return data
 
 

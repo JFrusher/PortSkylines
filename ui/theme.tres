@@ -1,0 +1,217 @@
+[gd_resource type="Theme" load_steps=15 format=3]
+
+[ext_resource type="FontFile" path="res://ui/fonts/Inter.ttf" id="1"]
+
+[sub_resource type="FontVariation" id="regular"]
+base_font = ExtResource("1")
+variation_opentype = {2003265652: 450}
+
+[sub_resource type="FontVariation" id="semibold"]
+base_font = ExtResource("1")
+variation_opentype = {2003265652: 600}
+
+[sub_resource type="StyleBoxFlat" id="panel"]
+content_margin_left = 16.0
+content_margin_top = 12.0
+content_margin_right = 16.0
+content_margin_bottom = 12.0
+bg_color = Color(0.071, 0.094, 0.129, 0.82)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.12)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.45)
+shadow_size = 15
+shadow_offset = Vector2(0, 10)
+
+[sub_resource type="StyleBoxFlat" id="toolbar"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.071, 0.094, 0.129, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.12)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+shadow_color = Color(0, 0, 0, 0.45)
+shadow_size = 15
+shadow_offset = Vector2(0, 10)
+
+[sub_resource type="StyleBoxFlat" id="titled"]
+content_margin_left = 0.0
+content_margin_top = 0.0
+content_margin_right = 0.0
+content_margin_bottom = 16.0
+bg_color = Color(0.094, 0.125, 0.173, 0.78)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.12)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+shadow_color = Color(0, 0, 0, 0.45)
+shadow_size = 15
+shadow_offset = Vector2(0, 10)
+
+[sub_resource type="StyleBoxFlat" id="header"]
+content_margin_left = 16.0
+content_margin_top = 10.0
+content_margin_right = 8.0
+content_margin_bottom = 10.0
+bg_color = Color(0.118, 0.161, 0.22, 0.88)
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.12)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+
+[sub_resource type="StyleBoxFlat" id="card"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.137, 0.184, 0.251, 0.6)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0, 0, 0, 0)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="card_hover"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.188, 0.251, 0.345, 0.75)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.12)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="active"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.0, 0.439, 0.867, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0, 0.533, 1, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+shadow_color = Color(0, 0.533, 1, 0.4)
+shadow_size = 12
+shadow_offset = Vector2(0, 0)
+
+[sub_resource type="StyleBoxFlat" id="disabled"]
+content_margin_left = 10.0
+content_margin_top = 6.0
+content_margin_right = 10.0
+content_margin_bottom = 6.0
+bg_color = Color(0.137, 0.184, 0.251, 0.24)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="focus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0, 0.533, 1, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+draw_center = false
+
+[sub_resource type="StyleBoxFlat" id="bar_bg"]
+bg_color = Color(0, 0, 0, 0.4)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="bar_fill"]
+bg_color = Color(0, 0.533, 1, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[resource]
+default_font = SubResource("regular")
+default_font_size = 15
+Button/colors/font_color = Color(0.973, 0.98, 0.988, 1)
+Button/colors/font_hover_color = Color(0.973, 0.98, 0.988, 1)
+Button/colors/font_pressed_color = Color(1, 1, 1, 1)
+Button/colors/font_hover_pressed_color = Color(1, 1, 1, 1)
+Button/colors/font_focus_color = Color(0.973, 0.98, 0.988, 1)
+Button/colors/font_disabled_color = Color(0.58, 0.639, 0.722, 0.4)
+Button/styles/normal = SubResource("card")
+Button/styles/hover = SubResource("card_hover")
+Button/styles/pressed = SubResource("active")
+Button/styles/hover_pressed = SubResource("active")
+Button/styles/disabled = SubResource("disabled")
+Button/styles/focus = SubResource("focus")
+CategoryButton/base_type = &"Button"
+CategoryButton/fonts/font = SubResource("semibold")
+ClockLabel/base_type = &"Label"
+ClockLabel/fonts/font = SubResource("semibold")
+ClockLabel/font_sizes/font_size = 18
+HBoxContainer/constants/separation = 8
+ItemButton/base_type = &"Button"
+ItemButton/font_sizes/font_size = 14
+Label/colors/font_color = Color(0.973, 0.98, 0.988, 1)
+MoneyLabel/base_type = &"Label"
+MoneyLabel/colors/font_color = Color(0.133, 0.773, 0.369, 1)
+MoneyLabel/fonts/font = SubResource("semibold")
+MoneyLabel/font_sizes/font_size = 28
+MutedLabel/base_type = &"Label"
+MutedLabel/colors/font_color = Color(0.58, 0.639, 0.722, 1)
+MutedLabel/font_sizes/font_size = 14
+PanelContainer/styles/panel = SubResource("panel")
+PanelHeader/base_type = &"PanelContainer"
+PanelHeader/styles/panel = SubResource("header")
+PanelTitle/base_type = &"Label"
+PanelTitle/fonts/font = SubResource("semibold")
+PanelTitle/font_sizes/font_size = 18
+ProgressBar/styles/background = SubResource("bar_bg")
+ProgressBar/styles/fill = SubResource("bar_fill")
+TitledPanel/base_type = &"PanelContainer"
+TitledPanel/styles/panel = SubResource("titled")
+Toolbar/base_type = &"PanelContainer"
+Toolbar/styles/panel = SubResource("toolbar")
+VBoxContainer/constants/separation = 8
+PanelBody/base_type = &"MarginContainer"
+PanelBody/constants/margin_left = 16
+PanelBody/constants/margin_top = 12
+PanelBody/constants/margin_right = 16

@@ -27,10 +27,24 @@ Open `project.godot` in Godot and press F5.
 | Q / E | Rotate |
 | Mouse wheel | Zoom |
 
+## Windows build
+
+`export_presets.cfg` has one preset, "Windows", with the shader baker on so
+shaders are compiled at export instead of stuttering on first use. Every
+pushed tag makes CI build `PortSkylines-<tag>-windows.zip` as a workflow
+artifact. CI exports headless, without a GPU, so its build skips the shader
+baker; export from the Godot editor on a machine with a GPU for a baked
+build:
+
+```bash
+godot --export-release "Windows" build/windows/PortSkylines.exe
+```
+
 ## Layout
 
 | Path | Role |
 |---|---|
+| `art/`, `assets/` | Blender sources (Git LFS), and the `.glb` models exported from them; see `art/README.md` |
 | `data/base/*.json` | Every tunable number (rules, ships, equipment); keys in `docs/content.md` |
 | `scripts/sim/content.gd` | Loads and checks the game data |
 | `scripts/sim/sim_clock.gd` | Fixed ticks: vehicle seconds and calendar minutes |
@@ -46,6 +60,9 @@ Open `project.godot` in Godot and press F5.
 | `scripts/world_view.gd` | Draws the sim in 3D; reads it, never changes it |
 | `scripts/chunked_meshes.gd` | One MultiMesh per map chunk |
 | `scripts/hud.gd` | Toolbar, speed buttons, save/load, money, KPIs and events |
+| `scripts/crash_reporter.gd` | On the first error, writes the log, a save and the content hash to `user://reports/` |
+| `scripts/guide.gd` | The guided start's steps, each done when the sim's state shows it |
+| `scripts/inspect.gd` | What the inspect tool shows for a clicked vehicle, ship, crane or tile |
 | `scripts/camera_rig.gd` | Pan, rotate, zoom camera |
 | `scripts/main.gd` | Wires them together, turns frame time into ticks and clicks into commands |
 

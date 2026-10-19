@@ -6,6 +6,7 @@ var sim := PortSim.new()
 var view := WorldView.new()
 var rig := CameraRig.new()
 var hud := Hud.new()
+var reporter := CrashReporter.new()
 
 ## Most ticks one frame may run per speed step; a slower frame drops the rest.
 const MAX_TICKS_PER_FRAME := 8
@@ -16,9 +17,11 @@ const SAVE_PATH := "user://save.bin"
 var _accumulated := 0.0
 var _painting := false
 var _last_cell := PortMap.NONE
+var _reported := false
 
 
 func _ready() -> void:
+	OS.add_logger(reporter)
 	add_child(_environment())
 	add_child(_sun())
 	view.sim = sim
@@ -62,6 +65,8 @@ func _use(new_sim: PortSim) -> void:
 
 
 func _process(dt: float) -> void:
+	if reporter.errored and not _reported:
+		_report_crash()
 	_accumulated += dt * hud.speed
 	var max_ticks := MAX_TICKS_PER_FRAME * hud.speed
 	var ticks := SimClock.ticks_for(_accumulated, max_ticks)
@@ -83,6 +88,9 @@ func _process(dt: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if hud.tool == Hud.INSPECT:
+			hud.inspect(_hovered_cell())
+			return
 		_painting = true
 		_order(_hovered_cell(), true)
 
@@ -126,6 +134,8 @@ func _yard_settings() -> Dictionary:
 
 func _order_error(cell: Vector2i) -> String:
 	match hud.tool:
+		Hud.INSPECT:
+			return ""
 		Hud.BULLDOZE:
 			return sim.bulldoze_error(cell)
 		Hud.CRANE:
@@ -145,6 +155,17 @@ func _hovered_cell() -> Vector2i:
 	return Vector2i(floori(hit.x), floori(hit.z))
 
 
+## Writes one crash report a run and shows its folder to the player.
+func _report_crash() -> void:
+	_reported = true
+	var dir := CrashReporter.write(sim)
+	if dir == "":
+		hud.flash("Something went wrong, and the report could not be written")
+		return
+	hud.flash("Something went wrong. A report is in " + ProjectSettings.globalize_path(dir))
+	OS.shell_show_in_file_manager(ProjectSettings.globalize_path(dir))
+
+
 func _sun() -> DirectionalLight3D:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-50, -30, 0)
@@ -154,7 +175,11 @@ func _sun() -> DirectionalLight3D:
 
 func _environment() -> WorldEnvironment:
 	var sky := Sky.new()
-	sky.sky_material = ProceduralSkyMaterial.new()
+	var material := ProceduralSkyMaterial.new()
+	# Below the horizon is land, so the view past the map's edge reads as countryside.
+	material.ground_horizon_color = Color(0.42, 0.5, 0.36)
+	material.ground_bottom_color = Color(0.36, 0.42, 0.3)
+	sky.sky_material = material
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky

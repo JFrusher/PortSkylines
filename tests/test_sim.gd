@@ -16,6 +16,7 @@ var _failures := 0
 func _initialize() -> void:
 	_test_build_rules()
 	_test_bulldoze_rules()
+	_test_bulldoze_in_use()
 	_test_no_ship_without_a_road()
 	_test_ships_unload_and_lorries_pay()
 	_test_commands()
@@ -49,6 +50,7 @@ func _initialize() -> void:
 	_test_bailout_fires_once()
 	_test_saved_reputation_meets_a_new_line()
 	_test_creative_mode_builds_without_cash()
+	_test_inspect_each_entity()
 	_test_land_must_be_bought()
 	_test_cranes_arrive_after_their_lead_time()
 	_test_dredging()
@@ -112,11 +114,42 @@ func _test_bulldoze_rules() -> void:
 	var yard := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 1)
 	_expect(sim.bulldoze(sim.map.entry), "That's the highway", "bulldoze highway")
 	_expect(sim.bulldoze(Vector2i(30, 40)), "Nothing to bulldoze", "bulldoze empty land")
-	sim.yard.add(yard, 999)
-	_expect(sim.bulldoze(yard), "The yard still holds boxes", "bulldoze a full yard")
-	sim.yard.take(yard, 999)
 	_expect(sim.bulldoze(yard), "", "bulldoze an empty yard")
 	_expect(sim.map.tile(yard), PortMap.Tile.LAND, "bulldozed yard is land again")
+
+
+## As in Cities: Skylines, anything in use can be bulldozed; what used it is
+## scrapped, rerouted or sent away, and the books of boxes, yard space,
+## machines and lanes stay straight.
+func _test_bulldoze_in_use() -> void:
+	var sim := _port()
+	_run(sim, FIRST_SHIP + 120)
+	var ship := sim.ships[0]
+	_expect(ship.state, PortSim.Ship.State.WORKING, "the first ship is being worked")
+	var stacked := sim.yard.stacks.keys().filter(func(t: Vector2i) -> bool: return sim.yard.count(t) > 0)
+	_expect(stacked.is_empty(), false, "imports are stacked")
+	var tile: Vector2i = stacked[0]
+	var lost := sim.yard.count(tile)
+	var before := sim.boxes.size()
+	_expect(sim.bulldoze(tile), "", "a yard tile holding boxes can be bulldozed")
+	_expect(sim.boxes.size() <= before - lost, true, "its boxes are lost")
+	_expect(sim.vehicles.all(func(v: Vehicle) -> bool: return v.target != tile), true, "nothing still heads for it")
+	var crane := sim.cranes[0]
+	_expect(sim.bulldoze(crane.cell), "", "a working crane can be bulldozed")
+	_expect(sim.cranes.has(crane), false, "the crane is gone")
+	var road := sim.map.access_road(sim.cranes[0].cell)
+	_expect(sim.bulldoze(road), "", "the road behind a working crane can be bulldozed")
+	_expect(sim.vehicles.all(func(v: Vehicle) -> bool: return v.home != road and road not in v.path), true, "no vehicle parks on or drives over it")
+	_expect(sim.bulldoze(ship.cells[0]), "", "a quay with a ship alongside can be bulldozed")
+	_expect(ship.state, PortSim.Ship.State.LEAVING, "the ship sails at once")
+	_run(sim, 120)
+	_expect(sim.vehicles.all(func(v: Vehicle) -> bool: return v.path.all(func(c: Vector2i) -> bool: return PortMap.is_road(sim.map.tile(c)))), true, "every vehicle still drives on road")
+	var reserved := {}
+	for v in sim.vehicles:
+		if v.state != "handling":
+			continue
+		reserved[v.block] = reserved.get(v.block, 0) + 1
+	_expect(reserved, sim.yard.busy, "busy machines match the vehicles being handled")
 
 
 func _test_no_ship_without_a_road() -> void:
@@ -385,7 +418,7 @@ func _test_gate() -> void:
 	for x in range(gateless.map.sea_width + 1, gateless.map.entry.x):
 		gateless.build(ROAD, Vector2i(x, row))
 	gateless.build(YARD, Vector2i(gateless.map.sea_width + 3, row - 1))
-	gateless.yard.add(Vector2i(gateless.map.sea_width + 3, row - 1), gateless._new_box("import", 0.0))
+	gateless.yard.add(Vector2i(gateless.map.sea_width + 3, row - 1), gateless._new_box("import", 0.0, ""))
 	_run(gateless, 5)
 	_expect(gateless.vehicles.is_empty(), true, "no lorry comes in without a gate")
 	_expect(gateless.last_event().contains("build a gate"), true, "the status says so (%s)" % gateless.last_event())
@@ -583,7 +616,7 @@ func _test_storage_is_charged_per_day() -> void:
 	_expect(sim.apply({"op": "set_storage", "free_days": 4, "fee": 30}), "Free days run from 0 to 3", "free days are capped")
 	var tile := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 1)
 	for i in 2:
-		sim.call("_stack", tile, sim._new_box("export", 0.0))
+		sim.call("_stack", tile, sim._new_box("export", 0.0, ""))
 	_run(sim, 3 * SimClock.MINUTES_PER_DAY)
 	# Stacked at minute 0: the first midnight is within the free day.
 	var storage: Array = sim.ledger.days.map(func(day: Dictionary) -> int: return day.lines.get("storage", 0))
@@ -770,3 +803,21 @@ func _test_year_end_scoreboard() -> void:
 	_expect(absf(closed.port_hours - hours / sailed.size()) < 1e-6 and absf(closed.moves_per_hour - moves / hours) < 1e-6, true, "the scoreboard matches the year's calls (%s)" % closed)
 	_expect(closed.turn_minutes > 2 * rules.gate_minutes, true, "and reports the gate turn")
 	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.begins_with("Year 1: ")), true, "the year is reported")
+
+
+func _test_inspect_each_entity() -> void:
+	var sim := _port()
+	_run(sim, FIRST_SHIP + 30)
+	var ship := sim.ships[0]
+	var crane := sim.cranes[0]
+	var vehicle := sim.vehicles[0]
+	var yard := sim.map.cells_of(YARD)[0]
+	_expect(Inspect.pick(sim, ship.cells[0] + ship.side), ship, "a click on the water beside a quay picks its ship")
+	_expect(Inspect.describe(sim, ship)[0], "%s feeder" % sim.contracts.name_of(ship.line), "a ship is named by line and class")
+	_expect(Inspect.pick(sim, crane.cell), crane, "a click on a crane's quay tile picks the crane")
+	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
+	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
+	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
+	_expect(Inspect.describe(sim, yard).slice(0, 2), ["Yard", "Import block, reach stacker"] as Array[String], "a yard tile shows its block")
+	sim.vehicles.erase(vehicle)
+	_expect(Inspect.describe(sim, vehicle), [] as Array[String], "a vehicle that left shows nothing")
