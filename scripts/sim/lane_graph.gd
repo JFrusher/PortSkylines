@@ -10,10 +10,19 @@ var _version := -1
 var _all := AStar2D.new()
 var _lorries := AStar2D.new()
 var _at := {}  # cell -> point ids of lane cells there
+var _junction := {}  # cells where routes from different roads meet or cross
 
 
 func _init(net: RoadNet) -> void:
 	_net = net
+
+
+## Whether `cell` is in a junction: crossing traffic shares it, so a vehicle
+## books through it to the cell beyond before entering.
+func is_junction(cell: Vector2i) -> bool:
+	if _version != _net.version:
+		_rebuild()
+	return cell in _junction
 
 
 ## The cells from `from` to `to` along lanes, both ends included, or [] when
@@ -49,6 +58,7 @@ func _rebuild() -> void:
 	_all.clear()
 	_lorries.clear()
 	_at.clear()
+	_junction.clear()
 	var ends := {}  # node -> [segment, last point] of lanes arriving there
 	var starts := {}  # node -> [segment, first point] of lanes leaving there
 	var next_id := 0
@@ -82,6 +92,11 @@ func _rebuild() -> void:
 			for leaving: Array in starts.get(node, []):
 				if leaving[0] != arriving[0] or dead_end:
 					_connect(arriving[1], leaving[1], _lorries.has_point(arriving[1]) and _lorries.has_point(leaving[1]))
+					if _net.degree(node) >= 3:
+						var from := Vector2i(_all.get_point_position(arriving[1]))
+						var to := Vector2i(_all.get_point_position(leaving[1]))
+						for cell: Vector2i in [from, to] + _steps(from, to):
+							_junction[cell] = true
 
 
 func _add_point(id: int, cell: Vector2i, lorries: bool) -> void:

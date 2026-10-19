@@ -20,7 +20,7 @@ The new model is built beside the tile model, in its own sim classes with headle
 3. **Road types from data.** Terminal road 1+1, terminal road 2+2, one-way road, and an AGV/tractor-only lane, with lanes and allowed vehicles per type. Test: content validation; a one-way road gives lanes in one direction only.
 4. **Automatic junctions.** A segment splits where roads meet or cross. Test: a crossing makes a 4-way node, and a T join makes a 3-way node.
 5. **Directed lane graph and router.** Replaces `PortMap`'s `AStarGrid2D`, which can't do one-way or 45° links. Test: one-way roads can't be driven backwards, the AGV lane refuses lorries, dead ends allow a U-turn, and a route across a road grid is the hand-counted shortest.
-6. **Cell reservation re-keyed** for diagonal steps and junction nodes (`Traffic.lane` keys on the four sides today). Test: M2's traffic cases (head-on, queue, ring, junction booking), ported, plus a 45° merge.
+6. **Cell reservation re-keyed** for diagonal steps and junction nodes (`Traffic.lane` keys on the four sides today). Test: M2's traffic cases (head-on, queue, a full ring waiting, never stopping in a junction), ported, plus a 45° merge. The give-up valve that clears a ring comes over with the box flow in step 19.
 7. **Draw-road tool and road commands.** A snapped preview with its cost, and bulldozing a segment. Test: a replay with road commands gives the same hash at 1, 3 and 6 ticks per frame.
 8. **Road rendering on the 4 m grid.** Straights, 45° joins, arcs and markings for each road type. Check: screenshots of each join.
 
