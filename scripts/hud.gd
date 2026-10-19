@@ -26,8 +26,8 @@ var _kpis := Label.new()
 var _message := Label.new()
 var _ledger := Label.new()
 var _contracts := VBoxContainer.new()
-## The contracts version and sim the contracts panel was last built for.
-var _contracts_drawn := [-1, null]
+## The contracts version, sim and storage terms the contracts panel was last built for.
+var _contracts_drawn := [-1, null, {}]
 var _flash_left := 0.0
 
 
@@ -98,7 +98,7 @@ func _process(dt: float) -> void:
 		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]
 	if _ledger.visible:
 		_ledger.text = _ledger_text()
-	if _contracts.visible and _contracts_drawn != [sim.contracts.version, sim]:
+	if _contracts.visible and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
 		_draw_contracts()
 	_flash_left -= dt
 	if _flash_left <= 0.0:
@@ -127,7 +127,7 @@ func _ledger_text() -> String:
 
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 func _draw_contracts() -> void:
-	_contracts_drawn = [sim.contracts.version, sim]
+	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate()]
 	for child in _contracts.get_children():
 		child.queue_free()
 	var contracts := sim.contracts
@@ -135,6 +135,17 @@ func _draw_contracts() -> void:
 	for line: String in contracts.reputation:
 		standing.append("%s %d" % [contracts.name_of(line), roundi(contracts.reputation[line])])
 	_contracts.add_child(_outlined(_label("Reputation   " + "    ".join(standing))))
+	var terms := _row(_contracts)
+	var free: int = sim.storage.free_days
+	var fee: int = sim.storage.fee
+	terms.add_child(_outlined(_label("Storage: %d free days, then $%d a box a day" % [free, fee])))
+	for change: Array in [["- day", -1, 0], ["+ day", 1, 0], ["- $10", 0, -10], ["+ $10", 0, 10]]:
+		var button := Button.new()
+		button.text = change[0]
+		var free_days: int = free + change[1]
+		var new_fee: int = fee + change[2]
+		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_storage", "free_days": free_days, "fee": new_fee}))
+		terms.add_child(button)
 	_contracts.add_child(_outlined(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services while reputation is good and berths have room")))
 	for offer in contracts.offers:
 		var row := _row(_contracts)

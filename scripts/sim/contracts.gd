@@ -98,10 +98,11 @@ func due(tick_of_week: int) -> Array[Dictionary]:
 	return found
 
 
-## Scores a finished call for its line. Returns an event to show, or "".
-func called(line: String, late_hours: float, moves_per_hour: float, turn_minutes: float) -> String:
+## Scores a finished call for its line, plus `other` (such as shippers'
+## view of storage fees). Returns an event to show, or "".
+func called(line: String, late_hours: float, moves_per_hour: float, turn_minutes: float, other := 0.0) -> String:
 	var weights: Dictionary = rules.reputation
-	var change: float = weights.on_time if late_hours == 0.0 else weights.late_per_hour * late_hours
+	var change: float = other + (weights.on_time if late_hours == 0.0 else weights.late_per_hour * late_hours)
 	change += weights.per_move_per_hour * (moves_per_hour - weights.moves_per_hour_target)
 	if turn_minutes > 0.0:
 		change += weights.per_turn_minute * (turn_minutes - weights.turn_target_minutes)

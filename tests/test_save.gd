@@ -66,7 +66,7 @@ func _test_save_replaces_existing() -> void:
 	var path := "user://replace.bin"
 	var sim := PortSim.new(7)
 	_expect(SaveFile.save(path, sim), "", "initial save")
-	sim.ledger.post("gate_fees", 123)
+	sim.ledger.post("moves", 123)
 	_expect(SaveFile.save(path, sim), "", "replace an existing save")
 	var loaded := SaveFile.load_from(path)
 	_expect(loaded.has("sim"), true, "replacement loads")
@@ -84,7 +84,7 @@ func _test_failed_save_preserves_destination() -> void:
 	var before := FileAccess.get_file_as_bytes(path)
 	# A directory at the temporary path prevents opening it for writing.
 	DirAccess.make_dir_absolute(path + ".tmp")
-	sim.ledger.post("gate_fees", 1)
+	sim.ledger.post("moves", 1)
 	_expect(SaveFile.save(path, sim).is_empty(), false, "temporary open failure is reported")
 	_expect(FileAccess.get_file_as_bytes(path), before, "open failure preserves the existing save")
 	DirAccess.remove_absolute(path + ".tmp")

@@ -71,8 +71,13 @@ static func _migrate(data: Dictionary) -> Dictionary:
 ## v3 (M3) moved cash into the ledger, which also records upkeep, and ships
 ## into services agreed with shipping lines. Ships in port finish their call
 ## for the first line, due a day after the save; no services are agreed yet.
+## Boxes become 20 ft dry boxes, and those in the yard start storage now.
 static func _v2_to_v3(data: Dictionary) -> Dictionary:
-	if not (_has_fields(data.sim, {"money": TYPE_INT, "ticks": TYPE_INT, "ships": TYPE_ARRAY}) and data.sim.ships.all(func(s: Variant) -> bool: return s is Dictionary)):
+	if not (_has_fields(data.sim, {"money": TYPE_INT, "ticks": TYPE_INT, "ships": TYPE_ARRAY, "boxes": TYPE_DICTIONARY, "yard": TYPE_DICTIONARY, "events": TYPE_ARRAY})
+			and data.sim.ships.all(func(s: Variant) -> bool: return s is Dictionary)
+			and data.sim.boxes.values().all(func(b: Variant) -> bool: return b is Dictionary)
+			and data.sim.yard.get("stacks") is Dictionary
+			and data.sim.yard.stacks.values().all(func(stack: Variant) -> bool: return stack is Array)):
 		return {}
 	data.sim.ledger = {"cash": data.sim.money, "opened": data.sim.money, "today": {}, "days": []}
 	data.sim.erase("money")
@@ -83,6 +88,15 @@ static func _v2_to_v3(data: Dictionary) -> Dictionary:
 		ship.line = rules.lines.keys()[0]
 		ship.due = data.sim.ticks * SimClock.CALENDAR_MINUTES_PER_TICK + SimClock.MINUTES_PER_DAY
 	data.sim.erase("until_ship")
+	var now: float = data.sim.ticks * SimClock.CALENDAR_MINUTES_PER_TICK
+	var in_yard := {}
+	for stack: Variant in data.sim.yard.stacks.values():
+		for id: Variant in stack:
+			in_yard[id] = true
+	for id: Variant in data.sim.boxes:
+		data.sim.boxes[id].merge({"teu": 1, "reefer": false, "in": now if in_yard.has(id) else -1.0})
+	data.sim.dwell_times = []
+	data.sim.storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	data.sim.events.append({"minute": data.sim.ticks * SimClock.CALENDAR_MINUTES_PER_TICK, "text": "Saved game updated: ships now come from contracts with shipping lines; accept their offers"})
 	data.version = 3
 	return data
@@ -151,7 +165,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"yard": TYPE_DICTIONARY, "boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
+		"contracts": TYPE_DICTIONARY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 	}):
 		return false
@@ -169,6 +183,8 @@ static func _valid_sim(data: Variant) -> bool:
 	if not _has_fields(data.ledger, {
 		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "days": TYPE_ARRAY,
 	}):
+		return false
+	if not _has_fields(data.storage, {"free_days": TYPE_INT, "fee": TYPE_INT}):
 		return false
 	if not _has_fields(data.contracts, {
 		"reputation": TYPE_DICTIONARY, "services": TYPE_ARRAY, "offers": TYPE_ARRAY, "next_id": TYPE_INT,

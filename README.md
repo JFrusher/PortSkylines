@@ -4,10 +4,11 @@ A port-building game in the spirit of city builders. Lay roads and a gate
 from the highway, build quays on the coast and container yards inland, place
 quay cranes and buy tractors. Shipping lines offer weekly services; accepted
 ones call in their window, berth by class and depth, and wait at anchorage
-when the berths are full, cranes work
-them at a set rate, tractors shuttle boxes to import and export blocks, and
-lorries queue at the gate to collect imports and bring exports. Money comes
-from boxes through the gate; upkeep is paid every midnight.
+when the berths are full. Cranes work them at a set rate, tractors shuttle
+boxes to import and export blocks, and lorries queue at the gate to collect
+imports and bring exports. Lines pay per crane move, boxes kept past their
+free days pay storage, and upkeep is paid every midnight. Every dollar is in
+the ledger.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the researched roadmap and open questions.
 

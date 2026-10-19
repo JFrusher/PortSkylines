@@ -4,8 +4,9 @@ extends RefCounted
 ## terminal tractors, which carry them to import blocks where yard machines
 ## stack them; after their dwell, lorries from the highway collect them.
 ## Lorries also bring exports to export blocks; once a ship is discharged,
-## tractors fetch exports to its cranes, which load them. Lorries pay a fee
-## per box in or out. Changed only through apply(command) and tick().
+## tractors fetch exports to its cranes, which load them. Lines pay per crane
+## move; boxes held past their free days pay storage. Changed only through
+## apply(command) and tick().
 
 ## Every tunable number, from data/base/*.json; see Content.
 var rules: Dictionary
@@ -35,8 +36,10 @@ var vehicles: Array[Vehicle] = []
 var traffic := Traffic.new()
 var yard: Yard
 ## Every box in the port by id: {"kind": "import" or "export", "due": the
-## calendar minute an import may leave}. A box is always in exactly one
-## place: on a vehicle or in a yard stack (boxes on ships are only counted).
+## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
+## "reefer": bool, "in": the calendar minute it was stacked, or -1}. A box
+## is always in exactly one place: on a vehicle or in a yard stack (boxes on
+## ships are only counted).
 var boxes := {}
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
@@ -44,6 +47,10 @@ var tractors := 0
 var gave_up := 0
 ## Gate-in to gate-out minutes of the latest lorries, newest last.
 var turn_times: Array[float] = []
+## Minutes the latest collected imports spent in the yard, newest last.
+var dwell_times: Array[float] = []
+## The player's storage terms: free days (0-3) and the fee per box per day after them.
+var storage := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
@@ -61,6 +68,7 @@ func _init(seed_value := 0, game_rules := Content.base()) -> void:
 	yard = Yard.new(map, rules)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
+	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
 	_event("Run a road from the highway to the coast through a gate, then build a quay, cranes, tractors and a yard")
 
@@ -162,6 +170,8 @@ func to_dict() -> Dictionary:
 		"tractors": tractors,
 		"gave_up": gave_up,
 		"turn_times": turn_times.duplicate(),
+		"dwell_times": dwell_times.duplicate(),
+		"storage": storage.duplicate(),
 		"claimed": _claimed.duplicate(),
 		"until_lorry": _until_lorry,
 		"until_export": _until_export,
@@ -198,6 +208,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
 	sim.turn_times.assign(d.turn_times)
+	sim.dwell_times.assign(d.dwell_times)
+	sim.storage = d.storage.duplicate()
 	sim._claimed = d.claimed.duplicate()
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
@@ -230,6 +242,8 @@ func apply(command: Dictionary) -> String:
 			return contracts.accept(command.id)
 		"decline_offer":
 			return contracts.decline(command.id)
+		"set_storage":
+			return set_storage(command.free_days, command.fee)
 	return "Unknown command: %s" % command.get("op")
 
 
@@ -314,6 +328,21 @@ func set_yard(cell: Vector2i, settings: Dictionary) -> String:
 	return err
 
 
+func set_storage(free_days: int, fee: int) -> String:
+	if free_days < 0 or free_days > 3:
+		return "Free days run from 0 to 3"
+	if fee < 0 or fee > rules.storage.max_fee:
+		return "The storage fee runs from $0 to $%d a day" % rules.storage.max_fee
+	storage = {"free_days": free_days, "fee": fee}
+	return ""
+
+
+## What a crane move of `box` earns from the line: by size, plus a reefer premium.
+func move_price(box: Dictionary) -> int:
+	var price: float = rules.move_price.per_20ft * (rules.move_price.forty_factor if box.teu == 2 else 1.0)
+	return roundi(price) + (rules.move_price.reefer_premium if box.reefer else 0)
+
+
 ## Bulldozing a quay tile with a crane removes the crane first.
 func bulldoze_error(cell: Vector2i) -> String:
 	var crane := _crane_at(cell)
@@ -388,17 +417,22 @@ func kpis() -> Dictionary:
 	for tile in map.cells_of(PortMap.Tile.YARD):
 		capacity += yard.capacity(tile)
 		held += yard.count(tile)
-	var turn := 0.0
-	for minutes in turn_times:
-		turn += minutes
 	return {
 		"berth_moves_per_hour": last.moves / last.hours if last else 0.0,
 		"crane_moves_per_hour": last.moves / last.hours / last.cranes if last else 0.0,
-		"gate_turn_minutes": turn / turn_times.size() if not turn_times.is_empty() else 0.0,
+		"gate_turn_minutes": _average(turn_times),
 		"yard_use": held / float(capacity) if capacity else 0.0,
 		"boxes_per_day": delivered_yesterday,
+		"import_dwell_hours": _average(dwell_times) / 60.0,
 		"upkeep_per_day": daily_upkeep(),
 	}
+
+
+func _average(values: Array[float]) -> float:
+	var total := 0.0
+	for value in values:
+		total += value
+	return total / values.size() if not values.is_empty() else 0.0
 
 
 func last_event() -> String:
@@ -416,6 +450,9 @@ func _event(text: String) -> void:
 func _end_of_day() -> void:
 	var upkeep := daily_upkeep()
 	ledger.post("upkeep", -upkeep)
+	var storage_paid: int = _storage_due() * storage.fee
+	if storage_paid > 0:
+		ledger.post("storage", storage_paid)
 	ledger.close_day(clock.game_day() - 1)
 	delivered_yesterday = delivered - _delivered_at_midnight
 	_delivered_at_midnight = delivered
@@ -550,7 +587,9 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	ship_log.append({"kind": ship.kind, "line": ship.line, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
 	if ship_log.size() > 10:
 		ship_log.pop_front()
-	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, kpis().gate_turn_minutes))
+	# Shippers dislike storage fees above the fair rate, and the line hears it.
+	var fees: float = rules.storage.satisfaction_per_dollar * maxf(storage.fee - rules.storage.fair_fee, 0.0)
+	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, kpis().gate_turn_minutes, fees))
 
 
 ## One crane's tick discharging: it needs a tractor sent under it, works its
@@ -564,9 +603,10 @@ func _discharge(crane: Crane, ship: Ship, move_minutes: float) -> void:
 		return
 	crane.timer = 0.0
 	crane.tractor = 0
-	var id := _new_box("import", clock.calendar_minutes() + rules.import_dwell_minutes)
+	var id := _new_box("import", clock.calendar_minutes() + rules.import_dwell_minutes * _dwell_factor())
 	ship.boxes -= 1
 	ship.moves += 1
+	ledger.post("moves", move_price(boxes[id]))
 	tractor.box = id
 	tractor.loaded = true
 	_head_for(tractor, yard.entrance(tractor.target))
@@ -591,6 +631,7 @@ func _load(crane: Crane, ship: Ship, move_minutes: float) -> void:
 		return
 	crane.timer = 0.0
 	crane.tractor = 0
+	ledger.post("moves", move_price(boxes[tractor.box]))
 	boxes.erase(tractor.box)
 	ship.exports -= 1
 	ship.moves += 1
@@ -600,8 +641,31 @@ func _load(crane: Crane, ship: Ship, move_minutes: float) -> void:
 func _new_box(kind: String, due: float) -> int:
 	var id := _next_box
 	_next_box += 1
-	boxes[id] = {"kind": kind, "due": due}
+	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0}
 	return id
+
+
+## Puts `box` into the yard at `tile` and starts its storage clock.
+func _stack(tile: Vector2i, box: int) -> void:
+	yard.add(tile, box)
+	boxes[box].in = clock.calendar_minutes()
+
+
+## Boxes in the yard past their free days.
+func _storage_due() -> int:
+	var now := clock.calendar_minutes()
+	var count := 0
+	for tile: Vector2i in yard.stacks:
+		for id: int in yard.stacks[tile]:
+			if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
+				count += 1
+	return count
+
+
+## Higher storage fees make shippers collect imports sooner, down to a floor.
+func _dwell_factor() -> float:
+	return maxf(rules.storage.min_dwell_factor, 1.0 / (1.0 + storage.fee * rules.storage.dwell_per_dollar))
 
 
 ## Sends a parked tractor under `crane`, off the road on the quay, with an
@@ -802,7 +866,7 @@ func _drive_lorry(lorry: Vehicle) -> void:
 			elif lorry.loaded and boxes[lorry.box].kind == "import":
 				boxes.erase(lorry.box)
 				_leave(lorry)
-				_paid()
+				delivered += 1
 			else:
 				lorry.state = "yard"
 		"yard":
@@ -812,11 +876,14 @@ func _drive_lorry(lorry: Vehicle) -> void:
 				return
 			if lorry.loaded:
 				yard.reserve(lorry.target, -1)
-				yard.add(lorry.target, lorry.box)
+				_stack(lorry.target, lorry.box)
 				lorry.box = 0
 				lorry.loaded = false
-				_paid()
+				delivered += 1
 			else:
+				dwell_times.append(clock.calendar_minutes() - boxes[lorry.box].in)
+				if dwell_times.size() > 50:
+					dwell_times.pop_front()
 				yard.take(lorry.target, lorry.box)
 				_claimed.erase(lorry.box)
 				lorry.loaded = true
@@ -863,11 +930,6 @@ func _queue_at(gate: Vector2i, lane: Vector3i) -> int:
 	return count
 
 
-func _paid() -> void:
-	ledger.post("gate_fees", rules.fee_per_box)
-	delivered += 1
-
-
 ## Tractors carry imports from under a crane to a block, and fetch exports
 ## from a block back to under a crane, waiting for a machine at the block.
 func _drive_tractor(tractor: Vehicle) -> void:
@@ -890,7 +952,7 @@ func _drive_tractor(tractor: Vehicle) -> void:
 				return
 			if tractor.loaded:
 				yard.reserve(tractor.target, -1)
-				yard.add(tractor.target, tractor.box)
+				_stack(tractor.target, tractor.box)
 				tractor.box = 0
 				tractor.loaded = false
 			else:

@@ -13,13 +13,14 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 
 | File | Covers |
 |---|---|
-| `test_sim.gd` | Build rules, berths, crane rate and outreach, yards and gear, dwell, exports, gates, upkeep, KPIs, events, save dictionaries |
+| `test_sim.gd` | Build rules, berths, crane rate and outreach, yards and gear, dwell, exports, gates, upkeep, KPIs, events, the ledger, services, offers, reputation, storage and move prices, save dictionaries |
 | `test_traffic.gd` | Lanes: head-on, queues, a ring, and giving up when stuck |
 | `test_clock.gd` | Calendar time and frame-to-tick conversion |
 | `test_replay.gd` | The same command log gives the same state at 1, 3 and 6 ticks per frame |
 | `test_save.gd` | Save files, atomic replace, refusing bad files and payloads, and every committed fixture |
 | `test_content.gd` | The game data loader and its error messages |
-| `test_soak.gd` | Calm and congested ports under random commands, with money, capacity, box and lane invariants checked every tick |
+| `test_economy_scenarios.gd` | M3's scripted scenarios: overbooking makes calls late, and higher storage fees lower dwell |
+| `test_soak.gd` | Two game days of calm and congested ports under random commands, with ledger, capacity, box and lane invariants checked every tick and every midnight |
 
 ## Save fixtures
 

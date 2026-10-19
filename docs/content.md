@@ -9,7 +9,14 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `map.width`, `map.height` | int | Map size in tiles |
 | `map.sea_width` | int | Tiles of sea along the west edge |
 | `start_money` | int | Money at the start of a new game |
-| `fee_per_box` | int | Paid for each box through the gate, in or out |
+| `move_price.per_20ft` | int >0 | What a line pays per crane move of a 20 ft box |
+| `move_price.forty_factor` | number >0 | A 40 ft box's move price as a multiple of a 20 ft one |
+| `move_price.reefer_premium` | int | Added to a reefer's move price |
+| `box_mix.forty_share`, `.reefer_share` | number | Shares of 40 ft boxes and of reefers among new boxes |
+| `storage.free_days`, `.fee` | int | Starting storage terms: free days (0–3), then the fee per box per day |
+| `storage.max_fee` | int | Highest storage fee the player may set |
+| `storage.dwell_per_dollar`, `.min_dwell_factor` | number | Import dwell is `import_dwell_minutes / (1 + fee × dwell_per_dollar)`, but not below `min_dwell_factor` of it |
+| `storage.fair_fee`, `.satisfaction_per_dollar` | number | Each $ of fee above the fair fee changes the line's reputation by this much per call |
 | `build_cost.road`, `.quay`, `.yard`, `.gate` | int | Cost per tile |
 | `gate_minutes` | number | Calendar minutes a lorry stops at a gate |
 | `upkeep.road`, `.quay`, `.yard`, `.gate` | int | Paid per tile at midnight |
@@ -17,7 +24,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `sail_seconds` | number >0 | Vehicle seconds to sail in or out |
 | `lorry_interval_minutes` | number >0 | Calendar minutes between import lorries |
 | `export_lorry_interval_minutes` | number >0 | Calendar minutes between export lorries |
-| `import_dwell_minutes` | number | Calendar minutes an import box waits in the yard before a lorry may collect it |
+| `import_dwell_minutes` | number | Calendar minutes an import box waits in the yard before a lorry may collect it, at a $0 storage fee |
 | `lorry_speed` | number >0 | Tiles per vehicle second |
 | `give_up_seconds` | number >0 | Vehicle seconds stuck before a tractor replans; lorries wait twice as long |
 | `ship_classes.<name>.length` | int >0 | Quay tiles the ship needs |

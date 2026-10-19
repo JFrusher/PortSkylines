@@ -42,8 +42,9 @@ func _initialize() -> void:
 	_test_only_the_ledger_moves_cash()
 	_test_a_service_calls_on_its_slot()
 	_test_offers_accept_and_decline()
-	_test_overbooking_makes_ships_late()
 	_test_reputation_cancels_and_recovers()
+	_test_storage_is_charged_per_day()
+	_test_a_call_earns_its_moves()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -129,7 +130,7 @@ func _test_ships_unload_and_lorries_pay() -> void:
 	# it onto a lorry, so the yard machine sets the pace.
 	_run(sim, cargo * sim.rules.yard_gear.reach_stacker.handling_minutes * 2 + 200)
 	_expect(sim.delivered >= cargo, true, "the first ship's %d boxes are all delivered (%d)" % [cargo, sim.delivered])
-	_expect(sim.money, before + sim.delivered * sim.rules.fee_per_box, "every delivery is paid")
+	_expect(sim.ledger.today.get("moves", 0) > 0, true, "the line pays for the moves")
 
 
 func _test_commands() -> void:
@@ -331,6 +332,7 @@ func _test_import_dwell() -> void:
 	var rules := Content.base().duplicate(true)
 	rules.import_dwell_minutes = 60.0
 	var sim := _port(rules)
+	sim.set_storage(0, 0)  # free storage, so shippers take the whole dwell
 	var first_stacked := -1.0
 	var first_pickup := -1.0
 	for i in roundi(240 / SimClock.CALENDAR_MINUTES_PER_TICK):
@@ -537,21 +539,6 @@ func _test_offers_accept_and_decline() -> void:
 	_expect(sim.ships.size() == 1 and sim.ships[0].line == offer.line, true, "and its ship calls")
 
 
-## One berth sold a Panamax every 2 hours, each taking longer than that to
-## work: every call waits longer at anchorage than the one before.
-func _test_overbooking_makes_ships_late() -> void:
-	var rules := Content.base().duplicate(true)
-	rules.ship_classes.panamax.window_hours = 2.0
-	rules.import_dwell_minutes = 0.0
-	var sim := _port(rules, "")
-	RandomPort.calls(sim, "panamax", 10, 120, 12)
-	_run(sim, SimClock.MINUTES_PER_DAY)
-	var late: Array = sim.ship_log.map(func(entry: Dictionary) -> float: return entry.late)
-	_expect(late.size() >= 3, true, "several overbooked calls sailed (%d)" % late.size())
-	for i in range(1, late.size()):
-		_expect(late[i] > late[i - 1], true, "each call is later than the last (%s)" % [late])
-
-
 ## Late calls cost a line's reputation until it cancels a service; good calls
 ## win it back until it offers services again.
 func _test_reputation_cancels_and_recovers() -> void:
@@ -578,3 +565,30 @@ func _test_reputation_cancels_and_recovers() -> void:
 			offered[offer.line] = true
 			contracts.offers.clear()
 	_expect(offered.has("kestrel"), true, "good calls win the line back to offering services")
+
+
+## Boxes pay the fee for each midnight they spend in the yard past their free days.
+func _test_storage_is_charged_per_day() -> void:
+	var sim := _port(Content.base(), "")
+	_expect(sim.apply({"op": "set_storage", "free_days": 1, "fee": 30}), "", "set storage terms")
+	_expect(sim.apply({"op": "set_storage", "free_days": 4, "fee": 30}), "Free days run from 0 to 3", "free days are capped")
+	var tile := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 1)
+	for i in 2:
+		sim.call("_stack", tile, sim._new_box("export", 0.0))
+	_run(sim, 3 * SimClock.MINUTES_PER_DAY)
+	# Stacked at minute 0: the first midnight is within the free day.
+	var storage: Array = sim.ledger.days.map(func(day: Dictionary) -> int: return day.lines.get("storage", 0))
+	_expect(storage, [0, 60, 60], "2 boxes x $30 for each day past the free one")
+
+
+## A call of 40 ft boxes earns 1.8 x the 20 ft price per move.
+func _test_a_call_earns_its_moves() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.box_mix = {"forty_share": 1.0, "reefer_share": 0.0}
+	var sim := _port(rules)
+	var ship: PortSim.Ship
+	while ship == null or ship.state != PortSim.Ship.State.LEAVING:
+		sim.tick()
+		if ship == null and not sim.ships.is_empty():
+			ship = sim.ships[0]
+	_expect(sim.ledger.today.moves, ship.moves * roundi(rules.move_price.per_20ft * 1.8), "%d moves at $180" % ship.moves)

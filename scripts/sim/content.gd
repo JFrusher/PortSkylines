@@ -8,7 +8,13 @@ const BASE_DIR := "res://data/base"
 const SCHEMA := {
 	"map": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
 	"start_money": TYPE_INT,
-	"fee_per_box": TYPE_INT,
+	# What a line pays per crane move: by box size, plus a reefer premium.
+	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
+	# Shares of 40 ft boxes and reefers among all boxes.
+	"box_mix": {"forty_share": TYPE_FLOAT, "reefer_share": TYPE_FLOAT},
+	# Starting storage terms, the fee cap, how fees shorten import dwell, and
+	# how shippers (and so lines) feel about fees above the fair rate.
+	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},
 	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT},
 	"gate_minutes": TYPE_FLOAT,
 	"upkeep": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT, "sts_crane": TYPE_INT, "tractor": TYPE_INT},
@@ -39,7 +45,7 @@ const SCHEMA := {
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
 
 static var _base := {}
 

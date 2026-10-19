@@ -1,7 +1,9 @@
 {
 	"map": {"width": 64, "height": 48, "sea_width": 12},
 	"start_money": 20000,
-	"fee_per_box": 120,
+	"move_price": {"per_20ft": 100, "forty_factor": 1.8, "reefer_premium": 60},
+	"box_mix": {"forty_share": 0.6, "reefer_share": 0.1},
+	"storage": {"free_days": 2, "fee": 20, "max_fee": 200, "dwell_per_dollar": 0.02, "min_dwell_factor": 0.3, "fair_fee": 40, "satisfaction_per_dollar": -0.02},
 	"build_cost": {"road": 10, "quay": 200, "yard": 50, "gate": 300},
 	"gate_minutes": 2,
 	"upkeep": {"road": 1, "quay": 5, "yard": 2, "gate": 20, "sts_crane": 150, "tractor": 30},
@@ -12,7 +14,8 @@
 	"lorry_speed": 5,
 	"give_up_seconds": 30,
 	"ledger_categories": {
-		"gate_fees": "Gate fees",
+		"moves": "Ship moves",
+		"storage": "Storage",
 		"construction": "Construction",
 		"equipment": "Equipment",
 		"upkeep": "Upkeep"
