@@ -72,8 +72,10 @@ static func _migrate(data: Dictionary) -> Dictionary:
 ## into services agreed with shipping lines. Ships in port finish their call
 ## for the first line, due a day after the save; no services are agreed yet.
 ## Boxes become 20 ft dry boxes, and those in the yard start storage now.
+## The channel starts at the new data's depth.
 static func _v2_to_v3(data: Dictionary) -> Dictionary:
-	if not (_has_fields(data.sim, {"money": TYPE_INT, "ticks": TYPE_INT, "ships": TYPE_ARRAY, "boxes": TYPE_DICTIONARY, "yard": TYPE_DICTIONARY, "events": TYPE_ARRAY})
+	if not (_has_fields(data.sim, {"money": TYPE_INT, "ticks": TYPE_INT, "ships": TYPE_ARRAY, "boxes": TYPE_DICTIONARY, "yard": TYPE_DICTIONARY, "events": TYPE_ARRAY, "map": TYPE_DICTIONARY})
+			and data.sim.map.get("size") is Vector2i
 			and data.sim.ships.all(func(s: Variant) -> bool: return s is Dictionary)
 			and data.sim.boxes.values().all(func(b: Variant) -> bool: return b is Dictionary)
 			and data.sim.yard.get("stacks") is Dictionary
@@ -85,6 +87,15 @@ static func _v2_to_v3(data: Dictionary) -> Dictionary:
 	var rules := Content.base()
 	data.sim.contracts = Contracts.new(rules).to_dict()
 	data.sim.finance = Finance.new(rules).to_dict()
+	# v2 maps had no land to buy: the port owns every tile its map covers.
+	var land := {}
+	var size: Vector2i = data.sim.map.size
+	for x in ceili(size.x / float(rules.land.cells)):
+		for y in ceili(size.y / float(rules.land.cells)):
+			land[Vector2i(x, y)] = true
+	data.sim.land = land
+	data.sim.channel_depth = rules.channel.start_depth
+	data.sim.crane_orders = []
 	data.sim.creative = false
 	for ship: Dictionary in data.sim.ships:
 		ship.line = rules.lines.keys()[0]
@@ -167,7 +178,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"yard": TYPE_DICTIONARY, "boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 	}):
 		return false
@@ -205,6 +216,12 @@ static func _valid_sim(data: Variant) -> bool:
 			"side": TYPE_VECTOR2I, "boxes": TYPE_INT, "exports": TYPE_INT, "state": TYPE_INT,
 			"sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
 		}) or not _all_cells(ship.cells, ship.state == PortSim.Ship.State.ANCHORED):
+			return false
+	for tile: Variant in data.land:
+		if not (tile is Vector2i and data.land[tile] is bool):
+			return false
+	for order: Variant in data.crane_orders:
+		if not order is Dictionary or not _has_fields(order, {"cell": TYPE_VECTOR2I, "due": TYPE_FLOAT}):
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {

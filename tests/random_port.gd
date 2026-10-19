@@ -5,12 +5,22 @@ extends RefCounted
 ## refused; that is part of the log.
 
 
-## The base rules with imports dwelling 30 minutes, so lorries collect them
-## within a test's run.
+## A copy of `game_rules` for a port that works at once: cranes stand the
+## moment they are ordered, and the channel is M2's 14 m, deep enough for
+## every class.
+static func quick(game_rules := Content.base()) -> Dictionary:
+	var copy := game_rules.duplicate(true)
+	copy.sts_crane.lead_days = 0.0
+	copy.channel.start_depth = 14.0
+	return copy
+
+
+## quick() with imports dwelling 30 minutes, so lorries collect them within a
+## test's run.
 static func rules() -> Dictionary:
-	var quick := Content.base().duplicate(true)
-	quick.import_dwell_minutes = 30.0
-	return quick
+	var fast := quick()
+	fast.import_dwell_minutes = 30.0
+	return fast
 
 
 ## Weekly services standing in for M2's ship timer: a ship of `kind` at

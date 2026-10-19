@@ -15,6 +15,7 @@ const CRANE := -2
 const EXPORT_YARD := -3
 const IMPORT_YARD := -4
 const RTG := -5
+const BUY_LAND := -6
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 const FLASH_SECONDS := 2.5
 const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -89,16 +90,21 @@ func _ready() -> void:
 	var bar := _row(root)
 	for name: String in sim.rules.build_cost:
 		var kind: int = PortMap.Tile[name.to_upper()]
-		var label := "%s  $%d" % [name.capitalize(), sim.cost(kind)]
+		var label := "%s $%d" % [name.capitalize(), sim.cost(kind)]
 		_button(bar, label, tools, kind == tool, func() -> void: tool = kind)
-	_button(bar, "Crane  $%d" % sim.rules.sts_crane.cost, tools, false, func() -> void: tool = CRANE)
-	_button(bar, "Import yard", tools, false, func() -> void: tool = IMPORT_YARD)
-	_button(bar, "Export yard", tools, false, func() -> void: tool = EXPORT_YARD)
-	_button(bar, "RTG  $%d/tile" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG)
+	_button(bar, "Crane $%d" % sim.rules.sts_crane.cost, tools, false, func() -> void: tool = CRANE)
+	_button(bar, "Import", tools, false, func() -> void: tool = IMPORT_YARD)
+	_button(bar, "Export", tools, false, func() -> void: tool = EXPORT_YARD)
+	_button(bar, "RTG $%d" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG)
 	var tractors := Button.new()
-	tractors.text = "+2 tractors  $%d" % (sim.rules.tractor.cost * 2)
+	tractors.text = "+2 tractors $%d" % (sim.rules.tractor.cost * 2)
 	tractors.pressed.connect(func() -> void: command_issued.emit({"op": "buy_tractors", "count": 2}))
 	bar.add_child(tractors)
+	_button(bar, "Land $%d" % sim.rules.land.price, tools, false, func() -> void: tool = BUY_LAND)
+	var dredge := Button.new()
+	dredge.text = "Dredge 1 m $%d" % sim.rules.channel.cost_per_metre
+	dredge.pressed.connect(func() -> void: command_issued.emit({"op": "dredge", "metres": 1}))
+	bar.add_child(dredge)
 	_button(bar, "Bulldoze", tools, false, func() -> void: tool = BULLDOZE)
 
 
@@ -111,7 +117,7 @@ func flash(text: String) -> void:
 func _process(dt: float) -> void:
 	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
 	var anchored := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state == PortSim.Ship.State.ANCHORED).size()
-	_readout.text = "$%d    Boxes delivered %d    Ships %d (%d at anchorage)    Tractors %d/%d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size() - anchored, anchored, sim.vehicles.size() - lorries, sim.tractors, lorries]
+	_readout.text = "$%d    Boxes %d    Ships %d (%d at anchorage)    Tractors %d/%d    Lorries %d    Channel %.0f m" % [sim.money, sim.delivered, sim.ships.size() - anchored, anchored, sim.vehicles.size() - lorries, sim.tractors, lorries, sim.channel_depth]
 	var k := sim.kpis()
 	_kpis.text = "Berth %.0f moves/h    Crane %.0f moves/h    Gate turn %.0f min    Yard %d%% full    %d boxes/day    Upkeep $%d/day" % [
 		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]

@@ -48,6 +48,9 @@ func _initialize() -> void:
 	_test_loans_are_paid_back_with_interest()
 	_test_bailout_fires_once()
 	_test_creative_mode_builds_without_cash()
+	_test_land_must_be_bought()
+	_test_cranes_arrive_after_their_lead_time()
+	_test_dredging()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -62,7 +65,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 ## 12-tile quay with an apron road behind it, two cranes, six tractors and a
 ## 3x2 yard block beside the road.
 func _port(rules := Content.base(), calls := "feeder") -> PortSim:
-	var sim := PortSim.new(0, rules)
+	var sim := PortSim.new(0, RandomPort.quick(rules))
 	if calls != "":
 		RandomPort.calls(sim, calls)
 	var row := sim.map.entry.y
@@ -90,22 +93,22 @@ func _run(sim: PortSim, minutes: float) -> void:
 func _test_build_rules() -> void:
 	var sim := PortSim.new()
 	_expect(sim.build(ROAD, Vector2i(3, 3)), "Can't build on water", "road on water")
-	_expect(sim.build(QUAY, Vector2i(30, 3)), "A quay must face the water", "inland quay")
-	_expect(sim.build(QUAY, Vector2i(12, 3)), "", "coastal quay")
-	_expect(sim.build(ROAD, Vector2i(12, 3)), "Bulldoze first", "road on a quay")
-	_expect(sim.build(ROAD, Vector2i(99, 3)), "Off the map", "road off the map")
-	_expect(sim.build(QUAY, Vector2i(12, 0)), "", "quay on the north edge faces the sea")
-	_expect(sim.build(QUAY, Vector2i(30, 0)), "A quay must face the water", "map edge is not water")
-	_expect(sim.money, sim.rules.start_money - 400, "quays cost money")
+	_expect(sim.build(QUAY, Vector2i(30, 40)), "A quay must face the water", "inland quay")
+	_expect(sim.build(QUAY, Vector2i(12, 40)), "", "coastal quay")
+	_expect(sim.build(ROAD, Vector2i(12, 40)), "Bulldoze first", "road on a quay")
+	_expect(sim.build(ROAD, Vector2i(99, 40)), "Off the map", "road off the map")
+	_expect(sim.map.build_error(QUAY, Vector2i(12, 0)), "", "quay on the north edge faces the sea")
+	_expect(sim.map.build_error(QUAY, Vector2i(30, 0)), "A quay must face the water", "map edge is not water")
+	_expect(sim.money, sim.rules.start_money - 200, "quays cost money")
 	sim.ledger.cash = 5
-	_expect(sim.build(ROAD, Vector2i(30, 3)), "Not enough money", "building while broke")
+	_expect(sim.build(ROAD, Vector2i(30, 40)), "Not enough money", "building while broke")
 
 
 func _test_bulldoze_rules() -> void:
 	var sim := _port()
 	var yard := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 1)
 	_expect(sim.bulldoze(sim.map.entry), "That's the highway", "bulldoze highway")
-	_expect(sim.bulldoze(Vector2i(30, 3)), "Nothing to bulldoze", "bulldoze empty land")
+	_expect(sim.bulldoze(Vector2i(30, 40)), "Nothing to bulldoze", "bulldoze empty land")
 	sim.yard.add(yard, 999)
 	_expect(sim.bulldoze(yard), "The yard still holds boxes", "bulldoze a full yard")
 	sim.yard.take(yard, 999)
@@ -116,7 +119,7 @@ func _test_bulldoze_rules() -> void:
 func _test_no_ship_without_a_road() -> void:
 	var sim := PortSim.new()
 	RandomPort.calls(sim)
-	sim.build(QUAY, Vector2i(12, 3))
+	sim.build(QUAY, Vector2i(12, 40))
 	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 0, "no ship calls at an unconnected quay")
 
@@ -139,7 +142,7 @@ func _test_ships_unload_and_lorries_pay() -> void:
 func _test_commands() -> void:
 	var by_command := PortSim.new()
 	var direct := PortSim.new()
-	var cell := Vector2i(12, 3)
+	var cell := Vector2i(12, 40)
 	_expect(by_command.apply({"op": "build", "kind": QUAY, "cell": cell}), "", "build command")
 	direct.build(QUAY, cell)
 	_expect(by_command.map.tile(cell), direct.map.tile(cell), "a build command builds like build()")
@@ -159,7 +162,7 @@ func _test_round_trip() -> void:
 	_run(copy, 25)
 	_expect(copy.ships.is_empty() and copy.vehicles.is_empty(), false, "the round trip happened mid-traffic")
 	_expect(copy.state_hash(), straight.state_hash(), "a round trip mid-run changes nothing")
-	_expect(copy.build(ROAD, Vector2i(30, 3)), "", "the copy's map still accepts builds")
+	_expect(copy.build(ROAD, Vector2i(30, 40)), "", "the copy's map still accepts builds")
 	_expect(copy.map.route(copy.map.entry, Vector2i(copy.map.sea_width, copy.map.entry.y)).is_empty(), false, "the copy's road routing works")
 
 
@@ -199,7 +202,7 @@ func _test_berths() -> void:
 
 
 func _test_ships_fit_their_berth() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.quick()
 	var sim := PortSim.new(0, rules)
 	RandomPort.calls(sim, "panamax")
 	var row := sim.map.entry.y
@@ -210,11 +213,11 @@ func _test_ships_fit_their_berth() -> void:
 	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 0, "a panamax does not call at an 8-tile berth")
 	_expect(sim.last_event().contains("12 quay tiles"), true, "the status says how long a berth it needs (%s)" % sim.last_event())
-	rules.water_depth = 11.0
+	rules.channel.start_depth = 11.0
 	var shallow := PortSim.new(0, rules)
 	RandomPort.calls(shallow, "panamax")
 	_run(shallow, FIRST_SHIP + 1)
-	_expect(shallow.last_event().contains("needs 13 m"), true, "a panamax does not call at 11 m of water (%s)" % shallow.last_event())
+	_expect(shallow.last_event().contains("needs 13 m of channel"), true, "a panamax does not call at 11 m of water (%s)" % shallow.last_event())
 
 
 func _test_cranes() -> void:
@@ -259,7 +262,7 @@ func _test_crane_timing() -> void:
 
 
 func _test_outreach() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.quick()
 	rules.sts_crane.outreach = 8
 	var sim := PortSim.new(0, rules)
 	RandomPort.calls(sim, "panamax")
@@ -282,7 +285,7 @@ func _test_route_cache() -> void:
 	_expect(map._route_cache.size(), 1, "a route is cached after the first request")
 	first.reverse()
 	_expect(map.route(map.entry, to)[0], map.access_road(map.entry), "changing a returned route leaves the cache alone")
-	sim.build(ROAD, Vector2i(30, 3))
+	sim.build(ROAD, Vector2i(30, 40))
 	_expect(map._route_cache.size(), 0, "building clears the cache")
 
 
@@ -296,7 +299,7 @@ func _test_yard_settings() -> void:
 	for i in 7:
 		sim.yard.add(tile, 1000 + i)
 	_expect(sim.set_yard(tile, {"gear": "reach_stacker"}), "Too many boxes here for reach stacker", "can't switch back with 7 boxes on a tile")
-	_expect(sim.set_yard(Vector2i(30, 3), {"role": "export"}), "That is not a yard", "settings need a yard")
+	_expect(sim.set_yard(Vector2i(30, 40), {"role": "export"}), "That is not a yard", "settings need a yard")
 	var exports := _port()
 	exports.set_yard(tile, {"role": "export"})
 	_run(exports, FIRST_SHIP + 30)
@@ -422,8 +425,8 @@ func _test_upkeep_at_midnight() -> void:
 	var rules := Content.base().duplicate(true)
 	var sim := _port(rules, "")
 	var upkeep := sim.daily_upkeep()
-	var expected: int = rules.upkeep.road * sim.map.cells_of(ROAD).size() + rules.upkeep.quay * 12 + rules.upkeep.yard * 6 + rules.upkeep.gate + rules.upkeep.sts_crane * 2 + rules.upkeep.tractor * 6 + rules.yard_gear.reach_stacker.upkeep_per_machine
-	_expect(upkeep, expected, "upkeep adds every tile, crane, tractor and yard machine")
+	var expected: int = rules.upkeep.road * sim.map.cells_of(ROAD).size() + rules.upkeep.quay * 12 + rules.upkeep.yard * 6 + rules.upkeep.gate + rules.upkeep.sts_crane * 2 + rules.upkeep.tractor * 6 + rules.yard_gear.reach_stacker.upkeep_per_machine + rules.land.upkeep * 3
+	_expect(upkeep, expected, "upkeep adds every tile, crane, tractor, yard machine and land tile")
 	for i in SimClock.TICKS_PER_DAY - 1:
 		sim.tick()
 	var before := sim.money
@@ -636,6 +639,53 @@ func _test_creative_mode_builds_without_cash() -> void:
 	for creative: bool in [false, true]:
 		var sim := PortSim.new(0, Content.base(), creative)
 		sim.ledger.cash = 0
-		_expect(sim.build(QUAY, Vector2i(12, 3)), "" if creative else "Not enough money", "building at $0 in %s mode" % ("creative" if creative else "normal"))
+		_expect(sim.build(QUAY, Vector2i(12, 40)), "" if creative else "Not enough money", "building at $0 in %s mode" % ("creative" if creative else "normal"))
 	var copy := PortSim.from_dict(PortSim.new(0, Content.base(), true).to_dict())
 	_expect(copy.creative, true, "creative mode survives a save")
+
+
+func _test_land_must_be_bought() -> void:
+	var sim := PortSim.new()
+	sim.ledger.cash = 100000
+	var north := Vector2i(40, 10)
+	_expect(sim.build(ROAD, north), "Buy this land first", "no building outside the port's land")
+	var before := sim.money
+	var upkeep := sim.daily_upkeep()
+	_expect(sim.apply({"op": "buy_land", "tile": sim.land_tile(north)}), "", "buy the land tile north of the start")
+	_expect([before - sim.money, sim.daily_upkeep() - upkeep], [sim.rules.land.price, sim.rules.land.upkeep], "land costs its price, then upkeep every day")
+	_expect(sim.build(ROAD, north), "", "and can be built on")
+	_expect(sim.buy_land(sim.land_tile(north)), "The port owns this land already", "land is bought once")
+	_expect(sim.buy_land(Vector2i(3, 0)), "Off the map", "only map tiles are for sale")
+
+
+## An STS crane ordered now stands on its quay exactly when its lead time ends.
+func _test_cranes_arrive_after_their_lead_time() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.sts_crane.lead_days = 0.5
+	var sim := PortSim.new(0, rules)
+	var quay := Vector2i(sim.map.sea_width, sim.map.entry.y)
+	sim.build(QUAY, quay)
+	var before := sim.money
+	_expect(sim.place_crane(quay), "", "order a crane")
+	_expect([sim.cranes.size(), before - sim.money], [0, rules.sts_crane.cost], "paid now, not there yet")
+	_expect(sim.place_crane(quay), "There is a crane here already", "one order per quay tile")
+	var due := roundi(720 / SimClock.CALENDAR_MINUTES_PER_TICK)
+	for i in due - 1:
+		sim.tick()
+	_expect(sim.cranes.size(), 0, "not there a tick early")
+	sim.tick()
+	_expect(sim.cranes.size(), 1, "there exactly 12 hours after the order")
+
+
+func _test_dredging() -> void:
+	var base := Content.base().duplicate(true)
+	base.channel.maintenance_days = 1
+	var sim := _port(base, "")
+	var channel: Dictionary = sim.rules.channel
+	sim.ledger.cash = 100000
+	var before := sim.money
+	_expect(sim.apply({"op": "dredge", "metres": 2}), "", "dredge two metres")
+	_expect([sim.channel_depth, before - sim.money], [channel.start_depth + 2, 2 * channel.cost_per_metre], "the channel is deeper, at a cost per metre")
+	_expect(sim.dredge(100), "The channel can't go below %.0f m" % channel.max_depth, "dredging stops at the limit")
+	_run(sim, SimClock.MINUTES_PER_DAY)
+	_expect(sim.ledger.days[-1].lines.dredging, -2 * channel.cost_per_metre - 2 * channel.maintenance_per_metre, "the dredged metres need maintenance at midnight")

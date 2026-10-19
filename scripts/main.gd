@@ -108,6 +108,8 @@ func _command(cell: Vector2i) -> Dictionary:
 			return {"op": "bulldoze", "cell": cell}
 		Hud.CRANE:
 			return {"op": "place_crane", "cell": cell}
+		Hud.BUY_LAND:
+			return {"op": "buy_land", "tile": sim.land_tile(cell)}
 		Hud.IMPORT_YARD, Hud.EXPORT_YARD, Hud.RTG:
 			return {"op": "set_yard", "cell": cell, "settings": _yard_settings()}
 	return {"op": "build", "kind": hud.tool, "cell": cell}
@@ -128,6 +130,8 @@ func _order_error(cell: Vector2i) -> String:
 			return sim.bulldoze_error(cell)
 		Hud.CRANE:
 			return sim.crane_error(cell)
+		Hud.BUY_LAND:
+			return sim.buy_land_error(sim.land_tile(cell))
 		Hud.IMPORT_YARD, Hud.EXPORT_YARD, Hud.RTG:
 			return sim.set_yard_error(cell, _yard_settings())
 	return sim.build_error(hud.tool, cell)

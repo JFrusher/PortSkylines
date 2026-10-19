@@ -25,6 +25,12 @@ var delivered := 0
 var contracts: Contracts
 ## Loans and the bailout.
 var finance: Finance
+## Land tiles (rules.land.cells square) the port owns, as tile coordinates.
+var land := {}
+## Depth of the channel from the sea to the berths, in metres.
+var channel_depth := 0.0
+## STS cranes ordered and not yet delivered: {"cell", "due" (calendar minute)}.
+var crane_orders: Array[Dictionary] = []
 ## Creative mode: cash never limits building and there are no bailouts; the
 ## ledger still records everything.
 var creative := false
@@ -65,6 +71,12 @@ var _until_export := 0.0
 var _next_vehicle := 1
 var _next_box := 1
 var _delivered_at_midnight := 0
+## Ships that have left, and the map version and departures when anchored
+## ships last looked for a berth. A berth frees only when one of these
+## changes, so until then looking again would find nothing; a new arrival
+## resets it to look once.
+var _departures := 0
+var _berths_seen := Vector2i(-1, -1)
 
 
 func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false) -> void:
@@ -75,6 +87,11 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
+	channel_depth = rules.channel.start_depth
+	var start: Dictionary = rules.land.start
+	for x in range(start.x, start.x + start.width):
+		for y in range(start.y, start.y + start.height):
+			land[Vector2i(x, y)] = true
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
 	_event("Run a road from the highway to the coast through a gate, then build a quay, cranes, tractors and a yard")
@@ -165,6 +182,9 @@ func to_dict() -> Dictionary:
 		"ledger": ledger.to_dict(),
 		"contracts": contracts.to_dict(),
 		"finance": finance.to_dict(),
+		"land": land.duplicate(),
+		"channel_depth": channel_depth,
+		"crane_orders": crane_orders.duplicate(true),
 		"creative": creative,
 		"delivered": delivered,
 		"events": events.duplicate(true),
@@ -199,6 +219,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.ledger = Ledger.from_dict(d.ledger, sim.rules.ledger_categories)
 	sim.contracts = Contracts.from_dict(d.contracts, sim.rules)
 	sim.finance = Finance.from_dict(d.finance, sim.rules)
+	sim.land = d.land.duplicate()
+	sim.channel_depth = d.channel_depth
+	sim.crane_orders.assign(d.crane_orders)
 	sim.creative = d.creative
 	sim.delivered = d.delivered
 	sim.events.assign(d.events)
@@ -257,11 +280,17 @@ func apply(command: Dictionary) -> String:
 			return set_storage(command.free_days, command.fee)
 		"take_loan":
 			return finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
+		"buy_land":
+			return buy_land(command.tile)
+		"dredge":
+			return dredge(command.metres)
 	return "Unknown command: %s" % command.get("op")
 
 
 func build_error(kind: int, cell: Vector2i) -> String:
 	var err := map.build_error(kind, cell)
+	if err == "" and not owns(cell):
+		err = "Buy this land first"
 	if err == "" and not _afford(_price(kind, cell)):
 		err = "Not enough money"
 	return err
@@ -299,19 +328,78 @@ func _joined_block(kind: int, cell: Vector2i) -> Vector2i:
 func crane_error(cell: Vector2i) -> String:
 	if map.tile(cell) != PortMap.Tile.QUAY:
 		return "Cranes stand on quay tiles"
-	if _crane_at(cell):
+	if _crane_at(cell) or crane_orders.any(func(o: Dictionary) -> bool: return o.cell == cell):
 		return "There is a crane here already"
 	if not _afford(rules.sts_crane.cost):
 		return "Not enough money"
 	return ""
 
 
+## Orders an STS crane for the quay tile `cell`. It is paid now and stands
+## there after rules.sts_crane.lead_days.
 func place_crane(cell: Vector2i) -> String:
 	var err := crane_error(cell)
 	if err == "":
 		ledger.post("equipment", -rules.sts_crane.cost)
-		cranes.append(Crane.new(cell))
+		crane_orders.append({"cell": cell, "due": clock.calendar_minutes() + rules.sts_crane.lead_days * SimClock.MINUTES_PER_DAY})
+		_deliver_cranes()
 	return err
+
+
+## Puts up the cranes whose order is due. One whose quay has gone is refunded.
+func _deliver_cranes() -> void:
+	var now := clock.calendar_minutes()
+	for order: Dictionary in crane_orders.duplicate():
+		if order.due > now:
+			continue
+		crane_orders.erase(order)
+		if map.tile(order.cell) == PortMap.Tile.QUAY and not _crane_at(order.cell):
+			cranes.append(Crane.new(order.cell))
+			_event("A new STS crane is up at %s" % order.cell)
+		else:
+			ledger.post("equipment", rules.sts_crane.cost)
+			_event("A crane arrived with no quay at %s to stand on; it went back, refunded" % order.cell)
+
+
+## The land tile holding map cell `cell`.
+func land_tile(cell: Vector2i) -> Vector2i:
+	return Vector2i(cell.x / rules.land.cells, cell.y / rules.land.cells)
+
+
+func owns(cell: Vector2i) -> bool:
+	return land.has(land_tile(cell))
+
+
+func buy_land_error(tile: Vector2i) -> String:
+	var tiles: Vector2i = (map.size + Vector2i.ONE * (rules.land.cells - 1)) / rules.land.cells
+	if tile.x < 0 or tile.y < 0 or tile.x >= tiles.x or tile.y >= tiles.y:
+		return "Off the map"
+	if land.has(tile):
+		return "The port owns this land already"
+	if not _afford(rules.land.price):
+		return "Not enough money"
+	return ""
+
+
+func buy_land(tile: Vector2i) -> String:
+	var err := buy_land_error(tile)
+	if err == "":
+		ledger.post("land", -rules.land.price)
+		land[tile] = true
+	return err
+
+
+## Deepens the channel by whole metres, up to rules.channel.max_depth.
+func dredge(metres: int) -> String:
+	if metres < 1:
+		return "Dredge at least a metre"
+	if channel_depth + metres > rules.channel.max_depth:
+		return "The channel can't go below %.0f m" % rules.channel.max_depth
+	if not _afford(metres * rules.channel.cost_per_metre):
+		return "Not enough money"
+	ledger.post("dredging", -metres * rules.channel.cost_per_metre)
+	channel_depth += metres
+	return ""
 
 
 func buy_tractors(count: int) -> String:
@@ -396,12 +484,18 @@ func tick() -> void:
 	clock.tick()
 	if clock.ticks % SimClock.TICKS_PER_DAY == 0:
 		_end_of_day()
+	if not crane_orders.is_empty():
+		_deliver_cranes()
 	for service in contracts.due(clock.ticks % (SimClock.TICKS_PER_DAY * 7)):
 		_call(service)
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
+	var berths_now := Vector2i(map.version, _departures)
 	for ship: Ship in ships.duplicate():
+		if ship.state == Ship.State.ANCHORED and berths_now == _berths_seen:
+			continue
 		_work(ship)
+	_berths_seen = berths_now
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and _dispatch_import_lorry():
 		_until_lorry = rules.lorry_interval_minutes
@@ -421,7 +515,7 @@ func daily_upkeep() -> int:
 	for name: String in rules.upkeep:
 		if name in rules.build_cost:
 			total += rules.upkeep[name] * map.cells_of(PortMap.Tile[name.to_upper()]).size()
-	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors
+	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for block_anchor in yard.anchors():
 		total += rules.yard_gear[yard.gear_of(block_anchor)].upkeep_per_machine * yard.machines(block_anchor)
 	return total
@@ -468,6 +562,9 @@ func _event(text: String) -> void:
 func _end_of_day() -> void:
 	var upkeep := daily_upkeep()
 	ledger.post("upkeep", -upkeep)
+	var dredged: float = channel_depth - rules.channel.start_depth
+	if dredged > 0.0 and clock.game_day() % rules.channel.maintenance_days == 0:
+		ledger.post("dredging", -roundi(dredged * rules.channel.maintenance_per_metre))
 	var storage_paid: int = _storage_due() * storage.fee
 	if storage_paid > 0:
 		ledger.post("storage", storage_paid)
@@ -486,8 +583,8 @@ func _call(service: Dictionary) -> void:
 	var spec: Dictionary = rules.ship_classes[service.kind]
 	var who := contracts.name_of(service.line)
 	var why := ""
-	if rules.water_depth < spec.draft:
-		why = "it needs %.0f m of water, the port has %.0f m" % [spec.draft, rules.water_depth]
+	if channel_depth < spec.draft:
+		why = "it needs %.0f m of channel, the port has %.0f m" % [spec.draft, channel_depth]
 	elif not _could_berth(service.kind):
 		why = "no berth of %d quay tiles with a road to the highway" % spec.length
 	if why != "":
@@ -496,6 +593,7 @@ func _call(service: Dictionary) -> void:
 		return
 	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
 	ships.append(Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves))
+	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
 	_event("%s's %s has arrived" % [who, service.kind])
 
 
@@ -519,7 +617,7 @@ func _berth(ship: Ship) -> bool:
 ## Whether some berth is long enough for `kind`, busy or not.
 func _could_berth(kind: String) -> bool:
 	var spec: Dictionary = rules.ship_classes[kind]
-	if rules.water_depth < spec.draft:
+	if channel_depth < spec.draft:
 		return false
 	for berth: Dictionary in map.berths():
 		if berth.cells.size() >= spec.length and _apron(berth.cells) != PortMap.NONE:
@@ -597,6 +695,7 @@ func _work(ship: Ship) -> void:
 			ship.sail -= SimClock.TICK_SECONDS / rules.sail_seconds
 			if ship.sail <= 0.0:
 				ships.erase(ship)
+				_departures += 1
 
 
 func _sail(ship: Ship, crane_count: int) -> void:
@@ -1104,6 +1203,11 @@ func _enter(vehicle: Vehicle, i: int) -> bool:
 	if next == vehicle.ahead:
 		vehicle.ahead = Traffic.NO_LANE
 		return _move_to_lane(vehicle, next)
+	if vehicle.ahead != Traffic.NO_LANE:
+		# The map changed under it, so the lane it booked past the junction
+		# is not its next lane any more: let that booking go.
+		traffic.release(vehicle.ahead, vehicle.id)
+		vehicle.ahead = Traffic.NO_LANE
 	if next.z != Traffic.JUNCTION or i + 1 >= vehicle.path.size():
 		# shortcut: a path that ends in a junction stops in it; fine while yard entrances and homes rarely sit on junctions.
 		return _move_to_lane(vehicle, next)

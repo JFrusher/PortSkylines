@@ -26,7 +26,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 
 func _test_save_load_save_is_identical() -> void:
 	var sim := PortSim.new(3)
-	sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(12, 3)})
+	sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(12, 40)})
 	for i in 500:
 		sim.tick()
 	_expect(SaveFile.save("user://a.bin", sim), "", "save")

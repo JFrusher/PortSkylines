@@ -28,14 +28,20 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `lorry_speed` | number >0 | Tiles per vehicle second |
 | `give_up_seconds` | number >0 | Vehicle seconds stuck before a tractor replans; lorries wait twice as long |
 | `ship_classes.<name>.length` | int >0 | Quay tiles the ship needs |
-| `ship_classes.<name>.draft` | number | Metres; a class deeper than `water_depth` never berths |
+| `ship_classes.<name>.draft` | number | Metres; a class deeper than the channel never berths |
 | `ship_classes.<name>.outreach` | int | Crane outreach (rows) the ship needs |
 | `ship_classes.<name>.import_moves`, `.export_moves` | int | Boxes off and on per call |
 | `ship_classes.<name>.window_hours` | number >0 | Length of a service's weekly berth window; sailing after it is late |
-| `water_depth` | number | Metres of water at every quay |
+| `channel.start_depth`, `.max_depth` | number | The channel's depth at the start, and as deep as dredging can take it (metres) |
+| `channel.cost_per_metre` | int | Cost of dredging one metre |
+| `channel.maintenance_per_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged metre costs this |
+| `land.cells` | int >0 | Land tiles are squares of this many cells |
+| `land.price`, `.upkeep` | int | Price of a land tile, and its upkeep a day once owned |
+| `land.start.x`, `.y`, `.width`, `.height` | int | The block of land tiles the port owns at the start |
 | `sts_crane.cost` | int | Price of a quay crane |
 | `sts_crane.rate` | number >0 | Moves per hour |
 | `sts_crane.outreach` | int | Rows the crane reaches |
+| `sts_crane.lead_days` | number | Days from ordering a crane to it standing on the quay |
 | `crane_interference` | number >0 | Rate multiplier for cranes working side by side |
 | `tractor.cost` | int | Price of one tractor |
 | `tractor.speed` | number >0 | Tiles per vehicle second |

@@ -8,7 +8,7 @@ const RandomPort := preload("res://tests/random_port.gd")
 
 
 func _initialize() -> void:
-	var sim := PortSim.new(1)
+	var sim := PortSim.new(1, RandomPort.quick())
 	RandomPort.calls(sim)
 	var row := sim.map.entry.y
 	for x in range(sim.map.sea_width + 1, sim.map.entry.x):
