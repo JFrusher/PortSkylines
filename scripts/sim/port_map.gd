@@ -129,7 +129,12 @@ static func is_road(kind: int) -> bool:
 ## The road a building is entered from: itself if it is a road or gate, else an adjacent road.
 func access_road(cell: Vector2i) -> Vector2i:
 	# shortcut: takes the first adjacent road even if a better one exists, fine until buildings get set entrances.
-	return cell if is_road(tile(cell)) else neighbor(cell, Tile.ROAD)
+	if is_road(tile(cell)):
+		return cell
+	for side: Vector2i in SIDES:
+		if is_road(tile(cell + side)):
+			return cell + side
+	return NONE
 
 
 ## Road route between two cells' access roads; empty when there is none.

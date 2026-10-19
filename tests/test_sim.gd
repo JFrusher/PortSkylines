@@ -35,6 +35,7 @@ func _initialize() -> void:
 	_test_ships_never_overlap()
 	_test_new_yard_tile_keeps_block_settings()
 	_test_unreachable_block_does_not_stall_imports()
+	_test_gate_is_an_access_road()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -471,3 +472,13 @@ func _test_unreachable_block_does_not_stall_imports() -> void:
 		sim.yard.add(box[1], box[0])
 	_expect(sim.call("_dispatch_import_lorry"), true, "a lorry is sent for the reachable box")
 	_expect(901 in sim.get("_claimed"), true, "it claims the reachable box")
+
+
+## A yard whose only neighbouring road is a gate is entered from that gate.
+func _test_gate_is_an_access_road() -> void:
+	var sim := _port()
+	var gate := Vector2i(sim.map.entry.x - 3, sim.map.entry.y)
+	var beside := gate + Vector2i.DOWN
+	_expect(sim.build(YARD, beside), "", "a yard tile beside the gate")
+	_expect(sim.yard.entrance(beside), beside, "the block has an entrance")
+	_expect(sim.map.access_road(beside), gate, "it is entered from the gate")
