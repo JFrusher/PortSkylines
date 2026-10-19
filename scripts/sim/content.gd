@@ -59,6 +59,9 @@ const SCHEMA := {
 	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
+	# Roads the player draws: lanes each way along the drawn direction, whether
+	# lorries may use it (tractors and AGVs always may), and cost and daily upkeep per 4 m cell.
+	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_INT}},
 	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT, "upkeep_per_machine": TYPE_INT}},
 }
 
@@ -112,6 +115,10 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 	for key: String in rules.site:
 		if rules.site[key] <= 0 or rules.site[key] % Grid.CELL != 0:
 			return {"error": "site.%s: must be a positive multiple of %d m" % [key, Grid.CELL]}
+	for kind: String in rules.road_types:
+		var road: Dictionary = rules.road_types[kind]
+		if road.forward < 0 or road.backward < 0 or road.forward + road.backward == 0 or road.forward < road.backward:
+			return {"error": "road_types.%s: needs lanes, with at least as many forward as backward" % kind}
 	for line: String in rules.lines:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):
@@ -146,6 +153,8 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 		return ""
 	if want == TYPE_STRING:
 		return "" if got is String else "%s: must be text" % where
+	if want == TYPE_BOOL:
+		return "" if got is bool else "%s: must be true or false" % where
 	if not (got is float or got is int):
 		return "%s: must be a number" % where
 	if want == TYPE_INT:

@@ -1,0 +1,8 @@
+{
+	"road_types": {
+		"terminal_1_1": {"name": "Terminal road 1+1", "forward": 1, "backward": 1, "lorries": true, "cost_per_cell": 40, "upkeep_per_cell": 1},
+		"terminal_2_2": {"name": "Terminal road 2+2", "forward": 2, "backward": 2, "lorries": true, "cost_per_cell": 80, "upkeep_per_cell": 2},
+		"one_way": {"name": "One-way road", "forward": 2, "backward": 0, "lorries": true, "cost_per_cell": 40, "upkeep_per_cell": 1},
+		"tractor_lane": {"name": "AGV and tractor lane", "forward": 1, "backward": 1, "lorries": false, "cost_per_cell": 30, "upkeep_per_cell": 1}
+	}
+}

@@ -10,6 +10,10 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `map.sea_width` | int | Tiles of sea along the west edge |
 | `site.width`, `site.height` | int | Site size in metres for roads and areas, a multiple of the 4 m grid cell |
 | `site.sea_width` | int | Metres of sea along the west edge, a multiple of 4 |
+| `road_types.<key>.name` | text | The road's name in the build menu |
+| `road_types.<key>.forward`, `.backward` | int | Lanes along and against the drawn direction; forward at least backward, and at least one lane |
+| `road_types.<key>.lorries` | true/false | Whether lorries may use it; tractors and AGVs always may |
+| `road_types.<key>.cost_per_cell`, `.upkeep_per_cell` | int | Build cost and daily upkeep per 4 m cell of road length |
 | `start_money` | int | Money at the start of a new game |
 | `move_price.per_20ft` | int >0 | What a line pays per crane move of a 20 ft box |
 | `move_price.forty_factor` | number >0 | A 40 ft box's move price as a multiple of a 20 ft one |
