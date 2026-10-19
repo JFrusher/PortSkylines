@@ -36,5 +36,5 @@
 ### Close
 14. **Bench at port scale.** Set new targets in `docs/perf.md` and meet them.
 15. **Fixture and soak.** New save fixture, and multi-terminal commands in the soak test.
-16. **Public playtest build.** Notes go in `docs/playtests/m7.md`.
+16. **Public playtest build.** Notes go in `docs/playtests/m8.md`.
 17. **Close the phase.** Tag `m8`.

@@ -26,5 +26,5 @@
 
 ### Close
 10. **Fixture and soak.** New save fixture, and transhipment and barge in the soak test.
-11. **Public playtest build.** Notes go in `docs/playtests/m8.md`.
+11. **Public playtest build.** Notes go in `docs/playtests/m9.md`.
 12. **Close the phase.** Tag `m9`.

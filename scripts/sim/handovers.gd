@@ -28,14 +28,16 @@ func arrive(area: int, id: int) -> String:
 	return "road"
 
 
-## Frees vehicle `id`'s slot in `area` and moves the queues up.
+## Frees vehicle `id`'s slot in `area` for the first in line and moves the queues up.
 func leave(area: int, id: int) -> void:
 	var at := _state(area)
 	var slot: int = at.slots.find(id)
 	assert(slot >= 0, "vehicle %d leaves area %d without a slot" % [id, area])
-	at.slots[slot] = at.buffer.pop_front() if not at.buffer.is_empty() else 0
-	if not at.road.is_empty():
-		at.buffer.append(at.road.pop_front())
+	var line: Array = at.buffer + at.road
+	at.slots[slot] = line[0] if not line.is_empty() else 0
+	at.buffer.erase(at.slots[slot])
+	at.road.erase(at.slots[slot])
+	_refill(area)
 
 
 ## Takes vehicle `id` out of `area` wherever it is: its slot frees for the
@@ -46,6 +48,7 @@ func drop(area: int, id: int) -> void:
 		leave(area, id)
 	at.buffer.erase(id)
 	at.road.erase(id)
+	_refill(area)
 
 
 ## The slot vehicle `id` holds in `area`, or -1.
@@ -88,6 +91,13 @@ func _state(area: int) -> Dictionary:
 		slots.fill(0)
 		_at[area] = {"slots": slots, "buffer": [], "road": []}
 	return _at[area]
+
+
+## Moves the road queue up into the buffer strip while it has room.
+func _refill(area: int) -> void:
+	var at := _state(area)
+	while not at.road.is_empty() and at.buffer.size() < _buffer_room(area):
+		at.buffer.append(at.road.pop_front())
 
 
 ## How many vehicles fit in `area`'s buffer strip: one per bay.

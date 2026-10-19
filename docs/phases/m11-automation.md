@@ -32,5 +32,5 @@
 
 ### Close
 12. **Fixture and soak.** New save fixture, and policies and rules in the soak test.
-13. **Public playtest build.** Notes go in `docs/playtests/m10.md`.
+13. **Public playtest build.** Notes go in `docs/playtests/m11.md`.
 14. **Close the phase.** Tag `m11`.

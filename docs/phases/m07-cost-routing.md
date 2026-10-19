@@ -37,5 +37,5 @@
 ### Close
 13. **Bench and replay.** Endgame bench within budget, and the replay hash test with threads.
 14. **Fixture and soak.** New save fixture, and lane invariants in the soak test.
-15. **Public playtest build.** Notes go in `docs/playtests/m6.md`.
+15. **Public playtest build.** Notes go in `docs/playtests/m7.md`.
 16. **Close the phase.** Tag `m7`.

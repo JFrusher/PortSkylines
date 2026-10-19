@@ -43,7 +43,7 @@
 
    Test: a lorry following the field takes a path of the same length as A*.
 8. **Background path thread.**
-   - Ad-hoc routes run on one worker thread with its own `AStarGrid2D` copy (the AStar classes are not thread-safe).
+   - Ad-hoc routes run on one worker thread with its own copy of the lane graph (the AStar classes are not thread-safe), so one-way and 45° links route as on the main thread.
    - Requests and results are queued, and results apply at the start of the next tick in request order so the outcome stays deterministic.
 
    Test: replay hash with the thread on equals the hash with it off.
@@ -69,5 +69,5 @@
 ### Close
 19. **Endgame bench passes** on the target PC. Record it.
 20. **Fixtures and soak.** Add the new save fixture and rail to the soak test.
-21. **Public playtest build.** Notes go in `docs/playtests/m5.md`.
+21. **Public playtest build.** Notes go in `docs/playtests/m6.md`.
 22. **Close the phase.** Tag `m6`.

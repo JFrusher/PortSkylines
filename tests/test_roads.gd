@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_area_settings()
 	_test_terminals()
 	_test_unconnected_areas()
+	_test_roads_keep_apart()
 	_test_handovers()
 	_test_machine_jobs()
 	_test_area_stacks()
@@ -350,6 +351,24 @@ func _test_unconnected_areas() -> void:
 	_expect(Inspect.describe(sim, {"area": 9}), [] as Array[String], "an area that went shows nothing")
 
 
+## A road may meet or cross another, but its lanes may not lie over another
+## road's lanes along the way, nor over an area.
+func _test_roads_keep_apart() -> void:
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(140, 100), "type": "terminal_1_1"}), "", "a road")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 101), "to": Vector2i(140, 101), "type": "terminal_1_1"}), "A road already runs here", "a road one row over would share a lane")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 102), "to": Vector2i(140, 102), "type": "terminal_1_1"}), "", "a road whose lanes run beside it is built")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(120, 90), "to": Vector2i(120, 110), "type": "terminal_2_2"}), "", "a road crossing both is built")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(130, 80), "to": Vector2i(130, 98), "type": "terminal_1_1"}), "", "and one ending on the first in a T")
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(110, 100)), "side": -1, "from": 0, "to": 15}), "", "a yard block along the first road")
+	var block := sim.areas.cells(1)
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(block[20].x, 60), "to": Vector2i(block[20].x, 96), "type": "terminal_1_1"}), "Something is already built here", "a road can't run over an area")
+	# An area beside a tractor lane joins the all-vehicle graph only, with no error logged.
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 100), "to": Vector2i(240, 100), "type": "tractor_lane"}), "", "a tractor lane")
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(210, 100)), "side": -1, "from": 0, "to": 15}), "", "a yard block beside it")
+	_expect(sim.lanes.route(Vector2i(200, 100), sim.areas.layout(2).slots[0][1], false).is_empty(), false, "tractors route into it")
+
+
 func _test_handovers() -> void:
 	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 140), "type": "terminal_1_1"})
@@ -365,6 +384,15 @@ func _test_handovers() -> void:
 	handovers.leave(block, 2)
 	_expect(handovers.slot_of(block, 5), 1, "a freed slot goes to the first vehicle in the buffer")
 	_expect(handovers.waiting(block), {"buffer": [6, 7, 8, 9], "road": [10]}, "and the first on the road moves into the buffer")
+	# Vehicles dropped from the buffer (a lorry giving up) make room for the road queue.
+	var dropping := Handovers.new(sim.areas)
+	for id in range(1, 11):
+		dropping.arrive(block, id)
+	for id: int in [5, 6, 7, 8]:
+		dropping.drop(block, id)
+	_expect(dropping.waiting(block), {"buffer": [9, 10], "road": []}, "the road queue moves up into a buffer emptied by drops")
+	dropping.leave(block, 1)
+	_expect([dropping.slot_of(block, 9), dropping.waiting(block)], [0, {"buffer": [10], "road": []}], "and a freed slot still goes to the first in line")
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
 	var holding := [1, 3, 4, 5]
@@ -484,6 +512,8 @@ func _test_driveways() -> void:
 func _test_apron_berths() -> void:
 	var sim := AreaPort.terminal(60)
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane off the apron's rails is refused")
+	var short := AreaPort.terminal(61)
+	_expect(short.apply({"op": "place_sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane past the last whole bay, with no slot under it, is refused")
 	_expect(sim.apply({"op": "place_sts", "apron": 2, "along": 3}), "STS cranes stand on a quay apron's rails", "a crane on a gate is refused")
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 20}), "", "a crane is ordered on the apron")
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 24}), "Too close to another crane", "cranes keep their width apart")

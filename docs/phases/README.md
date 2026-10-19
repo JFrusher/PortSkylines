@@ -30,7 +30,7 @@ These follow the developer's working style: simple over complex, one way to do t
 3. **The sim never reads the view.** New behaviour goes in `scripts/sim/`, and the view and HUD only read it. Player actions reach the sim only as command dictionaries (from M1 step 13).
 4. **Determinism is a test, not a hope.** From M1 on, every phase's tests include the replay hash test. A step that breaks it is not done.
 5. **Data, not constants.** Tunable numbers go in `data/base/*.json` (from M1 step 18), never in code.
-6. **Saves always migrate.** A step that changes the save format bumps `SaveFile.VERSION`, adds a `migrate_vN` function and commits a fixture save (from M1 step 17).
+6. **Saves always migrate.** A step that changes the save format bumps `SaveFile.VERSION`, adds a `migrate_vN` function and commits a fixture save (from M1 step 17). The one exception is v11, M5's move to roads and areas: older saves hold a tile port nothing can turn into roads and areas, so they are refused with the reason, and migrations start again from v11.
 7. **Mark known limits.** Every deliberate shortcut gets a `# shortcut: <the limit>, <when to upgrade>` comment.
 8. **Evidence before fixes.** When something misbehaves, write down the theory, add the smallest logging or test that proves it, and only then change code.
 9. **Exit criteria close the phase.** A phase ends when every exit criterion in its file passes, not when its time runs out. If time runs out, cut steps marked *(cuttable)*, never exit criteria.

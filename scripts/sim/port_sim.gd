@@ -359,6 +359,13 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
 	var err := roads.add_error(from, to, type)
 	if err == "" and not RoadNet.line(from, to).all(owns):
 		err = "Buy this land first"
+	if err == "":
+		var built := {}
+		for id: int in areas.list:
+			for cell in areas.cells(id):
+				built[cell] = true
+		if roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return c in built):
+			err = "Something is already built here"
 	if err == "" and not _afford(road_price(from, to, type)):
 		err = "Not enough money"
 	return err

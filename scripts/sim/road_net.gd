@@ -121,6 +121,19 @@ func _meets(from: Vector2i, to: Vector2i, type: String) -> Variant:
 			meets[shared[0]] = id
 		elif _crosses_between_cells(drawn, id):
 			return "Roads must cross at a cell, not between two"
+	# Lanes may overlap only where roads meet, within a road's width of it.
+	var width: int = types[type].forward + types[type].backward
+	var mine := footprint(from, to, type)
+	for id: int in segments:
+		var road: Dictionary = types[segments[id].type]
+		var reach := maxi(width, road.forward + road.backward)
+		var theirs := {}
+		for lane in lanes(id):
+			for cell: Vector2i in lane.cells:
+				theirs[cell] = true
+		for cell in mine:
+			if cell in theirs and not meets.keys().any(func(m: Vector2i) -> bool: return maxi(absi(m.x - cell.x), absi(m.y - cell.y)) < reach):
+				return "A road already runs here"
 	return meets
 
 
@@ -163,9 +176,18 @@ func cells(segment: int) -> Array[Vector2i]:
 ## `segment`'s lanes from left to right across its drawn direction, each
 ## {"cells": in driving order, "forward": true if it runs from a to b}.
 func lanes(segment: int) -> Array[Dictionary]:
-	var road: Dictionary = types[segments[segment].type]
-	var a: Vector2i = nodes[segments[segment].a]
-	var b: Vector2i = nodes[segments[segment].b]
+	return _lanes(nodes[segments[segment].a], nodes[segments[segment].b], types[segments[segment].type])
+
+
+## Every lane cell a road of `type` from `from` to `to` would cover.
+func footprint(from: Vector2i, to: Vector2i, type: String) -> Array[Vector2i]:
+	var found: Array[Vector2i] = []
+	for lane in _lanes(from, to, types[type]):
+		found.append_array(lane.cells)
+	return found
+
+
+static func _lanes(a: Vector2i, b: Vector2i, road: Dictionary) -> Array[Dictionary]:
 	var across := right_of(b - a)
 	var found: Array[Dictionary] = []
 	for i: int in road.backward + road.forward:

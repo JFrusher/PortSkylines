@@ -57,7 +57,8 @@ static func cranes_for(sim: PortSim, ship: PortSim.Ship) -> Array[PortSim.Crane]
 static func sts_error(sim: PortSim, apron: int, along: int) -> String:
 	if apron not in sim.areas.list or sim.areas.list[apron].type != "quay_apron":
 		return "STS cranes stand on a quay apron's rails"
-	if along < 0 or along >= _length(sim, apron):
+	# A crane works over a handover slot, and slots cover whole bays only.
+	if along < 0 or along >= _length(sim, apron) / AreaLayout.BAY * AreaLayout.BAY:
 		return "STS cranes stand on a quay apron's rails"
 	var room := ceili(sim.rules.sts_crane.width / float(Grid.CELL))
 	var near := func(a: int, k: int) -> bool: return a == apron and absi(k - along) < room

@@ -61,6 +61,8 @@ func _load() -> void:
 func _use(new_sim: PortSim) -> void:
 	sim = new_sim
 	_painting = false
+	_road_from = Grid.NONE
+	_area_from = {}
 	_following = 0
 	rig.bounds = Rect2(Vector2.ZERO, WorldView.site_size(sim))
 	_accumulated = 0.0
@@ -103,12 +105,15 @@ func _process(dt: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _following and event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE, KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 		_following = 0
+	# A drag builds on release only if its tool is still the one selected.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Grid.NONE:
-		_report(sim.apply({"op": "build_road", "from": _road_from, "to": _road_to(), "type": hud.road_type}))
+		if hud.tool == Hud.DRAW_ROAD:
+			_report(sim.apply({"op": "build_road", "from": _road_from, "to": _road_to(), "type": hud.road_type}))
 		_road_from = Grid.NONE
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
-		_report(sim.apply(_area_command()))
+		if hud.tool == Hud.DRAW_AREA:
+			_report(sim.apply(_area_command()))
 		_area_from = {}
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:

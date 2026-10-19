@@ -5,7 +5,7 @@
 **Depends on.** M11.
 
 **Exit criteria:**
-- A 10-hour soak with no crash or desync, and every save fixture since v1 loads.
+- A 10-hour soak with no crash or desync, and every save fixture since v11 loads (older ones are refused with the reason, as M5 decided).
 - The endgame bench meets budget on the GTX 1660-class target.
 - A data-file mod placed in the user mods folder can add a ship class, a line and an equipment type, and a broken mod is refused with a clear message.
 - Store and download pages list only features that are in the build.
