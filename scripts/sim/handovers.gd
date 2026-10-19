@@ -38,6 +38,16 @@ func leave(area: int, id: int) -> void:
 		at.buffer.append(at.road.pop_front())
 
 
+## Takes vehicle `id` out of `area` wherever it is: its slot frees for the
+## next in line, or it leaves the buffer or the road queue.
+func drop(area: int, id: int) -> void:
+	var at := _state(area)
+	if at.slots.has(id):
+		leave(area, id)
+	at.buffer.erase(id)
+	at.road.erase(id)
+
+
 ## The slot vehicle `id` holds in `area`, or -1.
 func slot_of(area: int, id: int) -> int:
 	return _state(area).slots.find(id)

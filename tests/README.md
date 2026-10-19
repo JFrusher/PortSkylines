@@ -18,6 +18,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | `test_grid.gd` | The 4 m grid: site size in cells, metres round-trip, cell centres |
 | `test_roads.gd` | Roads and areas on the 4 m grid: segments, angles, shared nodes |
 | `test_lane_traffic.gd` | M2's traffic cases on the lane graph: head-on, queues, a full ring, junction booking, a 45° merge |
+| `test_first_slice.gd` | M5's first slice: a port built by commands works its first ship end to end on roads and areas |
 | `test_clock.gd` | Calendar time and frame-to-tick conversion |
 | `test_guide.gd` | The guided start, played by commands on the base rules, ends with the first ship worked |
 | `test_replay.gd` | The same command log gives the same state at 1, 3 and 6 ticks per frame |

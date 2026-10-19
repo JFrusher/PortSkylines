@@ -47,6 +47,24 @@ static func working_terminal(imports: int, exports := 0) -> PortSim:
 	return sim
 
 
+## The first slice's chain, built with commands only on `terminal`: an import
+## and an export block, an STS crane on the apron and tractors. Ships come
+## from contracts; nothing is placed by hand.
+static func chain(seed_value: int) -> PortSim:
+	var sim := terminal(60)
+	sim.rng.seed = seed_value
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the import block is built")
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "the export block is built")
+	_built(sim.apply({"op": "set_area", "id": 4, "settings": {"role": "export"}}), "the export block is set")
+	for id: int in [3, 4]:
+		_built(sim.apply({"op": "set_terminal", "id": id, "terminal": 1}), "the blocks join the terminal")
+	for along: int in [12, 30, 48]:
+		_built(sim.apply({"op": "place_sts", "apron": 1, "along": along}), "a crane is ordered")
+	_built(sim.apply({"op": "buy_tractors", "count": 6}), "tractors are bought")
+	return sim
+
+
 static func _built(err: String, what: String) -> void:
 	if err != "":
 		push_error("%s: %s" % [what, err])

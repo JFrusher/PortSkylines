@@ -23,6 +23,12 @@ var _size: Vector2i
 var _sea: int
 var _next_id := 1
 var _next_terminal := 1
+## Every road lane cell, rebuilt when the roads change; layouts by area id,
+## rebuilt when the areas change. Both are asked for many times a tick.
+var _lane_cells := {}
+var _lanes_for := -1
+var _layouts := {}
+var _layouts_for := -1
 
 
 func _init(area_types: Dictionary, roads: RoadNet, site: Dictionary) -> void:
@@ -108,11 +114,14 @@ func cells(id: int) -> Array[Vector2i]:
 ## with a reason.
 func idle_reason(id: int) -> String:
 	var area: Dictionary = list[id]
-	var lanes := {}
-	for segment: int in _roads.segments:
-		for lane in _roads.lanes(segment):
-			for cell: Vector2i in lane.cells:
-				lanes[cell] = true
+	if _lanes_for != _roads.version:
+		_lanes_for = _roads.version
+		_lane_cells.clear()
+		for segment: int in _roads.segments:
+			for lane in _roads.lanes(segment):
+				for cell: Vector2i in lane.cells:
+					_lane_cells[cell] = true
+	var lanes := _lane_cells
 	for cell in RoadNet.line(area.start, area.end):
 		if cell - area.out in lanes:
 			return ""
@@ -121,15 +130,21 @@ func idle_reason(id: int) -> String:
 
 ## What `id` holds, laid out by AreaLayout for its type.
 func layout(id: int) -> Dictionary:
-	var area: Dictionary = list[id]
-	match area.type:
-		"yard_block":
-			return AreaLayout.yard_block(area, types.yard_block.depth)
-		"quay_apron":
-			return AreaLayout.quay_apron(area, types.quay_apron.depth)
-		"gate":
-			return AreaLayout.gate(area, types.gate.depth)
-	return {}
+	if _layouts_for != version:
+		_layouts_for = version
+		_layouts.clear()
+	if id not in _layouts:
+		var area: Dictionary = list[id]
+		match area.type:
+			"yard_block":
+				_layouts[id] = AreaLayout.yard_block(area, types.yard_block.depth)
+			"quay_apron":
+				_layouts[id] = AreaLayout.quay_apron(area, types.quay_apron.depth)
+			"gate":
+				_layouts[id] = AreaLayout.gate(area, types.gate.depth)
+			_:
+				_layouts[id] = {}
+	return _layouts[id]
 
 
 ## The area covering `cell`, or 0.

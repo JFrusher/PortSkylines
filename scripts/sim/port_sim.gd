@@ -61,6 +61,9 @@ var handovers: Handovers
 var machines: Machines
 var machine_jobs := {}
 var area_stacks := {}
+## The areas version yard machines were last fitted to; not saved, so a
+## loaded port refits once, which adds nothing.
+var _machines_fit_for := -1
 var traffic := Traffic.new()
 var yard: Yard
 ## The rules each area type takes, and what a new area starts with.

@@ -399,6 +399,7 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
 		return
 	if not sim.lane_traffic.advance(vehicle, _speed(sim, vehicle)):
+		_unstick(sim, vehicle)
 		return
 	match vehicle.state:
 		"arriving":
@@ -414,6 +415,24 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 				sim.delivered += 1 if sim.boxes[vehicle.box].kind == "import" else 0
 				sim.boxes.erase(vehicle.box)
 			_gone(sim, vehicle)
+
+
+## The safety valve for jams, as on tiles: a lorry stuck for twice the
+## give-up time leaves with whatever it carries, paying nothing, and its
+## place in any queue goes to the next. Tractors keep waiting.
+static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
+	if vehicle.kind != "lorry" or vehicle.waited < roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2:
+		return
+	if vehicle.area in sim.areas.list:
+		sim.handovers.drop(vehicle.area, vehicle.id)
+		_promote(sim, vehicle.area)
+	if vehicle.loaded:
+		sim.boxes.erase(vehicle.box)
+	elif vehicle.box != 0:
+		sim._claimed.erase(vehicle.box)
+	_gone(sim, vehicle)
+	sim.gave_up += 1
+	sim._event("A lorry gave up on a traffic jam and left")
 
 
 static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
@@ -564,6 +583,9 @@ static func _promote(sim: PortSim, area: int) -> void:
 ## Gives each yard block the machines its gear and size call for, adding
 ## idle ones as it grows, and drops the machines of blocks that have gone.
 static func _fit_machines(sim: PortSim) -> void:
+	if sim._machines_fit_for == sim.areas.version:
+		return
+	sim._machines_fit_for = sim.areas.version
 	for id: int in sim.machines.list.keys():
 		var area: int = sim.machines.list[id].area
 		if area not in sim.areas.list and sim.machines.list[id].job.is_empty():

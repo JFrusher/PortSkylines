@@ -29,6 +29,7 @@ func _initialize() -> void:
 	_test_discharge()
 	_test_delivery()
 	_test_exports()
+	_test_lorry_gives_up()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -568,6 +569,29 @@ func _test_exports() -> void:
 	_expect(ship.exports, 0, "tractors fetch exports to the crane, which loads them all")
 	_expect(ship.moves, 3, "the ship counts its import and both exports")
 	_expect(ship.state, PortSim.Ship.State.LEAVING, "and sails fully loaded")
+
+
+func _test_lorry_gives_up() -> void:
+	var sim := AreaPort.terminal(30)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59})
+	sim.apply({"op": "set_terminal", "id": 3, "terminal": 1})
+	var box := sim._new_box("import", 0.0, "")
+	AreaFlow._stacks(sim, 3).place(box, sim.boxes[box].teu)
+	sim.boxes[box].in = 0.0
+	# A parked tractor blocks the westbound lane between the entry and the gate.
+	var blocker := Vehicle.new(999, "tractor", [Vector2i(450, sim.site_entry().y - 1)] as Array[Vector2i])
+	sim.lane_traffic.place(blocker)
+	_expect(AreaFlow.dispatch_import_lorry(sim), true, "a lorry is sent for the box due out")
+	var lorry := sim.area_vehicles[0]
+	var limit := roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2
+	for i in limit + 400:
+		sim.tick()
+	_expect(sim.area_vehicles.has(lorry), false, "stuck behind it for twice the give-up time, the lorry gives up and leaves")
+	_expect(sim.gave_up, 1, "and is counted")
+	var holders := sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)
+	_expect(not sim._claimed.has(box) or (holders.size() == 1 and holders[0] != lorry), true, "its box is freed for another lorry")
+	_expect(sim.handovers.waiting(2), {"buffer": [], "road": []}, "and it holds no place at the gate")
 
 
 ## A lane cell at the site entry a vehicle can drive in from.
