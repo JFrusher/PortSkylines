@@ -149,6 +149,9 @@ func _command(cell: Vector2i) -> Dictionary:
 		Hud.BUY_LAND:
 			return {"op": "buy_land", "tile": sim.land_tile(cell)}
 		Hud.IMPORT_YARD, Hud.EXPORT_YARD, Hud.RTG:
+			var area := sim.areas.area_at(_hovered_grid_cell())
+			if area:
+				return {"op": "set_area", "id": area, "settings": _yard_settings()}
 			return {"op": "set_yard", "cell": cell, "settings": _yard_settings()}
 	return {"op": "build", "kind": hud.tool, "cell": cell}
 
@@ -181,7 +184,8 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.BUY_LAND:
 			return sim.buy_land_error(sim.land_tile(cell))
 		Hud.IMPORT_YARD, Hud.EXPORT_YARD, Hud.RTG:
-			return sim.set_yard_error(cell, _yard_settings())
+			var area := sim.areas.area_at(_hovered_grid_cell())
+			return sim.set_area_error(area, _yard_settings()) if area else sim.set_yard_error(cell, _yard_settings())
 	return sim.build_error(hud.tool, cell)
 
 

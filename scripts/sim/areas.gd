@@ -7,7 +7,8 @@ extends RefCounted
 ## It keeps its own cells once built, so later road edits never move it.
 
 ## Area id -> {"type": a key of area_types, "start" and "end": the ends of
-## its front row, beside the road, "out": one cell away from the road}.
+## its front row, beside the road, "out": one cell away from the road,
+## "settings": the player's rules for it, checked by PortSim.set_area}.
 var list := {}
 var types: Dictionary
 ## Bumped on every change, so the view knows to redraw.
@@ -25,11 +26,12 @@ func _init(area_types: Dictionary, roads: RoadNet, site: Dictionary) -> void:
 	_sea = Grid.cells(site.sea_width)
 
 
-## Adds an area; returns "" or why it can't be built.
-func add(type: String, segment: int, side: int, from: int, to: int) -> String:
+## Adds an area with `settings`; returns "" or why it can't be built.
+func add(type: String, segment: int, side: int, from: int, to: int, settings := {}) -> String:
 	var err := add_error(type, segment, side, from, to)
 	if err == "":
 		list[_next_id] = _placed(type, segment, side, from, to)
+		list[_next_id].settings = settings.duplicate(true)
 		_next_id += 1
 		version += 1
 	return err

@@ -52,6 +52,12 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var traffic := Traffic.new()
 var yard: Yard
+## The rules each area type takes, and what a new area starts with.
+const AREA_SETTINGS := {
+	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
+	"quay_apron": {"lines": []},
+}
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer"]
 ## The roads drawn on the 4 m grid, beside the tile map until M5 step 19
 ## moves the box flow onto them, and the lanes routed over them.
 var roads: RoadNet
@@ -326,6 +332,8 @@ func apply(command: Dictionary) -> String:
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"remove_area":
 			return remove_area(command.id)
+		"set_area":
+			return set_area(command.id, command.settings)
 	return "Unknown command: %s" % command.get("op")
 
 
@@ -367,12 +375,44 @@ func build_area(type: String, segment: int, side: int, from: int, to: int) -> St
 	var err := build_area_error(type, segment, side, from, to)
 	if err == "":
 		ledger.post("construction", -area_price(type, segment, side, from, to))
-		areas.add(type, segment, side, from, to)
+		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(type, {}).duplicate(true))
 	return err
 
 
 func area_price(type: String, segment: int, side: int, from: int, to: int) -> int:
 	return areas.cells_of(type, segment, side, from, to).size() * rules.area_types[type].cost_per_cell
+
+
+## shortcut: changing gear is free; machines are bought per area in M5 step 17.
+func set_area_error(id: int, settings: Dictionary) -> String:
+	if id not in areas.list:
+		return "No area there"
+	var type: String = areas.list[id].type
+	for key: String in settings:
+		if key not in AREA_SETTINGS.get(type, {}):
+			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
+	if settings.has("role") and settings.role not in AREA_ROLES:
+		return "Unknown yard role: %s" % settings.role
+	if settings.has("gear"):
+		if not rules.yard_gear.has(settings.gear):
+			return "Unknown yard gear: %s" % settings.gear
+		var locked := lock_error(settings.gear)
+		if locked:
+			return locked
+	if settings.has("lines"):
+		if not settings.lines is Array or not settings.lines.all(func(line: Variant) -> bool: return line is String and rules.lines.has(line)):
+			return "Line priority lists known shipping lines"
+	return ""
+
+
+## Sets some of area `id`'s rules: a yard block's role, gear and the lines it
+## favours; a quay apron's lines.
+func set_area(id: int, settings: Dictionary) -> String:
+	var err := set_area_error(id, settings)
+	if err == "":
+		areas.list[id].settings.merge(settings.duplicate(true), true)
+		areas.version += 1
+	return err
 
 
 func remove_area(id: int) -> String:

@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 6
+const VERSION := 7
 const MAGIC := "PSKY"
 
 
@@ -71,6 +71,17 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _v4_to_v5(data)
 	if data.version == 5:
 		data = _v5_to_v6(data)
+	if data.version == 6:
+		data = _v6_to_v7(data)
+	return data
+
+
+## v7 (M5) gives each area the player's rules, starting as a new area does.
+static func _v6_to_v7(data: Dictionary) -> Dictionary:
+	var starting := {"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []}, "quay_apron": {"lines": []}}
+	for area: Dictionary in data.sim.areas.list.values():
+		area.settings = starting.get(area.type, {}).duplicate(true)
+	data.version = 7
 	return data
 
 

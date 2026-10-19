@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_area_tool()
 	_test_yard_layout()
 	_test_apron_and_gate_layouts()
+	_test_area_settings()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -268,6 +269,30 @@ func _test_apron_and_gate_layouts() -> void:
 	_expect(gate.slots.size(), gate.lanes.size(), "one booth slot per lane")
 	_expect(gate.slots.all(func(s: Array) -> bool: return s[0].y == 106), true, "booths sit at the gate's middle bay")
 	_expect(gate.lanes.all(func(l: Array) -> bool: return l.size() == 15), true, "gate lanes run the gate's length")
+
+
+func _test_area_settings() -> void:
+	var sim := PortSim.new(0, Content.base(), true)
+	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, 160), "type": "terminal_1_1"})
+	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
+	sim.apply({"op": "build_area", "type": "gate", "segment": 1, "side": -1, "from": 35, "to": 50})
+	_expect(sim.areas.list[2].settings, {"role": "import", "gear": "reach_stacker", "lines": []}, "a new yard block starts as an import block with reach stackers")
+	var line: String = sim.rules.lines.keys()[0]
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "export", "lines": [line]}}), "", "a yard block's role and lines are set")
+	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line]}, "unset rules stay as they were")
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "reefer"}}), "", "reefer is a yard role")
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "transit"}}), "Unknown yard role: transit", "unknown roles are refused")
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"gear": "crane_on_legs"}}), "Unknown yard gear: crane_on_legs", "unknown gear is refused")
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"lines": ["Nobody Lines"]}}), "Line priority lists known shipping lines", "unknown lines are refused")
+	_expect(sim.apply({"op": "set_area", "id": 1, "settings": {"role": "export"}}), "A quay apron has no role setting", "an apron takes no role")
+	_expect(sim.apply({"op": "set_area", "id": 1, "settings": {"lines": [line]}}), "", "an apron favours lines")
+	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"lines": [line]}}), "A gate has no lines setting", "a gate has no rules")
+	_expect(sim.apply({"op": "set_area", "id": 9, "settings": {}}), "No area there", "a missing area is refused")
+	var locked := PortSim.new()
+	locked.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 160), "type": "terminal_1_1"})
+	locked.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 15})
+	_expect(locked.apply({"op": "set_area", "id": 1, "settings": {"gear": "rtg"}}), locked.lock_error("rtg"), "RTGs wait for their milestone")
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`

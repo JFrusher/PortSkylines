@@ -206,3 +206,4 @@ func _test_v4_has_no_roads_and_v5_keeps_them() -> void:
 	var v6: PortSim = SaveFile.load_from("res://tests/fixtures/save_v6.bin").sim
 	_expect(v6.areas.list.size(), 1, "a v6 port keeps its yard block")
 	_expect(v6.areas.cells(1).size(), 16 * v6.rules.area_types.yard_block.depth, "with its cells")
+	_expect(v6.areas.list[1].settings, {"role": "import", "gear": "reach_stacker", "lines": []}, "a v6 yard block gets a new block's rules")
