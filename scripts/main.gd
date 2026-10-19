@@ -21,6 +21,8 @@ var _last_cell := PortMap.NONE
 var _road_from := PortMap.NONE
 ## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
 var _area_from := {}
+## The box the camera follows, or 0.
+var _following := 0
 var _reported := false
 
 
@@ -59,6 +61,7 @@ func _load() -> void:
 func _use(new_sim: PortSim) -> void:
 	sim = new_sim
 	_painting = false
+	_following = 0
 	rig.bounds = Rect2(Vector2.ZERO, Vector2(sim.map.size))
 	_accumulated = 0.0
 	view.queue_free()
@@ -81,6 +84,7 @@ func _process(dt: float) -> void:
 		print_debug("Dropped %.2f s of sim time after a slow frame" % left)
 	_accumulated = minf(left, SimClock.TICK_SECONDS)
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
+	_follow(dt)
 	var cell := _hovered_cell()
 	view.show_hover(cell, _order_error(cell) == "")
 	var dragged: Array[Vector2i] = []
@@ -97,6 +101,8 @@ func _process(dt: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if _following and event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE, KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
+		_following = 0
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != PortMap.NONE:
 		_report(sim.apply({"op": "build_road", "from": _road_from, "to": _road_to(), "type": hud.road_type}))
 		_road_from = PortMap.NONE
@@ -115,10 +121,28 @@ func _unhandled_input(event: InputEvent) -> void:
 			_road_from = _hovered_grid_cell()
 			return
 		if hud.tool == Hud.INSPECT:
+			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
+			if box:
+				_following = box
+				hud.flash("Following a box: Esc or moving the camera stops")
+				return
 			hud.inspect(_hovered_cell(), _hovered_grid_cell())
 			return
 		_painting = true
 		_order(_hovered_cell(), true)
+
+
+## Glides the camera to the followed box; stops once it has left the port.
+func _follow(dt: float) -> void:
+	if not _following:
+		return
+	var at := AreaFlow.box_cell(sim, _following)
+	if at == Vector2.INF:
+		_following = 0
+		hud.flash("The box has left the port")
+		return
+	var world := (at + Vector2(0.5, 0.5)) * Grid.CELL / WorldView.METRES_PER_UNIT
+	rig.position = rig.position.lerp(Vector3(world.x, 0, world.y), minf(1.0, dt * 4.0))
 
 
 ## Builds or bulldozes `cell`. Refusals are only reported for clicks, not for

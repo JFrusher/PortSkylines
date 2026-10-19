@@ -651,3 +651,42 @@ static func _vehicle(sim: PortSim, id: int) -> Vehicle:
 		if vehicle.id == id:
 			return vehicle
 	return null
+
+
+## The box at grid cell `cell`: one on a vehicle there, else the top box of
+## a stack covering it; 0 for none. For picking a box to follow.
+static func box_at(sim: PortSim, cell: Vector2i) -> int:
+	for vehicle in sim.area_vehicles:
+		if vehicle.box != 0 and vehicle.box in sim.boxes and Vector2i(vehicle.position(1.0).round()) == cell:
+			return vehicle.box
+	for area: int in sim.area_stacks:
+		if area not in sim.areas.list:
+			continue
+		var layout := sim.areas.layout(area)
+		var stacks: AreaStacks = sim.area_stacks[area]
+		for position in stacks.stacks.size():
+			if cell in layout.stacks[position].cells and not stacks.stacks[position].is_empty():
+				return stacks.stacks[position][-1][-1]
+	return 0
+
+
+## Where box `box` is on the grid, in cells: on the vehicle or machine
+## carrying it, or on its stack; Vector2.INF once it has left the port or
+## gone aboard a ship.
+static func box_cell(sim: PortSim, box: int) -> Vector2:
+	if box not in sim.boxes:
+		return Vector2.INF
+	for vehicle in sim.area_vehicles:
+		if vehicle.box != box:
+			continue
+		for machine: int in sim.machine_jobs:
+			if sim.machine_jobs[machine].vehicle == vehicle.id:
+				var area: Dictionary = sim.areas.list[sim.machines.list[machine].area]
+				var k := sim.machines.position(machine) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
+				return Vector2(area.start) + Vector2((area.end - area.start).sign()) * k + Vector2(area.out) * 2.0
+		return vehicle.position(1.0)
+	for area: int in sim.area_stacks:
+		var stacks: AreaStacks = sim.area_stacks[area]
+		if stacks.boxes().has(box) and area in sim.areas.list:
+			return Vector2(sim.areas.layout(area).stacks[stacks.position_of(box)].cells[1])
+	return Vector2.INF

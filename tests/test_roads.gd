@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_test_delivery()
 	_test_exports()
 	_test_lorry_gives_up()
+	_test_following_a_box()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -592,6 +593,36 @@ func _test_lorry_gives_up() -> void:
 	var holders := sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)
 	_expect(not sim._claimed.has(box) or (holders.size() == 1 and holders[0] != lorry), true, "its box is freed for another lorry")
 	_expect(sim.handovers.waiting(2), {"buffer": [], "road": []}, "and it holds no place at the gate")
+
+
+func _test_following_a_box() -> void:
+	var sim := AreaPort.working_terminal(1)
+	var box := 0
+	for i in 2000:
+		sim.tick()
+		var carried := sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.loaded)
+		if not carried.is_empty():
+			box = carried[0].box
+			break
+	_expect(AreaFlow.box_at(sim, Vector2i(sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)[0].position(1.0).round())), box, "clicking the tractor under the crane picks its box")
+	var at := AreaFlow.box_cell(sim, box)
+	_expect(Vector2i(at.round()) in sim.areas.cells(1), true, "the box starts on the apron, under the crane")
+	var seen := {}
+	var lost := false
+	var due_set := false
+	for i in 30000:
+		sim.tick()
+		at = AreaFlow.box_cell(sim, box)
+		if at == Vector2.INF:
+			break
+		var area := sim.areas.area_at(Vector2i(at.round()))
+		if area:
+			seen[sim.areas.list[area].type] = true
+		if not due_set and sim.area_stacks[3].boxes().has(box):
+			sim.boxes[box].due = 0.0
+			due_set = true
+	_expect(seen.has("yard_block") and seen.has("gate"), true, "it is followed through the yard block and the gate (%s)" % [seen.keys()])
+	_expect(at, Vector2.INF, "until it leaves the port")
 
 
 ## A lane cell at the site entry a vehicle can drive in from.
