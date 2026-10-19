@@ -6,6 +6,7 @@ var _failures := 0
 
 
 func _initialize() -> void:
+	_test_road_mesh_faces_up()
 	_expect(WorldView.grid_cell(Vector3(1, 0, 0.5)), Vector2i(6, 3), "a world point finds its 4 m cell (25 m a unit)")
 	var map := PortMap.new(Vector2i(16, 16), 2)
 	var road := PortMap.Tile.ROAD
@@ -64,6 +65,21 @@ func _initialize() -> void:
 	_expect(unique.size(), feeder.size(), "no two deck boxes share a slot")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
+
+
+## Godot draws a triangle's front when its corners run clockwise seen from
+## the camera; a road wound the other way vanishes from above.
+func _test_road_mesh_faces_up() -> void:
+	var types: Dictionary = Content.base().road_types
+	var surface := WorldView._road_tool()
+	WorldView._add_road(surface, null, Vector2i(10, 10), Vector2i(30, 10), types.terminal_1_1)
+	WorldView._add_road(surface, null, Vector2i(30, 10), Vector2i(40, 20), types.tractor_lane)
+	var vertices: PackedVector3Array = surface.commit().surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
+	var clockwise := true
+	for i in range(0, vertices.size(), 3):
+		var normal := (vertices[i + 1] - vertices[i]).cross(vertices[i + 2] - vertices[i])
+		clockwise = clockwise and normal.y < 0.0
+	_expect(vertices.size() > 0 and clockwise, true, "every road triangle runs clockwise from above, so it faces the camera")
 
 
 func _expect(actual: Variant, expected: Variant, what: String) -> void:

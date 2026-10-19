@@ -81,6 +81,7 @@ func _process(dt: float) -> void:
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
 	var cell := _hovered_cell()
 	view.show_hover(cell, _order_error(cell) == "")
+	view.show_road_preview(_road_from, _road_to() if _road_from != PortMap.NONE else _road_from, hud.road_type, _order_error(cell) == "")
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_painting = false

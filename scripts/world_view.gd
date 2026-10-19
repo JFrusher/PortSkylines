@@ -30,6 +30,19 @@ const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const LANE_OFFSET := 0.22
 ## Metres in one world unit. shortcut: the tile view is drawn at 25 m a unit, so roads on the 4 m grid are scaled down to it; becomes 1 when M5 step 22 removes the tile model.
 const METRES_PER_UNIT := 25.0
+## Roads on the 4 m grid, in metres: how high the surface and markings sit
+## (lorry roads above tractor lanes, so junctions read as asphalt), the
+## markings' width, and dashes as long as their gaps are short.
+const ROAD_TOP := 0.3
+const ASPHALT_RISE := 0.05
+const MARK_RISE := 0.12
+const MARK_WIDTH := 0.15
+const DASH := 3.0
+const DASH_GAP := 6.0
+const ASPHALT := Color(0.2, 0.2, 0.22)
+## The surface of a road lorries may not use, so tractor lanes read at a glance.
+const TRACTOR_ONLY := Color(0.36, 0.24, 0.2)
+const MARKING := Color(0.92, 0.92, 0.85)
 ## Camera distances to a chunk's centre past which it is drawn with less
 ## detail, as Cities: Skylines does: each tile's stack as one slab instead of
 ## every box, then no yard machines. Instances drawn cost the most render time.
@@ -89,6 +102,12 @@ var _machines := ChunkedMeshes.new()
 var _machine_meshes := {}  # gear -> Mesh
 ## Machine parts ([chunk, gear]) drawn last frame, so emptied ones get cleared.
 var _machine_parts_drawn := {}
+## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
+var _roads := MeshInstance3D.new()
+var _road_marks := MeshInstance3D.new()
+var _roads_drawn := -1
+## The road being dragged out, tinted by whether it can be built.
+var _road_preview := MeshInstance3D.new()
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
 ## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _unowned := {}  # land tile -> Node3D
@@ -108,6 +127,11 @@ func _ready() -> void:
 	land.position = Vector3(map.sea_width + land_width / 2.0, -0.5, map.size.y / 2.0)
 	add_child(land)
 	add_child(_hover)
+	for node: MeshInstance3D in [_roads, _road_marks, _road_preview]:
+		add_child(node)
+	_road_preview.material_override = StandardMaterial3D.new()
+	_road_preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_road_preview.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	add_child(_tiles)
 	_stacks.range_end = STACK_DETAIL
 	_slabs.range_begin = STACK_DETAIL
@@ -143,7 +167,21 @@ func show_hover(cell: Vector2i, ok: bool) -> void:
 	(_hover.mesh.material as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
+## Shows the road a drag would build from `from` to `to`, green if it can be
+## built, else red; hidden when `from` is NONE.
+func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> void:
+	_road_preview.visible = from != PortMap.NONE and from != to
+	if not _road_preview.visible:
+		return
+	var surface := _road_tool()
+	_add_road(surface, null, from, to, sim.rules.road_types[type])
+	_road_preview.mesh = surface.commit()
+	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
+
+
 func _process(_dt: float) -> void:
+	if sim.roads.version != _roads_drawn:
+		_draw_roads()
 	var channel: Dictionary = sim.rules.channel
 	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
 	if sim.map.version != _drawn_version:
@@ -155,6 +193,101 @@ func _process(_dt: float) -> void:
 	_draw_cranes()
 	_draw_vehicles()
 	_draw_machines()
+
+
+func _draw_roads() -> void:
+	_roads_drawn = sim.roads.version
+	var surface := _road_tool()
+	var marks := _road_tool()
+	# Markings stop where a junction's widest road begins.
+	var trims := {}
+	for id: int in sim.roads.segments:
+		var road: Dictionary = sim.roads.segments[id]
+		var lanes: int = sim.rules.road_types[road.type].forward + sim.rules.road_types[road.type].backward
+		for node: int in [road.a, road.b]:
+			if sim.roads.degree(node) >= 3:
+				trims[node] = maxf(trims.get(node, 0.0), lanes * Grid.CELL / 2.0)
+	for id: int in sim.roads.segments:
+		var road: Dictionary = sim.roads.segments[id]
+		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
+	_roads.mesh = surface.commit()
+	_road_marks.mesh = marks.commit()
+
+
+static func _road_tool() -> SurfaceTool:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	tool.set_normal(Vector3.UP)
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.roughness = 0.9
+	tool.set_material(material)
+	return tool
+
+
+## Adds a road from cell `a` to cell `b` of type `road` to `surface`: a strip
+## over its lane cells with round ends, which overlap into arcs where roads
+## meet. Markings go to `marks` unless it is null: a solid line between the
+## two directions, dashes between lanes going the same way, stopping `trim_a`
+## and `trim_b` metres short of the ends.
+static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
+	var lanes: int = road.forward + road.backward
+	var across := Vector2(RoadNet.right_of(b - a))
+	var along := Vector2(b - a).normalized()
+	var side := Vector2(-along.y, along.x)
+	# A lane's width across the road: a cell, or less on 45° roads, where lanes step straight across.
+	var lane_width := Grid.CELL * absf(across.dot(side))
+	var middle: Vector2 = across * ((lanes - 1) / 2.0 - road.backward)
+	var start: Vector2 = (Vector2(a) + Vector2(0.5, 0.5) + middle) * Grid.CELL
+	var end: Vector2 = (Vector2(b) + Vector2(0.5, 0.5) + middle) * Grid.CELL
+	var half := lanes * lane_width / 2.0
+	surface.set_color(ASPHALT if road.lorries else TRACTOR_ONLY)
+	var top := ROAD_TOP + (ASPHALT_RISE if road.lorries else 0.0)
+	_strip(surface, start, end, half, top)
+	for centre: Vector2 in [start, end]:
+		_disc(surface, centre, half, top)
+	if marks == null:
+		return
+	marks.set_color(MARKING)
+	var length: float = start.distance_to(end) - trim_a - trim_b
+	if length <= 0.0:
+		return
+	start += along * trim_a
+	end = start + along * length
+	for k in range(1, lanes):
+		var offset := side * (k * lane_width - half)
+		if k == road.backward:
+			_strip(marks, start + offset, end + offset, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
+			continue
+		var at := 0.0
+		while at < length:
+			var dash_end := minf(at + DASH, length)
+			_strip(marks, start + offset + along * at, start + offset + along * dash_end, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
+			at += DASH + DASH_GAP
+
+
+## A flat strip `half` either side of the line from `from` to `to`, in metres.
+static func _strip(tool: SurfaceTool, from: Vector2, to: Vector2, half: float, height: float) -> void:
+	var side := (to - from).normalized().orthogonal() * half
+	var corners: Array[Vector2] = [from - side, to - side, to + side, from + side]
+	# Clockwise from above, Godot's front face.
+	for i: int in [0, 2, 1, 0, 3, 2]:
+		tool.add_vertex(_world(corners[i], height))
+
+
+## A flat disc of `radius` metres round `centre`, for a road's round end.
+static func _disc(tool: SurfaceTool, centre: Vector2, radius: float, height: float) -> void:
+	const STEPS := 16
+	for i in STEPS:
+		var from := centre + Vector2.from_angle(TAU * i / STEPS) * radius
+		var to := centre + Vector2.from_angle(TAU * (i + 1) / STEPS) * radius
+		for point: Vector2 in [centre, from, to]:
+			tool.add_vertex(_world(point, height))
+
+
+## A point in metres on the ground as a world position.
+static func _world(metres: Vector2, height: float) -> Vector3:
+	return Vector3(metres.x, height, metres.y) / METRES_PER_UNIT
 
 
 func _draw_land() -> void:
