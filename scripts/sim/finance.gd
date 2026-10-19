@@ -57,6 +57,7 @@ func end_of_day(now: float, ledger: Ledger, contracts: Contracts, bailouts: bool
 	days_negative = days_negative + 1 if ledger.cash < 0 else 0
 	if bailouts and days_negative >= rules.bailout.days:
 		days_negative = 0
+		loans.clear()
 		ledger.post("bailout", -ledger.cash)
 		blocked_until = now + rules.bailout.no_loans_days * SimClock.MINUTES_PER_DAY
 		for line: String in contracts.reputation:

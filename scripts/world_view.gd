@@ -82,8 +82,13 @@ func _draw_land() -> void:
 				_unowned[tile].queue_free()
 				_unowned.erase(tile)
 			elif not sim.land.has(tile) and not _unowned.has(tile):
-				var shade := _box(Vector3(cells, 0.02, cells), Color(0, 0, 0, 0.3))
-				shade.position = Vector3((x + 0.5) * cells, 0.02, (y + 0.5) * cells)
+				# Only the land part of the tile: the sea is nobody's to buy.
+				var from := maxi(x * cells, sim.map.sea_width)
+				var width := mini((x + 1) * cells, sim.map.size.x) - from
+				if width <= 0:
+					continue
+				var shade := _box(Vector3(width, 0.02, cells), Color(0, 0, 0, 0.3))
+				shade.position = Vector3(from + width / 2.0, 0.02, (y + 0.5) * cells)
 				add_child(shade)
 				_unowned[tile] = shade
 

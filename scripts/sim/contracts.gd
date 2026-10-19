@@ -130,7 +130,10 @@ func to_dict() -> Dictionary:
 
 static func from_dict(d: Dictionary, game_rules: Dictionary) -> Contracts:
 	var contracts := Contracts.new(game_rules)
-	contracts.reputation = d.reputation.duplicate()
+	# Lines added to the data since the save keep their starting reputation.
+	for line: String in d.reputation:
+		if contracts.reputation.has(line):
+			contracts.reputation[line] = d.reputation[line]
 	contracts.services.assign(d.services)
 	contracts.offers.assign(d.offers)
 	contracts._next_id = d.next_id

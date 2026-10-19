@@ -377,7 +377,8 @@ func _deliver_cranes() -> void:
 
 ## The land tile holding map cell `cell`.
 func land_tile(cell: Vector2i) -> Vector2i:
-	return Vector2i(cell.x / rules.land.cells, cell.y / rules.land.cells)
+	# Floored, so a cell off the map's top or left edge is off the map's tiles too.
+	return Vector2i(floori(cell.x / float(rules.land.cells)), floori(cell.y / float(rules.land.cells)))
 
 
 func owns(cell: Vector2i) -> bool:

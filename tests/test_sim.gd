@@ -47,6 +47,7 @@ func _initialize() -> void:
 	_test_a_call_earns_its_moves()
 	_test_loans_are_paid_back_with_interest()
 	_test_bailout_fires_once()
+	_test_saved_reputation_meets_a_new_line()
 	_test_creative_mode_builds_without_cash()
 	_test_land_must_be_bought()
 	_test_cranes_arrive_after_their_lead_time()
@@ -625,16 +626,29 @@ func _test_loans_are_paid_back_with_interest() -> void:
 func _test_bailout_fires_once() -> void:
 	var sim := PortSim.new()
 	sim.ledger.cash = -5000
+	sim.finance.loans.append({"kind": "small", "owed": 3000, "payment": 100, "days_left": 30})
 	var said: Array[String] = []
 	for day: int in sim.rules.bailout.days:
 		said.append_array(sim.finance.end_of_day(day * 1440.0, sim.ledger, sim.contracts, true))
 	_expect(said.size(), 1, "one bailout at the third midnight (%s)" % [said])
-	_expect([sim.money, sim.ledger.today.get("bailout", 0)], [0, 5000], "it clears the debt through the ledger")
+	_expect([sim.money, sim.ledger.today.get("bailout", 0) + sim.ledger.today.get("loan_payments", 0)], [0, 5000], "it clears the debt through the ledger")
+	_expect(sim.finance.loans.is_empty(), true, "loans included")
 	_expect(sim.contracts.reputation.aurora, sim.rules.reputation.start + sim.rules.bailout.reputation, "and costs reputation")
 	_expect(sim.finance.loan_error("small", 1440.0 * 5).begins_with("No lender"), true, "lenders stay away")
 	sim.ledger.cash = -5000
 	_expect(sim.finance.end_of_day(1440.0 * 3, sim.ledger, sim.contracts, true), [] as Array[String], "the count starts again after a bailout")
 	_expect(sim.finance.end_of_day(1440.0 * 3, sim.ledger, sim.contracts, false).is_empty() and sim.finance.end_of_day(1440.0 * 3, sim.ledger, sim.contracts, false).is_empty(), true, "creative mode has no bailouts")
+
+
+## A save from before a line was added to the data keeps its reputations, and
+## the new line starts where every line does.
+func _test_saved_reputation_meets_a_new_line() -> void:
+	var rules := Content.base()
+	var saved := Contracts.new(rules).to_dict()
+	saved.reputation.aurora = 90.0
+	saved.reputation.erase("kestrel")
+	var loaded := Contracts.from_dict(saved, rules)
+	_expect([loaded.reputation.aurora, loaded.reputation.kestrel], [90.0, float(rules.reputation.start)], "saved reputation kept, the new line at the start")
 
 
 func _test_creative_mode_builds_without_cash() -> void:
@@ -658,6 +672,7 @@ func _test_land_must_be_bought() -> void:
 	_expect(sim.build(ROAD, north), "", "and can be built on")
 	_expect(sim.buy_land(sim.land_tile(north)), "The port owns this land already", "land is bought once")
 	_expect(sim.buy_land(Vector2i(3, 0)), "Off the map", "only map tiles are for sale")
+	_expect(sim.buy_land(sim.land_tile(PortMap.NONE)), "Off the map", "a click off the map buys nothing")
 
 
 ## An STS crane ordered now stands on its quay exactly when its lead time ends.
