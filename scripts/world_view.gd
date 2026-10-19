@@ -3,6 +3,15 @@ extends Node3D
 ## Draws the sim as a small 3D model port. Reads PortSim every frame and
 ## never changes it.
 
+## Road pieces, chosen per tile from its road neighbours: shape -> the
+## neighbour sides it joins before turning. Corners are circular arcs.
+const ROAD_SHAPES := {
+	"straight": [Vector2i.UP, Vector2i.DOWN],
+	"end": [Vector2i.DOWN],
+	"corner": [Vector2i.DOWN, Vector2i.RIGHT],
+	"junction": [],
+}
+const ARC_STEPS := 8
 const TILE_HEIGHT := {PortMap.Tile.ROAD: 0.04, PortMap.Tile.QUAY: 0.25, PortMap.Tile.YARD: 0.08, PortMap.Tile.GATE: 0.5}
 const TILE_COLOR := {
 	PortMap.Tile.ROAD: Color(0.2, 0.2, 0.22),
@@ -25,6 +34,7 @@ var _drawn_version := -1
 var _drawn_tiles := PackedByteArray()
 var _tiles := ChunkedMeshes.new()
 var _tile_meshes := {}  # tile kind -> Mesh
+var _road_meshes := {}  # road shape -> Mesh
 var _stacks := ChunkedMeshes.new()
 var _stack_mesh := _box_mesh(Vector3(0.8, BOX_HEIGHT, 0.4), BOX_COLOR)
 ## Chunks that held stacks last frame, so emptied ones get cleared.
@@ -53,6 +63,8 @@ func _ready() -> void:
 	add_child(_stacks)
 	for kind: int in TILE_HEIGHT:
 		_tile_meshes[kind] = _box_mesh(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
+	for shape: String in ROAD_SHAPES:
+		_road_meshes[shape] = _road_mesh(shape)
 
 
 func show_hover(cell: Vector2i, ok: bool) -> void:
@@ -104,18 +116,76 @@ func _draw_tiles() -> void:
 			var kind := map.tile(Vector2i(x, y))
 			if _drawn_tiles[x + y * map.size.x] != kind:
 				_drawn_tiles[x + y * map.size.x] = kind
-				dirty[ChunkedMeshes.chunk_of(Vector2i(x, y))] = true
+				# A road's shape depends on its neighbours, which may lie in the next chunk.
+				for side: Vector2i in [Vector2i.ZERO] + PortMap.SIDES:
+					if map.in_bounds(Vector2i(x, y) + side):
+						dirty[ChunkedMeshes.chunk_of(Vector2i(x, y) + side)] = true
 	for chunk: Vector2i in dirty:
 		var by_kind := {}
 		for kind: int in TILE_HEIGHT:
 			by_kind[kind] = [] as Array[Transform3D]
+		var by_shape := {}
+		for shape: String in ROAD_SHAPES:
+			by_shape[shape] = [] as Array[Transform3D]
 		for y in range(chunk.y * ChunkedMeshes.CHUNK, mini((chunk.y + 1) * ChunkedMeshes.CHUNK, map.size.y)):
 			for x in range(chunk.x * ChunkedMeshes.CHUNK, mini((chunk.x + 1) * ChunkedMeshes.CHUNK, map.size.x)):
-				var kind := map.tile(Vector2i(x, y))
-				if kind in TILE_HEIGHT:
+				var cell := Vector2i(x, y)
+				var kind := map.tile(cell)
+				if kind == PortMap.Tile.ROAD:
+					var piece := road_piece(map, cell)
+					by_shape[piece[0]].append(Transform3D(Basis(Vector3.UP, piece[1] * PI / 2), Vector3(x + 0.5, TILE_HEIGHT[kind] / 2.0, y + 0.5)))
+				elif kind in TILE_HEIGHT:
 					by_kind[kind].append(Transform3D(Basis(), Vector3(x + 0.5, TILE_HEIGHT[kind] / 2.0, y + 0.5)))
 		for kind: int in by_kind:
 			_tiles.show_part(Vector3i(chunk.x, chunk.y, kind), _tile_meshes[kind], by_kind[kind])
+		for shape: String in by_shape:
+			_tiles.show_part([chunk, shape], _road_meshes[shape], by_shape[shape])
+
+
+## The road piece for `cell`: [shape, quarter turns about +Y] whose turned
+## sides match the road and gate tiles around it. The highway entry also
+## joins the off-map road east of it.
+static func road_piece(map: PortMap, cell: Vector2i) -> Array:
+	var joined: Array[Vector2i] = []
+	for side: Vector2i in PortMap.SIDES:
+		if PortMap.is_road(map.tile(cell + side)) or (cell == map.entry and side == Vector2i.RIGHT):
+			joined.append(side)
+	if joined.size() != 1 and joined.size() != 2:
+		return ["junction", 0]
+	for shape: String in ["straight", "end", "corner"]:
+		for turns in 4:
+			var turned: Array = ROAD_SHAPES[shape].map(func(side: Vector2i) -> Vector2i: return _turn(side, turns))
+			if turned.size() == joined.size() and turned.all(func(side: Vector2i) -> bool: return side in joined):
+				return [shape, turns]
+	return ["junction", 0]
+
+
+## `side` turned the way Basis(Vector3.UP, turns * PI / 2) turns a tile, in map
+## coordinates (map y is world z).
+static func _turn(side: Vector2i, turns: int) -> Vector2i:
+	var turned := Basis(Vector3.UP, turns * PI / 2) * Vector3(side.x, 0, side.y)
+	return Vector2i(roundi(turned.x), roundi(turned.z))
+
+
+## Where along `path` a vehicle `at` tiles in is drawn, as [position in tile
+## coordinates, heading]. Through a tile where the path turns it follows a
+## quarter circle between the middles of the tile's edges, so it never snaps.
+static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
+	var i := clampi(int(at), 0, path.size() - 1)
+	var f := at - i
+	if path.size() < 2:
+		return [Vector2(path[0]), Vector2.ZERO]
+	if i >= path.size() - 1:
+		return [Vector2(path[-1]), Vector2(path[-1] - path[-2])]
+	var corner := i + 1 if f >= 0.5 else i
+	if corner > 0 and corner < path.size() - 1:
+		var d_in := Vector2(path[corner] - path[corner - 1])
+		var d_out := Vector2(path[corner + 1] - path[corner])
+		if d_in != d_out and d_in != -d_out:
+			var u := (f - 0.5 if corner == i + 1 else f + 0.5) * PI / 2
+			var centre := Vector2(path[corner]) + (d_out - d_in) * 0.5
+			return [centre + 0.5 * (d_in * sin(u) - d_out * cos(u)), d_in * cos(u) + d_out * sin(u)]
+	return [Vector2(path[i]).lerp(Vector2(path[i + 1]), f), Vector2(path[i + 1] - path[i])]
 
 
 func _draw_stacks() -> void:
@@ -192,9 +262,9 @@ func _draw_vehicles() -> void:
 			add_child(cab)
 			_vehicles[lorry] = cab
 		var cab: Node3D = _vehicles[lorry]
-		var at := lorry.position(alpha)
-		var i := mini(int(lorry.t), lorry.path.size() - 1)
-		var heading := Vector2(lorry.path[mini(i + 1, lorry.path.size() - 1)] - lorry.path[i])
+		var pose := path_pose(lorry.path, lerpf(lorry.prev_t, lorry.t, alpha))
+		var at := pose[0]
+		var heading := pose[1].normalized()
 		# Keep right: each direction drives in its own half of the road.
 		var right := Vector2(-heading.y, heading.x) * LANE_OFFSET
 		cab.position = Vector3(at.x + 0.5 + right.x, 0.17, at.y + 0.5 + right.y)
@@ -209,6 +279,51 @@ func _forget_gone(drawn: Dictionary, live: Array) -> void:
 		if thing not in live:
 			drawn[thing].queue_free()
 			drawn.erase(thing)
+
+
+## A road piece one tile across and TILE_HEIGHT[ROAD] thick, centred on the
+## origin, joining the sides ROAD_SHAPES gives for `shape`.
+func _road_mesh(shape: String) -> Mesh:
+	var outline := PackedVector2Array()
+	match shape:
+		"straight", "junction":
+			outline = [Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(0.5, 0.5), Vector2(-0.5, 0.5)]
+		"end":
+			# Half a tile from the joined side, rounded off at the middle.
+			outline = [Vector2(0.5, 0.5), Vector2(-0.5, 0.5)]
+			for step in ARC_STEPS + 1:
+				var angle := PI - PI * step / ARC_STEPS
+				outline.append(Vector2(cos(angle), -sin(angle)) * 0.5)
+		"corner":
+			# A quarter disc of radius 1 about the corner between the joined sides.
+			outline = [Vector2(0.5, 0.5)]
+			for step in ARC_STEPS + 1:
+				var angle := PI + PI / 2 * step / ARC_STEPS
+				outline.append(Vector2(0.5, 0.5) + Vector2(cos(angle), sin(angle)))
+	return _prism(outline, TILE_HEIGHT[PortMap.Tile.ROAD], TILE_COLOR[PortMap.Tile.ROAD])
+
+
+## `outline` (x, z) raised into a solid `height` thick, centred on y = 0.
+func _prism(outline: PackedVector2Array, height: float, color: Color) -> Mesh:
+	var top := height / 2.0
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	tool.set_smooth_group(-1)  # Flat: each face lit on its own, not blended with the walls.
+	var triangles := Geometry2D.triangulate_polygon(outline)
+	for i in range(0, triangles.size(), 3):
+		for j: int in [0, 1, 2]:
+			var p := outline[triangles[i + j]]
+			tool.add_vertex(Vector3(p.x, top, p.y))
+	for i in outline.size():
+		var a := outline[i]
+		var b := outline[(i + 1) % outline.size()]
+		for p: Vector3 in [Vector3(a.x, top, a.y), Vector3(b.x, -top, b.y), Vector3(b.x, top, b.y), Vector3(a.x, top, a.y), Vector3(a.x, -top, a.y), Vector3(b.x, -top, b.y)]:
+			tool.add_vertex(p)
+	tool.generate_normals()
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	tool.set_material(material)
+	return tool.commit()
 
 
 func _box(size: Vector3, color: Color) -> MeshInstance3D:
