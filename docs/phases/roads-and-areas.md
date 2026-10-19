@@ -59,6 +59,10 @@ Rules this sketch assumes:
 | D6 | All handover slots full | The vehicle waits in a buffer strip that the auto layout includes. Overflow beyond the buffer waits on the road and forms a visible queue |
 | G1 | Placement | Its own phase after M4. M5–M11 renumber when this proposal gets its steps |
 | F1 | Old saves | Tile saves are dropped. Decision 30 ("migrate forever") applies from the first public build in the new format |
+| C1+ | Player rules on a yard area | Role (import, export, empty or reefer), equipment type, and lines or berth priority. No stack-height cap |
+| D5 | Equipment sharing | A machine belongs to one area only |
+| B5 | Area levels | None. Unlocks stay on the port-wide milestone ladder from M3 |
+| H1–H2 | Rail, barge and automation | Each is another area type in the same model: rail sidings (M5), the barge terminal (M8) and ASC blocks (M10) |
 
 What these change **[Inference]**:
 - With a grid under the roads and areas laid out automatically, D7 is answered (the sim stays on a grid), and B2 mostly is (yard areas are strips beside a road, so rows run parallel to it).
