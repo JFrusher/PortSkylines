@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_build_rules()
 	_test_bulldoze_rules()
 	_test_bulldoze_in_use()
+	_test_yard_blocks_follow_the_map()
 	_test_no_ship_without_a_road()
 	_test_ships_unload_and_lorries_pay()
 	_test_commands()
@@ -821,3 +822,36 @@ func _test_inspect_each_entity() -> void:
 	_expect(Inspect.describe(sim, yard).slice(0, 2), ["Yard", "Import block, reach stacker"] as Array[String], "a yard tile shows its block")
 	sim.vehicles.erase(vehicle)
 	_expect(Inspect.describe(sim, vehicle), [] as Array[String], "a vehicle that left shows nothing")
+
+
+## Blocks kept up to date tile by tile match a flood fill of the map after
+## random yard builds and bulldozes, anchors and tiles in map order.
+func _test_yard_blocks_follow_the_map() -> void:
+	var sim := PortSim.new(0, RandomPort.quick())
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var area := Rect2i(sim.map.sea_width + 2, 30, 14, 14)
+	for i in 600:
+		var cell := area.position + Vector2i(rng.randi_range(0, area.size.x - 1), rng.randi_range(0, area.size.y - 1))
+		sim.map.place(PortMap.Tile.LAND if sim.map.tile(cell) == YARD else YARD, cell)
+	var seen := {}
+	var expected := {}
+	for start in sim.map.cells_of(YARD):
+		if start in seen:
+			continue
+		var tiles: Array[Vector2i] = [start]
+		seen[start] = true
+		var i := 0
+		while i < tiles.size():
+			for side: Vector2i in PortMap.SIDES:
+				var next: Vector2i = tiles[i] + side
+				if sim.map.tile(next) == YARD and next not in seen:
+					seen[next] = true
+					tiles.append(next)
+			i += 1
+		tiles.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.y < b.y or (a.y == b.y and a.x < b.x))
+		expected[start] = tiles
+	_expect(expected.size() > 3, true, "the random yard has several blocks (%d)" % expected.size())
+	_expect(sim.yard.anchors(), expected.keys() as Array[Vector2i], "block anchors match a flood fill, in map order")
+	for anchor: Vector2i in expected:
+		_expect(sim.yard.block(anchor), expected[anchor], "block %s matches a flood fill" % anchor)

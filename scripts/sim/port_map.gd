@@ -16,6 +16,9 @@ var entry: Vector2i
 ## Bumped on every change so views know to redraw.
 var version := 0
 
+## Every change of one tile, after it is made, so the yard can update its blocks.
+signal tile_changed(cell: Vector2i, was: int, now: int)
+
 var _tiles := PackedByteArray()
 var _roads := AStarGrid2D.new()
 ## Tile indices per kind, kept sorted so cells_of() returns map order, the
@@ -78,10 +81,12 @@ func place(kind: int, cell: Vector2i) -> void:
 	old.remove_at(old.bsearch(i))
 	var new: PackedInt32Array = _index[kind]
 	new.insert(new.bsearch(i), i)
+	var was := _tiles[i]
 	_tiles[i] = kind
 	_roads.set_point_solid(cell, not is_road(kind))
 	_route_cache.clear()
 	version += 1
+	tile_changed.emit(cell, was, kind)
 
 
 ## The first side of `cell` holding `kind`, or NONE.
