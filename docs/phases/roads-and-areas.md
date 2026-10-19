@@ -47,6 +47,20 @@ Rules this sketch assumes:
 2. An area with no road connection, or no required asset, does no work and shows why.
 3. A vehicle's journey ends at a slot in a handover asset, not at an area or a tile.
 
+## Answers so far (19 Oct 2026)
+
+| # | Question | Answer |
+|---|---|---|
+| A1 | Grid or free-form roads | Fine-grid snapped: straight runs with 45° and 90° joins and arc corners. The sim keeps a grid underneath, so M2's cell reservation stays |
+| B1 | How an area is made | Dragged along a road edge, CS2-zoning style. The area takes the road's direction |
+| C1 | Placed or generated assets | Fully automatic: area type and size decide the layout, and the player only sets rules |
+| E1 | Animation detail | Main motions only: travel, lift and set down |
+
+What these change **[Inference]**:
+- With a grid under the roads and areas laid out automatically, D7 is answered (the sim stays on a grid), and B2 mostly is (yard areas are strips beside a road, so rows run parallel to it).
+- Fully automatic layout means C2–C4 become rules for the layout generator, not things the player places.
+- Main motions only keeps E3 cheap: every machine can animate, with no distance-based detail levels.
+
 ## Questions to settle
 
 ### A. Roads
