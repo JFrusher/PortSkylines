@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_test_save_replaces_existing()
 	_test_failed_save_preserves_destination()
 	_test_malformed_payloads_are_refused()
+	_test_malformed_v1_is_refused()
 	_test_every_fixture_loads()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -146,6 +147,15 @@ func _test_malformed_payloads_are_refused() -> void:
 		var bad := valid.duplicate(true)
 		bad.vehicles[0].t = value
 		_expect_payload_refused(bad, "non-finite vehicle position")
+
+
+func _test_malformed_v1_is_refused() -> void:
+	var v1: Dictionary = {"version": 1, "sim": {"delivered": 0, "stacked": {Vector2i(14, 23): 3}}}
+	for stacked: Variant in [null, [], {"bad key": 1}, {Vector2i(14, 23): "bad count"}, {Vector2i(14, 23): -1}, {Vector2i(14, 23): 1000000}]:
+		var bad := v1.duplicate(true)
+		bad.sim.stacked = stacked
+		_write_payload("user://bad_v1.bin", bad)
+		_expect(SaveFile.load_from("user://bad_v1.bin").get("error", "").contains("not a Port Skylines save"), true, "v1 stacked %s is refused" % [stacked])
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:

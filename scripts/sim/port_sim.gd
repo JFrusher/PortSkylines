@@ -233,6 +233,12 @@ func build(kind: int, cell: Vector2i) -> String:
 	var err := build_error(kind, cell)
 	if err == "":
 		money -= cost(kind)
+		# A tile joining a block keeps that block's settings, whichever tile anchors it.
+		var joined := map.neighbor(cell, PortMap.Tile.YARD) if kind == PortMap.Tile.YARD else PortMap.NONE
+		if joined != PortMap.NONE:
+			var settings_from := yard.anchor(joined)
+			yard.role[cell] = yard.role_of(settings_from)
+			yard.gear[cell] = yard.gear_of(settings_from)
 		map.place(kind, cell)
 	return err
 
@@ -400,14 +406,14 @@ func _call_ship() -> void:
 		return
 	for berth: Dictionary in map.berths():
 		var cells: Array[Vector2i] = berth.cells
-		if cells.size() < spec.length or _ship_at(cells[0]):
-			continue
-		var span := cells.slice(0, spec.length)
-		if _apron(span) == PortMap.NONE:
-			continue
-		ships.append(Ship.new(kind, span, berth.side, spec.import_moves, spec.export_moves))
-		_event("A %s is coming in" % kind)
-		return
+		# Any free stretch of the run will do; a berth can grow at either end.
+		for start in range(cells.size() - spec.length + 1):
+			var span := cells.slice(start, start + spec.length)
+			if span.any(_ship_at) or _apron(span) == PortMap.NONE:
+				continue
+			ships.append(Ship.new(kind, span, berth.side, spec.import_moves, spec.export_moves))
+			_event("A %s is coming in" % kind)
+			return
 	_event("A %s went elsewhere: no free berth of %d quay tiles with a road to the highway" % [kind, spec.length])
 
 
@@ -668,11 +674,16 @@ func _yard_tile_for(role: String, from: Vector2i) -> Vector2i:
 ## Sends a lorry from the highway for an import box whose dwell is over.
 func _dispatch_import_lorry() -> bool:
 	var now := clock.calendar_minutes()
+	var gated := not map.cells_of(PortMap.Tile.GATE).is_empty()
 	for tile: Vector2i in yard.stacks:
+		var way_in := yard.entrance(tile)
+		# A block lorries can't reach must not hold up the others.
+		if gated and (way_in == PortMap.NONE or _route_via_gate(map.entry, way_in).is_empty()):
+			continue
 		for id: int in yard.stacks[tile]:
 			if id in _claimed or boxes[id].kind != "import" or boxes[id].due > now:
 				continue
-			var lorry := _new_lorry(yard.entrance(tile))
+			var lorry := _new_lorry(way_in)
 			if lorry == null:
 				return false
 			lorry.box = id

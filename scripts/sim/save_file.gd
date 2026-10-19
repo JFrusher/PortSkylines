@@ -60,8 +60,21 @@ static func load_from(path: String) -> Dictionary:
 ## Brings an older save up to VERSION one step at a time.
 static func _migrate(data: Dictionary) -> Dictionary:
 	if data.version == 1:
+		if not _valid_v1(data.sim):
+			return {}
 		data = _v1_to_v2(data)
 	return data
+
+
+## The v1 fields _v1_to_v2 reads. v1 yard tiles held at most 6 boxes.
+static func _valid_v1(sim: Dictionary) -> bool:
+	if not _has_fields(sim, {"stacked": TYPE_DICTIONARY, "delivered": TYPE_INT}):
+		return false
+	for tile: Variant in sim.stacked:
+		var count: Variant = sim.stacked[tile]
+		if not (tile is Vector2i and count is int and count >= 0 and count <= 6):
+			return false
+	return true
 
 
 ## v2 (M2) gave ships classes and berths. Ships in a v1 save were mid-call in

@@ -1,6 +1,8 @@
 # Game data
 
-Every tunable number lives in `data/base/*.json`: `rules.json` (map, money, timing), `ships.json` (ship classes) and `equipment.json` (cranes, tractors, yard gear). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated kKeys marked *>0* must be greater than zero.
+Every tunable number lives in `data/base/*.json`: `rules.json` (map, money, timing), `ships.json` (ship classes) and `equipment.json` (cranes, tractors, yard gear). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated key stops the game with an error that names the file and key.
+
+Whole numbers are allowed where a key is a number; keys marked *int* must be whole. Keys marked *>0* must be greater than zero.
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -37,9 +39,5 @@ Every tunable number lives in `data/base/*.json`: `rules.json` (map, money, timi
 | `yard_gear.<name>.tiles_per_machine` | int >0 | One machine per this many tiles in a block |
 | `yard_gear.<name>.cost_per_tile` | int | Paid per tile when a block switches to this gear |
 | `yard_gear.<name>.upkeep_per_machine` | int | Paid per machine at midnight |
-
-rd tile |
-| `lorry_interval_minutes` | number | Calendar minutes between lorry dispatches |
-| `lorry_speed` | number | Tiles per vehicle second |
 
 **Time units.** At 1×, one vehicle second is one real second, and one calendar minute is one real second (one game hour per real minute). See `SimClock`.

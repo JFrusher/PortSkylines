@@ -32,6 +32,9 @@ func _initialize() -> void:
 	_test_parallel_gates()
 	_test_upkeep_at_midnight()
 	_test_events_do_not_repeat()
+	_test_ships_never_overlap()
+	_test_new_yard_tile_keeps_block_settings()
+	_test_unreachable_block_does_not_stall_imports()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -422,3 +425,44 @@ func _test_events_do_not_repeat() -> void:
 	sim._event("A crane is waiting for a free tractor")
 	sim._event("A crane is waiting for a free tractor")
 	_expect(sim.events.size(), before + 1, "a message repeated tick after tick is kept once")
+
+
+## Extending a berth at its start must not let a second ship overlap the first.
+func _test_ships_never_overlap() -> void:
+	var sim := _port()
+	var coast := sim.map.sea_width
+	var top := sim.map.entry.y - 7
+	sim.ships.clear()
+	sim.call("_call_ship")
+	sim.money = 100000
+	_expect(sim.build(QUAY, Vector2i(coast, top)), "", "quay at the berth start")
+	_expect(sim.build(ROAD, Vector2i(coast + 1, top)), "", "apron at the berth start")
+	sim.call("_call_ship")
+	for ship: PortSim.Ship in sim.ships.slice(1):
+		_expect(ship.cells.filter(func(c: Vector2i) -> bool: return c in sim.ships[0].cells), [], "ships share no quay tile")
+
+
+## A tile that becomes a block's anchor must not reset its role and gear.
+func _test_new_yard_tile_keeps_block_settings() -> void:
+	var sim := _port()
+	sim.money = 100000
+	var tile := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 2)
+	_expect(sim.apply({"op": "set_yard", "cell": tile, "settings": {"role": "export", "gear": "rtg"}}), "", "export RTG block")
+	_expect(sim.build(YARD, tile + Vector2i.UP), "", "yard tile above the anchor")
+	var anchor := sim.yard.anchor(tile)
+	_expect(anchor, tile + Vector2i.UP, "the new tile anchors the block")
+	_expect([sim.yard.role_of(anchor), sim.yard.gear_of(anchor)], ["export", "rtg"], "the block keeps its settings")
+
+
+## Imports in a block lorries can't reach must not hold up imports elsewhere.
+func _test_unreachable_block_does_not_stall_imports() -> void:
+	var sim := _port()
+	var lone := Vector2i(sim.map.sea_width + 20, sim.map.entry.y + 10)
+	_expect(sim.build(YARD, lone), "", "a yard tile with no road")
+	var reachable := Vector2i(sim.map.sea_width + 3, sim.map.entry.y - 2)
+	sim.yard.stacks.clear()
+	for box: Array in [[900, lone], [901, reachable]]:
+		sim.boxes[box[0]] = {"kind": "import", "due": 0.0}
+		sim.yard.add(box[1], box[0])
+	_expect(sim.call("_dispatch_import_lorry"), true, "a lorry is sent for the reachable box")
+	_expect(901 in sim.get("_claimed"), true, "it claims the reachable box")
