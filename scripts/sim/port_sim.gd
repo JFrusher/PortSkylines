@@ -784,7 +784,9 @@ func _could_berth(kind: String) -> bool:
 func _offer_service() -> void:
 	var now := clock.calendar_minutes()
 	contracts.expire(now)
-	var berths := map.berths().filter(func(b: Dictionary) -> bool: return _apron(b.cells) != PortMap.NONE).size()
+	# A berth counts once lorries can reach it and a crane stands on it, so a
+	# first call never arrives before the port can work it.
+	var berths := map.berths().filter(func(b: Dictionary) -> bool: return _apron(b.cells) != PortMap.NONE and cranes.any(func(c: Crane) -> bool: return c.cell in b.cells)).size()
 	var offered := contracts.offer(rng, now, berths, func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind))
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
