@@ -19,6 +19,8 @@ var _painting := false
 var _last_cell := PortMap.NONE
 ## Where a road drag started on the 4 m grid, or NONE.
 var _road_from := PortMap.NONE
+## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
+var _area_from := {}
 var _reported := false
 
 
@@ -81,6 +83,11 @@ func _process(dt: float) -> void:
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
 	var cell := _hovered_cell()
 	view.show_hover(cell, _order_error(cell) == "")
+	var dragged: Array[Vector2i] = []
+	if not _area_from.is_empty():
+		var area := _area_command()
+		dragged = sim.areas.cells_of(area.type, area.segment, area.side, area.from, area.to)
+	view.show_area_preview(dragged, _order_error(cell) == "")
 	view.show_road_preview(_road_from, _road_to() if _road_from != PortMap.NONE else _road_from, hud.road_type, _order_error(cell) == "")
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
@@ -94,7 +101,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		_report(sim.apply({"op": "build_road", "from": _road_from, "to": _road_to(), "type": hud.road_type}))
 		_road_from = PortMap.NONE
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
+		_report(sim.apply(_area_command()))
+		_area_from = {}
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if hud.tool == Hud.DRAW_AREA:
+			_area_from = sim.areas.attach(_hovered_grid_cell(), hud.area_type)
+			if _area_from.is_empty():
+				hud.flash("Drag areas out along a road's edge")
+			return
 		if hud.tool == Hud.DRAW_ROAD:
 			_road_from = _hovered_grid_cell()
 			return
@@ -123,6 +139,9 @@ func _report(err: String) -> void:
 func _command(cell: Vector2i) -> Dictionary:
 	match hud.tool:
 		Hud.BULLDOZE:
+			var area := sim.areas.area_at(_hovered_grid_cell())
+			if area:
+				return {"op": "remove_area", "id": area}
 			var road := sim.roads.segment_at(_hovered_grid_cell())
 			return {"op": "remove_road", "segment": road} if road else {"op": "bulldoze", "cell": cell}
 		Hud.CRANE:
@@ -149,8 +168,14 @@ func _order_error(cell: Vector2i) -> String:
 			return ""
 		Hud.DRAW_ROAD:
 			return "" if _road_from == PortMap.NONE else sim.build_road_error(_road_from, _road_to(), hud.road_type)
+		Hud.DRAW_AREA:
+			if _area_from.is_empty():
+				return ""
+			var area := _area_command()
+			return sim.build_area_error(area.type, area.segment, area.side, area.from, area.to)
 		Hud.BULLDOZE:
-			return "" if sim.roads.segment_at(_hovered_grid_cell()) else sim.bulldoze_error(cell)
+			var grid := _hovered_grid_cell()
+			return "" if sim.areas.area_at(grid) or sim.roads.segment_at(grid) else sim.bulldoze_error(cell)
 		Hud.CRANE:
 			return sim.crane_error(cell)
 		Hud.BUY_LAND:
@@ -174,6 +199,12 @@ func _hovered_grid_cell() -> Vector2i:
 ## Where a road drag from _road_from ends, snapped straight or to 45°.
 func _road_to() -> Vector2i:
 	return RoadNet.snap(_road_from, _hovered_grid_cell())
+
+
+## The build_area command for the area dragged from _area_from to the mouse.
+func _area_command() -> Dictionary:
+	var to := sim.areas.index_near(_area_from.segment, _hovered_grid_cell())
+	return {"op": "build_area", "type": hud.area_type, "segment": _area_from.segment, "side": _area_from.side, "from": mini(_area_from.index, to), "to": maxi(_area_from.index, to)}
 
 
 ## Where the mouse points on the ground, or null.

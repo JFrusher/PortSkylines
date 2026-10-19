@@ -19,6 +19,10 @@ const BUY_LAND := -6
 const INSPECT := -7
 ## Draws a road of road_type on the 4 m grid by dragging.
 const DRAW_ROAD := -8
+## Drags an area of area_type out along a road's edge.
+const DRAW_AREA := -9
+## The build menu row each area type sits in.
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-9.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
@@ -32,6 +36,8 @@ var sim: PortSim
 var tool: int = PortMap.Tile.ROAD
 ## The road type DRAW_ROAD draws, a key of rules.road_types.
 var road_type := ""
+## The area type DRAW_AREA drags out, a key of rules.area_types.
+var area_type := ""
 var speed := 1
 
 var _money := Label.new()
@@ -158,6 +164,11 @@ func _ready() -> void:
 		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
 			road_type = key))
+	for key: String in sim.rules.area_types:
+		var area: Dictionary = sim.rules.area_types[key]
+		_item(_button(rows[AREA_ROWS[key]], "%s\n$%d per 4 m cell" % [area.name, area.cost_per_cell], tools, false, func() -> void:
+			tool = DRAW_AREA
+			area_type = key))
 	_gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n$%d" % sim.rules.channel.cost_per_metre, {"op": "dredge", "metres": 1})))
 	_item(_button(rows.Cranes, "STS crane\n" + _dollars(sim.rules.sts_crane.cost), tools, false, func() -> void: tool = CRANE))
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2}))

@@ -43,6 +43,12 @@ const ASPHALT := Color(0.2, 0.2, 0.22)
 ## The surface of a road lorries may not use, so tractor lanes read at a glance.
 const TRACTOR_ONLY := Color(0.36, 0.24, 0.2)
 const MARKING := Color(0.92, 0.92, 0.85)
+## Area ground by type, a little below road level.
+const AREA_COLOR := {
+	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
+	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
+}
+const AREA_TOP := 0.2
 ## Camera distances to a chunk's centre past which it is drawn with less
 ## detail, as Cities: Skylines does: each tile's stack as one slab instead of
 ## every box, then no yard machines. Instances drawn cost the most render time.
@@ -106,6 +112,10 @@ var _machine_parts_drawn := {}
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
 var _roads_drawn := -1
+## Every area's ground as one mesh, redrawn when the areas change.
+var _areas := MeshInstance3D.new()
+var _areas_drawn := -1
+var _area_preview := MeshInstance3D.new()
 ## The road being dragged out, tinted by whether it can be built.
 var _road_preview := MeshInstance3D.new()
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
@@ -127,11 +137,12 @@ func _ready() -> void:
 	land.position = Vector3(map.sea_width + land_width / 2.0, -0.5, map.size.y / 2.0)
 	add_child(land)
 	add_child(_hover)
-	for node: MeshInstance3D in [_roads, _road_marks, _road_preview]:
+	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _areas, _area_preview]:
 		add_child(node)
-	_road_preview.material_override = StandardMaterial3D.new()
-	_road_preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_road_preview.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for preview: MeshInstance3D in [_road_preview, _area_preview]:
+		preview.material_override = StandardMaterial3D.new()
+		preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		preview.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	add_child(_tiles)
 	_stacks.range_end = STACK_DETAIL
 	_slabs.range_begin = STACK_DETAIL
@@ -179,9 +190,23 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
+## Shows `cells` as the area a drag would build, green or red; hidden when empty.
+func show_area_preview(cells: Array[Vector2i], ok: bool) -> void:
+	_area_preview.visible = not cells.is_empty()
+	if cells.is_empty():
+		return
+	var tool := _road_tool()
+	for cell in cells:
+		_cell_quad(tool, cell, AREA_TOP + 0.05)
+	_area_preview.mesh = tool.commit()
+	_area_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
+
+
 func _process(_dt: float) -> void:
 	if sim.roads.version != _roads_drawn:
 		_draw_roads()
+	if sim.areas.version != _areas_drawn:
+		_draw_areas()
 	var channel: Dictionary = sim.rules.channel
 	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
 	if sim.map.version != _drawn_version:
@@ -212,6 +237,24 @@ func _draw_roads() -> void:
 		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
+
+
+func _draw_areas() -> void:
+	_areas_drawn = sim.areas.version
+	var tool := _road_tool()
+	for id: int in sim.areas.list:
+		tool.set_color(AREA_COLOR[sim.areas.list[id].type])
+		for cell in sim.areas.cells(id):
+			_cell_quad(tool, cell, AREA_TOP)
+	_areas.mesh = tool.commit()
+
+
+## One 4 m cell as a flat square `height` metres up.
+static func _cell_quad(tool: SurfaceTool, cell: Vector2i, height: float) -> void:
+	var corner := Vector2(cell) * Grid.CELL
+	var corners: Array[Vector2] = [corner, corner + Vector2(Grid.CELL, 0), corner + Vector2(Grid.CELL, Grid.CELL), corner + Vector2(0, Grid.CELL)]
+	for i: int in [0, 1, 2, 0, 2, 3]:
+		tool.add_vertex(_world(corners[i], height))
 
 
 static func _road_tool() -> SurfaceTool:

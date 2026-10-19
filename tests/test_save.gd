@@ -202,3 +202,7 @@ func _test_v4_has_no_roads_and_v5_keeps_them() -> void:
 	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v5.bin").sim
 	_expect(sim.roads.segments.size(), 4, "a v5 port keeps its two crossing roads, split in two at the crossing")
 	_expect(sim.lanes.route(Vector2i(100, 120), Vector2i(140, 120), true).is_empty(), false, "and routes on them after loading")
+	_expect(sim.areas.list.is_empty(), true, "a v5 port has no areas")
+	var v6: PortSim = SaveFile.load_from("res://tests/fixtures/save_v6.bin").sim
+	_expect(v6.areas.list.size(), 1, "a v6 port keeps its yard block")
+	_expect(v6.areas.cells(1).size(), 16 * v6.rules.area_types.yard_block.depth, "with its cells")

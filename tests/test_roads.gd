@@ -13,6 +13,7 @@ func _initialize() -> void:
 	_test_editing()
 	_test_sim_commands()
 	_test_areas()
+	_test_area_tool()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -193,6 +194,34 @@ func _test_areas() -> void:
 	_expect(coast_areas.add("yard_block", 1, 1, 0, 40), "Areas can't be built on water", "areas stay out of the sea")
 	coast.add(Vector2i(595, 100), Vector2i(595, 200), "terminal_1_1")
 	_expect(coast_areas.add("yard_block", 2, -1, 0, 40), "Areas must stay on the site", "areas stay on the site")
+
+
+func _test_area_tool() -> void:
+	var sim := PortSim.new()
+	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 160), "type": "terminal_2_2"})
+	# Drawn south: right is west. Forward lanes are x = 100 and 99, backward 101 and 102 (left, east),
+	# so areas start at x = 98 to the west and x = 103 to the east.
+	_expect(sim.areas.attach(Vector2i(97, 110), "yard_block"), {"segment": 1, "side": 1, "index": 10}, "a drag beside a road attaches to its edge")
+	_expect(sim.areas.attach(Vector2i(92, 110), "yard_block"), {"segment": 1, "side": 1, "index": 10}, "anywhere within the area's depth attaches")
+	_expect(sim.areas.attach(Vector2i(103, 125), "depot"), {"segment": 1, "side": -1, "index": 25}, "the other side attaches the other way")
+	_expect(sim.areas.attach(Vector2i(102, 125), "depot"), {}, "a lane cell attaches nowhere")
+	_expect(sim.areas.attach(Vector2i(80, 110), "yard_block"), {}, "a drag far from any road attaches nowhere")
+	_expect(sim.areas.index_near(1, Vector2i(90, 140)), 40, "a drag's far end finds the nearest cell along the road")
+	var money := sim.money
+	var upkeep := sim.daily_upkeep()
+	var block: Dictionary = sim.rules.area_types.yard_block
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": 1, "from": 10, "to": 29}), "", "a yard block is built by command")
+	_expect(money - sim.money, 20 * block.depth * block.cost_per_cell, "an area costs its cells")
+	_expect(sim.daily_upkeep() - upkeep, 20 * block.depth * block.upkeep_per_cell, "areas add their upkeep")
+	sim.apply({"op": "build_road", "from": Vector2i(100, 120), "to": Vector2i(120, 120), "type": "terminal_1_1"})
+	_expect(sim.areas.cells(1).size(), 20 * block.depth, "a road joining later doesn't move the area")
+	_expect(sim.apply({"op": "remove_area", "id": 7}), "No area there", "removing a missing area is refused")
+	_expect(sim.apply({"op": "remove_area", "id": 1}), "", "an area is removed by command")
+	var diagonal := PortSim.new()
+	diagonal.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(130, 130), "type": "terminal_1_1"})
+	_expect(diagonal.apply({"op": "build_area", "type": "depot", "segment": 1, "side": -1, "from": 0, "to": 10}), "", "an area is built along a 45° road")
+	var rows := diagonal.areas.cells(1)
+	_expect(rows.all(func(c: Vector2i) -> bool: return diagonal.roads.segment_at(c) == 0), true, "and takes its direction without covering it")
 
 
 func _steps_are_single(cells: Array[Vector2i]) -> bool:

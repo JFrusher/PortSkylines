@@ -69,6 +69,11 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 			command = {"op": "build_road", "from": from, "to": to, "type": Content.base().road_types.keys()[rng.randi() % Content.base().road_types.size()]}
 		elif roll >= 0.3 and roll < 0.33:
 			command = {"op": "remove_road", "segment": rng.randi_range(1, 20)}
+		elif roll >= 0.33 and roll < 0.4:
+			var type: String = Content.base().area_types.keys()[rng.randi() % Content.base().area_types.size()]
+			command = {"op": "build_area", "type": type, "segment": rng.randi_range(1, 20), "side": [1, -1][rng.randi() % 2], "from": rng.randi_range(0, 4), "to": rng.randi_range(4, 30)}
+		elif roll >= 0.4 and roll < 0.42:
+			command = {"op": "remove_area", "id": rng.randi_range(1, 10)}
 		# The economy: offers are numbered from 1, so some answers find one and
 		# some are refused; loans, land and dredging are refused without the cash.
 		if roll > 0.88:

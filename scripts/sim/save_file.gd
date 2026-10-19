@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 5
+const VERSION := 6
 const MAGIC := "PSKY"
 
 
@@ -69,6 +69,15 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _v3_to_v4(data)
 	if data.version == 4:
 		data = _v4_to_v5(data)
+	if data.version == 5:
+		data = _v5_to_v6(data)
+	return data
+
+
+## v6 (M5) adds the areas dragged along roads; older ports have none.
+static func _v5_to_v6(data: Dictionary) -> Dictionary:
+	data.sim.areas = {"list": {}, "next_id": 1}
+	data.version = 6
 	return data
 
 
@@ -200,7 +209,7 @@ static func _v1_to_v2(data: Dictionary) -> Dictionary:
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
-		"map": TYPE_DICTIONARY, "roads": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"map": TYPE_DICTIONARY, "roads": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
 		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,

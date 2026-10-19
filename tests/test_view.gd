@@ -74,12 +74,13 @@ func _test_road_mesh_faces_up() -> void:
 	var surface := WorldView._road_tool()
 	WorldView._add_road(surface, null, Vector2i(10, 10), Vector2i(30, 10), types.terminal_1_1)
 	WorldView._add_road(surface, null, Vector2i(30, 10), Vector2i(40, 20), types.tractor_lane)
+	WorldView._cell_quad(surface, Vector2i(5, 7), 0.2)
 	var vertices: PackedVector3Array = surface.commit().surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var clockwise := true
 	for i in range(0, vertices.size(), 3):
 		var normal := (vertices[i + 1] - vertices[i]).cross(vertices[i + 2] - vertices[i])
 		clockwise = clockwise and normal.y < 0.0
-	_expect(vertices.size() > 0 and clockwise, true, "every road triangle runs clockwise from above, so it faces the camera")
+	_expect(vertices.size() > 0 and clockwise, true, "every road and area triangle runs clockwise from above, so it faces the camera")
 
 
 func _expect(actual: Variant, expected: Variant, what: String) -> void:

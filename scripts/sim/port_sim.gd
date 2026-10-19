@@ -56,6 +56,8 @@ var yard: Yard
 ## moves the box flow onto them, and the lanes routed over them.
 var roads: RoadNet
 var lanes: LaneGraph
+## The areas dragged along those roads.
+var areas: Areas
 ## Every box in the port by id: {"kind": "import" or "export", "due": the
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
@@ -102,6 +104,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	yard = Yard.new(map, rules)
 	roads = RoadNet.new(rules.road_types)
 	lanes = LaneGraph.new(roads)
+	areas = Areas.new(rules.area_types, roads, rules.site)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
@@ -196,6 +199,7 @@ func to_dict() -> Dictionary:
 	return {
 		"map": map.to_dict(),
 		"roads": roads.to_dict(),
+		"areas": areas.to_dict(),
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
@@ -238,6 +242,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.yard = Yard.from_dict(d.yard, sim.map, sim.rules)
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
 	sim.lanes = LaneGraph.new(sim.roads)
+	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
@@ -317,6 +322,10 @@ func apply(command: Dictionary) -> String:
 			return build_road(command.from, command.to, command.type)
 		"remove_road":
 			return remove_road(command.segment)
+		"build_area":
+			return build_area(command.type, command.segment, command.side, command.from, command.to)
+		"remove_area":
+			return remove_area(command.id)
 	return "Unknown command: %s" % command.get("op")
 
 
@@ -344,6 +353,32 @@ func remove_road(segment: int) -> String:
 	if segment not in roads.segments:
 		return "No road there"
 	roads.remove(segment)
+	return ""
+
+
+func build_area_error(type: String, segment: int, side: int, from: int, to: int) -> String:
+	var err := areas.add_error(type, segment, side, from, to)
+	if err == "" and not _afford(area_price(type, segment, side, from, to)):
+		err = "Not enough money"
+	return err
+
+
+func build_area(type: String, segment: int, side: int, from: int, to: int) -> String:
+	var err := build_area_error(type, segment, side, from, to)
+	if err == "":
+		ledger.post("construction", -area_price(type, segment, side, from, to))
+		areas.add(type, segment, side, from, to)
+	return err
+
+
+func area_price(type: String, segment: int, side: int, from: int, to: int) -> int:
+	return areas.cells_of(type, segment, side, from, to).size() * rules.area_types[type].cost_per_cell
+
+
+func remove_area(id: int) -> String:
+	if id not in areas.list:
+		return "No area there"
+	areas.remove(id)
 	return ""
 
 
@@ -695,6 +730,8 @@ func daily_upkeep() -> int:
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
 		total += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+	for id: int in areas.list:
+		total += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
 	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for block_anchor in yard.anchors():
 		total += rules.yard_gear[yard.gear_of(block_anchor)].upkeep_per_machine * yard.machines(block_anchor)

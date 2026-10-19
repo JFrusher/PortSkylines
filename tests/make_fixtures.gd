@@ -22,8 +22,15 @@ func _initialize() -> void:
 	for x in range(sim.map.sea_width + 3, sim.map.sea_width + 6):
 		sim.apply({"op": "build", "kind": PortMap.Tile.YARD, "cell": Vector2i(x, row - 1)})
 	# Roads on the 4 m grid, from v5: a crossing of a 2+2 and a 1+1 road.
+	# Areas from v6: a yard block beside the 2+2 road, east of the crossing,
+	# starting two cells along so it clears the crossing road's lanes.
 	sim.apply({"op": "build_road", "from": Vector2i(100, 120), "to": Vector2i(140, 120), "type": "terminal_2_2"})
 	sim.apply({"op": "build_road", "from": Vector2i(120, 100), "to": Vector2i(120, 140), "type": "terminal_1_1"})
+	var refused := sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(130, 120)), "side": 1, "from": 2, "to": 17})
+	if refused or sim.roads.segments.size() != 4:
+		push_error("fixture roads or area refused: " + refused)
+		quit(1)
+		return
 	# 30 game minutes: a ship alongside, boxes stacked and lorries on the road.
 	for i in roundi(30 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
