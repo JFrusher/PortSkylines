@@ -16,7 +16,7 @@ The new model is built beside the tile model, in its own sim classes with headle
 
 ### Grid and roads
 1. **4 m sim grid.** Map sizes in the data become 4 m cells, and every world position comes from the cell. Test: map sizes round-trip between metres and cells.
-2. **Road segments.** Roads are nodes and segments snapped to 0°, 45° and 90°, with arc corners, and each segment is turned into lane cells. Test: a 45° segment becomes a connected diagonal run, and an arc fills the expected cells.
+2. **Road segments.** Roads are nodes and segments snapped to 0°, 45° and 90°, and each segment is turned into the cells along it. Corners are arcs in the view (step 8), not extra cells. Test: a 45° segment becomes a connected diagonal run, and other angles are refused.
 3. **Road types from data.** Terminal road 1+1, terminal road 2+2, one-way road, and an AGV/tractor-only lane, with lanes and allowed vehicles per type. Test: content validation; a one-way road gives lanes in one direction only.
 4. **Automatic junctions.** A segment splits where roads meet or cross. Test: a crossing makes a 4-way node, and a T join makes a 3-way node.
 5. **Directed lane graph and router.** Replaces `PortMap`'s `AStarGrid2D`, which can't do one-way or 45° links. Test: one-way roads can't be driven backwards, the AGV lane refuses lorries, and route lengths match BFS on a hand-built map.
