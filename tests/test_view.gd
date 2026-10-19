@@ -31,6 +31,16 @@ func _initialize() -> void:
 		last = pose
 	var middle := WorldView.path_pose(path, 1.0)
 	_expect(middle[0].distance_to(Vector2(0.5, 0.5) + Vector2(1, -1).normalized() * 0.5) < 0.001, true, "the corner tile is crossed on a quarter circle about its inner corner")
+	for discharging: bool in [true, false]:
+		var from := 1.0 if discharging else 0.0
+		_expect(WorldView.crane_pose(0.0, discharging), [from, 0.0] as Array[float], "a move starts raised over its pick-up end (discharging %s)" % discharging)
+		_expect(WorldView.crane_pose(0.15, discharging), [from, 1.0] as Array[float], "it lowers at the pick-up end (discharging %s)" % discharging)
+		_expect(WorldView.crane_pose(0.85, discharging), [1.0 - from, 1.0] as Array[float], "it lowers at the drop end (discharging %s)" % discharging)
+		var before := WorldView.crane_pose(0.0, discharging)
+		for step in range(1, 101):
+			var now := WorldView.crane_pose(step / 100.0, discharging)
+			_expect(absf(now[0] - before[0]) < 0.05 and absf(now[1] - before[1]) < 0.1, true, "the trolley moves smoothly at %.2f" % (step / 100.0))
+			before = now
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 

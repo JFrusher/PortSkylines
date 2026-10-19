@@ -27,6 +27,11 @@ const BOX_LENGTH := {1: 0.4, 2: 0.8}
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const LANE_OFFSET := 0.22
 const BOX_COLOR := Color(0.85, 0.4, 0.15)
+const CRANE_HEIGHT := 3.2
+## How far the girder reaches behind the quay edge and out over the water, in tiles.
+const CRANE_BACK := -1.0
+const CRANE_REACH := 2.6
+const CRANE_COLOR := Color(0.85, 0.3, 0.2)
 const SEA_START := -18.0  # how far the water reaches past the map
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
@@ -263,20 +268,79 @@ func _draw_ships() -> void:
 		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_classes[ship.kind].import_moves), 0.01)
 
 
-## A tower on the quay tile with a boom reaching out over the water.
+## Where an STS crane's trolley and spreader are `phase` (0 to 1) into a
+## move, as [along: 0 over the quay to 1 over the ship, drop: 0 raised to 1
+## lowered]. It lowers and lifts at one end, runs along, then lowers and
+## lifts at the other; discharging starts over the ship, loading over the quay.
+static func crane_pose(phase: float, discharging: bool) -> Array[float]:
+	var start := 1.0 if discharging else 0.0
+	var along := start
+	var drop := 0.0
+	if phase < 0.3:
+		drop = 1.0 - absf(phase - 0.15) / 0.15
+	elif phase < 0.7:
+		along = lerpf(start, 1.0 - start, smoothstep(0.3, 0.7, phase))
+	else:
+		along = 1.0 - start
+		drop = 1.0 - absf(phase - 0.85) / 0.15
+	return [along, drop]
+
+
+## An STS crane: legs on the quay, a girder out over the water, and a
+## trolley and spreader that follow the crane's move.
 func _draw_cranes() -> void:
 	_forget_gone(_cranes, sim.cranes)
+	var move_minutes: float = 60.0 / (sim.rules.sts_crane.rate * sim.rules.crane_interference)
 	for crane: PortSim.Crane in sim.cranes:
-		if crane in _cranes:
-			continue
-		var tower := _box(Vector3(0.7, 3.0, 0.7), Color(0.85, 0.3, 0.2))
-		tower.position = Vector3(crane.cell.x + 0.5, 1.5, crane.cell.y + 0.5)
-		var water := sim.map.neighbor(crane.cell, PortMap.Tile.WATER) - crane.cell
-		var boom := _box(Vector3(maxf(absf(water.x) * 3.5, 0.3), 0.3, maxf(absf(water.y) * 3.5, 0.3)), Color(0.85, 0.3, 0.2))
-		boom.position = Vector3(water.x * 1.2, 1.4, water.y * 1.2)
-		tower.add_child(boom)
-		add_child(tower)
-		_cranes[crane] = tower
+		if crane not in _cranes:
+			_cranes[crane] = _crane_model(crane)
+		var model: Node3D = _cranes[crane]
+		var ship := _ship_beside(crane.cell)
+		var phase := crane.timer / move_minutes if crane.tractor != 0 else 0.0
+		var pose := crane_pose(phase, ship != null and ship.boxes > 0)
+		var trolley: Node3D = model.get_node("Trolley")
+		trolley.position.z = lerpf(CRANE_BACK, CRANE_REACH, pose[0])
+		var spreader: Node3D = trolley.get_node("Spreader")
+		spreader.position.y = -lerpf(0.2, CRANE_HEIGHT - 0.6, pose[1])
+		var cable: Node3D = trolley.get_node("Cable")
+		cable.scale.y = -spreader.position.y
+		cable.position.y = spreader.position.y / 2.0
+
+
+## The crane's model, turned so +Z points out to the water.
+func _crane_model(crane: PortSim.Crane) -> Node3D:
+	var model := Node3D.new()
+	var water := sim.map.neighbor(crane.cell, PortMap.Tile.WATER) - crane.cell
+	model.position = Vector3(crane.cell.x + 0.5, 0.25, crane.cell.y + 0.5)
+	model.rotation.y = atan2(water.x, water.y)
+	for x: float in [-0.35, 0.35]:
+		for z: float in [-0.35, 0.35]:
+			var leg := _box(Vector3(0.1, CRANE_HEIGHT, 0.1), CRANE_COLOR)
+			leg.position = Vector3(x, CRANE_HEIGHT / 2.0, z)
+			model.add_child(leg)
+	var girder := _box(Vector3(0.5, 0.18, CRANE_REACH - CRANE_BACK + 0.6), CRANE_COLOR)
+	girder.position = Vector3(0, CRANE_HEIGHT, (CRANE_REACH + CRANE_BACK) / 2.0)
+	model.add_child(girder)
+	var trolley := _box(Vector3(0.4, 0.14, 0.3), Color(0.25, 0.25, 0.27))
+	trolley.name = "Trolley"
+	trolley.position.y = CRANE_HEIGHT - 0.16
+	model.add_child(trolley)
+	var cable := _box(Vector3(0.03, 1.0, 0.03), Color(0.15, 0.15, 0.15))
+	cable.name = "Cable"
+	trolley.add_child(cable)
+	var spreader := _box(Vector3(0.36, 0.06, 0.8), Color(0.95, 0.75, 0.1))
+	spreader.name = "Spreader"
+	trolley.add_child(spreader)
+	add_child(model)
+	return model
+
+
+## The ship alongside the quay tile `cell`, or null.
+func _ship_beside(cell: Vector2i) -> PortSim.Ship:
+	for ship: PortSim.Ship in sim.ships:
+		if cell in ship.cells:
+			return ship
+	return null
 
 
 func _draw_vehicles() -> void:
