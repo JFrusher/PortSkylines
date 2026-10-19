@@ -1,8 +1,8 @@
-# M8 — Barge and feeder transhipment
+# M9 — Barge and feeder transhipment
 
 **Goal.** Add the water modes. Barges carry boxes inland, and transhipment moves boxes from mother ships to feeders and back through the yard.
 
-**Depends on.** M7.
+**Depends on.** M8.
 
 **Exit criteria:**
 - Transhipment boxes never leave by gate or rail. They go ship → yard → ship within their connection window, or miss it with a measured penalty.
@@ -27,4 +27,4 @@
 ### Close
 10. **Fixture and soak.** New save fixture, and transhipment and barge in the soak test.
 11. **Public playtest build.** Notes go in `docs/playtests/m8.md`.
-12. **Close the phase.** Tag `m8`.
+12. **Close the phase.** Tag `m9`.

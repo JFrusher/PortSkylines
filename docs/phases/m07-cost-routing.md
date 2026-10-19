@@ -1,19 +1,19 @@
-# M6 — CS2-style cost routing
+# M7 — CS2-style cost routing
 
 **Goal.** Route vehicles by a cost made of time, comfort and money over a lane graph, as Cities: Skylines II does. Cell reservation from M2 stays underneath to stop vehicles colliding. Ship vanilla traffic tools (truck-only lanes, one-way gate lanes, simple signals), because CS1 players needed TM:PE for these.
 
-**Depends on.** M5 (flow fields, path thread, packed vehicles).
+**Depends on.** M6 (flow fields, path thread, packed vehicles).
 
 **Exit criteria:**
 - Route choice responds to cost: in a scripted scenario, adding a toll or signal delay shifts at least a set share of lorries to the alternative route.
 - Vehicles use every lane of a multi-lane road (no lane hogging) within a set tolerance in the soak test.
-- The endgame bench still meets the M5 budget.
+- The endgame bench still meets the M6 budget.
 - Determinism holds: the replay hash with threads matches the hash without.
 
 ## Steps
 
 ### Lane graph
-1. **Lane model.** Road tiles get a lane count (1–3 per direction) and a direction from the data and the build tool. `LaneGraph` derives lane nodes and edges from tiles. Test: a 2+2 road gives 4 lanes, and a T junction gives the expected turn edges.
+1. **Lane model.** M5 builds the lanes from road segments and road types. This step adds the lane count per direction (1–3) to the cost model. Test: a 2+2 road gives 4 lanes, and a T junction gives the expected turn edges.
 2. **Turn connections.** Each junction connects lanes to lanes by turn rules: left lanes turn left, right lanes turn right, middle lanes go straight. Test: the generated turn table matches the hand-written one for each junction shape.
 3. **Reservation per lane.** M2 cell reservation moves to lane-cell slots, so overtaking on a multi-lane road becomes possible. Test: two lorries side by side in two lanes don't conflict.
 
@@ -38,4 +38,4 @@
 13. **Bench and replay.** Endgame bench within budget, and the replay hash test with threads.
 14. **Fixture and soak.** New save fixture, and lane invariants in the soak test.
 15. **Public playtest build.** Notes go in `docs/playtests/m6.md`.
-16. **Close the phase.** Tag `m6`.
+16. **Close the phase.** Tag `m7`.

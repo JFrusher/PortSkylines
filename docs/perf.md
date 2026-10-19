@@ -79,6 +79,8 @@ on a GTX 1660-class GPU.
 
 ## M5 baseline profile (2026-10-19)
 
+Scale and rail was M5 when these steps were done; it is now M6. Step numbers here are that phase's.
+
 `bench/profile_sim.gd` builds the endgame port (`bench/endgame_port.gd`: a
 160² map, 6 berths of 3 cranes, a road grid with 25 gates, RTG yard bands
 holding 20,000 imports) and times the sim's per-tick functions while

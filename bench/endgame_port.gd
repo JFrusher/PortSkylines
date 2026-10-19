@@ -1,5 +1,5 @@
 extends RefCounted
-## The endgame benchmark port (M5): a 160-tile map with 6 berths of 3
+## The endgame benchmark port (M6): a 160-tile map with 6 berths of 3
 ## cranes, a grid of roads with a gate on each, RTG yard bands and the yard
 ## filled with 20,000 imports. Shared by make_endgame.gd and profile_sim.gd.
 

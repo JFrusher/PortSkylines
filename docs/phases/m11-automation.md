@@ -1,8 +1,8 @@
-# M10 — Policies, rules and automation
+# M11 — Policies, rules and automation
 
 **Goal.** Let the player run a big port through rules instead of clicks: global policies, rules per yard block, and an automation technology tier that pays off in the long run but has a sourced ramp-up penalty.
 
-**Depends on.** M9.
+**Depends on.** M10.
 
 **Exit criteria:**
 - Every policy and rule is a command, saved, and covered by the replay hash.
@@ -33,4 +33,4 @@
 ### Close
 12. **Fixture and soak.** New save fixture, and policies and rules in the soak test.
 13. **Public playtest build.** Notes go in `docs/playtests/m10.md`.
-14. **Close the phase.** Tag `m10`.
+14. **Close the phase.** Tag `m11`.

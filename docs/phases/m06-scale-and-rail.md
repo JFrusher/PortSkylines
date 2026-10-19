@@ -1,8 +1,12 @@
-# M5 — Scale and on-dock rail
+# M6 — Scale and on-dock rail
 
 **Goal.** Reach endgame entity counts on a mid-range PC, and add rail as the second land mode, the answer to truck spam. Also add reefers, Neopanamax, and hinterland demand.
 
-**Depends on.** M4.
+**Depends on.** M5 (roads and areas). This phase started before M5 existed, as M5 itself:
+- Done and kept: steps 1 and 2 (bench and profile; `bench/endgame_port.gd` needs its port rebuilt on roads and areas), 4 (vehicle MultiMeshes) and 6 (detail by distance; the stack slabs follow M5's stacks).
+- Done on tiles and redone in M5: step 7 (distance fields), as part of the lane graph.
+- Skipped on evidence: step 5 (ships and cranes cost 5 ms of 168 render; see `docs/perf.md`).
+- Waiting for M5's model: steps 3, 8, 9, 11–15, 17 and 18.
 
 **Exit criteria:**
 - The endgame benchmark save (about 2,000 lorries, 20,000 stacked boxes, 6 berths, 2 trains) holds 60 fps at 1080p on the GTX 1660-class target at 1×, and stays playable at 3×.
@@ -65,4 +69,4 @@
 19. **Endgame bench passes** on the target PC. Record it.
 20. **Fixtures and soak.** Add the new save fixture and rail to the soak test.
 21. **Public playtest build.** Notes go in `docs/playtests/m5.md`.
-22. **Close the phase.** Tag `m5`.
+22. **Close the phase.** Tag `m6`.

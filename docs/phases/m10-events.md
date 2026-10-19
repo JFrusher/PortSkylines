@@ -1,8 +1,8 @@
-# M9 — Events and regulations
+# M10 — Events and regulations
 
 **Goal.** Add disruption as a planning problem. Wind and storms stop cranes, strikes and congestion create backlogs, and regulations change the rules over time. Each event type can be switched off in settings.
 
-**Depends on.** M8.
+**Depends on.** M9.
 
 **Exit criteria:**
 - A scripted storm stops yard equipment at ≥65 km/h and STS cranes at ≥80 km/h. It shows a forecast one game day ahead.
@@ -36,4 +36,4 @@
 ### Close
 14. **Fixture and soak.** New save fixture, and events in the soak test.
 15. **Public playtest build.** Notes go in `docs/playtests/m9.md`.
-16. **Close the phase.** Tag `m9`.
+16. **Close the phase.** Tag `m10`.

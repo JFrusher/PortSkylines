@@ -1,12 +1,12 @@
 extends SceneTree
-## Writes bench/endgame.bin: a port at the M5 target counts (about 2,000
+## Writes bench/endgame.bin: a port at the M6 target counts (about 2,000
 ## lorries, 20,000 stacked boxes and 6 berths) for bench/endgame_bench.gd.
 ## godot --headless --script res://bench/make_endgame.gd
 ## The yard is filled directly, since unloading 20,000 boxes from ships would
 ## take game months. Lorries are placed directly too, already through a gate
 ## and heading for an import box: one highway entry lets in a lorry every few
 ## ticks and they finish their trips about as fast, so traffic alone levels
-## off near 500. Trains join when rail exists (M5 step 13).
+## off near 500. Trains join when rail exists (M6 step 13).
 
 const EndgamePort := preload("res://bench/endgame_port.gd")
 const LORRIES := 2000

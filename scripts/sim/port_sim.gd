@@ -1419,7 +1419,7 @@ func _unstick(vehicle: Vehicle) -> void:
 			vehicle.path = around
 			vehicle.t = 0.0
 			vehicle.prev_t = 0.0
-	# shortcut: a lorry's way round ignores gates, so it may skip one; rare, revisit with cost routing in M6.
+	# shortcut: a lorry's way round ignores gates, so it may skip one; rare, revisit with cost routing in M7.
 	elif vehicle.waited >= limit * 2 and vehicle.kind == "lorry":
 		if vehicle.loaded:
 			if boxes[vehicle.box].kind == "export":

@@ -1,6 +1,54 @@
-# Proposal — Roads first, then areas and assets
+# M5 — Roads and areas
 
-**Status.** Proposed, not decided. The developer is still shaping this idea. The questions at the end must be answered before it gets a phase number and steps. Nothing here overrides **Decisions so far** in the roadmap until it is answered.
+**Goal.** Stop building the port square by square. The player draws roads on a 4 m grid, then drags areas (quay apron, yard block, gate) along them, and each area lays itself out. Vehicles end their trips at handover slots, machines work jobs in fixed phases, and the main motions are animated.
+
+**Depends on.** M4. M6 (scale and rail) resumes on this model; its steps 1, 2, 4 and 6 carry over, and step 7 is redone here as part of the lane graph.
+
+**Exit criteria:**
+- One full chain plays: draw roads, then drag a quay apron, one RTG yard block and a gate. A box goes STS → tractor → RTG lane → stack → lorry → gate, with main-motion animations.
+- The follow camera tracks a box from ship to gate.
+- The replay hash test passes on the new model at 1, 3 and 6 ticks per frame.
+- Tile-format saves are refused with a clear message; the new format has a fixture.
+
+## Steps
+
+### Grid and roads
+1. **4 m sim grid.** Map sizes in the data become 4 m cells, and every world position comes from the cell. Test: map sizes round-trip between metres and cells.
+2. **Road segments.** Roads are nodes and segments snapped to 0°, 45° and 90°, with arc corners, and each segment is turned into lane cells. Test: a 45° segment becomes a connected diagonal run, and an arc fills the expected cells.
+3. **Road types from data.** Terminal road 1+1, terminal road 2+2, one-way road, and an AGV/tractor-only lane, with lanes and allowed vehicles per type. Test: content validation; a one-way road gives lanes in one direction only.
+4. **Automatic junctions.** A segment splits where roads meet or cross. Test: a crossing makes a 4-way node, and a T join makes a 3-way node.
+5. **Directed lane graph and router.** Replaces `PortMap`'s `AStarGrid2D`, which can't do one-way or 45° links. Test: one-way roads can't be driven backwards, the AGV lane refuses lorries, and route lengths match BFS on a hand-built map.
+6. **Cell reservation re-keyed** for diagonal steps and junction nodes (`Traffic.lane` keys on the four sides today). Test: M2's traffic cases (head-on, queue, ring, junction booking), ported, plus a 45° merge.
+7. **Draw-road tool and road commands.** A snapped preview with its cost, and bulldozing a segment. Test: a replay with road commands gives the same hash at 1, 3 and 6 ticks per frame.
+8. **Road rendering on the 4 m grid.** Straights, 45° joins, arcs and markings for each road type. Check: screenshots of each join.
+
+### Areas
+9. **Area model.** An area has a type, cells, the road edge it is attached to, and a terminal. Test: an area off a road edge, or overlapping a road or another area, is refused.
+10. **Drag-along-road tool**, CS2 zoning style: the depth is set by the type, the length is dragged, and the area takes the road's direction, 45° roads included. Check: screenshots. Test: snapping to the edge.
+11. **RTG yard block layout.** Rows parallel to the road, a truck lane beside them, handover slots (one 40 ft or two 20 ft each) and a buffer strip. Test: a given length gives the expected rows and slots, the same every time.
+12. **Quay apron and gate layouts.** Crane rails, tractor lanes under the cranes and a buffer on the apron; lanes and booths at the gate. Test: each layout comes out as expected for a given length.
+13. **Area rules.** Role (import, export, empty or reefer), equipment type, and line or berth priority. Test: invalid settings are refused.
+14. **Terminals as groups of areas.** A new area joins the terminal it touches; a terminal needs a gate and a quay apron to take contracts. Test: both rules.
+15. **An area without a road does no work and shows why.** Test: an unconnected yard block takes no boxes and reports the reason.
+
+### Moves
+16. **Slot booking.** A vehicle books a handover slot; overflow waits in the buffer strip, then queues on the road. Test: no slot ever holds two vehicles, and a full block shows a road queue.
+17. **Machine jobs with phase times from the data** (travel, lift, set down). Each machine belongs to one area. Test: one move takes the data time.
+18. **Stacks per area.** Rows, bays and tiers, with no 40 ft box on a 20 ft box. Digging out a buried box costs extra moves, and cranes reshuffle in quiet periods. Test: a buried box costs the expected extra moves.
+19. **Box flow on slots and jobs.** Replaces the tile-based `_dispatch_*` and `_drive_*` code. Test: a scripted port works its first ship end to end.
+
+### View and close
+20. **Main-motion animations** from the job phases, reusing the M4 art. Check: screenshots of each phase.
+21. **Follow camera.** Click a box or machine to follow it. Check: following a box from ship to gate.
+22. **New save format.** Tile saves are refused with a clear message, fixtures are rebuilt, and the soak test runs on the new model. Test: `test_save` and `test_soak`.
+23. **Guided start rewritten** for roads, then areas. Test: `test_guide`.
+24. **First slice playtest: one full chain.** Notes go in `docs/playtests/m5.md`. Tag `m5`.
+
+The depot or parking area and the reach-stacker equipment option follow the first slice.
+
+## Background: the proposal
+
+**Status.** Decided on 19 Oct 2026 and placed as M5; the phases after it moved up by one. Phase numbers below are the ones from before that move: "M5" here is now M6, "M6" is M7, and so on.
 
 **The idea.** Stop building the port square by square. The player draws roads first. Areas (yard, gate, quay apron, rail siding, depot) are then laid out along those roads, and assets are placed inside each area. An asset is a working part of the area, for example the lane where an AGV or tractor waits to be served. Each move then plays as a full animation: the yard crane travels to the handover lane, lowers the spreader, locks the box, lifts it, carries it to its stack slot and sets it down.
 

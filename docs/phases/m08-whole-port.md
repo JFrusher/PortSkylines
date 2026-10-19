@@ -1,8 +1,8 @@
-# M7 — The whole port
+# M8 — The whole port
 
 **Goal.** Grow from one terminal to a port. Several terminals share one channel. Pilots and tugs bring ships in, ships wait at anchorage when the port is full, ULCVs arrive, and boxes can move between terminals.
 
-**Depends on.** M6.
+**Depends on.** M7.
 
 **Exit criteria:**
 - Two or more terminals run at once, with their own yards, gates and contracts, sharing the channel.
@@ -37,4 +37,4 @@
 14. **Bench at port scale.** Set new targets in `docs/perf.md` and meet them.
 15. **Fixture and soak.** New save fixture, and multi-terminal commands in the soak test.
 16. **Public playtest build.** Notes go in `docs/playtests/m7.md`.
-17. **Close the phase.** Tag `m7`.
+17. **Close the phase.** Tag `m8`.

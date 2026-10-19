@@ -7,7 +7,7 @@ signal save_pressed
 signal load_pressed
 ## A command for PortSim.apply, such as accepting an offer.
 signal command_issued(command: Dictionary)
-## shortcut: two buttons stand in for the new-game screen until M11 builds it.
+## shortcut: two buttons stand in for the new-game screen until M12 builds it.
 signal new_game_pressed(creative: bool)
 
 const BULLDOZE := -1

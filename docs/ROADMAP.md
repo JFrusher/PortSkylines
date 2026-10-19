@@ -165,7 +165,7 @@ The developer answered most of the open questions below. These answers override 
 
 **Still open:** 33 (localisation and accessibility), 34 (public roadmap cadence) and 35 (roads, areas and assets).
 
-The step-by-step plan that follows these decisions is in [docs/phases/](phases/README.md): eleven phase files, M1 to M11.
+The step-by-step plan that follows these decisions is in [docs/phases/](phases/README.md): twelve phase files, M1 to M12 (roads and areas became M5 on 19 Oct 2026; the phases after it moved up by one, so sections below written earlier may use the old numbers).
 
 **What these answers change** **[Inference]**:
 - **Release phases.** A free hobby release going straight to 1.0 removes the wishlist gates, the Next Fest timing and the Early Access sections. M6 becomes public playtest builds, for example on itch.io or a free Steam page (Steam still charges its app fee). M7 becomes 1.0 readiness. There is no competitor race to win, so phases can run until their exit criteria pass rather than to a date.
@@ -219,7 +219,7 @@ Each answer changes phase content, ordering or duration. Answers given so far ar
 32. **Repository visibility and licensing.** The repo is on GitHub. Public code invites contributions but also clones of the concept before launch. Options: keep private until EA; open source the engine and keep assets proprietary; fully open.
 33. **Localisation and accessibility at EA.** It adds M7 work and affects reach. Options: English only at EA; top 5 Steam languages at 1.0; colour-blind palettes and screen-reader support (Godot 4.5 added the latter) from M7.
 34. **Public roadmap and update cadence.** Promises create EA obligations. Options: rolling "next update" only; a quarterly public roadmap; a dated roadmap to 1.0.
-35. **Roads first, then areas and assets.** The developer proposed replacing square-by-square building with roads drawn first, areas laid out along them, and assets inside each area (for example a handover lane where an AGV waits), with full crane animations for each move. It would change decision 11, the build tools, and the base of M5 and M6. The proposal and its questions are in [docs/phases/roads-and-areas.md](phases/roads-and-areas.md).
+35. **Roads first, then areas and assets.** The developer proposed replacing square-by-square building with roads drawn first, areas laid out along them, and assets inside each area (for example a handover lane where an AGV waits), with full crane animations for each move. **Decided:** it is M5, with its steps and answers in [docs/phases/m05-roads-and-areas.md](phases/m05-roads-and-areas.md). It replaces decision 11's square-by-square building with roads on a 4 m grid.
 
 ## Conclusion
 
