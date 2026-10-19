@@ -3,32 +3,14 @@ extends Node3D
 ## Draws the sim as a small 3D model port. Reads PortSim every frame and
 ## never changes it.
 
-## Road pieces, chosen per tile from its road neighbours: shape -> the
-## neighbour sides it joins before turning. Corners are circular arcs.
-const ROAD_SHAPES := {
-	"straight": [Vector2i.UP, Vector2i.DOWN],
-	"end": [Vector2i.DOWN],
-	"corner": [Vector2i.DOWN, Vector2i.RIGHT],
-	"junction": [],
-}
-const ARC_STEPS := 8
-const TILE_HEIGHT := {PortMap.Tile.ROAD: 0.04, PortMap.Tile.QUAY: 0.25, PortMap.Tile.YARD: 0.08, PortMap.Tile.GATE: 0.5}
-const TILE_COLOR := {
-	PortMap.Tile.ROAD: Color(0.2, 0.2, 0.22),
-	PortMap.Tile.QUAY: Color(0.62, 0.6, 0.55),
-	PortMap.Tile.YARD: Color(0.45, 0.45, 0.43),
-	PortMap.Tile.GATE: Color(0.2, 0.45, 0.7),
-}
+## A deck box's height and its length by TEU (20 ft and 40 ft) on a ship
+## model, in world units, stretched a little so boxes aboard read at a distance.
 const BOX_HEIGHT := 0.3
-## A box's length along the tile by TEU: 20 ft and 40 ft, at 1 tile = 25 m
-## stretched a little so a lone 20 ft box still reads at a distance.
 const BOX_LENGTH := {1: 0.4, 2: 0.8}
-## Rows of 40 ft slots across a yard tile.
-const YARD_ROWS := 2
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
-const LANE_OFFSET := 0.22
-## Metres in one world unit. shortcut: the tile view is drawn at 25 m a unit, so roads on the 4 m grid are scaled down to it; becomes 1 when M5 step 22 removes the tile model.
+## Metres in one world unit. Ships, cranes and the camera were made at this
+## scale; roads, areas and what moves on them are drawn true to the 4 m grid in it.
 const METRES_PER_UNIT := 25.0
 ## Roads on the 4 m grid, in metres: how high the surface and markings sit
 ## (lorry roads above tractor lanes, so junctions read as asphalt), the
@@ -66,13 +48,8 @@ const RAIL_COLOR := Color(0.16, 0.16, 0.17)
 const EDGE_COLOR := Color(0.85, 0.7, 0.15)
 ## Mixed into an idle area's ground, so an area cut off from its road stands out.
 const IDLE_TINT := Color(0.85, 0.2, 0.15)
-## Camera distances to a chunk's centre past which it is drawn with less
-## detail, as Cities: Skylines does: each tile's stack as one slab instead of
-## every box, then no yard machines. Instances drawn cost the most render time.
-const STACK_DETAIL := 60.0
-const MACHINE_DETAIL := 80.0
 const CRANE_HEIGHT := 3.2
-## How far the girder reaches behind the quay edge and out over the water, in tiles.
+## How far the girder reaches behind the quay edge and out over the water, in world units.
 const CRANE_BACK := -1.0
 const CRANE_REACH := 2.6
 const CRANE_COLOR := Color(0.85, 0.3, 0.2)
@@ -85,43 +62,24 @@ const DECK_ROWS := 3
 const DECK_TIERS := 4
 ## A 40 ft box turned along the ship and sized to a deck bay.
 var _deck_box := Basis(Vector3.UP, PI / 2) * Basis.from_scale(Vector3((DECK_BAY - 0.04) / 0.78, 0.8, 1.27))
-const SEA_START := -18.0  # how far the water reaches past the map
+const SEA_START := -18.0  # how far the water reaches past the site
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
 var sim: PortSim
 ## How far play has moved from the last tick towards the next, 0 to 1.
 var alpha := 1.0
 
-var _drawn_version := -1
-## Tile kinds as last drawn, to find the chunks a map change touched.
-var _drawn_tiles := PackedByteArray()
-var _tiles := ChunkedMeshes.new()
-var _tile_meshes := {}  # tile kind -> Mesh
-var _road_meshes := {}  # road shape -> Mesh
-var _marks_mesh: Mesh
-var _quay_edge_mesh: Mesh
 var _water := ShaderMaterial.new()
-var _stacks := ChunkedMeshes.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
-## Far from the camera, each yard tile's stack as one slab in its top box's livery.
-var _slabs := ChunkedMeshes.new()
-var _slab_mesh: Mesh
-## Stack parts ([chunk, teu]) drawn last time, so emptied ones get cleared.
-var _stack_parts := {}
-## Chunks with slabs drawn last time, so emptied ones get cleared.
-var _slab_chunks := {}
-## The tick and map version the stacks were drawn for; bulldozing a stack changes the map.
-var _stacks_drawn := []
 # shortcut: ships are one node each, fine at the handful a port works at once; MultiMesh them if berths grow past ~20.
 var _ships := {}  # PortSim.Ship -> Node3D
 ## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
 var _vehicle_parts := {}
-## Each vehicle's last heading by id, kept while it waits on a one-tile path.
+## Each vehicle's last heading by id, kept while it waits on a one-cell path.
 var _headings := {}
 ## A box on a vehicle's chassis: a container model turned along the vehicle and scaled to it.
 var _vehicle_box := Transform3D(Basis(Vector3.UP, PI / 2).scaled_local(Vector3(0.65, 0.75, 0.8)), Vector3(0, 0.2, -0.06))
 var _cranes := {}  # PortSim.Crane -> Node3D
-var _machines := ChunkedMeshes.new()
 ## Yard machines on areas, by machine id, and how tall each gear's model is.
 var _area_machines := {}
 var _machine_heights := {}
@@ -129,12 +87,9 @@ var _machine_heights := {}
 ## sim has ticked or the areas changed.
 var _area_stacks := {}
 var _area_stacks_drawn := []
-## Each box model scaled to real size, by TEU: the tile view stretches boxes
-## to read at a distance, while areas are drawn true to the 4 m grid.
+## Each box model scaled to real size, by TEU, for boxes on areas and vehicles.
 var _real_box := {}
 var _machine_meshes := {}  # gear -> Mesh
-## Machine parts ([chunk, gear]) drawn last frame, so emptied ones get cleared.
-var _machine_parts_drawn := {}
 ## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
@@ -146,23 +101,23 @@ var _areas_drawn := []
 var _area_preview := MeshInstance3D.new()
 ## The road being dragged out, tinted by whether it can be built.
 var _road_preview := MeshInstance3D.new()
-var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
+var _hover := _box(Vector3(Grid.CELL, 1.5, Grid.CELL) / METRES_PER_UNIT, Color(1, 1, 1, 0.5))
 ## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _unowned := {}  # land tile -> Node3D
 var _drawn_land := -1
 
 
 func _ready() -> void:
-	var map := sim.map
-	var water := _box(Vector3(map.size.x - SEA_START * 2, 0.1, map.size.y - SEA_START * 2), Color.WHITE)
-	water.position = Vector3(map.size.x / 2.0, -0.35, map.size.y / 2.0)
+	var site := site_size(sim)
+	var sea: float = sim.rules.site.sea_width / METRES_PER_UNIT
+	var water := _box(Vector3(site.x - SEA_START * 2, 0.1, site.y - SEA_START * 2), Color.WHITE)
+	water.position = Vector3(site.x / 2.0, -0.35, site.y / 2.0)
 	_water.shader = load("res://shaders/water.gdshader")
-	_water.set_shader_parameter("coast_x", float(map.sea_width))
+	_water.set_shader_parameter("coast_x", sea)
 	water.material_override = _water
 	add_child(water)
-	var land_width := map.size.x - map.sea_width
-	var land := _box(Vector3(land_width, 1, map.size.y), Color(0.36, 0.42, 0.3))
-	land.position = Vector3(map.sea_width + land_width / 2.0, -0.5, map.size.y / 2.0)
+	var land := _box(Vector3(site.x - sea, 1, site.y), Color(0.36, 0.42, 0.3))
+	land.position = Vector3((site.x + sea) / 2.0, -0.5, site.y / 2.0)
 	add_child(land)
 	add_child(_hover)
 	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _areas, _area_preview]:
@@ -171,49 +126,32 @@ func _ready() -> void:
 		preview.material_override = StandardMaterial3D.new()
 		preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		preview.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	add_child(_tiles)
-	_stacks.range_end = STACK_DETAIL
-	_slabs.range_begin = STACK_DETAIL
-	_machines.range_end = MACHINE_DETAIL
-	add_child(_stacks)
-	add_child(_slabs)
-	add_child(_machines)
-	_slab_mesh = _merged([[Vector3.ONE, Vector3(0, 0.5, 0), Color.WHITE]])
 	for gear: String in sim.rules.yard_gear:
 		_machine_meshes[gear] = _machine_mesh(gear)
 		_machine_heights[gear] = _machine_meshes[gear].get_aabb().end.y
-	for kind: int in TILE_HEIGHT:
-		_tile_meshes[kind] = _box_mesh(Vector3(1, TILE_HEIGHT[kind], 1), TILE_COLOR[kind])
 	for teu: int in BOX_LENGTH:
 		_stack_meshes[teu] = _container_mesh(teu)
 		var real := Vector3(REAL_BOX_LENGTH[teu], REAL_BOX_HEIGHT, REAL_BOX_WIDTH) / METRES_PER_UNIT
 		_real_box[teu] = real / _stack_meshes[teu].get_aabb().size
 		_area_stacks[teu] = _vehicle_part(_stack_meshes[teu])
-	for shape: String in ROAD_SHAPES:
-		_road_meshes[shape] = _road_mesh(shape)
-	# A dashed centre line, two dashes a tile, just above a straight road.
-	var top: float = TILE_HEIGHT[PortMap.Tile.ROAD] / 2.0 + 0.003
-	_marks_mesh = _merged([[Vector3(0.04, 0.004, 0.22), Vector3(0, top, -0.25), Color(0.92, 0.92, 0.85)], [Vector3(0.04, 0.004, 0.22), Vector3(0, top, 0.25), Color(0.92, 0.92, 0.85)]])
-	# A dark fender along the water's edge and two bollards, facing +Z.
-	var deck: float = TILE_HEIGHT[PortMap.Tile.QUAY] / 2.0
-	_quay_edge_mesh = _merged([
-		[Vector3(1.0, 0.18, 0.06), Vector3(0, deck - 0.12, 0.52), Color(0.12, 0.12, 0.13)],
-		[Vector3(1.0, 0.01, 0.08), Vector3(0, deck + 0.005, 0.44), Color(0.95, 0.75, 0.1)],
-		[Vector3(0.07, 0.08, 0.07), Vector3(-0.3, deck + 0.04, 0.36), Color(0.15, 0.15, 0.16)],
-		[Vector3(0.07, 0.08, 0.07), Vector3(0.3, deck + 0.04, 0.36), Color(0.15, 0.15, 0.16)],
-	])
 
 
+## The site in world units.
+static func site_size(port: PortSim) -> Vector2:
+	return Vector2(port.rules.site.width, port.rules.site.height) / METRES_PER_UNIT
+
+
+## Marks grid cell `cell` under the mouse, green if the tool can act there, else red.
 func show_hover(cell: Vector2i, ok: bool) -> void:
-	_hover.visible = sim.map.in_bounds(cell)
-	_hover.position = Vector3(cell.x + 0.5, 0.3, cell.y + 0.5)
+	_hover.visible = cell != Grid.NONE
+	_hover.position = _world((Vector2(cell) + Vector2(0.5, 0.5)) * Grid.CELL, 1.0)
 	(_hover.mesh.material as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
 ## Shows the road a drag would build from `from` to `to`, green if it can be
 ## built, else red; hidden when `from` is NONE.
 func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> void:
-	_road_preview.visible = from != PortMap.NONE and from != to
+	_road_preview.visible = from != Grid.NONE and from != to
 	if not _road_preview.visible:
 		return
 	var surface := _road_tool()
@@ -241,15 +179,11 @@ func _process(_dt: float) -> void:
 		_draw_areas()
 	var channel: Dictionary = sim.rules.channel
 	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
-	if sim.map.version != _drawn_version:
-		_draw_tiles()
 	if sim.land.size() != _drawn_land:
 		_draw_land()
-	_draw_stacks()
 	_draw_ships()
 	_draw_cranes()
 	_draw_vehicles()
-	_draw_machines()
 	_draw_area_machines()
 	_draw_area_stacks()
 
@@ -387,107 +321,35 @@ static func _world(metres: Vector2, height: float) -> Vector3:
 
 func _draw_land() -> void:
 	_drawn_land = sim.land.size()
-	var cells: int = sim.rules.land.cells
-	for y in ceili(sim.map.size.y / float(cells)):
-		for x in ceili(sim.map.size.x / float(cells)):
+	var site := site_size(sim)
+	var size: float = sim.rules.land.metres / METRES_PER_UNIT
+	var sea: float = sim.rules.site.sea_width / METRES_PER_UNIT
+	for y in ceili(site.y / size):
+		for x in ceili(site.x / size):
 			var tile := Vector2i(x, y)
 			if sim.land.has(tile) and _unowned.has(tile):
 				_unowned[tile].queue_free()
 				_unowned.erase(tile)
 			elif not sim.land.has(tile) and not _unowned.has(tile):
 				# Only the land part of the tile: the sea is nobody's to buy.
-				var from := maxi(x * cells, sim.map.sea_width)
-				var width := mini((x + 1) * cells, sim.map.size.x) - from
-				if width <= 0:
+				var from := maxf(x * size, sea)
+				var width := minf((x + 1) * size, site.x) - from
+				if width <= 0.0:
 					continue
-				var shade := _box(Vector3(width, 0.02, cells), Color(0, 0, 0, 0.3))
-				shade.position = Vector3(from + width / 2.0, 0.02, (y + 0.5) * cells)
+				var shade := _box(Vector3(width, 0.02, size), Color(0, 0, 0, 0.3))
+				shade.position = Vector3(from + width / 2.0, 0.02, (y + 0.5) * size)
 				add_child(shade)
 				_unowned[tile] = shade
 
 
-## Redraws only the chunks whose tiles changed since the last draw.
-func _draw_tiles() -> void:
-	_drawn_version = sim.map.version
-	var map := sim.map
-	_drawn_tiles.resize(map.size.x * map.size.y)
-	var dirty := {}
-	for y in map.size.y:
-		for x in map.size.x:
-			var kind := map.tile(Vector2i(x, y))
-			if _drawn_tiles[x + y * map.size.x] != kind:
-				_drawn_tiles[x + y * map.size.x] = kind
-				# A road's shape depends on its neighbours, which may lie in the next chunk.
-				for side: Vector2i in [Vector2i.ZERO] + PortMap.SIDES:
-					if map.in_bounds(Vector2i(x, y) + side):
-						dirty[ChunkedMeshes.chunk_of(Vector2i(x, y) + side)] = true
-	for chunk: Vector2i in dirty:
-		var by_kind := {}
-		for kind: int in TILE_HEIGHT:
-			by_kind[kind] = [] as Array[Transform3D]
-		var by_shape := {}
-		for shape: String in ROAD_SHAPES:
-			by_shape[shape] = [] as Array[Transform3D]
-		var marks: Array[Transform3D] = []
-		var edges: Array[Transform3D] = []
-		for y in range(chunk.y * ChunkedMeshes.CHUNK, mini((chunk.y + 1) * ChunkedMeshes.CHUNK, map.size.y)):
-			for x in range(chunk.x * ChunkedMeshes.CHUNK, mini((chunk.x + 1) * ChunkedMeshes.CHUNK, map.size.x)):
-				var cell := Vector2i(x, y)
-				var kind := map.tile(cell)
-				var centre := Vector3(x + 0.5, TILE_HEIGHT.get(kind, 0.0) / 2.0, y + 0.5)
-				if kind == PortMap.Tile.ROAD:
-					var piece := road_piece(map, cell)
-					var placed := Transform3D(Basis(Vector3.UP, piece[1] * PI / 2), centre)
-					by_shape[piece[0]].append(placed)
-					if piece[0] == "straight":
-						marks.append(placed)
-				elif kind in TILE_HEIGHT:
-					by_kind[kind].append(Transform3D(Basis(), centre))
-				if kind == PortMap.Tile.QUAY:
-					for side: Vector2i in PortMap.SIDES:
-						if map.tile(cell + side) == PortMap.Tile.WATER:
-							edges.append(Transform3D(Basis(Vector3.UP, atan2(side.x, side.y)), centre))
-		for kind: int in by_kind:
-			_tiles.show_part(Vector3i(chunk.x, chunk.y, kind), _tile_meshes[kind], by_kind[kind])
-		for shape: String in by_shape:
-			_tiles.show_part([chunk, shape], _road_meshes[shape], by_shape[shape])
-		_tiles.show_part([chunk, "marks"], _marks_mesh, marks)
-		_tiles.show_part([chunk, "quay edge"], _quay_edge_mesh, edges)
-
-
-## The road piece for `cell`: [shape, quarter turns about +Y] whose turned
-## sides match the road and gate tiles around it. The highway entry also
-## joins the off-map road east of it.
-static func road_piece(map: PortMap, cell: Vector2i) -> Array:
-	var joined: Array[Vector2i] = []
-	for side: Vector2i in PortMap.SIDES:
-		if PortMap.is_road(map.tile(cell + side)) or (cell == map.entry and side == Vector2i.RIGHT):
-			joined.append(side)
-	if joined.size() != 1 and joined.size() != 2:
-		return ["junction", 0]
-	for shape: String in ["straight", "end", "corner"]:
-		for turns in 4:
-			var turned: Array = ROAD_SHAPES[shape].map(func(side: Vector2i) -> Vector2i: return _turn(side, turns))
-			if turned.size() == joined.size() and turned.all(func(side: Vector2i) -> bool: return side in joined):
-				return [shape, turns]
-	return ["junction", 0]
-
-
-## `side` turned the way Basis(Vector3.UP, turns * PI / 2) turns a tile, in map
-## coordinates (map y is world z).
-static func _turn(side: Vector2i, turns: int) -> Vector2i:
-	var turned := Basis(Vector3.UP, turns * PI / 2) * Vector3(side.x, 0, side.y)
-	return Vector2i(roundi(turned.x), roundi(turned.z))
-
-
-## Where along `path` a vehicle `at` tiles in is drawn, as [position in tile
-## coordinates, heading]. Through a tile where the path turns it follows a
-## quarter circle between the middles of the tile's edges, so it never snaps.
 ## The 4 m grid cell at world point `at`.
 static func grid_cell(at: Vector3) -> Vector2i:
 	return Vector2i(floori(at.x * METRES_PER_UNIT / Grid.CELL), floori(at.z * METRES_PER_UNIT / Grid.CELL))
 
 
+## Where along `path` a vehicle `at` cells in is drawn, as [position in grid
+## cells, heading]. Through a cell where the path turns it follows a quarter
+## circle between the middles of the cell's edges, so it never snaps.
 static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
 	var i := clampi(int(at), 0, path.size() - 1)
 	var f := at - i
@@ -506,71 +368,6 @@ static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
 	return [Vector2(path[i]).lerp(Vector2(path[i + 1]), f), Vector2(path[i + 1] - path[i])]
 
 
-## Every stacked box, in its line's livery, redrawn when the sim has ticked
-## or the map has changed.
-func _draw_stacks() -> void:
-	if _stacks_drawn == [sim.clock.ticks, sim.map.version]:
-		return
-	_stacks_drawn = [sim.clock.ticks, sim.map.version]
-	var transforms := {}
-	var colors := {}
-	for part: Array in _stack_parts:
-		transforms[part] = [] as Array[Transform3D]
-		colors[part] = PackedColorArray()
-	var slabs := {}
-	var slab_colors := {}
-	for chunk: Vector2i in _slab_chunks:
-		slabs[chunk] = [] as Array[Transform3D]
-		slab_colors[chunk] = PackedColorArray()
-	for cell: Vector2i in sim.yard.stacks:
-		var chunk := ChunkedMeshes.chunk_of(cell)
-		var ids: Array = sim.yard.stacks[cell]
-		if ids.is_empty():
-			continue
-		var forties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 2)
-		var twenties := ids.filter(func(id: int) -> bool: return sim.boxes[id].teu == 1)
-		if chunk not in slabs:
-			slabs[chunk] = [] as Array[Transform3D]
-			slab_colors[chunk] = PackedColorArray()
-		var tiers: float = stack_spot(forties.size(), ids.size() - 1).y + 1
-		var top: int = (forties + twenties)[-1]
-		slabs[chunk].append(Transform3D(Basis().scaled(Vector3(BOX_LENGTH[2], tiers * BOX_HEIGHT, YARD_ROWS * 0.34)), Vector3(cell.x + 0.5, 0.08, cell.y + 0.5)))
-		slab_colors[chunk].append(_livery(sim.boxes[top].line, top))
-		for i in ids.size():
-			var forty := i < forties.size()
-			var id: int = forties[i] if forty else twenties[i - forties.size()]
-			var spot := stack_spot(forties.size(), i)
-			var part := [chunk, 2 if forty else 1]
-			if part not in transforms:
-				transforms[part] = [] as Array[Transform3D]
-				colors[part] = PackedColorArray()
-			transforms[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5 + spot.x, 0.08 + (spot.y + 0.5) * BOX_HEIGHT, cell.y + 0.5 + spot.z)))
-			colors[part].append(_livery(sim.boxes[id].line, id))
-	_stack_parts.clear()
-	for part: Array in transforms:
-		_stacks.show_part(part, _stack_meshes[part[1]], transforms[part], colors[part])
-		if not transforms[part].is_empty():
-			_stack_parts[part] = true
-	_slab_chunks.clear()
-	for chunk: Vector2i in slabs:
-		_slabs.show_part(chunk, _slab_mesh, slabs[chunk], slab_colors[chunk])
-		if not slabs[chunk].is_empty():
-			_slab_chunks[chunk] = true
-
-
-## Where the `i`th box of a yard tile with `forties` 40 ft boxes sits, as
-## (offset along the tile, tier, offset across it). The sim only knows which
-## tile a box is on, so the view lays each tile out the way yards stack: two
-## rows of 40 ft slots, filled a tier at a time across both rows, 40s first
-## and then 20s in pairs end to end, so a 40 never rests on a 20.
-static func stack_spot(forties: int, i: int) -> Vector3:
-	var tier := i if i < forties else forties + (i - forties) / 2
-	var along := 0.0
-	if i >= forties:
-		along = (BOX_LENGTH[1] / 2.0 + 0.01) * (-1 if (i - forties) % 2 == 0 else 1)
-	return Vector3(along, tier / YARD_ROWS, ((tier % YARD_ROWS) - (YARD_ROWS - 1) / 2.0) * 0.34)
-
-
 ## `line`'s livery, a touch lighter or darker per box so a stack reads as
 ## separate boxes. shortcut: a shade stands in for M4's wear texture until the box model has UVs.
 func _livery(line: String, id: int) -> Color:
@@ -584,7 +381,7 @@ func _draw_ships() -> void:
 		# shortcut: ships at anchorage are only counted in the HUD; draw them offshore if players miss them.
 		if ship.state == PortSim.Ship.State.ANCHORED:
 			continue
-		var length: int = sim.rules.ship_classes[ship.kind].length if ship.apron else ship.cells.size()
+		var length: float = sim.rules.ship_classes[ship.kind].length / METRES_PER_UNIT
 		if ship not in _ships:
 			_ships[ship] = _ship_model(ship, length)
 		var model: Node3D = _ships[ship]
@@ -608,10 +405,8 @@ func _draw_ships() -> void:
 
 
 ## Where `ship` lies alongside in world units, and the way out to sea:
-## [middle, side]. A ship's middle is a tile out from the quay's edge.
+## [middle, side]. A ship's middle is a world unit out from the quay's edge.
 func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
-	if not ship.apron:
-		return [(Vector2(ship.cells[0]) + Vector2(ship.cells[-1])) / 2.0 + Vector2(ship.side) + Vector2(0.5, 0.5), Vector2(ship.side)]
 	var area: Dictionary = sim.areas.list[ship.apron]
 	var along := Vector2((area.end - area.start).sign())
 	var side := Vector2(area.out).normalized()
@@ -621,11 +416,11 @@ func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
 	return [edge / METRES_PER_UNIT + side, side]
 
 
-## Where the first `count` boxes on deck of a ship `length` tiles long sit,
+## Where the first `count` boxes on deck of a ship `length` world units long sit,
 ## in the ship's frame (length along +Z, bow at +Z): 40 ft bays from behind
 ## the bridge to short of the bow, three rows across, filled tier by tier.
 ## Boxes past the top tier are not drawn.
-static func deck_slots(length: int, count: int) -> Array[Vector3]:
+static func deck_slots(length: float, count: int) -> Array[Vector3]:
 	var bays := floori((length - SHIP_BOW - SHIP_STERN) / DECK_BAY)
 	var per_tier := bays * DECK_ROWS
 	var slots: Array[Vector3] = []
@@ -638,13 +433,10 @@ static func deck_slots(length: int, count: int) -> Array[Vector3]:
 
 ## A hull in the line's livery with a pointed bow, a bridge at the stern
 ## and a deck of boxes, turned so its length lies along the quay.
-func _ship_model(ship: PortSim.Ship, length: int) -> Node3D:
+func _ship_model(ship: PortSim.Ship, length: float) -> Node3D:
 	var model := Node3D.new()
-	if ship.apron:
-		var side := Vector2(sim.areas.list[ship.apron].out)
-		model.rotation.y = atan2(-side.y, side.x)
-	else:
-		model.rotation.y = 0.0 if ship.side.x != 0 else PI / 2
+	var side := Vector2(sim.areas.list[ship.apron].out)
+	model.rotation.y = atan2(-side.y, side.x)
 	var half := length / 2.0 - 0.2
 	var outline := PackedVector2Array([Vector2(-0.7, -half), Vector2(0.7, -half), Vector2(0.7, half - 1.0), Vector2(0, half), Vector2(-0.7, half - 1.0)])
 	var hull := MeshInstance3D.new()
@@ -692,7 +484,7 @@ func _draw_cranes() -> void:
 		if crane not in _cranes:
 			_cranes[crane] = _crane_model(crane)
 		var model: Node3D = _cranes[crane]
-		var ship := _ship_beside(crane.cell) if not crane.apron else _ship_over(crane)
+		var ship := _ship_over(crane)
 		var phase := crane.timer / move_minutes if crane.tractor != 0 else 0.0
 		var pose := crane_pose(phase, ship != null and ship.boxes > 0)
 		var trolley: Node3D = model.get_node("Trolley")
@@ -707,17 +499,12 @@ func _draw_cranes() -> void:
 ## The crane's model, turned so +Z points out to the water.
 func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var model := Node3D.new()
-	if crane.apron:
-		# Between an apron's rails, facing its water.
-		var area: Dictionary = sim.areas.list[crane.apron]
-		var depth: int = sim.rules.area_types.quay_apron.depth
-		var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
-		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
-		model.rotation.y = atan2(area.out.x, area.out.y)
-	else:
-		var water := sim.map.neighbor(crane.cell, PortMap.Tile.WATER) - crane.cell
-		model.position = Vector3(crane.cell.x + 0.5, 0.25, crane.cell.y + 0.5)
-		model.rotation.y = atan2(water.x, water.y)
+	# Between its apron's rails, facing the water.
+	var area: Dictionary = sim.areas.list[crane.apron]
+	var depth: int = sim.rules.area_types.quay_apron.depth
+	var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+	model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
+	model.rotation.y = atan2(area.out.x, area.out.y)
 	for x: float in [-0.35, 0.35]:
 		for z: float in [-0.35, 0.35]:
 			var leg := _box(Vector3(0.1, CRANE_HEIGHT, 0.1), CRANE_COLOR)
@@ -740,18 +527,10 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	return model
 
 
-## The ship alongside the quay tile `cell`, or null.
-## The ship along apron crane `crane`'s stretch of quay, or null.
+## The ship along crane `crane`'s stretch of quay, or null.
 func _ship_over(crane: PortSim.Crane) -> PortSim.Ship:
 	for ship: PortSim.Ship in sim.ships:
 		if crane in AreaFlow.cranes_for(sim, ship):
-			return ship
-	return null
-
-
-func _ship_beside(cell: Vector2i) -> PortSim.Ship:
-	for ship: PortSim.Ship in sim.ships:
-		if cell in ship.cells:
 			return ship
 	return null
 
@@ -771,19 +550,13 @@ func _draw_vehicles() -> void:
 	for part: Variant in _vehicle_parts:
 		buffers[part] = PackedFloat32Array()
 	var headings := {}
-	for vehicle: Vehicle in sim.vehicles + sim.area_vehicles:
+	for vehicle: Vehicle in sim.vehicles:
 		var pose := path_pose(vehicle.path, lerpf(vehicle.prev_t, vehicle.t, alpha))
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
 		headings[vehicle.id] = heading
-		var at: Vector2 = pose[0] + Vector2(0.5, 0.5)
-		var basis := Basis(Vector3.UP, atan2(heading.x, heading.y))
-		if vehicle in sim.area_vehicles:
-			# On the 4 m grid each lane is its own cell, so no keep-right offset.
-			at *= Grid.CELL / METRES_PER_UNIT
-			basis = basis.scaled_local(AREA_VEHICLE_SCALE)
-		else:
-			# Keep right: each direction drives in its own half of the road.
-			at += Vector2(-heading.y, heading.x) * LANE_OFFSET
+		# Each lane is its own cell, so a vehicle drives down the middle of it.
+		var at: Vector2 = (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+		var basis := Basis(Vector3.UP, atan2(heading.x, heading.y)).scaled_local(AREA_VEHICLE_SCALE)
 		var placed := Transform3D(basis, Vector3(at.x, 0.04, at.y))
 		_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
 		_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
@@ -904,37 +677,6 @@ func _draw_area_machines() -> void:
 			(box.material_override as StandardMaterial3D).albedo_color = PLAIN_BOX
 
 
-## Each yard block's machines: one over each box being handled, the rest
-## parked along the block. RTGs straddle the stacks; reach stackers drive
-## beside them. One MultiMesh per chunk and gear, as a port can have hundreds.
-func _draw_machines() -> void:
-	var working := {}  # block anchor -> tiles being handled
-	for vehicle: Vehicle in sim.vehicles:
-		if vehicle.state == "handling":
-			if vehicle.block not in working:
-				working[vehicle.block] = []
-			working[vehicle.block].append(vehicle.target)
-	var parts := {}
-	for part: Array in _machine_parts_drawn:
-		parts[part] = [] as Array[Transform3D]
-	for anchor in sim.yard.anchors():
-		var gear := sim.yard.gear_of(anchor)
-		var tiles := sim.yard.block(anchor)
-		var busy: Array = working.get(anchor, [])
-		var count := sim.yard.machines(anchor)
-		for i in count:
-			var cell: Vector2i = busy[i] if i < busy.size() else tiles[i * tiles.size() / count]
-			var part := [ChunkedMeshes.chunk_of(cell), gear]
-			if part not in parts:
-				parts[part] = [] as Array[Transform3D]
-			parts[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5, 0.08, cell.y + 0.5 + (0.0 if gear == "rtg" else 0.38))))
-	_machine_parts_drawn.clear()
-	for part: Array in parts:
-		_machines.show_part(part, _machine_meshes[part[1]], parts[part])
-		if not parts[part].is_empty():
-			_machine_parts_drawn[part] = true
-
-
 ## One mesh per kind of yard gear, standing on its origin.
 func _machine_mesh(gear: String) -> Mesh:
 	if gear != "rtg":
@@ -942,8 +684,8 @@ func _machine_mesh(gear: String) -> Mesh:
 			[Vector3(0.26, 0.2, 0.4), Vector3(0, 0.12, 0), Color(0.85, 0.35, 0.15)],
 			[Vector3(0.06, 0.06, 0.4), Vector3(0, 0.36, -0.1), Color(0.2, 0.2, 0.22)],
 		])
-	# Tall enough to clear a tile stacked to the gear's capacity.
-	var height: float = 0.3 + ceili(sim.rules.yard_gear.rtg.capacity / float(YARD_ROWS)) * BOX_HEIGHT
+	# Drawn scaled to REAL_RTG_HEIGHT; this only sets its proportions.
+	var height: float = 0.3 + sim.rules.yard_gear.rtg.tiers * BOX_HEIGHT
 	var parts := []
 	for x: float in [-0.56, 0.56]:
 		for z: float in [-0.3, 0.3]:
@@ -960,28 +702,6 @@ func _forget_gone(drawn: Dictionary, live: Array) -> void:
 		if thing not in live:
 			drawn[thing].queue_free()
 			drawn.erase(thing)
-
-
-## A road piece one tile across and TILE_HEIGHT[ROAD] thick, centred on the
-## origin, joining the sides ROAD_SHAPES gives for `shape`.
-func _road_mesh(shape: String) -> Mesh:
-	var outline := PackedVector2Array()
-	match shape:
-		"straight", "junction":
-			outline = [Vector2(-0.5, -0.5), Vector2(0.5, -0.5), Vector2(0.5, 0.5), Vector2(-0.5, 0.5)]
-		"end":
-			# Half a tile from the joined side, rounded off at the middle.
-			outline = [Vector2(0.5, 0.5), Vector2(-0.5, 0.5)]
-			for step in ARC_STEPS + 1:
-				var angle := PI - PI * step / ARC_STEPS
-				outline.append(Vector2(cos(angle), -sin(angle)) * 0.5)
-		"corner":
-			# A quarter disc of radius 1 about the corner between the joined sides.
-			outline = [Vector2(0.5, 0.5)]
-			for step in ARC_STEPS + 1:
-				var angle := PI + PI / 2 * step / ARC_STEPS
-				outline.append(Vector2(0.5, 0.5) + Vector2(cos(angle), sin(angle)))
-	return _prism(outline, TILE_HEIGHT[PortMap.Tile.ROAD], TILE_COLOR[PortMap.Tile.ROAD])
 
 
 ## `outline` (x, z) raised into a solid `height` thick, centred on y = 0.

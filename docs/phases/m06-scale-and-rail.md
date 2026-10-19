@@ -3,7 +3,8 @@
 **Goal.** Reach endgame entity counts on a mid-range PC, and add rail as the second land mode, the answer to truck spam. Also add reefers, Neopanamax, and hinterland demand.
 
 **Depends on.** M5 (roads and areas). This phase started before M5 existed, as M5 itself:
-- Done and kept: steps 1 and 2 (bench and profile; `bench/endgame_port.gd` needs its port rebuilt on roads and areas), 4 (vehicle MultiMeshes) and 6 (detail by distance; the stack slabs follow M5's stacks).
+- Done and kept: step 4 (vehicle MultiMeshes).
+- Done on tiles, to redo on roads and areas: steps 1 and 2 (the render bench, the endgame port and save, and the sim profiler went with the tile model at M5 step 22.2; `docs/perf.md` keeps their tile figures as the baseline) and 6 (detail by distance: the tile stacks' slabs and ChunkedMeshes went too).
 - Done on tiles and redone in M5: step 7 (distance fields), as part of the lane graph.
 - Skipped on evidence: step 5 (ships and cranes cost 5 ms of 168 render; see `docs/perf.md`).
 - Waiting for M5's model: steps 3, 8, 9, 11–15, 17 and 18.

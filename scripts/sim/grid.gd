@@ -5,6 +5,8 @@ extends RefCounted
 ## places things in metres from a cell's centre.
 
 const CELL := 4
+## No cell: where a vehicle has nowhere set to go.
+const NONE := Vector2i(-1, -1)
 
 
 static func cells(metres: int) -> int:

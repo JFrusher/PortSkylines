@@ -6,7 +6,6 @@ extends RefCounted
 
 const BASE_DIR := "res://data/base"
 const SCHEMA := {
-	"map": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
 	# The site for roads and areas, in metres, each a whole number of Grid cells.
 	"site": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
 	"start_money": TYPE_INT,
@@ -17,13 +16,13 @@ const SCHEMA := {
 	# Starting storage terms, the fee cap, how fees shorten import dwell, and
 	# how shippers (and so lines) feel about fees above the fair rate.
 	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},
-	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT},
 	"gate_minutes": TYPE_FLOAT,
-	"upkeep": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT, "sts_crane": TYPE_INT, "tractor": TYPE_INT},
+	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"sail_seconds": TYPE_FLOAT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"export_lorry_interval_minutes": TYPE_FLOAT,
 	"import_dwell_minutes": TYPE_FLOAT,
+	# Metres a vehicle second, which is one game minute; the tractor's too.
 	"lorry_speed": TYPE_FLOAT,
 	"give_up_seconds": TYPE_FLOAT,
 	# Every way cash can move, with the label the ledger panel shows.
@@ -41,6 +40,7 @@ const SCHEMA := {
 	# reputation changes by `reputation`, and no loans for `no_loans_days`.
 	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
 	# "*" means any key, each holding the record that follows.
+	# Length in metres, draft in metres, outreach in box rows.
 	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT}},
 	# Fictional shipping lines: the classes they sail (relative weights) and how
 	# strongly their reputation of the port moves.
@@ -53,9 +53,9 @@ const SCHEMA := {
 	},
 	# shortcut: one channel depth serves every berth; give each berth its own route and depth when ports get several channels.
 	"channel": {"start_depth": TYPE_FLOAT, "max_depth": TYPE_FLOAT, "cost_per_metre": TYPE_INT, "maintenance_per_metre": TYPE_INT, "maintenance_days": TYPE_INT},
-	# The map is split into square land tiles of `cells` cells; the port owns
+	# The site is split into square land tiles `metres` across; the port owns
 	# the `start` block of tiles and buys the rest at `price`, paying `upkeep` a day each.
-	"land": {"cells": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
+	"land": {"metres": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
 	# An STS crane: its price, moves an hour, outreach in box rows, days from
 	# order to standing, and width along the quay in metres.
 	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT},
@@ -69,11 +69,11 @@ const SCHEMA := {
 	"area_types": {"*": {"name": TYPE_STRING, "depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
-	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
+	"yard_gear": {"*": {"upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "cells", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed"]
 
 static var _base := {}
 

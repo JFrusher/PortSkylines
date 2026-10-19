@@ -4,54 +4,40 @@ extends RefCounted
 ## read from the sim. Reads PortSim, never changes it.
 
 const STATES := {
-	"drive": "Driving", "yard": "Queueing for a yard machine", "handling": "Being handled in the yard",
-	"gate": "At the gate", "under_crane": "Under a crane", "no_route": "Waiting for a road",
 	"arriving": "Driving to its area", "queued": "Waiting for a handover slot", "to_slot": "Driving to its handover slot",
-	"handled": "Being handled in the yard", "at_gate": "At the gate", "returning": "Driving out of the yard",
+	"handling": "Waiting for a yard machine", "handled": "Being handled in the yard", "under_crane": "Under a crane", "at_gate": "At the gate", "returning": "Driving out of the yard",
 	"leaving": "Leaving the port", "to_crane": "Bringing an export to its crane",
 }
 const SHIP_STATES := ["Arriving", "Working", "Leaving", "At anchor"]
 
 
-## The vehicle, ship or crane at `cell`, else an area at `grid_cell` on the
-## 4 m grid as {"area": id}, else the cell itself.
-static func pick(sim: PortSim, cell: Vector2i, grid_cell: Vector2i) -> Variant:
+## The vehicle, ship or crane at grid cell `cell`, else an area there as
+## {"area": id}, else null.
+static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for vehicle in sim.vehicles:
 		if Vector2i(vehicle.position(1.0).round()) == cell:
 			return vehicle
-	for vehicle in sim.area_vehicles:
-		if Vector2i(vehicle.position(1.0).round()) == grid_cell:
-			return vehicle
 	for ship in sim.ships:
-		if ship.apron and grid_cell in _ship_water(sim, ship):
+		if ship.apron and cell in _ship_water(sim, ship):
 			return ship
 	for crane in sim.cranes:
-		if crane.apron and grid_cell in _crane_cells(sim, crane):
+		if cell in _crane_cells(sim, crane):
 			return crane
-	for ship in sim.ships:
-		for quay in ship.cells:
-			if quay + ship.side == cell:
-				return ship
-	for crane in sim.cranes:
-		if crane.cell == cell:
-			return crane
-	var area := sim.areas.area_at(grid_cell)
-	if area:
-		return {"area": area}
-	return cell
+	var area := sim.areas.area_at(cell)
+	return {"area": area} if area else null
 
 
 ## A title then lines of state for `thing` from `pick`, or [] once it is gone.
 static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 	if thing is Vehicle:
-		return _vehicle(sim, thing) if thing in sim.vehicles or thing in sim.area_vehicles else []
+		return _vehicle(sim, thing) if thing in sim.vehicles else []
 	if thing is PortSim.Ship:
 		return _ship(sim, thing) if thing in sim.ships else []
 	if thing is PortSim.Crane:
 		return _crane(sim, thing) if thing in sim.cranes else []
 	if thing is Dictionary:
 		return _area(sim, thing.area) if thing.area in sim.areas.list else []
-	return _cell(sim, thing)
+	return []
 
 
 ## The water an apron ship lies in: its length of the quay edge, out to its beam.
@@ -77,7 +63,8 @@ static func _crane_cells(sim: PortSim, crane: PortSim.Crane) -> Array[Vector2i]:
 
 
 static func _vehicle(sim: PortSim, vehicle: Vehicle) -> Array[String]:
-	var lines: Array[String] = ["%s %d" % [vehicle.kind.capitalize(), vehicle.id], STATES.get(vehicle.state, vehicle.state)]
+	var doing: String = "Waiting for a road" if vehicle.state.begins_with("no_route:") else STATES.get(vehicle.state, vehicle.state)
+	var lines: Array[String] = ["%s %d" % [vehicle.kind.capitalize(), vehicle.id], doing]
 	if vehicle.loaded:
 		var box: Dictionary = sim.boxes[vehicle.box]
 		lines.append("Carrying a %s %s box%s" % ["40 ft" if box.teu == 2 else "20 ft", box.kind, ", reefer" if box.reefer else ""])
@@ -114,20 +101,4 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		lines.append("Favours " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
 	var idle := sim.areas.idle_reason(id)
 	lines.append(idle if idle else "Working")
-	return lines
-
-
-static func _cell(sim: PortSim, cell: Vector2i) -> Array[String]:
-	if not sim.map.in_bounds(cell):
-		return []
-	var kind := sim.map.tile(cell)
-	var lines: Array[String] = [PortMap.Tile.keys()[kind].capitalize()]
-	if kind == PortMap.Tile.YARD:
-		var yard := sim.yard
-		lines.append("%s block, %s" % [yard.role_of(cell).capitalize(), yard.gear_of(cell).replace("_", " ")])
-		lines.append("%d of %d boxes stacked here" % [yard.count(cell), yard.capacity(cell)])
-		var anchor := yard.anchor(cell)
-		lines.append("%d of %d machines busy" % [yard.busy.get(anchor, 0), yard.machines(anchor)])
-	if not sim.owns(cell) and kind != PortMap.Tile.WATER:
-		lines.append("Land the port does not own")
 	return lines

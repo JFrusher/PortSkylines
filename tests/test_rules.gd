@@ -36,6 +36,7 @@ func _initialize() -> void:
 	_test_bailout_fires_once()
 	_test_saved_reputation_meets_a_new_line()
 	_test_creative_mode_builds_without_cash()
+	_test_land_must_be_bought()
 	_test_cranes_arrive_after_their_lead_time()
 	_test_dredging()
 	_test_milestones_unlock_content()
@@ -92,7 +93,7 @@ func _test_round_trip() -> void:
 	var copy := PortSim.from_dict(halves.to_dict())
 	_expect(copy.state_hash(), halves.state_hash(), "to_dict -> from_dict keeps the state")
 	_run(copy, 25)
-	_expect(copy.ships.is_empty() and copy.area_vehicles.is_empty(), false, "the round trip happened mid-traffic")
+	_expect(copy.ships.is_empty() and copy.vehicles.is_empty(), false, "the round trip happened mid-traffic")
 	_expect(copy.state_hash(), straight.state_hash(), "a round trip mid-run changes nothing")
 
 
@@ -188,7 +189,7 @@ func _test_import_dwell() -> void:
 		sim.tick()
 		if first_lifted < 0 and not sim.boxes.is_empty():
 			first_lifted = sim.clock.calendar_minutes()
-		if first_pickup < 0 and sim.area_vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry"):
+		if first_pickup < 0 and sim.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry"):
 			first_pickup = sim.clock.calendar_minutes()
 	_expect(first_lifted > 0 and first_pickup > 0, true, "imports were lifted and collected")
 	_expect(first_pickup - first_lifted >= 60.0, true, "no lorry comes before the hour's dwell (lifted %.1f, first lorry %.1f)" % [first_lifted, first_pickup])
@@ -202,7 +203,7 @@ func _test_gate() -> void:
 	var box := gateless._new_box("import", 0.0, "")
 	AreaFlow._stacks(gateless, 3).place(box, gateless.boxes[box].teu)
 	_run(gateless, 5)
-	_expect(gateless.area_vehicles.is_empty(), true, "no lorry comes in without a gate")
+	_expect(gateless.vehicles.is_empty(), true, "no lorry comes in without a gate")
 	_expect(gateless.last_event().contains("build a gate"), true, "the status says so (%s)" % gateless.last_event())
 	var sim := AreaPort.base(rules)
 	_run(sim, FIRST_SHIP + 240)
@@ -221,7 +222,6 @@ func _test_upkeep_at_midnight() -> void:
 	for id: int in sim.areas.list:
 		cells += sim.areas.cells(id).size() * rules.area_types[sim.areas.list[id].type].upkeep_per_cell
 	var expected := roundi(cells)
-	expected += rules.upkeep.road * sim.map.cells_of(PortMap.Tile.ROAD).size()  # the tile map's highway, until step 22.2
 	expected += rules.upkeep.sts_crane * 2 + rules.upkeep.tractor * 6 + rules.land.upkeep * sim.land.size()
 	expected += rules.yard_gear.reach_stacker.upkeep_per_machine * sim.machines.list.size()
 	_expect(sim.daily_upkeep(), expected, "upkeep adds every road and area cell, crane, tractor, yard machine and land tile")
@@ -408,6 +408,26 @@ func _test_creative_mode_builds_without_cash() -> void:
 	_expect(copy.creative, true, "creative mode survives a save")
 
 
+## The port starts owning the middle third of the site; roads and areas
+## elsewhere wait until it buys the land, which then costs upkeep.
+func _test_land_must_be_bought() -> void:
+	var sim := PortSim.new(0, RandomPort.quick())
+	sim.ledger.cash = 100000
+	var north := {"op": "build_road", "from": Vector2i(150, 100), "to": Vector2i(170, 100), "type": "terminal_1_1"}
+	_expect(sim.apply(north), "Buy this land first", "no road outside the port's land")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(150, 205), "to": Vector2i(170, 205), "type": "terminal_1_1"}), "", "a road on the port's land")
+	var refused: Array = [1, -1].map(func(side: int) -> String: return sim.build_area_error("yard_block", 1, side, 0, 15))
+	_expect(refused.has("Buy this land first") and refused.has(""), true, "an area reaching off the port's land is refused, the other side of the road is not (%s)" % [refused])
+	var before := sim.money
+	var upkeep := sim.daily_upkeep()
+	_expect(sim.apply({"op": "buy_land", "tile": sim.land_tile(Vector2i(150, 100))}), "", "buy the land tile north of the start")
+	_expect([before - sim.money, sim.daily_upkeep() - upkeep], [sim.rules.land.price, sim.rules.land.upkeep], "land costs its price, then upkeep every day")
+	_expect(sim.apply(north), "", "and can be built on")
+	_expect(sim.buy_land(sim.land_tile(Vector2i(150, 100))), "The port owns this land already", "land is bought once")
+	_expect(sim.buy_land(Vector2i(3, 0)), "Off the site", "only the site's tiles are for sale")
+	_expect(sim.buy_land(sim.land_tile(Grid.NONE)), "Off the site", "a click off the site buys nothing")
+
+
 ## An STS crane ordered now stands on its apron exactly when its lead time ends.
 func _test_cranes_arrive_after_their_lead_time() -> void:
 	var rules := Content.base().duplicate(true)
@@ -507,22 +527,22 @@ func _test_year_end_scoreboard() -> void:
 
 func _test_inspect_each_entity() -> void:
 	var sim := AreaPort.base()
-	while sim.area_vehicles.is_empty():
+	while sim.vehicles.is_empty():
 		sim.tick()
 	var ship := sim.ships[0]
 	var crane := sim.cranes[0]
-	var vehicle := sim.area_vehicles[0]
+	var vehicle := sim.vehicles[0]
 	var apron: Dictionary = sim.areas.list[1]
 	var along: Vector2i = (apron.end - apron.start).sign()
 	var water: Vector2i = apron.start + along * (ship.from + 5) + apron.out * (sim.rules.area_types.quay_apron.depth + 2)
-	_expect(Inspect.pick(sim, PortMap.NONE, water), ship, "a click on the water beside an apron picks its ship")
+	_expect(Inspect.pick(sim, water), ship, "a click on the water beside an apron picks its ship")
 	_expect(Inspect.describe(sim, ship)[0], "%s feeder" % sim.contracts.name_of(ship.line), "a ship is named by line and class")
-	_expect(Inspect.pick(sim, PortMap.NONE, apron.start + along * crane.along + apron.out * 4), crane, "a click between a crane's rails picks the crane")
+	_expect(Inspect.pick(sim, apron.start + along * crane.along + apron.out * 4), crane, "a click between a crane's rails picks the crane")
 	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
-	_expect(Inspect.pick(sim, PortMap.NONE, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
+	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
 	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
 	_expect(Inspect.describe(sim, {"area": 3}).slice(0, 3), ["Yard block", "Terminal 1", "Import block, reach stacker"] as Array[String], "a yard block shows its rules")
-	sim.area_vehicles.erase(vehicle)
+	sim.vehicles.erase(vehicle)
 	_expect(Inspect.describe(sim, vehicle), [] as Array[String], "a vehicle that left shows nothing")
 
 
@@ -532,14 +552,14 @@ func _test_removing_areas_in_use() -> void:
 	var sim := AreaPort.base()
 	_run(sim, FIRST_SHIP + 20)
 	var ship := sim.ships[0]
-	_expect(_stacked(sim) > 0 and not sim.area_vehicles.is_empty(), true, "boxes are stacked and tractors busy")
+	_expect(_stacked(sim) > 0 and not sim.vehicles.is_empty(), true, "boxes are stacked and tractors busy")
 	var boxes := sim.boxes.size()
-	var lost := _stacked(sim) + sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.area == 3 and v.loaded).size()
+	var lost := _stacked(sim) + sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == 3 and v.loaded).size()
 	_expect(sim.apply({"op": "remove_area", "id": 3}), "", "the yard block is removed in use")
-	_expect([sim.boxes.size(), sim.area_vehicles.any(func(v: Vehicle) -> bool: return v.area == 3)], [boxes - lost, false], "its boxes are lost and its vehicles scrapped")
+	_expect([sim.boxes.size(), sim.vehicles.any(func(v: Vehicle) -> bool: return v.area == 3)], [boxes - lost, false], "its boxes are lost and its vehicles scrapped")
 	_expect(sim.last_event().begins_with("Removing the area lost"), true, "and the status says so (%s)" % sim.last_event())
 	_expect(sim.apply({"op": "remove_area", "id": 1}), "", "the apron is removed with a ship alongside")
-	_expect([ship.state, sim.cranes.size()], [PortSim.Ship.State.LEAVING, 0], "the ship sails and the cranes come down")
+	_expect([ship in sim.ships, sim.ship_log[-1].moves, sim.cranes.size()], [false, ship.moves, 0], "the ship sails at once with its call logged, and the cranes come down")
 	for i in 200:
 		sim.tick()
 	_expect(sim.machines.list.is_empty(), true, "the block's machines go")

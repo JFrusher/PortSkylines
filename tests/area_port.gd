@@ -5,7 +5,7 @@ const RandomPort := preload("res://tests/random_port.gd")
 ## working its first ship. Building them is checked with push_error, so a
 ## broken helper shows up as an ERROR line, which CI fails on.
 
-## A terminal on the coast: a 1+1 road south along x = 85 from y = 100 to the
+## A terminal on the coast: a 1+1 road south along x = 85 from y = 200 to the
 ## site entry's row, then east to the entry; a quay apron `apron_length`
 ## cells long west of the coast road, and a gate on the north side of the
 ## east road, fed by the westbound lane lorries come in on. Traffic only
@@ -13,9 +13,9 @@ const RandomPort := preload("res://tests/random_port.gd")
 static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
 	var sim := PortSim.new(0, rules, true)
 	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, entry.y), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, entry.y), "type": "terminal_1_1"})
 	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"})
-	var coast := sim.roads.segment_at(Vector2i(85, 150))
+	var coast := sim.roads.segment_at(Vector2i(85, 250))
 	var east := sim.roads.segment_at(Vector2i(200, entry.y))
 	_built(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 0, "to": apron_length - 1}), "the terminal's apron is built")
 	_built(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 300, "to": 314}), "the terminal's gate is built")
@@ -42,7 +42,7 @@ static func working_terminal(imports: int, exports := 0) -> PortSim:
 	sim.apply({"op": "buy_tractors", "count": 4})
 	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], sim.clock.calendar_minutes() + 600.0, imports, exports)
 	sim.ships.append(ship)
-	_built("" if sim._berth(ship) else "refused", "the feeder berths")
+	_built("" if AreaFlow.berth(sim, ship) else "refused", "the feeder berths")
 	ship.state = PortSim.Ship.State.WORKING
 	ship.sail = 1.0
 	ship.berthed = sim.clock.calendar_minutes()
@@ -96,6 +96,15 @@ static func chain(seed_value: int) -> PortSim:
 	for along: int in [12, 30, 48]:
 		_built(sim.apply({"op": "place_sts", "apron": 1, "along": along}), "a crane is ordered")
 	_built(sim.apply({"op": "buy_tractors", "count": 6}), "tractors are bought")
+	return sim
+
+
+## Gives `sim` every land tile of the site, for tests that build anywhere.
+static func owned(sim: PortSim) -> PortSim:
+	var metres: float = sim.rules.land.metres
+	for x in ceili(sim.rules.site.width / metres):
+		for y in ceili(sim.rules.site.height / metres):
+			sim.land[Vector2i(x, y)] = true
 	return sim
 
 

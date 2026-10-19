@@ -4,6 +4,7 @@ extends SceneTree
 ## dredging the channel lets a deeper class call.
 ## godot --headless --script res://tests/test_economy_scenarios.gd
 
+const AreaPort := preload("res://tests/area_port.gd")
 const RandomPort := preload("res://tests/random_port.gd")
 
 var _failures := 0
@@ -23,25 +24,11 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
 
 
-## The test port of test_sim: a gate, a 12-tile quay with an apron, two
-## cranes, six tractors and a 3x2 import block.
+## AreaPort.base's port in creative mode, so cash never gets in the way,
+## with no services: each scenario books its own.
 func _port(rules: Dictionary) -> PortSim:
-	var sim := PortSim.new(0, rules)
-	sim.creative = true  # build the test port without worrying about cash
-	var row := sim.map.entry.y
-	var coast := sim.map.sea_width
-	for x in range(coast + 1, sim.map.entry.x):
-		sim.build(PortMap.Tile.GATE if x == sim.map.entry.x - 3 else PortMap.Tile.ROAD, Vector2i(x, row))
-	for y in range(row - 6, row + 6):
-		sim.build(PortMap.Tile.QUAY, Vector2i(coast, y))
-		if y != row:
-			sim.build(PortMap.Tile.ROAD, Vector2i(coast + 1, y))
-	for y: int in [row - 1, row]:
-		sim.place_crane(Vector2i(coast, y))
-	sim.buy_tractors(6)
-	for x in range(coast + 3, coast + 6):
-		for y: int in [row - 2, row - 1]:
-			sim.build(PortMap.Tile.YARD, Vector2i(x, y))
+	var sim := AreaPort.base(rules, "")
+	sim.creative = true
 	return sim
 
 

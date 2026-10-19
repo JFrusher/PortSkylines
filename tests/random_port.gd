@@ -1,8 +1,8 @@
 extends RefCounted
-## Seeded command logs for tests: a working port (road from the highway,
-## quay, cranes, tractors, an import and an export block), then random builds
-## and bulldozes near the coast, and offer answers, loans, land, dredging and
-## storage terms, at random ticks. Many are refused; that is part of the log.
+## Seeded command logs for tests: a working port on roads and areas, then
+## random roads and areas, cranes, tractors, offer answers, loans, land,
+## dredging and storage terms, at random ticks. Many are refused; that is part
+## of the log. Also test rules that make a port work at once, and services.
 
 
 ## A copy of `game_rules` for a port that works at once: cranes stand the
@@ -34,53 +34,64 @@ static func calls(sim: PortSim, kind := "feeder", first := 10, every := 45, coun
 		sim.contracts.services.append({"id": 1000 + i, "line": line, "kind": kind, "start": first + every * i, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves})
 
 
+## A tick-tagged log: AreaPort.chain's port built by commands at tick 0 (a
+## coast road and an east road to the highway, a quay apron, a gate, an
+## import and an export block in one terminal, three STS cranes and six
+## tractors), then `extra_commands` random ones at random ticks: roads and
+## areas south of the port, taken out again, cranes, tractors and the economy.
+## Random commands leave the port's own roads and areas alone, so it keeps
+## working; test_rules covers removing them in use.
 static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var map := PortSim.new().map
+	var entry := PortSim.new().site_entry()
+	var port: Array[Dictionary] = [
+		{"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, entry.y), "type": "terminal_1_1"},
+		{"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"},
+		{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 79},
+		{"op": "build_area", "type": "gate", "segment": 2, "side": -1, "from": 300, "to": 314},
+		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 30, "to": 59},
+		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 61, "to": 90},
+		{"op": "set_area", "id": 4, "settings": {"role": "export"}},
+	]
+	for id: int in [2, 3, 4]:
+		port.append({"op": "set_terminal", "id": id, "terminal": 1})
+	for along: int in [12, 30, 48]:
+		port.append({"op": "place_sts", "apron": 1, "along": along})
+	port.append({"op": "buy_tractors", "count": 6})
 	var log: Array[Dictionary] = []
-	for x in range(map.sea_width + 1, map.entry.x):
-		var kind := PortMap.Tile.GATE if x == map.entry.x - 3 else PortMap.Tile.ROAD
-		log.append({"tick": 0, "command": {"op": "build", "kind": kind, "cell": Vector2i(x, map.entry.y)}})
-	# A 12-tile quay, long enough for every ship class.
-	for y in range(map.entry.y - 6, map.entry.y + 6):
-		log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(map.sea_width, y)}})
-		if y != map.entry.y:
-			log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.ROAD, "cell": Vector2i(map.sea_width + 1, y)}})
-	log.append({"tick": 0, "command": {"op": "buy_tractors", "count": 6}})
-	for y: int in [map.entry.y - 1, map.entry.y]:
-		log.append({"tick": 0, "command": {"op": "place_crane", "cell": Vector2i(map.sea_width, y)}})
-	log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.YARD, "cell": Vector2i(map.sea_width + 2, map.entry.y - 1)}})
-	var exports := Vector2i(map.sea_width + 6, map.entry.y + 1)
-	log.append({"tick": 0, "command": {"op": "build", "kind": PortMap.Tile.YARD, "cell": exports}})
-	log.append({"tick": 0, "command": {"op": "set_yard", "cell": exports, "settings": {"role": "export"}}})
-	var kinds := [PortMap.Tile.ROAD, PortMap.Tile.QUAY, PortMap.Tile.YARD]
+	for command in port:
+		log.append({"tick": 0, "command": command})
+	var road_types: Array = Content.base().road_types.keys()
+	var area_types: Array = Content.base().area_types.keys()
 	# sort_custom is not stable, so only the random commands are sorted; the
 	# port above must be built in the order written.
 	var extra: Array[Dictionary] = []
 	for i in extra_commands:
-		var cell := Vector2i(rng.randi_range(map.sea_width - 1, map.sea_width + 8), rng.randi_range(map.entry.y - 5, map.entry.y + 5))
 		var roll := rng.randf()
-		var command := {"op": "bulldoze", "cell": cell} if roll < 0.2 else {"op": "build", "kind": kinds[rng.randi() % kinds.size()], "cell": cell}
-		# Roads on the 4 m grid: drawn at any angle (some refused), and taken out again.
-		if roll >= 0.2 and roll < 0.3:
-			var from := Vector2i(rng.randi_range(80, 120), rng.randi_range(80, 120))
+		var command := {}
+		# Roads on the 4 m grid south of the port: drawn at any angle (some refused), and taken out again.
+		if roll < 0.3:
+			var from := Vector2i(rng.randi_range(150, 250), rng.randi_range(320, 390))
 			var to := from + Vector2i(rng.randi_range(-12, 12), rng.randi_range(-12, 12))
-			command = {"op": "build_road", "from": from, "to": to, "type": Content.base().road_types.keys()[rng.randi() % Content.base().road_types.size()]}
-		elif roll >= 0.3 and roll < 0.33:
-			command = {"op": "remove_road", "segment": rng.randi_range(1, 20)}
-		elif roll >= 0.33 and roll < 0.4:
-			var type: String = Content.base().area_types.keys()[rng.randi() % Content.base().area_types.size()]
-			command = {"op": "build_area", "type": type, "segment": rng.randi_range(1, 20), "side": [1, -1][rng.randi() % 2], "from": rng.randi_range(0, 4), "to": rng.randi_range(4, 30)}
-		elif roll >= 0.4 and roll < 0.42:
-			command = {"op": "remove_area", "id": rng.randi_range(1, 10)}
-		elif roll >= 0.42 and roll < 0.46:
-			command = {"op": "set_area", "id": rng.randi_range(1, 10), "settings": {"role": PortSim.AREA_ROLES[rng.randi() % PortSim.AREA_ROLES.size()]}}
-		elif roll >= 0.46 and roll < 0.48:
-			command = {"op": "set_terminal", "id": rng.randi_range(1, 10), "terminal": rng.randi_range(0, 3)}
+			command = {"op": "build_road", "from": from, "to": to, "type": road_types[rng.randi() % road_types.size()]}
+		elif roll < 0.33:
+			command = {"op": "remove_road", "segment": rng.randi_range(3, 20)}
+		elif roll < 0.45:
+			command = {"op": "build_area", "type": area_types[rng.randi() % area_types.size()], "segment": rng.randi_range(3, 20), "side": [1, -1][rng.randi() % 2], "from": rng.randi_range(0, 4), "to": rng.randi_range(4, 30)}
+		elif roll < 0.5:
+			command = {"op": "remove_area", "id": rng.randi_range(5, 12)}
+		elif roll < 0.56:
+			command = {"op": "set_area", "id": rng.randi_range(5, 12), "settings": {"role": PortSim.AREA_ROLES[rng.randi() % PortSim.AREA_ROLES.size()]}}
+		elif roll < 0.6:
+			command = {"op": "set_terminal", "id": rng.randi_range(5, 12), "terminal": rng.randi_range(0, 3)}
+		elif roll < 0.75:
+			command = {"op": "place_sts", "apron": rng.randi_range(1, 6), "along": rng.randi_range(0, 80)}
+		elif roll < 0.88:
+			command = {"op": "buy_tractors", "count": rng.randi_range(1, 2)}
 		# The economy: offers are numbered from 1, so some answers find one and
 		# some are refused; loans, land and dredging are refused without the cash.
-		if roll > 0.88:
+		else:
 			var economy: Array[Dictionary] = [
 				{"op": "accept_offer", "id": rng.randi_range(1, 10)},
 				{"op": "decline_offer", "id": rng.randi_range(1, 10)},

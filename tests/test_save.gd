@@ -2,6 +2,8 @@ extends SceneTree
 ## Headless tests for SaveFile and the committed save fixtures.
 ## godot --headless --script res://tests/test_save.gd
 
+const AreaPort := preload("res://tests/area_port.gd")
+
 var _failures := 0
 
 
@@ -11,12 +13,9 @@ func _initialize() -> void:
 	_test_save_replaces_existing()
 	_test_failed_save_preserves_destination()
 	_test_malformed_payloads_are_refused()
-	_test_malformed_v1_is_refused()
-	_test_v2_cash_moves_into_the_ledger()
-	_test_every_fixture_loads()
-	_test_v3_boxes_belong_to_no_line()
-	_test_v4_has_no_roads_and_v5_keeps_them()
+	_test_every_fixture_loads_or_is_refused()
 	_test_area_flow_round_trips()
+	_test_a_removed_apron_saves()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -28,8 +27,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 
 
 func _test_save_load_save_is_identical() -> void:
-	var sim := PortSim.new(3)
-	sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(12, 40)})
+	var sim := AreaPort.base()
 	for i in 500:
 		sim.tick()
 	_expect(SaveFile.save("user://a.bin", sim), "", "save")
@@ -52,11 +50,16 @@ func _test_bad_files_are_refused() -> void:
 	_expect(SaveFile.load_from("user://missing.bin").has("error"), true, "a missing file is refused")
 
 
-func _test_every_fixture_loads() -> void:
+## Saves from before roads and areas are refused with a reason; every later
+## one loads and plays on.
+func _test_every_fixture_loads_or_is_refused() -> void:
 	var fixtures := Array(DirAccess.get_files_at("res://tests/fixtures")).filter(func(f: String) -> bool: return f.begins_with("save_v") and f.ends_with(".bin"))
 	_expect(fixtures.size() >= SaveFile.VERSION, true, "a fixture exists for every save version (%s)" % [fixtures])
 	for name: String in fixtures:
 		var loaded := SaveFile.load_from("res://tests/fixtures/" + name)
+		if name.trim_prefix("save_v").to_int() < SaveFile.FIRST:
+			_expect(loaded.get("error", "").contains("saved before roads and areas"), true, "%s is refused with the reason (%s)" % [name, loaded.get("error", "")])
+			continue
 		_expect(loaded.has("sim"), true, "%s loads (%s)" % [name, loaded.get("error", "")])
 		if loaded.has("sim"):
 			var sim: PortSim = loaded.sim
@@ -116,7 +119,7 @@ func _test_malformed_payloads_are_refused() -> void:
 	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
 	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
 	# Every field each deserialiser reads, through the public load path.
-	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["contracts"], ["finance"], ["ships", 0], ["cranes", 0], ["vehicles", 0], ["roads"], ["areas"], ["roads", "segments", 1], ["areas", "list", 1]]:
+	for section: Array in [[], ["ledger"], ["contracts"], ["finance"], ["ships", 0], ["cranes", 0], ["vehicles", 0], ["roads"], ["areas"], ["roads", "segments", 1], ["areas", "list", 1], ["machines"]]:
 		var original := _section(valid, section)
 		for key: String in original:
 			var missing := valid.duplicate(true)
@@ -141,37 +144,16 @@ func _test_malformed_payloads_are_refused() -> void:
 	var unknown_apron := valid.duplicate(true)
 	unknown_apron.ships[0].apron = 99
 	_expect_payload_refused(unknown_apron, "a ship at a quay apron that isn't there")
-	var no_cells := valid.duplicate(true)
-	no_cells.ships[0].cells = []
-	_expect_payload_refused(no_cells, "a berthed ship with no cells")
-	for size: Vector2i in [Vector2i.ZERO, Vector2i(-1, 48), Vector2i(64, 49)]:
-		var bad := valid.duplicate(true)
-		bad.map.size = size
-		_expect_payload_refused(bad, "invalid map dimensions %s" % size)
-	var bad_tiles := valid.duplicate(true)
-	bad_tiles.map.tiles[0] = 255
-	_expect_payload_refused(bad_tiles, "unknown tile kind")
+	var adrift := valid.duplicate(true)
+	adrift.ships[0].apron = 0
+	_expect_payload_refused(adrift, "a ship out of anchorage at no apron")
+	var floating := valid.duplicate(true)
+	floating.cranes[0].apron = 99
+	_expect_payload_refused(floating, "a crane on a quay apron that isn't there")
 	for value: float in [NAN, INF, -INF]:
 		var bad := valid.duplicate(true)
 		bad.vehicles[0].t = value
 		_expect_payload_refused(bad, "non-finite vehicle position")
-
-
-func _test_malformed_v1_is_refused() -> void:
-	var v1: Dictionary = {"version": 1, "sim": {"delivered": 0, "stacked": {Vector2i(14, 23): 3}}}
-	for stacked: Variant in [null, [], {"bad key": 1}, {Vector2i(14, 23): "bad count"}, {Vector2i(14, 23): -1}, {Vector2i(14, 23): 1000000}]:
-		var bad := v1.duplicate(true)
-		bad.sim.stacked = stacked
-		_write_payload("user://bad_v1.bin", bad)
-		_expect(SaveFile.load_from("user://bad_v1.bin").get("error", "").contains("not a Port Skylines save"), true, "v1 stacked %s is refused" % [stacked])
-
-
-func _test_v2_cash_moves_into_the_ledger() -> void:
-	var file := FileAccess.open("res://tests/fixtures/save_v2.bin", FileAccess.READ)
-	file.get_buffer(SaveFile.MAGIC.length())
-	var raw: Dictionary = file.get_var(false)
-	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v2.bin").sim
-	_expect([sim.money, sim.ledger.opened, sim.ledger.today_total()], [raw.sim.money, raw.sim.money, 0], "v2 cash opens the ledger")
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:
@@ -194,35 +176,15 @@ func _write_payload(path: String, data: Variant) -> void:
 	file.close()
 
 
-func _test_v3_boxes_belong_to_no_line() -> void:
-	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v3.bin").sim
-	_expect(sim.boxes.is_empty(), false, "the v3 fixture has boxes")
-	_expect(sim.boxes.values().all(func(b: Dictionary) -> bool: return b.line == ""), true, "v3 boxes migrate to no line")
-
-
-func _test_v4_has_no_roads_and_v5_keeps_them() -> void:
-	var old: PortSim = SaveFile.load_from("res://tests/fixtures/save_v4.bin").sim
-	_expect(old.roads.segments.is_empty(), true, "a v4 port has no 4 m roads")
-	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v5.bin").sim
-	_expect(sim.roads.segments.size(), 4, "a v5 port keeps its two crossing roads, split in two at the crossing")
-	_expect(sim.lanes.route(Vector2i(100, 120), Vector2i(140, 120), true).is_empty(), false, "and routes on them after loading")
-	_expect(sim.areas.list.is_empty(), true, "a v5 port has no areas")
-	var v6: PortSim = SaveFile.load_from("res://tests/fixtures/save_v6.bin").sim
-	_expect(v6.areas.list.size(), 1, "a v6 port keeps its yard block")
-	_expect(v6.areas.cells(1).size(), 16 * v6.rules.area_types.yard_block.depth, "with its cells")
-	_expect(v6.areas.list[1].settings, {"role": "import", "gear": "reach_stacker", "lines": []}, "a v6 yard block gets a new block's rules")
-	_expect([v6.areas.list[1].terminal, v6.areas.terminals], [1, {1: {"name": "Terminal 1"}}], "and joins Terminal 1")
-
-
 ## A port mid-discharge on roads and areas saves and loads to the same state,
 ## then plays on the same as one never saved.
 func _test_area_flow_round_trips() -> void:
-	var sim: PortSim = preload("res://tests/area_port.gd").working_terminal(3)
+	var sim: PortSim = AreaPort.working_terminal(3)
 	for i in 2000:
 		sim.tick()
-		if not (sim.area_vehicles.is_empty() or sim.machine_jobs.is_empty()):
+		if not (sim.vehicles.is_empty() or sim.machine_jobs.is_empty()):
 			break
-	_expect(sim.area_vehicles.is_empty() or sim.machine_jobs.is_empty(), false, "tractors and machines are busy at save time")
+	_expect(sim.vehicles.is_empty() or sim.machine_jobs.is_empty(), false, "tractors and machines are busy at save time")
 	_expect(SaveFile.save("user://area_flow.bin", sim), "", "a port mid-discharge saves")
 	var loaded: PortSim = SaveFile.load_from("user://area_flow.bin").sim
 	_expect(loaded.to_dict(), sim.to_dict(), "and loads to the same state")
@@ -230,3 +192,12 @@ func _test_area_flow_round_trips() -> void:
 		sim.tick()
 		loaded.tick()
 	_expect(loaded.state_hash(), sim.state_hash(), "then plays on the same")
+
+
+## Bulldozing a quay apron with a ship alongside: the port saves and loads.
+func _test_a_removed_apron_saves() -> void:
+	var sim: PortSim = AreaPort.working_terminal(5)
+	_expect(sim.apply({"op": "remove_area", "id": 1}), "", "the apron is removed with a ship alongside")
+	_expect(SaveFile.save("user://removed.bin", sim), "", "the port saves")
+	var loaded := SaveFile.load_from("user://removed.bin")
+	_expect(loaded.has("sim"), true, "and loads (%s)" % loaded.get("error", ""))

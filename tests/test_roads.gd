@@ -157,7 +157,7 @@ func _test_editing() -> void:
 
 
 func _test_sim_commands() -> void:
-	var sim := PortSim.new()
+	var sim := AreaPort.owned(PortSim.new())
 	var money := sim.money
 	var upkeep := sim.daily_upkeep()
 	var cost: int = sim.rules.road_types.terminal_2_2.cost_per_cell
@@ -167,7 +167,7 @@ func _test_sim_commands() -> void:
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(15, 10), "to": Vector2i(25, 10), "type": "terminal_1_1"}), "A road already runs here", "a refused road")
 	_expect(money - sim.money, 20 * cost, "costs nothing")
 	_expect(sim.lanes.route(Vector2i(10, 10), Vector2i(30, 10), true).size(), 21, "the sim routes on its roads")
-	var poor := PortSim.new()
+	var poor := AreaPort.owned(PortSim.new())
 	poor.ledger.post("construction", -poor.money)
 	_expect(poor.apply({"op": "build_road", "from": Vector2i(10, 10), "to": Vector2i(30, 10), "type": "terminal_2_2"}), "Not enough money", "roads need the money")
 	_expect(sim.apply({"op": "remove_road", "segment": 99}), "No road there", "removing a missing road is refused")
@@ -214,7 +214,7 @@ func _test_areas() -> void:
 
 
 func _test_area_tool() -> void:
-	var sim := PortSim.new()
+	var sim := AreaPort.owned(PortSim.new())
 	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 160), "type": "terminal_2_2"})
 	# Drawn south: right is west. Forward lanes are x = 100 and 99, backward 101 and 102 (left, east),
 	# so areas start at x = 98 to the west and x = 103 to the east.
@@ -234,7 +234,7 @@ func _test_area_tool() -> void:
 	_expect(sim.areas.cells(1).size(), 20 * block.depth, "a road joining later doesn't move the area")
 	_expect(sim.apply({"op": "remove_area", "id": 7}), "No area there", "removing a missing area is refused")
 	_expect(sim.apply({"op": "remove_area", "id": 1}), "", "an area is removed by command")
-	var diagonal := PortSim.new()
+	var diagonal := AreaPort.owned(PortSim.new())
 	diagonal.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(130, 130), "type": "terminal_1_1"})
 	_expect(diagonal.apply({"op": "build_area", "type": "depot", "segment": 1, "side": -1, "from": 0, "to": 10}), "", "an area is built along a 45° road")
 	var rows := diagonal.areas.cells(1)
@@ -242,7 +242,7 @@ func _test_area_tool() -> void:
 
 
 func _test_yard_layout() -> void:
-	var sim := PortSim.new()
+	var sim := AreaPort.owned(PortSim.new())
 	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(160, 100), "type": "terminal_1_1"})
 	# Drawn east, right is south: the block starts on row 101 and runs 31 cells east.
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": 1, "from": 0, "to": 30})
@@ -265,7 +265,7 @@ func _test_yard_layout() -> void:
 
 
 func _test_apron_and_gate_layouts() -> void:
-	var sim := PortSim.new(0, Content.base(), true)
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	# Drawn south at x = 85, its right (west) side reaches the sea: the apron covers x = 84 down to 75.
 	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, 160), "type": "terminal_1_1"})
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29}), "", "an apron is built on the coast")
@@ -288,7 +288,7 @@ func _test_apron_and_gate_layouts() -> void:
 
 
 func _test_area_settings() -> void:
-	var sim := PortSim.new(0, Content.base(), true)
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, 160), "type": "terminal_1_1"})
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
@@ -305,14 +305,14 @@ func _test_area_settings() -> void:
 	_expect(sim.apply({"op": "set_area", "id": 1, "settings": {"lines": [line]}}), "", "an apron favours lines")
 	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"lines": [line]}}), "A gate has no lines setting", "a gate has no rules")
 	_expect(sim.apply({"op": "set_area", "id": 9, "settings": {}}), "No area there", "a missing area is refused")
-	var locked := PortSim.new()
+	var locked := AreaPort.owned(PortSim.new())
 	locked.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 160), "type": "terminal_1_1"})
 	locked.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 15})
 	_expect(locked.apply({"op": "set_area", "id": 1, "settings": {"gear": "rtg"}}), locked.lock_error("rtg"), "RTGs wait for their milestone")
 
 
 func _test_terminals() -> void:
-	var sim := PortSim.new(0, Content.base(), true)
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(85, 100), "to": Vector2i(85, 200), "type": "terminal_1_1"})
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
 	_expect(sim.areas.list[1].terminal, 1, "the first area starts Terminal 1")
@@ -333,11 +333,11 @@ func _test_terminals() -> void:
 
 
 func _test_unconnected_areas() -> void:
-	var sim := PortSim.new(0, Content.base(), true)
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 140), "type": "terminal_1_1"})
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
 	_expect(sim.areas.idle_reason(1), "", "a yard block along its road works")
-	var lines := Inspect.describe(sim, Inspect.pick(sim, PortMap.NONE, sim.areas.cells(1)[5]))
+	var lines := Inspect.describe(sim, Inspect.pick(sim, sim.areas.cells(1)[5]))
 	_expect(lines, ["Yard block", "Terminal 1", "Terminal 1 needs a quay apron", "Import block, reach stacker", "Working"] as Array[String], "inspecting an area shows its type, its terminal and what that lacks, its rules and state")
 	var area: Dictionary = sim.areas.list[1]
 	_expect(sim.areas.along(1, area.start + (area.end - area.start).sign() * 7 + area.out * 3), 7, "a cell's place along an area, from any row")
@@ -351,7 +351,7 @@ func _test_unconnected_areas() -> void:
 
 
 func _test_handovers() -> void:
-	var sim := PortSim.new(0, Content.base(), true)
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(100, 140), "type": "terminal_1_1"})
 	# 12 cells: 4 bays, so 4 slots and room for 4 in the buffer strip.
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 11}), "", "a 4-bay yard block is built")
@@ -448,7 +448,7 @@ func _test_area_stacks() -> void:
 
 
 func _test_driveways() -> void:
-	var sim := PortSim.new(0, Content.base(), true)
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	var entry := sim.site_entry()
 	# A 1+1 road from the site entry west to the coast. Drawn west, its right is
 	# north: the westbound lane is the drawn row 300 and the eastbound lane row 301.
@@ -494,15 +494,15 @@ func _test_apron_berths() -> void:
 	_expect(AreaFlow.offer_berths(sim), 1, "an apron with a crane in a ready terminal is a berth lines may offer for")
 	var feeder := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 1, 0)
 	_expect(AreaFlow.ship_cells(sim, "feeder"), 50, "a feeder needs 200 m of quay, 50 cells")
-	_expect(sim._berth(feeder), true, "a feeder berths along a 60-cell apron")
+	_expect(AreaFlow.berth(sim, feeder), true, "a feeder berths along a 60-cell apron")
 	_expect([feeder.apron, feeder.from], [1, 0], "at the apron's first free stretch")
 	_expect(AreaFlow.cranes_for(sim, feeder).size(), 1, "the crane within its length works it")
 	var panamax := PortSim.Ship.new("panamax", sim.rules.lines.keys()[0], 0.0, 1, 0)
-	_expect(sim._berth(panamax), false, "a ship too long for the apron waits at anchor")
+	_expect(AreaFlow.berth(sim, panamax), false, "a ship too long for the apron waits at anchor")
 	_expect(AreaFlow.could_berth(sim, "panamax"), false, "and no apron could ever take it")
 	var lonely := AreaPort.terminal(60)
 	lonely.apply({"op": "set_terminal", "id": 2, "terminal": 0})
-	_expect(lonely._berth(PortSim.Ship.new("feeder", lonely.rules.lines.keys()[0], 0.0, 1, 0)), false, "an apron in a terminal without a gate takes no ships")
+	_expect(AreaFlow.berth(lonely, PortSim.Ship.new("feeder", lonely.rules.lines.keys()[0], 0.0, 1, 0)), false, "an apron in a terminal without a gate takes no ships")
 
 
 func _test_discharge() -> void:
@@ -526,7 +526,7 @@ func _test_discharge() -> void:
 	_expect(sim.area_stacks[3].boxes().all(func(b: int) -> bool: return sim.boxes[b].in >= 0.0), true, "stacked boxes start their storage clock")
 	for i in 400:
 		sim.tick()
-	_expect(sim.area_vehicles.is_empty(), true, "tractors return to the pool once their box is stacked")
+	_expect(sim.vehicles.is_empty(), true, "tractors return to the pool once their box is stacked")
 	_expect(sim.handovers.slots()[3].all(func(v: int) -> bool: return v == 0), true, "leaving every slot free")
 
 
@@ -557,7 +557,7 @@ func _test_delivery() -> void:
 	_expect(stacks.boxes().is_empty() and sim._claimed.is_empty(), true, "the yard is empty and nothing is left claimed")
 	for i in 600:
 		sim.tick()
-	_expect(sim.area_vehicles.is_empty(), true, "every vehicle has left")
+	_expect(sim.vehicles.is_empty(), true, "every vehicle has left")
 
 
 func _test_exports() -> void:
@@ -589,13 +589,13 @@ func _test_lorry_gives_up() -> void:
 	var blocker := Vehicle.new(999, "tractor", [Vector2i(450, sim.site_entry().y - 1)] as Array[Vector2i])
 	sim.lane_traffic.place(blocker)
 	_expect(AreaFlow.dispatch_import_lorry(sim), true, "a lorry is sent for the box due out")
-	var lorry := sim.area_vehicles[0]
+	var lorry := sim.vehicles[0]
 	var limit := roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2
 	for i in limit + 400:
 		sim.tick()
-	_expect(sim.area_vehicles.has(lorry), false, "stuck behind it for twice the give-up time, the lorry gives up and leaves")
+	_expect(sim.vehicles.has(lorry), false, "stuck behind it for twice the give-up time, the lorry gives up and leaves")
 	_expect(sim.gave_up, 1, "and is counted")
-	var holders := sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)
+	var holders := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)
 	_expect(not sim._claimed.has(box) or (holders.size() == 1 and holders[0] != lorry), true, "its box is freed for another lorry")
 	_expect(sim.handovers.waiting(2), {"buffer": [], "road": []}, "and it holds no place at the gate")
 
@@ -605,11 +605,11 @@ func _test_following_a_box() -> void:
 	var box := 0
 	for i in 2000:
 		sim.tick()
-		var carried := sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.loaded)
+		var carried := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.loaded)
 		if not carried.is_empty():
 			box = carried[0].box
 			break
-	_expect(AreaFlow.box_at(sim, Vector2i(sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)[0].position(1.0).round())), box, "clicking the tractor under the crane picks its box")
+	_expect(AreaFlow.box_at(sim, Vector2i(sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)[0].position(1.0).round())), box, "clicking the tractor under the crane picks its box")
 	var at := AreaFlow.box_cell(sim, box)
 	_expect(Vector2i(at.round()) in sim.areas.cells(1), true, "the box starts on the apron, under the crane")
 	var seen := {}
@@ -635,7 +635,7 @@ func _inbound(sim: PortSim, entry: Vector2i) -> Vector2i:
 	for y in range(entry.y - 4, entry.y + 5):
 		if not sim.lanes.route(Vector2i(entry.x, y), Vector2i(entry.x - 3, y), true).is_empty():
 			return Vector2i(entry.x, y)
-	return PortMap.NONE
+	return Grid.NONE
 
 
 ## A lane cell at the site entry a vehicle can drive out on.
@@ -643,7 +643,7 @@ func _outbound(sim: PortSim, entry: Vector2i) -> Vector2i:
 	for y in range(entry.y - 4, entry.y + 5):
 		if not sim.lanes.route(Vector2i(entry.x - 3, y), Vector2i(entry.x, y), true).is_empty():
 			return Vector2i(entry.x, y)
-	return PortMap.NONE
+	return Grid.NONE
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`

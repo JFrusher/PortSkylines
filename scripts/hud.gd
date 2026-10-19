@@ -33,7 +33,7 @@ const SETTINGS_PATH := "user://settings.cfg"
 const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 var sim: PortSim
-var tool: int = PortMap.Tile.ROAD
+var tool := DRAW_ROAD
 ## The road type DRAW_ROAD draws, a key of rules.road_types.
 var road_type := ""
 ## The area type DRAW_AREA drags out, a key of rules.area_types.
@@ -160,9 +160,6 @@ func _ready() -> void:
 		open.theme_type_variation = "CategoryButton"
 		open.custom_minimum_size = Vector2(84, 48)
 		_category_buttons.append(open)
-	for name: String in sim.rules.build_cost:
-		var kind: int = PortMap.Tile[name.to_upper()]
-		_item(_button(rows[{"road": "Roads", "quay": "Quay", "yard": "Yard", "gate": "Gate"}[name]], "%s\n$%d" % [name.capitalize(), sim.cost(kind)], tools, kind == tool, func() -> void: tool = kind))
 	for key: String in sim.rules.road_types:
 		var road: Dictionary = sim.rules.road_types[key]
 		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
@@ -178,10 +175,10 @@ func _ready() -> void:
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2}))
 	_item(_button(rows.Yard, "Import\nblock", tools, false, func() -> void: tool = IMPORT_YARD))
 	_item(_button(rows.Yard, "Export\nblock", tools, false, func() -> void: tool = EXPORT_YARD))
-	_gate("rtg", _item(_button(rows.Yard, "RTG\n$%d a tile" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG)))
+	_gate("rtg", _item(_button(rows.Yard, "RTG\nfor a block", tools, false, func() -> void: tool = RTG)))
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + _dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND))
-	_item(_button(rows.Bulldoze, "Bulldoze\ntile", tools, false, func() -> void: tool = BULLDOZE))
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE))
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT))
 	_category_buttons[0].button_pressed = true
 
@@ -198,9 +195,9 @@ func _set_ui_scale(factor: float, button: Button) -> void:
 	button.text = "UI %d%%" % roundi(factor * 100)
 
 
-## Opens the inspect panel on whatever is at `cell`.
-func inspect(cell: Vector2i, grid_cell: Vector2i) -> void:
-	_inspected = Inspect.pick(sim, cell, grid_cell)
+## Opens the inspect panel on whatever is at grid cell `cell`.
+func inspect(cell: Vector2i) -> void:
+	_inspected = Inspect.pick(sim, cell)
 	_panel_of(_inspect_name).visible = true
 
 
@@ -211,7 +208,7 @@ func flash(text: String) -> void:
 
 
 func _process(dt: float) -> void:
-	var lorries := (sim.vehicles + sim.area_vehicles).filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
+	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
 	var anchored := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state == PortSim.Ship.State.ANCHORED).size()
 	_money.text = _dollars(sim.money)
 	_readout.text = "Boxes %d   Ships %d (%d at anchor)   Tractors %d/%d   Lorries %d   Channel %.0f m" % [sim.delivered, sim.ships.size() - anchored, anchored, sim._tractors_out(), sim.tractors, lorries, sim.channel_depth]

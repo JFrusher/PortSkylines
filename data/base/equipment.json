@@ -1,9 +1,9 @@
 {
 	"sts_crane": {"cost": 1500, "rate": 25, "outreach": 13, "lead_days": 1, "width": 28},
 	"crane_interference": 0.9,
-	"tractor": {"cost": 400, "speed": 6},
+	"tractor": {"cost": 400, "speed": 150},
 	"yard_gear": {
-		"reach_stacker": {"capacity": 6, "handling_minutes": 3, "tiles_per_machine": 6, "cost_per_tile": 0, "upkeep_per_machine": 40, "speed": 7.0, "lift_seconds": 20, "set_down_seconds": 20, "bays_per_machine": 4, "tiers": 4},
-		"rtg": {"capacity": 12, "handling_minutes": 2, "tiles_per_machine": 8, "cost_per_tile": 250, "upkeep_per_machine": 60, "speed": 2.0, "lift_seconds": 30, "set_down_seconds": 25, "bays_per_machine": 10, "tiers": 5}
+		"reach_stacker": {"upkeep_per_machine": 40, "speed": 7.0, "lift_seconds": 20, "set_down_seconds": 20, "bays_per_machine": 4, "tiers": 4},
+		"rtg": {"upkeep_per_machine": 60, "speed": 2.0, "lift_seconds": 30, "set_down_seconds": 25, "bays_per_machine": 10, "tiers": 5}
 	}
 }

@@ -1,6 +1,7 @@
 extends SceneTree
-## Headless sim timing: runs the soak test's busy port and fails when a tick
-## costs more than the budget in docs/perf.md. CI runs it on every push.
+## Headless sim timing: runs the soak test's port on roads and areas, kept
+## busy with a lorry every quarter minute, and fails when a tick costs more
+## than the budget in docs/perf.md. CI runs it on every push.
 ## godot --headless --script res://bench/sim_bench.gd
 
 const RandomPort := preload("res://tests/random_port.gd")
@@ -8,15 +9,15 @@ const RandomPort := preload("res://tests/random_port.gd")
 const TICKS := SimClock.TICKS_PER_DAY / 2
 const WARMUP := SimClock.TICKS_PER_DAY / 8
 ## Budgets from docs/perf.md, with headroom for slow CI machines.
-const MAX_TICK_MS := 1.0
-const MAX_US_PER_VEHICLE := 100.0
+const MAX_TICK_MS := 12.0
+const MAX_US_PER_VEHICLE := 50.0
 
 
 func _initialize() -> void:
 	var rules := RandomPort.rules()
 	rules.lorry_interval_minutes = 0.25
 	rules.export_lorry_interval_minutes = 0.5
-	var sim := PortSim.new(2, rules)
+	var sim := PortSim.new(2, rules, true)
 	RandomPort.calls(sim)
 	var log := RandomPort.command_log(11, TICKS, 0)
 	var next := 0

@@ -12,7 +12,7 @@ func _initialize() -> void:
 	_expect(base.start_money is int, true, "whole numbers load as ints")
 	_expect(base.sail_seconds is float, true, "float keys load as floats")
 	_expect(_error_for({"start_money": null}), DIR + ": missing \"start_money\"", "a missing key names the key")
-	_expect(_error_for({"map": {"width": 64, "height": 48}}), "rules.json: map: missing \"sea_width\"", "a missing nested key names the path")
+	_expect(_error_for({"site": {"width": 2400, "height": 2400}}), "rules.json: site: missing \"sea_width\"", "a missing nested key names the path")
 	_expect(_error_for({"start_money": "lots"}), "rules.json: start_money: must be a number", "a wrong type names the key")
 	_expect(_error_for({"start_money": 6.5}), "rules.json: start_money: must be a whole number", "an int key refuses fractions")
 	_expect(_error_for({"colour": 1}), "rules.json: colour: unknown key", "an unknown key is refused")

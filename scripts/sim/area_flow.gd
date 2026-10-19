@@ -1,16 +1,12 @@
 class_name AreaFlow
 extends RefCounted
 ## The port's work on roads and areas: ships berth along quay aprons, STS
-## cranes stand on their rails, and boxes move by slots and machine jobs. It
-## runs beside the tile flow in PortSim until M5 step 22 removes that. Its
+## cranes stand on their rails, and boxes move by slots and machine jobs. Its
 ## functions take the sim, whose state they work on, so nothing refers back.
-
-## shortcut: ship lengths are in 25 m tiles until M5 step 22 moves them to metres.
-const TILE_METRES := 25
 
 ## How many cells of quay a ship of `kind` needs.
 static func ship_cells(sim: PortSim, kind: String) -> int:
-	return ceili(sim.rules.ship_classes[kind].length * TILE_METRES / float(Grid.CELL))
+	return ceili(sim.rules.ship_classes[kind].length / float(Grid.CELL))
 
 
 ## Aprons that can take ships: in a terminal with a gate, and with a road.
@@ -76,9 +72,9 @@ static func _length(sim: PortSim, apron: int) -> int:
 
 
 ## A tractor's speed on the grid, in cells a vehicle second: the data gives
-## it in 25 m tiles.
+## it in metres.
 static func tractor_speed(sim: PortSim) -> float:
-	return sim.rules.tractor.speed * TILE_METRES / Grid.CELL
+	return sim.rules.tractor.speed / Grid.CELL
 
 
 ## One tick of the area flow, after ships: machines work, then vehicles drive.
@@ -86,7 +82,7 @@ static func tick(sim: PortSim) -> void:
 	_fit_machines(sim)
 	for machine: int in sim.machines.tick():
 		_machine_done(sim, machine)
-	for vehicle: Vehicle in sim.area_vehicles.duplicate():
+	for vehicle: Vehicle in sim.vehicles.duplicate():
 		_drive(sim, vehicle)
 
 
@@ -177,7 +173,7 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	tractor.home = tractor.path[0]
 	tractor.box = box
 	sim._claimed[box] = true
-	sim.area_vehicles.append(tractor)
+	sim.vehicles.append(tractor)
 	crane.tractor = tractor.id
 	_go_to(sim, tractor, _block_of(sim, box))
 
@@ -219,7 +215,7 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	sim._next_vehicle += 1
 	tractor.state = "under_crane"
 	tractor.area = block
-	sim.area_vehicles.append(tractor)
+	sim.vehicles.append(tractor)
 	crane.tractor = tractor.id
 	return true
 
@@ -231,7 +227,7 @@ static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != role or sim.areas.idle_reason(id) != "":
 			continue
-		var coming := sim.area_vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and v.loaded).size()
+		var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and v.loaded).size()
 		if _stacks(sim, id).room() > coming:
 			return id
 	return 0
@@ -252,14 +248,14 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 			if box in sim._claimed or sim.boxes[box].kind != "import" or sim.boxes[box].due > now:
 				continue
 			var entry := _entry_cell(sim)
-			if entry == PortMap.NONE:
+			if entry == Grid.NONE:
 				return false
 			var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 			sim.lane_traffic.place(lorry)
 			sim._next_vehicle += 1
 			lorry.box = box
 			sim._claimed[box] = true
-			sim.area_vehicles.append(lorry)
+			sim.vehicles.append(lorry)
 			_go_to(sim, lorry, gate)
 			return true
 	return false
@@ -274,7 +270,7 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		if gate == 0 or _export_room(sim, terminal) <= 0:
 			continue
 		var entry := _entry_cell(sim)
-		if entry == PortMap.NONE:
+		if entry == Grid.NONE:
 			return false
 		var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 		sim.lane_traffic.place(lorry)
@@ -282,7 +278,7 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		# shortcut: an export is booked on no line until a ship loads it, as on tiles.
 		lorry.box = sim._new_box("export", 0.0, "")
 		lorry.loaded = true
-		sim.area_vehicles.append(lorry)
+		sim.vehicles.append(lorry)
 		_go_to(sim, lorry, gate)
 		return true
 	return false
@@ -296,7 +292,7 @@ static func _export_room(sim: PortSim, terminal: int) -> int:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type == "yard_block" and area.terminal == terminal and area.settings.role == "export" and sim.areas.idle_reason(id) == "":
 			room += _stacks(sim, id).room()
-	for vehicle: Vehicle in sim.area_vehicles:
+	for vehicle: Vehicle in sim.vehicles:
 		if vehicle.kind == "lorry" and vehicle.loaded and sim.boxes[vehicle.box].kind == "export" and vehicle.area in sim.areas.list and sim.areas.list[vehicle.area].terminal == terminal:
 			room -= 1
 	return room
@@ -307,7 +303,7 @@ static func _entry_cell(sim: PortSim) -> Vector2i:
 	for cell in _edge_cells(sim):
 		if sim.lane_traffic.holder(cell) == 0 and sim.lanes.steps_at(cell).any(func(step: Vector2i) -> bool: return step.x < 0):
 			return cell
-	return PortMap.NONE
+	return Grid.NONE
 
 
 ## A lane cell at the site entry leaving the site, or NONE.
@@ -316,7 +312,7 @@ static func _exit_cell(sim: PortSim) -> Vector2i:
 		var steps := sim.lanes.steps_at(cell)
 		if not steps.is_empty() and not steps.any(func(step: Vector2i) -> bool: return step.x < 0):
 			return cell
-	return PortMap.NONE
+	return Grid.NONE
 
 
 ## Cells on the site's east edge near the entry, where the highway's lanes meet the roads.
@@ -390,7 +386,7 @@ static func _head(sim: PortSim, vehicle: Vehicle, to: Vector2i, state: String) -
 
 
 static func _speed(sim: PortSim, vehicle: Vehicle) -> float:
-	return (sim.rules.lorry_speed * TILE_METRES / Grid.CELL) if vehicle.kind == "lorry" else tractor_speed(sim)
+	return (sim.rules.lorry_speed / Grid.CELL) if vehicle.kind == "lorry" else tractor_speed(sim)
 
 
 static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
@@ -443,7 +439,7 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 
 static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
 	sim.lane_traffic.leave(vehicle)
-	sim.area_vehicles.erase(vehicle)
+	sim.vehicles.erase(vehicle)
 
 
 ## A vehicle reached its handover slot: at a gate it is checked for the gate
@@ -563,7 +559,7 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 		vehicle.loaded = true
 		_go_out(sim, vehicle, sim.areas.list[block].terminal)
 	_promote(sim, block)
-	for other: Vehicle in sim.area_vehicles:
+	for other: Vehicle in sim.vehicles:
 		if other.area == block and other.state == "handling":
 			_start_handling(sim, other)
 
@@ -582,7 +578,7 @@ static func _go_out(sim: PortSim, vehicle: Vehicle, terminal: int) -> void:
 
 ## Sends the vehicles just given a slot at `area` on to it.
 static func _promote(sim: PortSim, area: int) -> void:
-	for waiting: Vehicle in sim.area_vehicles:
+	for waiting: Vehicle in sim.vehicles:
 		if waiting.area == area and waiting.slot < 0 and sim.handovers.slot_of(area, waiting.id) >= 0:
 			_head_to_slot(sim, waiting)
 
@@ -609,7 +605,8 @@ static func _fit_machines(sim: PortSim) -> void:
 
 ## Takes away area `id` and everything working there: boxes stacked in it
 ## are lost, vehicles bound for it are scrapped with their loads, its
-## machines go, a ship at it sails at once and its cranes come down.
+## machines go, a ship alongside sails at once and is gone, one coming in
+## turns back to anchorage, and its cranes come down.
 static func remove(sim: PortSim, id: int) -> void:
 	var lost := 0
 	if id in sim.area_stacks:
@@ -617,27 +614,37 @@ static func remove(sim: PortSim, id: int) -> void:
 			sim.boxes.erase(box)
 			lost += 1
 		sim.area_stacks.erase(id)
-	for vehicle: Vehicle in sim.area_vehicles.duplicate():
+	for vehicle: Vehicle in sim.vehicles.duplicate():
 		if vehicle.area == id:
 			if vehicle.loaded:
 				sim.boxes.erase(vehicle.box)
 				lost += 1
 			sim.lane_traffic.leave(vehicle)
-			sim.area_vehicles.erase(vehicle)
+			sim.vehicles.erase(vehicle)
 	for machine: int in sim.machines.list.keys():
 		if sim.machines.list[machine].area == id:
 			sim.machines.list.erase(machine)
 			sim.machine_jobs.erase(machine)
-	for ship: PortSim.Ship in sim.ships:
-		if ship.apron == id and ship.state != PortSim.Ship.State.LEAVING:
+	for ship: PortSim.Ship in sim.ships.duplicate():
+		if ship.apron != id:
+			continue
+		if ship.state == PortSim.Ship.State.ARRIVING:
+			ship.state = PortSim.Ship.State.ANCHORED
+			ship.apron = 0
+			ship.sail = 0.0
+			ship.prev_sail = 0.0
+			continue
+		if ship.state == PortSim.Ship.State.WORKING:
 			sim._sail(ship, cranes_for(sim, ship).size())
 			sim._event("A %s sailed early: its quay apron was removed" % ship.kind)
+		sim.ships.erase(ship)
+		sim._departures += 1
 	for crane: PortSim.Crane in sim.cranes.duplicate():
 		if crane.apron == id:
 			var tractor := _vehicle(sim, crane.tractor)
 			if tractor:
 				sim.lane_traffic.leave(tractor)
-				sim.area_vehicles.erase(tractor)
+				sim.vehicles.erase(tractor)
 			sim.cranes.erase(crane)
 	sim.handovers.forget(id)
 	sim.areas.remove(id)
@@ -654,7 +661,7 @@ static func _stacks(sim: PortSim, area: int) -> AreaStacks:
 
 
 static func _vehicle(sim: PortSim, id: int) -> Vehicle:
-	for vehicle in sim.area_vehicles:
+	for vehicle in sim.vehicles:
 		if vehicle.id == id:
 			return vehicle
 	return null
@@ -663,7 +670,7 @@ static func _vehicle(sim: PortSim, id: int) -> Vehicle:
 ## The box at grid cell `cell`: one on a vehicle there, else the top box of
 ## a stack covering it; 0 for none. For picking a box to follow.
 static func box_at(sim: PortSim, cell: Vector2i) -> int:
-	for vehicle in sim.area_vehicles:
+	for vehicle in sim.vehicles:
 		if vehicle.box != 0 and vehicle.box in sim.boxes and Vector2i(vehicle.position(1.0).round()) == cell:
 			return vehicle.box
 	for area: int in sim.area_stacks:
@@ -683,7 +690,7 @@ static func box_at(sim: PortSim, cell: Vector2i) -> int:
 static func box_cell(sim: PortSim, box: int) -> Vector2:
 	if box not in sim.boxes:
 		return Vector2.INF
-	for vehicle in sim.area_vehicles:
+	for vehicle in sim.vehicles:
 		if vehicle.box != box:
 			continue
 		for machine: int in sim.machine_jobs:
