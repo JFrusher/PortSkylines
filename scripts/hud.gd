@@ -48,6 +48,8 @@ var _category_buttons: Array[Button] = []
 var _inspected: Variant
 var _inspect_name := Label.new()
 var _inspect_lines := Label.new()
+var _guide_step := Label.new()
+var _guide_text := Label.new()
 
 
 func _ready() -> void:
@@ -101,6 +103,13 @@ func _ready() -> void:
 		button.text = "New creative" if creative else "New game"
 		button.pressed.connect(func() -> void: new_game_pressed.emit(creative))
 		menu.add_child(button)
+
+	var guide := _panel(right, "Getting started")
+	_guide_step.theme_type_variation = "MutedLabel"
+	guide.add_child(_guide_step)
+	_guide_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_guide_text.custom_minimum_size.x = 320
+	guide.add_child(_guide_text)
 
 	# Bottom centre: the items of the open category above the category bar; keys 1-9 open a category.
 	var bottom := _corner(Control.PRESET_CENTER_BOTTOM)
@@ -176,6 +185,7 @@ func _process(dt: float) -> void:
 	_events.visible = _message.text != ""
 	if _ledger.is_visible_in_tree():
 		_ledger.text = _ledger_text()
+	_show_guide()
 	if _inspect_name.is_visible_in_tree():
 		var lines := Inspect.describe(sim, _inspected)
 		_panel_of(_inspect_name).visible = not lines.is_empty()
@@ -202,6 +212,17 @@ static func _dollars(amount: int) -> String:
 	for i in range(digits.length() - 3, 0, -3):
 		digits = digits.insert(i, ",")
 	return ("-$" if amount < 0 else "$") + digits
+
+
+## The guided start's current step; its panel hides once the first ship is worked.
+func _show_guide() -> void:
+	var step := Guide.current(sim)
+	var count := Guide.steps(sim).size()
+	if step == count:
+		_panel_of(_guide_text).visible = false
+		return
+	_guide_step.text = "Step %d of %d" % [step + 1, count]
+	_guide_text.text = Guide.steps(sim)[step].text
 
 
 func _show_milestone() -> void:
