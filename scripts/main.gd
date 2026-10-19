@@ -6,6 +6,7 @@ var sim := PortSim.new()
 var view := WorldView.new()
 var rig := CameraRig.new()
 var hud := Hud.new()
+var reporter := CrashReporter.new()
 
 ## Most ticks one frame may run per speed step; a slower frame drops the rest.
 const MAX_TICKS_PER_FRAME := 8
@@ -16,9 +17,11 @@ const SAVE_PATH := "user://save.bin"
 var _accumulated := 0.0
 var _painting := false
 var _last_cell := PortMap.NONE
+var _reported := false
 
 
 func _ready() -> void:
+	OS.add_logger(reporter)
 	add_child(_environment())
 	add_child(_sun())
 	view.sim = sim
@@ -62,6 +65,8 @@ func _use(new_sim: PortSim) -> void:
 
 
 func _process(dt: float) -> void:
+	if reporter.errored and not _reported:
+		_report_crash()
 	_accumulated += dt * hud.speed
 	var max_ticks := MAX_TICKS_PER_FRAME * hud.speed
 	var ticks := SimClock.ticks_for(_accumulated, max_ticks)
@@ -148,6 +153,17 @@ func _hovered_cell() -> Vector2i:
 	if hit == null:
 		return PortMap.NONE
 	return Vector2i(floori(hit.x), floori(hit.z))
+
+
+## Writes one crash report a run and shows its folder to the player.
+func _report_crash() -> void:
+	_reported = true
+	var dir := CrashReporter.write(sim)
+	if dir == "":
+		hud.flash("Something went wrong, and the report could not be written")
+		return
+	hud.flash("Something went wrong. A report is in " + ProjectSettings.globalize_path(dir))
+	OS.shell_show_in_file_manager(ProjectSettings.globalize_path(dir))
 
 
 func _sun() -> DirectionalLight3D:
