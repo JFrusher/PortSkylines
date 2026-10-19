@@ -23,10 +23,11 @@ const BOX_HEIGHT := 0.3
 ## A box's length along the tile by TEU: 20 ft and 40 ft, at 1 tile = 25 m
 ## stretched a little so a lone 20 ft box still reads at a distance.
 const BOX_LENGTH := {1: 0.4, 2: 0.8}
+## Rows of 40 ft slots across a yard tile.
+const YARD_ROWS := 2
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const LANE_OFFSET := 0.22
-const BOX_COLOR := Color(0.85, 0.4, 0.15)
 const CRANE_HEIGHT := 3.2
 ## How far the girder reaches behind the quay edge and out over the water, in tiles.
 const CRANE_BACK := -1.0
@@ -62,6 +63,7 @@ var _stacks_drawn := []
 var _ships := {}  # PortSim.Ship -> Node3D
 var _vehicles := {}  # Vehicle -> Node3D
 var _cranes := {}  # PortSim.Crane -> Node3D
+var _machines := {}  # [block anchor, index] -> Node3D
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
 ## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _unowned := {}  # land tile -> Node3D
@@ -105,6 +107,7 @@ func _process(_dt: float) -> void:
 	_draw_ships()
 	_draw_cranes()
 	_draw_vehicles()
+	_draw_machines()
 
 
 func _draw_land() -> void:
@@ -235,7 +238,7 @@ func _draw_stacks() -> void:
 			if part not in transforms:
 				transforms[part] = [] as Array[Transform3D]
 				colors[part] = PackedColorArray()
-			transforms[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5 + spot.x, 0.08 + (spot.y + 0.5) * BOX_HEIGHT, cell.y + 0.5)))
+			transforms[part].append(Transform3D(Basis(), Vector3(cell.x + 0.5 + spot.x, 0.08 + (spot.y + 0.5) * BOX_HEIGHT, cell.y + 0.5 + spot.z)))
 			colors[part].append(_livery(sim.boxes[id].line, id))
 	_stack_parts.clear()
 	for part: Array in transforms:
@@ -245,15 +248,16 @@ func _draw_stacks() -> void:
 
 
 ## Where the `i`th box of a yard tile with `forties` 40 ft boxes sits, as
-## (offset along the tile, tier). The sim only knows which tile a box is on,
-## so the view lays each tile out as one 40 ft slot the way yards stack: the
-## 40s at the bottom, then the 20s in pairs end to end above them, so a 40
-## never rests on a 20.
-static func stack_spot(forties: int, i: int) -> Vector2:
-	if i < forties:
-		return Vector2(0, i)
-	var k := i - forties
-	return Vector2((BOX_LENGTH[1] / 2.0 + 0.01) * (-1 if k % 2 == 0 else 1), forties + k / 2)
+## (offset along the tile, tier, offset across it). The sim only knows which
+## tile a box is on, so the view lays each tile out the way yards stack: two
+## rows of 40 ft slots, filled a tier at a time across both rows, 40s first
+## and then 20s in pairs end to end, so a 40 never rests on a 20.
+static func stack_spot(forties: int, i: int) -> Vector3:
+	var tier := i if i < forties else forties + (i - forties) / 2
+	var along := 0.0
+	if i >= forties:
+		along = (BOX_LENGTH[1] / 2.0 + 0.01) * (-1 if (i - forties) % 2 == 0 else 1)
+	return Vector3(along, tier / YARD_ROWS, ((tier % YARD_ROWS) - (YARD_ROWS - 1) / 2.0) * 0.34)
 
 
 ## `line`'s livery, a touch lighter or darker per box so a stack reads as
@@ -411,25 +415,106 @@ func _ship_beside(cell: Vector2i) -> PortSim.Ship:
 
 func _draw_vehicles() -> void:
 	_forget_gone(_vehicles, sim.vehicles)
-	for lorry: Vehicle in sim.vehicles:
-		if lorry not in _vehicles:
-			var cab := _box(Vector3(0.3, 0.25, 0.6), Color(0.85, 0.85, 0.8) if lorry.kind == "lorry" else Color(0.95, 0.75, 0.1))
-			var box := _box(Vector3(0.28, 0.22, 0.5), BOX_COLOR)
-			box.name = "Box"
-			box.position.y = 0.23
-			cab.add_child(box)
-			add_child(cab)
-			_vehicles[lorry] = cab
-		var cab: Node3D = _vehicles[lorry]
-		var pose := path_pose(lorry.path, lerpf(lorry.prev_t, lorry.t, alpha))
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle not in _vehicles:
+			_vehicles[vehicle] = _vehicle_model(vehicle.kind)
+		var model: Node3D = _vehicles[vehicle]
+		var pose := path_pose(vehicle.path, lerpf(vehicle.prev_t, vehicle.t, alpha))
 		var at := pose[0]
 		var heading := pose[1].normalized()
 		# Keep right: each direction drives in its own half of the road.
 		var right := Vector2(-heading.y, heading.x) * LANE_OFFSET
-		cab.position = Vector3(at.x + 0.5 + right.x, 0.17, at.y + 0.5 + right.y)
+		model.position = Vector3(at.x + 0.5 + right.x, 0.04, at.y + 0.5 + right.y)
 		if heading != Vector2.ZERO:
-			cab.rotation.y = atan2(heading.x, heading.y)
-		cab.get_node("Box").visible = lorry.loaded
+			model.rotation.y = atan2(heading.x, heading.y)
+		var box: MeshInstance3D = model.get_node("Box")
+		box.visible = vehicle.loaded
+		if vehicle.loaded and box.get_meta("id", 0) != vehicle.box:
+			box.set_meta("id", vehicle.box)
+			var spec: Dictionary = sim.boxes[vehicle.box]
+			box.scale.z = 1.0 if spec.teu == 2 else 0.5
+			(box.material_override as StandardMaterial3D).albedo_color = _livery(spec.line, vehicle.box)
+
+
+## A tractor (yellow) or lorry (white) cab pulling a chassis, facing +Z, with
+## a box on the chassis that _draw_vehicles shows, sizes and paints.
+func _vehicle_model(kind: String) -> Node3D:
+	var model := Node3D.new()
+	var cab := _box(Vector3(0.24, 0.2, 0.16), Color(0.95, 0.75, 0.1) if kind == "tractor" else Color(0.9, 0.9, 0.86))
+	cab.position = Vector3(0, 0.14, 0.24)
+	model.add_child(cab)
+	var chassis := _box(Vector3(0.22, 0.04, 0.52), Color(0.2, 0.2, 0.22))
+	chassis.position = Vector3(0, 0.06, -0.06)
+	model.add_child(chassis)
+	var box := _box(Vector3(0.24, 0.2, 0.5), Color.WHITE)
+	box.name = "Box"
+	box.position = Vector3(0, 0.18, -0.06)
+	box.material_override = StandardMaterial3D.new()
+	model.add_child(box)
+	add_child(model)
+	return model
+
+
+## Each yard block's machines: one over each box being handled, the rest
+## parked along the block. RTGs straddle the stacks; reach stackers drive
+## beside them.
+func _draw_machines() -> void:
+	var working := {}  # block anchor -> tiles being handled
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.state == "handling":
+			if vehicle.block not in working:
+				working[vehicle.block] = []
+			working[vehicle.block].append(vehicle.target)
+	var live := {}
+	for anchor in sim.yard.anchors():
+		var gear := sim.yard.gear_of(anchor)
+		var tiles := sim.yard.block(anchor)
+		var busy: Array = working.get(anchor, [])
+		var count := sim.yard.machines(anchor)
+		for i in count:
+			var key := [anchor, i]
+			live[key] = true
+			if key in _machines and _machines[key].get_meta("gear") != gear:
+				_machines[key].queue_free()
+				_machines.erase(key)
+			if key not in _machines:
+				_machines[key] = _machine_model(gear)
+			var cell: Vector2i = busy[i] if i < busy.size() else tiles[i * tiles.size() / count]
+			_machines[key].position = Vector3(cell.x + 0.5, 0.08, cell.y + 0.5 + (0.0 if gear == "rtg" else 0.38))
+	for key: Array in _machines.keys():
+		if key not in live:
+			_machines[key].queue_free()
+			_machines.erase(key)
+
+
+func _machine_model(gear: String) -> Node3D:
+	var model := Node3D.new()
+	model.set_meta("gear", gear)
+	if gear == "rtg":
+		# Tall enough to clear a tile stacked to the gear's capacity.
+		var height: float = 0.3 + ceili(sim.rules.yard_gear.rtg.capacity / float(YARD_ROWS)) * BOX_HEIGHT
+		for x: float in [-0.56, 0.56]:
+			for z: float in [-0.3, 0.3]:
+				var leg := _box(Vector3(0.08, height, 0.08), Color(0.95, 0.95, 0.92))
+				leg.position = Vector3(x, height / 2.0, z)
+				model.add_child(leg)
+			var wheels := _box(Vector3(0.14, 0.1, 0.72), Color(0.2, 0.2, 0.22))
+			wheels.position = Vector3(x, 0.05, 0)
+			model.add_child(wheels)
+		for z: float in [-0.3, 0.3]:
+			var beam := _box(Vector3(1.24, 0.1, 0.1), Color(0.95, 0.75, 0.1))
+			beam.position = Vector3(0, height, z)
+			model.add_child(beam)
+	else:
+		var body := _box(Vector3(0.26, 0.2, 0.4), Color(0.85, 0.35, 0.15))
+		body.position.y = 0.12
+		model.add_child(body)
+		var boom := _box(Vector3(0.06, 0.06, 0.5), Color(0.2, 0.2, 0.22))
+		boom.position = Vector3(0, 0.4, -0.12)
+		boom.rotation.x = 0.6
+		model.add_child(boom)
+	add_child(model)
+	return model
 
 
 ## Frees the nodes of things the sim no longer has.

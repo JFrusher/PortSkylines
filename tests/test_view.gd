@@ -41,12 +41,18 @@ func _initialize() -> void:
 			var now := WorldView.crane_pose(step / 100.0, discharging)
 			_expect(absf(now[0] - before[0]) < 0.05 and absf(now[1] - before[1]) < 0.1, true, "the trolley moves smoothly at %.2f" % (step / 100.0))
 			before = now
-	# Two 40s then three 20s: the 40s on the ground and tier 1, the 20s paired above.
-	var spots: Array = range(5).map(func(i: int) -> Vector2: return WorldView.stack_spot(2, i))
-	_expect(spots.map(func(p: Vector2) -> float: return p.y), [0.0, 1.0, 2.0, 2.0, 3.0], "40s first, then 20s two to a tier")
-	_expect([spots[0].x, spots[1].x], [0.0, 0.0], "a 40 fills the slot's length")
-	_expect(spots[2].x < 0.0 and spots[3].x > 0.0 and is_equal_approx(spots[2].x, -spots[3].x), true, "a pair of 20s sits end to end")
-	_expect(absf(spots[2].x) * 2.0 >= WorldView.BOX_LENGTH[1], true, "paired 20s do not overlap")
+	# Three 40s then three 20s on two rows: tiers 0-2 are the 40s, tiers 3-4 the
+	# 20s in pairs; tiers alternate rows, so each row has 40s below its 20s.
+	var spots: Array = range(6).map(func(i: int) -> Vector3: return WorldView.stack_spot(3, i))
+	var tiers := [0, 1, 2, 3, 3, 4]
+	for i in 6:
+		_expect([spots[i].y, signf(spots[i].z)], [float(tiers[i] / 2), -1.0 if tiers[i] % 2 == 0 else 1.0], "box %d sits on tier %d's row and level" % [i, tiers[i]])
+	for i in 6:
+		for j in 6:
+			if spots[j].z == spots[i].z and spots[j].y > spots[i].y and j < 3:
+				_expect(i < 3, true, "a 40 (box %d) never rests on a 20 (box %d)" % [j, i])
+	_expect(spots[3].x < 0.0 and spots[4].x > 0.0 and absf(spots[3].x) * 2.0 >= WorldView.BOX_LENGTH[1], true, "a pair of 20s sits end to end without overlapping")
+	_expect(absf(spots[0].z) * 2.0 >= 0.32, true, "the two rows do not overlap")
 	var feeder := WorldView.deck_slots(8, 999)
 	_expect(feeder.size(), floori((8 - WorldView.SHIP_BOW - WorldView.SHIP_STERN) / WorldView.DECK_BAY) * WorldView.DECK_ROWS * WorldView.DECK_TIERS, "a full deck stops at the top tier")
 	_expect(WorldView.deck_slots(8, 5).size(), 5, "each box aboard gets a slot")
