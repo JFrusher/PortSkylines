@@ -3,7 +3,8 @@ extends RefCounted
 ## The tile grid and what may be built where. Knows nothing about money,
 ## ships or rendering.
 
-enum Tile { LAND, WATER, ROAD, QUAY, YARD }
+## Values are stored in saves: add new kinds at the end.
+enum Tile { LAND, WATER, ROAD, QUAY, YARD, GATE }
 
 const NONE := Vector2i(-1, -1)
 const SIDES := [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
@@ -20,6 +21,8 @@ var _roads := AStarGrid2D.new()
 ## Tile indices per kind, kept sorted so cells_of() returns map order, the
 ## same order a full scan gives, without scanning.
 var _index := {}
+## Routes already found, keyed by their two road ends; cleared on any change.
+var _route_cache := {}
 
 
 func _init(map_size: Vector2i, sea: int) -> void:
@@ -76,7 +79,8 @@ func place(kind: int, cell: Vector2i) -> void:
 	var new: PackedInt32Array = _index[kind]
 	new.insert(new.bsearch(i), i)
 	_tiles[i] = kind
-	_roads.set_point_solid(cell, kind != Tile.ROAD)
+	_roads.set_point_solid(cell, not is_road(kind))
+	_route_cache.clear()
 	version += 1
 
 
@@ -88,10 +92,49 @@ func neighbor(cell: Vector2i, kind: int) -> Vector2i:
 	return NONE
 
 
-## The road a building is entered from: itself if it is a road, else an adjacent one.
+## Straight runs of quay tiles with water along one side: the places a ship can
+## lie. Each is {"cells": quay tiles in order along the run, "side": the step
+## from a quay tile to the water}.
+func berths() -> Array[Dictionary]:
+	var found: Array[Dictionary] = []
+	var seen := {}
+	for cell in cells_of(Tile.QUAY):
+		var water := neighbor(cell, Tile.WATER)
+		if cell in seen or water == NONE:
+			continue
+		var side := water - cell
+		var along := Vector2i(absi(side.y), absi(side.x))
+		var start := cell
+		while _berth_continues(start - along, side):
+			start -= along
+		var cells: Array[Vector2i] = []
+		var at := start
+		while _berth_continues(at, side):
+			cells.append(at)
+			seen[at] = true
+			at += along
+		found.append({"cells": cells, "side": side})
+	return found
+
+
+func _berth_continues(cell: Vector2i, side: Vector2i) -> bool:
+	return tile(cell) == Tile.QUAY and tile(cell + side) == Tile.WATER
+
+
+## Tiles vehicles drive on: roads, and gates, which lorries must also stop at.
+static func is_road(kind: int) -> bool:
+	return kind == Tile.ROAD or kind == Tile.GATE
+
+
+## The road a building is entered from: itself if it is a road or gate, else an adjacent road.
 func access_road(cell: Vector2i) -> Vector2i:
-	# shortcut: takes the first adjacent road even if a better one exists, fine until gates own access in M2.
-	return cell if tile(cell) == Tile.ROAD else neighbor(cell, Tile.ROAD)
+	# shortcut: takes the first adjacent road even if a better one exists, fine until buildings get set entrances.
+	if is_road(tile(cell)):
+		return cell
+	for side: Vector2i in SIDES:
+		if is_road(tile(cell + side)):
+			return cell + side
+	return NONE
 
 
 ## Road route between two cells' access roads; empty when there is none.
@@ -100,7 +143,24 @@ func route(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	var b := access_road(to)
 	if a == NONE or b == NONE:
 		return []
-	return _roads.get_id_path(a, b)
+	var key := Vector4i(a.x, a.y, b.x, b.y)
+	if key not in _route_cache:
+		_route_cache[key] = _roads.get_id_path(a, b)
+	var path: Array[Vector2i] = _route_cache[key]
+	return path.duplicate()
+
+
+## A road route from road tile `from` to `to`'s access road that does not pass
+## through `blocked`; empty when there is none.
+func route_avoiding(from: Vector2i, to: Vector2i, blocked: Vector2i) -> Array[Vector2i]:
+	var b := access_road(to)
+	if b == NONE or from == blocked or b == blocked:
+		return []
+	var was_solid := _roads.is_point_solid(blocked)
+	_roads.set_point_solid(blocked, true)
+	var path := _roads.get_id_path(from, b)
+	_roads.set_point_solid(blocked, was_solid)
+	return path
 
 
 func cells_of(kind: int) -> Array[Vector2i]:
@@ -130,6 +190,6 @@ static func from_dict(d: Dictionary) -> PortMap:
 	map._rebuild_index()
 	map._roads.fill_solid_region(map._roads.region)
 	for i in map._tiles.size():
-		if map._tiles[i] == Tile.ROAD:
+		if is_road(map._tiles[i]):
 			map._roads.set_point_solid(Vector2i(i % map.size.x, int(i / float(map.size.x))), false)
 	return map

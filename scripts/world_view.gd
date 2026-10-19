@@ -3,15 +3,18 @@ extends Node3D
 ## Draws the sim as a small 3D model port. Reads PortSim every frame and
 ## never changes it.
 
-const TILE_HEIGHT := {PortMap.Tile.ROAD: 0.04, PortMap.Tile.QUAY: 0.25, PortMap.Tile.YARD: 0.08}
+const TILE_HEIGHT := {PortMap.Tile.ROAD: 0.04, PortMap.Tile.QUAY: 0.25, PortMap.Tile.YARD: 0.08, PortMap.Tile.GATE: 0.5}
 const TILE_COLOR := {
 	PortMap.Tile.ROAD: Color(0.2, 0.2, 0.22),
 	PortMap.Tile.QUAY: Color(0.62, 0.6, 0.55),
 	PortMap.Tile.YARD: Color(0.45, 0.45, 0.43),
+	PortMap.Tile.GATE: Color(0.2, 0.45, 0.7),
 }
 const BOX_HEIGHT := 0.3
+const LANE_OFFSET := 0.22
 const BOX_COLOR := Color(0.85, 0.4, 0.15)
-const SEA_START := -18.0  # where ships appear, west of the map
+const SEA_START := -18.0  # how far the water reaches past the map
+const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
 var sim: PortSim
 ## How far play has moved from the last tick towards the next, 0 to 1.
@@ -26,9 +29,10 @@ var _stacks := ChunkedMeshes.new()
 var _stack_mesh := _box_mesh(Vector3(0.8, BOX_HEIGHT, 0.4), BOX_COLOR)
 ## Chunks that held stacks last frame, so emptied ones get cleared.
 var _stack_chunks := {}
-# shortcut: ships and lorries are one node each, fine under ~100; MultiMesh them in M5.
+# shortcut: ships and vehicles are one node each, fine under ~100; MultiMesh them in M5.
 var _ships := {}  # PortSim.Ship -> Node3D
-var _lorries := {}  # PortSim.Lorry -> Node3D
+var _vehicles := {}  # Vehicle -> Node3D
+var _cranes := {}  # PortSim.Crane -> Node3D
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
 
 
@@ -59,7 +63,8 @@ func _process(_dt: float) -> void:
 		_draw_tiles()
 	_draw_stacks()
 	_draw_ships()
-	_draw_lorries()
+	_draw_cranes()
+	_draw_vehicles()
 
 
 ## Redraws only the chunks whose tiles changed since the last draw.
@@ -91,8 +96,8 @@ func _draw_stacks() -> void:
 	var by_chunk := {}
 	for chunk: Vector2i in _stack_chunks:
 		by_chunk[chunk] = [] as Array[Transform3D]
-	for cell: Vector2i in sim.stacked:
-		var count: int = sim.stacked[cell]
+	for cell: Vector2i in sim.yard.stacks:
+		var count := sim.yard.count(cell)
 		if count == 0:
 			continue
 		var chunk := ChunkedMeshes.chunk_of(cell)
@@ -109,9 +114,11 @@ func _draw_stacks() -> void:
 func _draw_ships() -> void:
 	_forget_gone(_ships, sim.ships)
 	for ship: PortSim.Ship in sim.ships:
+		var length := ship.cells.size()
+		var along_z := ship.side.x != 0
 		if ship not in _ships:
-			var hull := _box(Vector3(1.4, 0.6, 4.5), Color(0.15, 0.2, 0.35))
-			var cargo := _box(Vector3(1.0, 0.6, 3.6), BOX_COLOR)
+			var hull := _box(Vector3(1.4, 0.6, length - 0.4) if along_z else Vector3(length - 0.4, 0.6, 1.4), Color(0.15, 0.2, 0.35))
+			var cargo := _box(Vector3(1.0, 0.6, length - 1.6) if along_z else Vector3(length - 1.6, 0.6, 1.0), BOX_COLOR)
 			cargo.name = "Cargo"
 			cargo.position.y = 0.6
 			hull.add_child(cargo)
@@ -119,29 +126,49 @@ func _draw_ships() -> void:
 			_ships[ship] = hull
 		var hull: Node3D = _ships[ship]
 		var sail := lerpf(ship.prev_sail, ship.sail, alpha)
-		var x := lerpf(SEA_START, ship.berth.x + 0.5, ease(sail, -2.0))
-		hull.position = Vector3(x, -0.05, ship.berth.y + 0.5)
+		var middle := (Vector2(ship.cells[0]) + Vector2(ship.cells[-1])) / 2.0 + Vector2(ship.side) + Vector2(0.5, 0.5)
+		var alongside := Vector3(middle.x, -0.05, middle.y)
+		var at_sea := alongside + Vector3(ship.side.x, 0, ship.side.y) * SEA_DISTANCE
+		hull.position = at_sea.lerp(alongside, ease(sail, -2.0))
 		var cargo: Node3D = hull.get_node("Cargo")
 		cargo.visible = ship.boxes > 0
-		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_boxes), 0.01)
+		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_classes[ship.kind].import_moves), 0.01)
 
 
-func _draw_lorries() -> void:
-	_forget_gone(_lorries, sim.lorries)
-	for lorry: PortSim.Lorry in sim.lorries:
-		if lorry not in _lorries:
-			var cab := _box(Vector3(0.3, 0.25, 0.6), Color(0.85, 0.85, 0.8))
+## A tower on the quay tile with a boom reaching out over the water.
+func _draw_cranes() -> void:
+	_forget_gone(_cranes, sim.cranes)
+	for crane: PortSim.Crane in sim.cranes:
+		if crane in _cranes:
+			continue
+		var tower := _box(Vector3(0.7, 3.0, 0.7), Color(0.85, 0.3, 0.2))
+		tower.position = Vector3(crane.cell.x + 0.5, 1.5, crane.cell.y + 0.5)
+		var water := sim.map.neighbor(crane.cell, PortMap.Tile.WATER) - crane.cell
+		var boom := _box(Vector3(maxf(absf(water.x) * 3.5, 0.3), 0.3, maxf(absf(water.y) * 3.5, 0.3)), Color(0.85, 0.3, 0.2))
+		boom.position = Vector3(water.x * 1.2, 1.4, water.y * 1.2)
+		tower.add_child(boom)
+		add_child(tower)
+		_cranes[crane] = tower
+
+
+func _draw_vehicles() -> void:
+	_forget_gone(_vehicles, sim.vehicles)
+	for lorry: Vehicle in sim.vehicles:
+		if lorry not in _vehicles:
+			var cab := _box(Vector3(0.3, 0.25, 0.6), Color(0.85, 0.85, 0.8) if lorry.kind == "lorry" else Color(0.95, 0.75, 0.1))
 			var box := _box(Vector3(0.28, 0.22, 0.5), BOX_COLOR)
 			box.name = "Box"
 			box.position.y = 0.23
 			cab.add_child(box)
 			add_child(cab)
-			_lorries[lorry] = cab
-		var cab: Node3D = _lorries[lorry]
+			_vehicles[lorry] = cab
+		var cab: Node3D = _vehicles[lorry]
 		var at := lorry.position(alpha)
-		cab.position = Vector3(at.x + 0.5, 0.17, at.y + 0.5)
 		var i := mini(int(lorry.t), lorry.path.size() - 1)
 		var heading := Vector2(lorry.path[mini(i + 1, lorry.path.size() - 1)] - lorry.path[i])
+		# Keep right: each direction drives in its own half of the road.
+		var right := Vector2(-heading.y, heading.x) * LANE_OFFSET
+		cab.position = Vector3(at.x + 0.5 + right.x, 0.17, at.y + 0.5 + right.y)
 		if heading != Vector2.ZERO:
 			cab.rotation.y = atan2(heading.x, heading.y)
 		cab.get_node("Box").visible = lorry.loaded

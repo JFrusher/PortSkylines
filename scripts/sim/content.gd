@@ -9,16 +9,28 @@ const SCHEMA := {
 	"map": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
 	"start_money": TYPE_INT,
 	"fee_per_box": TYPE_INT,
-	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT},
+	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT},
+	"gate_minutes": TYPE_FLOAT,
+	"upkeep": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT, "sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"first_ship_minutes": TYPE_FLOAT,
 	"ship_interval_minutes": TYPE_FLOAT,
-	"ship_boxes": TYPE_INT,
 	"sail_seconds": TYPE_FLOAT,
-	"crane_minutes": TYPE_FLOAT,
-	"yard_capacity": TYPE_INT,
 	"lorry_interval_minutes": TYPE_FLOAT,
+	"export_lorry_interval_minutes": TYPE_FLOAT,
+	"import_dwell_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
+	"give_up_seconds": TYPE_FLOAT,
+	# "*" means any key, each holding the record that follows.
+	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "weight": TYPE_FLOAT}},
+	"water_depth": TYPE_FLOAT,
+	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT},
+	"crane_interference": TYPE_FLOAT,
+	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
+	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT, "upkeep_per_machine": TYPE_INT}},
 }
+
+# Keys the sim divides by or repeats on; zero or less would hang or spin it.
+const POSITIVE := ["ship_interval_minutes", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
 
 static var _base := {}
 
@@ -70,6 +82,14 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 	if want is Dictionary:
 		if not got is Dictionary:
 			return "%s: must be an object" % where
+		if want.has("*"):
+			if got.is_empty():
+				return "%s: must list at least one entry" % where
+			for sub: String in got:
+				var err := _check(got, sub, want["*"], "%s.%s" % [where, sub])
+				if err:
+					return err
+			return ""
 		for sub: String in want:
 			if not got.has(sub):
 				return "%s: missing \"%s\"" % [where, sub]
@@ -86,6 +106,6 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 		parent[key] = int(got)
 	else:
 		parent[key] = float(got)
-	if key in ["ship_interval_minutes", "ship_boxes", "sail_seconds", "crane_minutes", "lorry_interval_minutes", "lorry_speed"] and got <= 0:
+	if key in POSITIVE and got <= 0:
 		return "%s: must be greater than zero" % where
 	return ""

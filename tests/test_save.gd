@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_test_save_replaces_existing()
 	_test_failed_save_preserves_destination()
 	_test_malformed_payloads_are_refused()
+	_test_malformed_v1_is_refused()
 	_test_every_fixture_loads()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -100,16 +101,18 @@ func _test_failed_save_preserves_destination() -> void:
 
 
 func _test_malformed_payloads_are_refused() -> void:
-	var sim := PortSim.new()
-	sim.ships.append(PortSim.Ship.new(Vector2i(12, 24), Vector2i(11, 24), 12))
-	var route: Array[Vector2i] = [sim.map.entry, sim.map.entry + Vector2i.LEFT]
-	sim.lorries.append(PortSim.Lorry.new(route, Vector2i(14, 23)))
+	# A busy port, so ships, cranes and vehicles all have entries to break.
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v2.bin").sim
+	for i in 40000:
+		if not (sim.ships.is_empty() or sim.cranes.is_empty() or sim.vehicles.is_empty() or sim.get("_claimed").is_empty()):
+			break
+		sim.tick()
 	var valid := sim.to_dict()
 	_write_payload("user://valid.bin", {"version": SaveFile.VERSION, "sim": valid})
-	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship and lorry payload loads")
-	# Exercise every field consumed by each deserialiser, including fields in
-	# nonempty traffic arrays, through the public load path.
-	for section: Array in [[], ["map"], ["ships", 0], ["lorries", 0]]:
+	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
+	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
+	# Every field each deserialiser reads, through the public load path.
+	for section: Array in [[], ["map"], ["yard"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
 		var original := _section(valid, section)
 		for key: String in original:
 			var missing := valid.duplicate(true)
@@ -119,19 +122,21 @@ func _test_malformed_payloads_are_refused() -> void:
 				var mistyped := valid.duplicate(true)
 				_section(mistyped, section)[key] = wrong
 				_expect_payload_refused(mistyped, "mistyped %s.%s" % [section, key])
-	for collection: String in ["ships", "lorries"]:
+	for collection: String in ["ships", "cranes", "vehicles"]:
 		var bad := valid.duplicate(true)
 		bad[collection] = [42]
 		_expect_payload_refused(bad, "non-dictionary in %s" % collection)
-	for collection: String in ["stacked", "claimed"]:
-		for counts: Dictionary in [{"bad key": 1}, {Vector2i(14, 23): "bad count"}]:
-			var bad := valid.duplicate(true)
-			bad[collection] = counts
-			_expect_payload_refused(bad, "mistyped entries in %s" % collection)
-	for route_value: Array in [[], ["bad cell"], [Vector2(1, 2)]]:
+	for claimed: Dictionary in [{"bad key": true}, {Vector2i(14, 23): true}, {7: "yes"}, {7: false}]:
 		var bad := valid.duplicate(true)
-		bad.lorries[0].path = route_value
+		bad.claimed = claimed
+		_expect_payload_refused(bad, "mistyped entries in claimed")
+	for route_value: Array in [["bad cell"], [Vector2(1, 2)]]:
+		var bad := valid.duplicate(true)
+		bad.vehicles[0].path = route_value
 		_expect_payload_refused(bad, "invalid route %s" % [route_value])
+	var no_cells := valid.duplicate(true)
+	no_cells.ships[0].cells = []
+	_expect_payload_refused(no_cells, "a ship with no cells")
 	for size: Vector2i in [Vector2i.ZERO, Vector2i(-1, 48), Vector2i(64, 49)]:
 		var bad := valid.duplicate(true)
 		bad.map.size = size
@@ -141,8 +146,17 @@ func _test_malformed_payloads_are_refused() -> void:
 	_expect_payload_refused(bad_tiles, "unknown tile kind")
 	for value: float in [NAN, INF, -INF]:
 		var bad := valid.duplicate(true)
-		bad.lorries[0].t = value
+		bad.vehicles[0].t = value
 		_expect_payload_refused(bad, "non-finite vehicle position")
+
+
+func _test_malformed_v1_is_refused() -> void:
+	var v1: Dictionary = {"version": 1, "sim": {"delivered": 0, "stacked": {Vector2i(14, 23): 3}}}
+	for stacked: Variant in [null, [], {"bad key": 1}, {Vector2i(14, 23): "bad count"}, {Vector2i(14, 23): -1}, {Vector2i(14, 23): 1000000}]:
+		var bad := v1.duplicate(true)
+		bad.sim.stacked = stacked
+		_write_payload("user://bad_v1.bin", bad)
+		_expect(SaveFile.load_from("user://bad_v1.bin").get("error", "").contains("not a Port Skylines save"), true, "v1 stacked %s is refused" % [stacked])
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:

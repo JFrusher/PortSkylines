@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 1
+const VERSION := 2
 const MAGIC := "PSKY"
 
 
@@ -57,19 +57,80 @@ static func load_from(path: String) -> Dictionary:
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time. Empty until v2.
+## Brings an older save up to VERSION one step at a time.
 static func _migrate(data: Dictionary) -> Dictionary:
+	if data.version == 1:
+		if not _valid_v1(data.sim):
+			return {}
+		data = _v1_to_v2(data)
+	return data
+
+
+## The v1 fields _v1_to_v2 reads. v1 yard tiles held at most 6 boxes.
+static func _valid_v1(sim: Dictionary) -> bool:
+	if not _has_fields(sim, {"stacked": TYPE_DICTIONARY, "delivered": TYPE_INT}):
+		return false
+	for tile: Variant in sim.stacked:
+		var count: Variant = sim.stacked[tile]
+		if not (tile is Vector2i and count is int and count >= 0 and count <= 6):
+			return false
+	return true
+
+
+## v2 (M2) gave ships classes and berths. Ships in a v1 save were mid-call in
+## the old format, so they are dropped; the map, money and yards carry over.
+static func _v1_to_v2(data: Dictionary) -> Dictionary:
+	data.sim.ships = []
+	data.sim.cranes = []
+	# Lorries move to the v2 traffic model; lorries on the road are dropped
+	# and any boxes they had claimed are free again.
+	data.sim.erase("lorries")
+	data.sim.vehicles = []
+	data.sim.claimed = {}
+	data.sim.next_vehicle = 1
+	data.sim.gave_up = 0
+	# Yard tiles held box counts; they become import boxes ready to collect.
+	var stacks := {}
+	var boxes := {}
+	var next := 1
+	for tile: Vector2i in data.sim.stacked:
+		for i in int(data.sim.stacked[tile]):
+			boxes[next] = {"kind": "import", "due": 0.0}
+			if not stacks.has(tile):
+				stacks[tile] = []
+			stacks[tile].append(next)
+			next += 1
+	data.sim.erase("stacked")
+	data.sim.yard = {"stacks": stacks, "reserved": {}, "role": {}, "gear": {}, "busy": {}}
+	data.sim.boxes = boxes
+	data.sim.next_box = next
+	data.sim.tractors = 0
+	data.sim.until_export = 0.0
+	data.sim.turn_times = []
+	data.sim.erase("status")
+	data.sim.events = [{"minute": 0.0, "text": "Saved game updated: ships that were in port have sailed"}]
+	data.sim.upkeep_paid = 0
+	data.sim.ship_log = []
+	data.sim.delivered_yesterday = 0
+	data.sim.delivered_at_midnight = data.sim.delivered
+	data.version = 2
 	return data
 
 
 ## Check the entire payload before any typed deserialiser sees it.
+# shortcut: entries inside yard, boxes, events and ship_log are not checked,
+# only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
 		"map": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "money": TYPE_INT, "delivered": TYPE_INT,
-		"status": TYPE_STRING, "ships": TYPE_ARRAY, "lorries": TYPE_ARRAY,
-		"stacked": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"until_ship": TYPE_FLOAT, "until_lorry": TYPE_FLOAT,
+		"events": TYPE_ARRAY, "upkeep_paid": TYPE_INT, "ship_log": TYPE_ARRAY,
+		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
+		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
+		"yard": TYPE_DICTIONARY, "boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
+		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
+		"until_ship": TYPE_FLOAT, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
+		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 	}):
 		return false
 	var map: Dictionary = data.map
@@ -83,29 +144,47 @@ static func _valid_sim(data: Variant) -> bool:
 	for tile: int in map.tiles:
 		if tile not in PortMap.Tile.values():
 			return false
+	if not _has_fields(data.yard, {
+		"stacks": TYPE_DICTIONARY, "reserved": TYPE_DICTIONARY, "role": TYPE_DICTIONARY,
+		"gear": TYPE_DICTIONARY, "busy": TYPE_DICTIONARY,
+	}):
+		return false
 	for ship: Variant in data.ships:
 		if not ship is Dictionary or not _has_fields(ship, {
-			"quay": TYPE_VECTOR2I, "berth": TYPE_VECTOR2I, "boxes": TYPE_INT,
-			"state": TYPE_INT, "sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT,
-			"crane": TYPE_FLOAT,
+			"kind": TYPE_STRING, "cells": TYPE_ARRAY, "side": TYPE_VECTOR2I,
+			"boxes": TYPE_INT, "exports": TYPE_INT, "state": TYPE_INT, "sail": TYPE_FLOAT,
+			"prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
+		}) or not _all_cells(ship.cells, false):
+			return false
+	for crane: Variant in data.cranes:
+		if not crane is Dictionary or not _has_fields(crane, {
+			"cell": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "tractor": TYPE_INT,
 		}):
 			return false
-	for lorry: Variant in data.lorries:
-		if not lorry is Dictionary or not _has_fields(lorry, {
-			"path": TYPE_ARRAY, "yard": TYPE_VECTOR2I, "loaded": TYPE_BOOL,
-			"t": TYPE_FLOAT, "prev_t": TYPE_FLOAT,
-		}):
+	for vehicle: Variant in data.vehicles:
+		if not vehicle is Dictionary or not _has_fields(vehicle, {
+			"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
+			"prev_t": TYPE_FLOAT, "lane": TYPE_VECTOR3I, "ahead": TYPE_VECTOR3I,
+			"waited": TYPE_INT, "replanned": TYPE_BOOL, "state": TYPE_STRING,
+			"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
+			"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "block": TYPE_VECTOR2I,
+			"gate_in": TYPE_FLOAT,
+		}) or not _all_cells(vehicle.path, true):
 			return false
-		if lorry.path.is_empty():
+	for id: Variant in data.claimed:
+		if not (id is int and data.claimed[id] is bool and data.claimed[id]):
 			return false
-		for cell: Variant in lorry.path:
-			if not cell is Vector2i:
-				return false
-	for counts: Dictionary in [data.stacked, data.claimed]:
-		for cell: Variant in counts:
-			if not cell is Vector2i or not counts[cell] is int:
-				return false
+	for id: Variant in data.boxes:
+		if not id is int or not data.boxes[id] is Dictionary:
+			return false
 	return true
+
+
+## True when `cells` holds only Vector2i, and some unless `may_be_empty`.
+static func _all_cells(cells: Array, may_be_empty: bool) -> bool:
+	if cells.is_empty() and not may_be_empty:
+		return false
+	return cells.all(func(cell: Variant) -> bool: return cell is Vector2i)
 
 
 static func _has_fields(data: Dictionary, fields: Dictionary) -> bool:
