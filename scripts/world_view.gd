@@ -49,6 +49,10 @@ const AREA_COLOR := {
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
 }
 const AREA_TOP := 0.2
+## A laid-out area's driven parts: the buffer strip, and handover slots in
+## two alternating shades so each slot reads on its own.
+const BUFFER_COLOR := Color(0.3, 0.3, 0.32)
+const SLOT_COLORS: Array[Color] = [Color(0.24, 0.24, 0.26), Color(0.33, 0.33, 0.35)]
 ## Camera distances to a chunk's centre past which it is drawn with less
 ## detail, as Cities: Skylines does: each tile's stack as one slab instead of
 ## every box, then no yard machines. Instances drawn cost the most render time.
@@ -243,8 +247,17 @@ func _draw_areas() -> void:
 	_areas_drawn = sim.areas.version
 	var tool := _road_tool()
 	for id: int in sim.areas.list:
-		tool.set_color(AREA_COLOR[sim.areas.list[id].type])
+		var colors := {}
 		for cell in sim.areas.cells(id):
+			colors[cell] = AREA_COLOR[sim.areas.list[id].type]
+		var layout := sim.areas.layout(id)
+		for cell: Vector2i in layout.get("buffer", []):
+			colors[cell] = BUFFER_COLOR
+		for i: int in layout.get("slots", []).size():
+			for cell: Vector2i in layout.slots[i]:
+				colors[cell] = SLOT_COLORS[i % 2]
+		for cell: Vector2i in colors:
+			tool.set_color(colors[cell])
 			_cell_quad(tool, cell, AREA_TOP)
 	_areas.mesh = tool.commit()
 

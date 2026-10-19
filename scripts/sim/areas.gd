@@ -69,6 +69,15 @@ func cells(id: int) -> Array[Vector2i]:
 	return _cells(list[id])
 
 
+## What `id` holds, laid out by AreaLayout for its type.
+func layout(id: int) -> Dictionary:
+	var area: Dictionary = list[id]
+	match area.type:
+		"yard_block":
+			return AreaLayout.yard_block(area, types.yard_block.depth)
+	return {}
+
+
 ## The area covering `cell`, or 0.
 func area_at(cell: Vector2i) -> int:
 	for id: int in list:

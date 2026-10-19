@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_sim_commands()
 	_test_areas()
 	_test_area_tool()
+	_test_yard_layout()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -222,6 +223,29 @@ func _test_area_tool() -> void:
 	_expect(diagonal.apply({"op": "build_area", "type": "depot", "segment": 1, "side": -1, "from": 0, "to": 10}), "", "an area is built along a 45° road")
 	var rows := diagonal.areas.cells(1)
 	_expect(rows.all(func(c: Vector2i) -> bool: return diagonal.roads.segment_at(c) == 0), true, "and takes its direction without covering it")
+
+
+func _test_yard_layout() -> void:
+	var sim := PortSim.new()
+	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(160, 100), "type": "terminal_1_1"})
+	# Drawn east, right is south: the block starts on row 101 and runs 31 cells east.
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": 1, "from": 0, "to": 30})
+	var depth: int = sim.rules.area_types.yard_block.depth
+	var layout := sim.areas.layout(1)
+	_expect(layout.buffer.size(), 31, "the buffer strip runs the block's whole length")
+	_expect(layout.buffer.all(func(c: Vector2i) -> bool: return c.y == 101), true, "beside the road")
+	_expect(layout.slots.size(), 10, "31 cells hold 10 bays of 3, so 10 handover slots")
+	_expect(layout.slots.all(func(s: Array) -> bool: return s.size() == AreaLayout.BAY and s.all(func(c: Vector2i) -> bool: return c.y == 102)), true, "each slot is a bay of the truck lane, one row in")
+	_expect(layout.stacks.size(), 10 * (depth - 2), "a stack per bay in each row behind the truck lane")
+	var used := {}
+	var overlap := false
+	for cells: Array in [layout.buffer] + layout.slots + layout.stacks.map(func(s: Dictionary) -> Array: return s.cells):
+		for cell: Vector2i in cells:
+			overlap = overlap or cell in used
+			used[cell] = true
+	_expect(overlap, false, "no cell is used twice")
+	_expect(used.keys().all(func(c: Vector2i) -> bool: return c in sim.areas.cells(1)), true, "every part lies inside the block")
+	_expect(sim.areas.layout(1), layout, "the same block lays out the same every time")
 
 
 func _steps_are_single(cells: Array[Vector2i]) -> bool:
