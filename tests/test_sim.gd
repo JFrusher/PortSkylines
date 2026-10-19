@@ -6,6 +6,9 @@ const ROAD := PortMap.Tile.ROAD
 const QUAY := PortMap.Tile.QUAY
 const YARD := PortMap.Tile.YARD
 const GATE := PortMap.Tile.GATE
+const RandomPort := preload("res://tests/random_port.gd")
+## When the first test ship calls; see RandomPort.calls.
+const FIRST_SHIP := 10
 
 var _failures := 0
 
@@ -37,6 +40,10 @@ func _initialize() -> void:
 	_test_unreachable_block_does_not_stall_imports()
 	_test_gate_is_an_access_road()
 	_test_only_the_ledger_moves_cash()
+	_test_a_service_calls_on_its_slot()
+	_test_offers_accept_and_decline()
+	_test_overbooking_makes_ships_late()
+	_test_reputation_cancels_and_recovers()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -50,8 +57,10 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 ## A road from the highway to the coast with a gate near the highway, a
 ## 12-tile quay with an apron road behind it, two cranes, six tractors and a
 ## 3x2 yard block beside the road.
-func _port(rules := Content.base()) -> PortSim:
+func _port(rules := Content.base(), calls := "feeder") -> PortSim:
 	var sim := PortSim.new(0, rules)
+	if calls != "":
+		RandomPort.calls(sim, calls)
 	var row := sim.map.entry.y
 	var coast := sim.map.sea_width
 	for x in range(coast + 1, sim.map.entry.x):
@@ -102,8 +111,9 @@ func _test_bulldoze_rules() -> void:
 
 func _test_no_ship_without_a_road() -> void:
 	var sim := PortSim.new()
+	RandomPort.calls(sim)
 	sim.build(QUAY, Vector2i(12, 3))
-	_run(sim, sim.rules.first_ship_minutes + 1)
+	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 0, "no ship calls at an unconnected quay")
 
 
@@ -112,7 +122,7 @@ func _test_ships_unload_and_lorries_pay() -> void:
 	rules.import_dwell_minutes = 0.0
 	var sim := _port(rules)
 	var before := sim.money
-	_run(sim, sim.rules.first_ship_minutes + 1)
+	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 1, "a ship calls at the 12-tile berth")
 	var cargo := sim.ships[0].boxes
 	# One reach stacker serves the block, stacking each box and later loading
@@ -186,19 +196,20 @@ func _test_berths() -> void:
 
 func _test_ships_fit_their_berth() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.ship_classes.feeder.weight = 0.0
 	var sim := PortSim.new(0, rules)
+	RandomPort.calls(sim, "panamax")
 	var row := sim.map.entry.y
 	for x in range(sim.map.sea_width + 1, sim.map.entry.x):
 		sim.build(ROAD, Vector2i(x, row))
 	for y in range(row - 4, row + 4):
 		sim.build(QUAY, Vector2i(sim.map.sea_width, y))
-	_run(sim, sim.rules.first_ship_minutes + 1)
+	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 0, "a panamax does not call at an 8-tile berth")
 	_expect(sim.last_event().contains("12 quay tiles"), true, "the status says how long a berth it needs (%s)" % sim.last_event())
 	rules.water_depth = 11.0
 	var shallow := PortSim.new(0, rules)
-	_run(shallow, shallow.rules.first_ship_minutes + 1)
+	RandomPort.calls(shallow, "panamax")
+	_run(shallow, FIRST_SHIP + 1)
 	_expect(shallow.last_event().contains("needs 13 m"), true, "a panamax does not call at 11 m of water (%s)" % shallow.last_event())
 
 
@@ -217,17 +228,16 @@ func _test_cranes() -> void:
 ## 120 / (3 x 25 x 0.9) hours at berth, within 5%.
 func _test_crane_timing() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.ship_classes.feeder.weight = 0.0
 	rules.ship_classes.panamax.import_moves = 120
 	rules.start_money = 100000
 	# A yard that never holds the cranes up: room for everything, a machine
 	# per tile, near-instant stacking.
 	rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 0.05, "tiles_per_machine": 1, "cost_per_tile": 0, "upkeep_per_machine": 0}
-	var sim := _port(rules)
+	var sim := _port(rules, "panamax")
 	var row := sim.map.entry.y
 	sim.place_crane(Vector2i(sim.map.sea_width, row + 2))
 	sim.buy_tractors(10)
-	_run(sim, rules.first_ship_minutes + 1)
+	_run(sim, FIRST_SHIP + 1)
 	var first := sim.ships[0]
 	var working_ticks := 0
 	for i in roundi(240 / SimClock.CALENDAR_MINUTES_PER_TICK):
@@ -246,16 +256,16 @@ func _test_crane_timing() -> void:
 
 func _test_outreach() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.ship_classes.feeder.weight = 0.0
 	rules.sts_crane.outreach = 8
 	var sim := PortSim.new(0, rules)
+	RandomPort.calls(sim, "panamax")
 	var row := sim.map.entry.y
 	for x in range(sim.map.sea_width + 1, sim.map.entry.x):
 		sim.build(ROAD, Vector2i(x, row))
 	for y in range(row - 6, row + 6):
 		sim.build(QUAY, Vector2i(sim.map.sea_width, y))
 	sim.place_crane(Vector2i(sim.map.sea_width, row))
-	_run(sim, sim.rules.first_ship_minutes + 30)
+	_run(sim, FIRST_SHIP + 30)
 	_expect(sim.ships.size() == 1 and sim.ships[0].boxes == rules.ship_classes.panamax.import_moves, true, "a panamax gets no moves from cranes that are too short")
 	_expect(sim.last_event().contains("reaches 13 rows"), true, "the status says why (%s)" % sim.last_event())
 
@@ -285,7 +295,7 @@ func _test_yard_settings() -> void:
 	_expect(sim.set_yard(Vector2i(30, 3), {"role": "export"}), "That is not a yard", "settings need a yard")
 	var exports := _port()
 	exports.set_yard(tile, {"role": "export"})
-	_run(exports, exports.rules.first_ship_minutes + 30)
+	_run(exports, FIRST_SHIP + 30)
 	var imports_there: int = exports.yard.stacks.values().reduce(func(n: int, ids: Array) -> int: return n + ids.filter(func(id: int) -> bool: return exports.boxes[id].kind == "import").size(), 0)
 	_expect(imports_there, 0, "imports never go to an export block")
 	_expect(exports.last_event().contains("no import yard space"), true, "the status says why the ship waits (%s)" % exports.last_event())
@@ -298,13 +308,12 @@ func _test_yard_machines_set_the_pace() -> void:
 	var minutes: Array[float] = []
 	for per_machine: int in [1, 2]:
 		var rules := Content.base().duplicate(true)
-		rules.ship_classes.feeder.weight = 0.0
 		rules.start_money = 100000
 		rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 20.0, "tiles_per_machine": per_machine, "cost_per_tile": 0, "upkeep_per_machine": 0}
 		rules.lorry_interval_minutes = 1e9  # no lorries competing for the machines
-		var sim := _port(rules)
+		var sim := _port(rules, "panamax")
 		sim.buy_tractors(20)
-		_run(sim, rules.first_ship_minutes + 1)
+		_run(sim, FIRST_SHIP + 1)
 		var import_moves: int = rules.ship_classes.panamax.import_moves
 		var ticks := 0
 		while _stacked(sim) < import_moves and ticks < 100000:
@@ -336,9 +345,8 @@ func _test_import_dwell() -> void:
 
 func _test_exports_are_loaded() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.ship_classes.panamax.weight = 0.0
-	rules.first_ship_minutes = 120.0
-	var sim := _port(rules)
+	var sim := _port(rules, "")
+	RandomPort.calls(sim, "feeder", 120)
 	var exports := Vector2i(sim.map.sea_width + 7, sim.map.entry.y + 1)
 	for x in range(exports.x, exports.x + 3):
 		sim.build(YARD, Vector2i(x, exports.y))
@@ -371,7 +379,7 @@ func _test_gate() -> void:
 	_expect(gateless.vehicles.is_empty(), true, "no lorry comes in without a gate")
 	_expect(gateless.last_event().contains("build a gate"), true, "the status says so (%s)" % gateless.last_event())
 	var sim := _port(rules)
-	_run(sim, sim.rules.first_ship_minutes + 240)
+	_run(sim, FIRST_SHIP + 240)
 	_expect(sim.turn_times.size() > 5, true, "lorries record turn times (%d)" % sim.turn_times.size())
 	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * rules.gate_minutes), true, "every turn includes a stop at the gate each way")
 
@@ -385,7 +393,6 @@ func _test_parallel_gates() -> void:
 		var rules := Content.base().duplicate(true)
 		rules.gate_minutes = 6.0
 		rules.export_lorry_interval_minutes = 0.05
-		rules.first_ship_minutes = 1e9
 		rules.start_money = 100000
 		rules.yard_gear.reach_stacker = {"capacity": 1000, "handling_minutes": 0.05, "tiles_per_machine": 1, "cost_per_tile": 0, "upkeep_per_machine": 0}
 		var sim := PortSim.new(0, rules)
@@ -408,8 +415,7 @@ func _test_parallel_gates() -> void:
 
 func _test_upkeep_at_midnight() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.first_ship_minutes = 1e9
-	var sim := _port(rules)
+	var sim := _port(rules, "")
 	var upkeep := sim.daily_upkeep()
 	var expected: int = rules.upkeep.road * sim.map.cells_of(ROAD).size() + rules.upkeep.quay * 12 + rules.upkeep.yard * 6 + rules.upkeep.gate + rules.upkeep.sts_crane * 2 + rules.upkeep.tractor * 6 + rules.yard_gear.reach_stacker.upkeep_per_machine
 	_expect(upkeep, expected, "upkeep adds every tile, crane, tractor and yard machine")
@@ -434,12 +440,15 @@ func _test_ships_never_overlap() -> void:
 	var sim := _port()
 	var coast := sim.map.sea_width
 	var top := sim.map.entry.y - 7
+	var feeder: Dictionary = sim.contracts.services[0]
 	sim.ships.clear()
-	sim.call("_call_ship")
+	sim.call("_call", feeder)
+	_expect(sim.call("_berth", sim.ships[0]), true, "the first feeder berths")
 	sim.ledger.cash = 100000
 	_expect(sim.build(QUAY, Vector2i(coast, top)), "", "quay at the berth start")
 	_expect(sim.build(ROAD, Vector2i(coast + 1, top)), "", "apron at the berth start")
-	sim.call("_call_ship")
+	sim.call("_call", feeder)
+	sim.call("_berth", sim.ships[1])
 	for ship: PortSim.Ship in sim.ships.slice(1):
 		_expect(ship.cells.filter(func(c: Vector2i) -> bool: return c in sim.ships[0].cells), [], "ships share no quay tile")
 
@@ -494,3 +503,78 @@ func _test_only_the_ledger_moves_cash() -> void:
 		var text := FileAccess.get_file_as_string(dir.path_join(file))
 		for pattern: String in ["money +=", "money -=", "cash +=", "cash -=", "cash ="]:
 			_expect(text.contains(pattern), false, "%s has no '%s'" % [file, pattern])
+
+
+## A weekly service's ship arrives exactly at its start minute, every week.
+func _test_a_service_calls_on_its_slot() -> void:
+	var sim := _port(Content.base(), "")
+	var start := SimClock.MINUTES_PER_DAY + 5 * 60
+	RandomPort.calls(sim, "feeder", start, 0, 1)
+	var arrivals: Array[float] = []
+	for i in roundi((start + Contracts.MINUTES_PER_WEEK + 60) / SimClock.CALENDAR_MINUTES_PER_TICK):
+		var before := sim.ships.size()
+		sim.tick()
+		if sim.ships.size() > before:
+			arrivals.append(sim.clock.calendar_minutes())
+	_expect(arrivals, [float(start), float(start + Contracts.MINUTES_PER_WEEK)], "the service calls on day 1 at 05:00, two weeks running")
+
+
+func _test_offers_accept_and_decline() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.contracts.offer_chance = 1.0
+	var sim := _port(rules, "")
+	_run(sim, rules.contracts.offer_check_minutes * 2)
+	_expect(sim.contracts.offers.size(), 2, "lines offer services to a port with a berth")
+	var declined: int = sim.contracts.offers[0].id
+	_expect(sim.apply({"op": "decline_offer", "id": declined}), "", "decline an offer")
+	_expect(sim.contracts.offers.any(func(o: Dictionary) -> bool: return o.id == declined), false, "a declined offer is gone")
+	var offer: Dictionary = sim.contracts.offers[0]
+	_expect(sim.apply({"op": "accept_offer", "id": offer.id}), "", "accept an offer")
+	_expect(sim.apply({"op": "accept_offer", "id": offer.id}), "No such offer", "an offer is accepted once")
+	_expect(sim.contracts.services.map(func(s: Dictionary) -> int: return s.id), [offer.id], "the accepted offer is a service")
+	var minute_of_week := fmod(sim.clock.calendar_minutes(), Contracts.MINUTES_PER_WEEK)
+	_run(sim, fposmod(offer.start - minute_of_week, Contracts.MINUTES_PER_WEEK) + 1)
+	_expect(sim.ships.size() == 1 and sim.ships[0].line == offer.line, true, "and its ship calls")
+
+
+## One berth sold a Panamax every 2 hours, each taking longer than that to
+## work: every call waits longer at anchorage than the one before.
+func _test_overbooking_makes_ships_late() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.ship_classes.panamax.window_hours = 2.0
+	rules.import_dwell_minutes = 0.0
+	var sim := _port(rules, "")
+	RandomPort.calls(sim, "panamax", 10, 120, 12)
+	_run(sim, SimClock.MINUTES_PER_DAY)
+	var late: Array = sim.ship_log.map(func(entry: Dictionary) -> float: return entry.late)
+	_expect(late.size() >= 3, true, "several overbooked calls sailed (%d)" % late.size())
+	for i in range(1, late.size()):
+		_expect(late[i] > late[i - 1], true, "each call is later than the last (%s)" % [late])
+
+
+## Late calls cost a line's reputation until it cancels a service; good calls
+## win it back until it offers services again.
+func _test_reputation_cancels_and_recovers() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.contracts.offer_chance = 1.0
+	var contracts := Contracts.new(rules)
+	for id: int in [1, 2]:
+		contracts.services.append({"id": id, "line": "kestrel", "kind": "feeder", "start": 0, "window_hours": 12.0, "moves": 40})
+	var said := ""
+	var calls := 0
+	while said == "" and calls < 20:
+		said = contracts.called("kestrel", 12.0, 20.0, 60.0)
+		calls += 1
+	_expect(said.contains("cancelled"), true, "a line let down too often cancels a service (%s)" % said)
+	_expect(contracts.services.size(), 1, "one service is gone")
+	_expect(contracts.reputation.kestrel < rules.reputation.offer_above, true, "and it offers nothing while unhappy")
+	while contracts.reputation.kestrel < rules.reputation.offer_above:
+		contracts.called("kestrel", 0.0, 30.0, 40.0)
+	var rng := RandomNumberGenerator.new()
+	var offered := {}
+	for i in 50:
+		var offer := contracts.offer(rng, 0.0, 100, func(_kind: String) -> bool: return true)
+		if not offer.is_empty():
+			offered[offer.line] = true
+			contracts.offers.clear()
+	_expect(offered.has("kestrel"), true, "good calls win the line back to offering services")

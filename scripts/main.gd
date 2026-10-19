@@ -29,7 +29,7 @@ func _ready() -> void:
 	hud.sim = sim
 	hud.save_pressed.connect(_save)
 	hud.load_pressed.connect(_load)
-	hud.tractors_pressed.connect(func() -> void: _report(sim.apply({"op": "buy_tractors", "count": 2})))
+	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
 	add_child(hud)
 
 

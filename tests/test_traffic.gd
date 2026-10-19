@@ -24,7 +24,6 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 ## A sim with no ships, a straight road along row 5 from x=20 to x=40.
 func _road_sim() -> PortSim:
 	var rules := Content.base().duplicate(true)
-	rules.first_ship_minutes = 1e9
 	var sim := PortSim.new(0, rules)
 	for x in range(20, 41):
 		sim.map.place(PortMap.Tile.ROAD, Vector2i(x, 5))
@@ -80,7 +79,6 @@ func _test_queue_never_shares_a_lane() -> void:
 
 func _test_deadlocked_ring_clears() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.first_ship_minutes = 1e9
 	var sim := PortSim.new(0, rules)
 	var ring: Array[Vector2i] = [Vector2i(30, 30), Vector2i(31, 30), Vector2i(31, 31), Vector2i(30, 31)]
 	for cell in ring:

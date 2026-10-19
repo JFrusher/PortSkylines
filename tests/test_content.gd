@@ -17,12 +17,15 @@ func _initialize() -> void:
 	_expect(_error_for({"start_money": 6.5}), "rules.json: start_money: must be a whole number", "an int key refuses fractions")
 	_expect(_error_for({"colour": 1}), "rules.json: colour: unknown key", "an unknown key is refused")
 	_expect(base.ship_classes.feeder.length is int, true, "records under a \"*\" key are checked and typed")
-	for key: String in ["ship_interval_minutes", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds"]:
+	for key: String in ["sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds"]:
 		for value: int in [0, -1]:
 			_expect(_error_for({key: value}), "rules.json: %s: must be greater than zero" % key, "%s refuses %d" % [key, value])
 		_expect(_error_for({key: 1}), "", "%s accepts a positive whole number" % key)
 	_expect(_error_for({"sail_seconds": 0.5}), "", "a positive fractional duration is valid")
-	_expect(_error_for({"first_ship_minutes": 0}), "", "the first ship can arrive immediately")
+	_expect(_error_for({"import_dwell_minutes": 0}), "", "imports may leave at once")
+	var lines: Dictionary = Content.base().lines.duplicate(true)
+	lines.aurora.classes["cruise"] = 1
+	_expect(_error_for({"lines": lines}, "lines.json"), "lines.aurora.classes: unknown ship class \"cruise\"", "a line can only sail known ship classes")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -33,10 +36,10 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
 
 
-## Copies the base data with `changes` applied to rules.json (null removes a
+## Copies the base data with `changes` applied to `file_name` (null removes a
 ## key) and returns the loader's error.
-func _error_for(changes: Dictionary) -> String:
-	var rules: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(Content.BASE_DIR.path_join("rules.json")))
+func _error_for(changes: Dictionary, file_name := "rules.json") -> String:
+	var rules: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(Content.BASE_DIR.path_join(file_name)))
 	for key: String in changes:
 		if changes[key] == null:
 			rules.erase(key)
@@ -44,11 +47,11 @@ func _error_for(changes: Dictionary) -> String:
 			rules[key] = changes[key]
 	DirAccess.make_dir_recursive_absolute(DIR)
 	for name: String in DirAccess.get_files_at(Content.BASE_DIR):
-		if name.ends_with(".json") and name != "rules.json":
+		if name.ends_with(".json") and name != file_name:
 			var copy := FileAccess.open(DIR.path_join(name), FileAccess.WRITE)
 			copy.store_string(FileAccess.get_file_as_string(Content.BASE_DIR.path_join(name)))
 			copy.close()
-	var file := FileAccess.open(DIR.path_join("rules.json"), FileAccess.WRITE)
+	var file := FileAccess.open(DIR.path_join(file_name), FileAccess.WRITE)
 	file.store_string(JSON.stringify(rules))
 	file.close()
 	return Content.load_dir(DIR).get("error", "")

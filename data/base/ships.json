@@ -1,7 +1,7 @@
 {
 	"ship_classes": {
-		"feeder": {"length": 8, "draft": 10, "outreach": 8, "import_moves": 24, "export_moves": 16, "weight": 2},
-		"panamax": {"length": 12, "draft": 13, "outreach": 13, "import_moves": 70, "export_moves": 50, "weight": 1}
+		"feeder": {"length": 8, "draft": 10, "outreach": 8, "import_moves": 24, "export_moves": 16, "window_hours": 12},
+		"panamax": {"length": 12, "draft": 13, "outreach": 13, "import_moves": 70, "export_moves": 50, "window_hours": 24}
 	},
 	"water_depth": 14
 }

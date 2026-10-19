@@ -1,6 +1,6 @@
 # Game data
 
-Every tunable number lives in `data/base/*.json`: `rules.json` (map, money, timing), `ships.json` (ship classes) and `equipment.json` (cranes, tractors, yard gear). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated key stops the game with an error that names the file and key.
+Every tunable number lives in `data/base/*.json`: `rules.json` (map, money, timing), `ships.json` (ship classes), `equipment.json` (cranes, tractors, yard gear) and `lines.json` (shipping lines, contracts, reputation). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated key stops the game with an error that names the file and key.
 
 Whole numbers are allowed where a key is a number; keys marked *int* must be whole. Keys marked *>0* must be greater than zero.
 
@@ -14,8 +14,6 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `gate_minutes` | number | Calendar minutes a lorry stops at a gate |
 | `upkeep.road`, `.quay`, `.yard`, `.gate` | int | Paid per tile at midnight |
 | `upkeep.sts_crane`, `.tractor` | int | Paid per crane and per tractor at midnight |
-| `first_ship_minutes` | number | Calendar minutes before the first ship is called |
-| `ship_interval_minutes` | number >0 | Calendar minutes between ships |
 | `sail_seconds` | number >0 | Vehicle seconds to sail in or out |
 | `lorry_interval_minutes` | number >0 | Calendar minutes between import lorries |
 | `export_lorry_interval_minutes` | number >0 | Calendar minutes between export lorries |
@@ -26,7 +24,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `ship_classes.<name>.draft` | number | Metres; a class deeper than `water_depth` never berths |
 | `ship_classes.<name>.outreach` | int | Crane outreach (rows) the ship needs |
 | `ship_classes.<name>.import_moves`, `.export_moves` | int | Boxes off and on per call |
-| `ship_classes.<name>.weight` | number | Relative chance this class is called |
+| `ship_classes.<name>.window_hours` | number >0 | Length of a service's weekly berth window; sailing after it is late |
 | `water_depth` | number | Metres of water at every quay |
 | `sts_crane.cost` | int | Price of a quay crane |
 | `sts_crane.rate` | number >0 | Moves per hour |
@@ -39,5 +37,22 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `yard_gear.<name>.tiles_per_machine` | int >0 | One machine per this many tiles in a block |
 | `yard_gear.<name>.cost_per_tile` | int | Paid per tile when a block switches to this gear |
 | `yard_gear.<name>.upkeep_per_machine` | int | Paid per machine at midnight |
+| `ledger_categories.<key>` | text | A ledger category and the label the ledger panel shows |
+| `lines.<key>.name`, `.livery` | text | A fictional shipping line and its hull colour (`#rrggbb`) |
+| `lines.<key>.classes.<class>` | number | Relative weight of each ship class the line offers; classes must exist |
+| `lines.<key>.sensitivity` | number >0 | Multiplies every change in this line's reputation |
+| `contracts.offer_check_minutes` | number >0 | How often lines consider offering a service |
+| `contracts.offer_chance` | number | Chance of an offer at each check |
+| `contracts.max_offers` | int | Offers open at once |
+| `contracts.offer_days` | number | Days an offer stays open |
+| `contracts.max_services_per_berth` | int | Services plus offers per berth with a road, at most |
+| `reputation.start` | number | Every line's reputation (0–100) at the start |
+| `reputation.offer_above` | number | A line offers services only at or above this |
+| `reputation.cancel_below` | number | Below this a line cancels a service after each call |
+| `reputation.on_time` | number | Change for a call that sails within its window |
+| `reputation.late_per_hour` | number | Change per hour a call sails after its window |
+| `reputation.moves_per_hour_target`, `.per_move_per_hour` | number | Change per berth move per hour above (or below) the target |
+| `reputation.turn_target_minutes`, `.per_turn_minute` | number | Change per minute of gate turn time above (or below) the target |
+| `reputation.missed` | number | Change when a call finds no berth that could ever take it |
 
 **Time units.** At 1×, one vehicle second is one real second, and one calendar minute is one real second (one game hour per real minute). See `SimClock`.

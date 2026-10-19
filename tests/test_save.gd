@@ -103,7 +103,7 @@ func _test_failed_save_preserves_destination() -> void:
 
 func _test_malformed_payloads_are_refused() -> void:
 	# A busy port, so ships, cranes and vehicles all have entries to break.
-	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v2.bin").sim
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v%d.bin" % SaveFile.VERSION).sim
 	for i in 40000:
 		if not (sim.ships.is_empty() or sim.cranes.is_empty() or sim.vehicles.is_empty() or sim.get("_claimed").is_empty()):
 			break
@@ -113,7 +113,7 @@ func _test_malformed_payloads_are_refused() -> void:
 	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
 	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
 	# Every field each deserialiser reads, through the public load path.
-	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
+	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["contracts"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
 		var original := _section(valid, section)
 		for key: String in original:
 			var missing := valid.duplicate(true)
@@ -137,7 +137,7 @@ func _test_malformed_payloads_are_refused() -> void:
 		_expect_payload_refused(bad, "invalid route %s" % [route_value])
 	var no_cells := valid.duplicate(true)
 	no_cells.ships[0].cells = []
-	_expect_payload_refused(no_cells, "a ship with no cells")
+	_expect_payload_refused(no_cells, "a berthed ship with no cells")
 	for size: Vector2i in [Vector2i.ZERO, Vector2i(-1, 48), Vector2i(64, 49)]:
 		var bad := valid.duplicate(true)
 		bad.map.size = size

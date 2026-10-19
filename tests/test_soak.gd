@@ -29,6 +29,7 @@ func _initialize() -> void:
 
 func _soak(rules: Dictionary) -> PortSim:
 	var sim := PortSim.new(2, rules)
+	RandomPort.calls(sim)
 	var log := RandomPort.command_log(11, TICKS, 400)
 	var next := 0
 	while sim.clock.ticks < TICKS and _failures == 0:

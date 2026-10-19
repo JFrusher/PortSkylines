@@ -20,10 +20,12 @@ var money: int:
 		return ledger.cash
 ## Boxes through the highway: imports out and exports in.
 var delivered := 0
+## Shipping lines, their services and offers, and their reputation of the port.
+var contracts: Contracts
 ## Things worth telling the player, newest last: {"minute", "text"}. A
 ## message repeated tick after tick is kept once.
 var events: Array[Dictionary] = []
-## The latest ships to sail: {"kind", "moves", "hours", "cranes"}, newest last.
+## The latest ships to sail: {"kind", "line", "moves", "hours", "cranes", "late"}, newest last.
 var ship_log: Array[Dictionary] = []
 ## Boxes through the gate in the last full game day.
 var delivered_yesterday := 0
@@ -45,8 +47,7 @@ var turn_times: Array[float] = []
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
-## Calendar minutes until the next ship, import lorry and export lorry.
-var _until_ship := 0.0
+## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
 var _next_vehicle := 1
@@ -59,7 +60,7 @@ func _init(seed_value := 0, game_rules := Content.base()) -> void:
 	map = PortMap.new(Vector2i(rules.map.width, rules.map.height), rules.map.sea_width)
 	yard = Yard.new(map, rules)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
-	_until_ship = rules.first_ship_minutes
+	contracts = Contracts.new(rules)
 	rng.seed = seed_value
 	_event("Run a road from the highway to the coast through a gate, then build a quay, cranes, tractors and a yard")
 
@@ -69,10 +70,15 @@ func cost(kind: int) -> int:
 
 
 class Ship:
-	enum State { ARRIVING, WORKING, LEAVING }
+	## ANCHORED: waiting off the map for a berth.
+	enum State { ARRIVING, WORKING, LEAVING, ANCHORED }
 	## Its class, a key of rules.ship_classes.
 	var kind: String
-	## The quay tiles it lies along, in order.
+	## Its line, a key of rules.lines.
+	var line: String
+	## The calendar minute its berth window closes; sailing later is late.
+	var due: float
+	## The quay tiles it lies along, in order; empty while anchored.
 	var cells: Array[Vector2i]
 	## The step from those quay tiles to the water the ship is in.
 	var side: Vector2i
@@ -88,20 +94,21 @@ class Ship:
 	var moves := 0
 	var berthed := -1.0
 
-	func _init(ship_kind: String, along: Array[Vector2i], water_side: Vector2i, imports: int, export_room: int) -> void:
+	func _init(ship_kind: String, ship_line: String, window_end: float, imports: int, export_room: int) -> void:
 		kind = ship_kind
-		cells = along
-		side = water_side
+		line = ship_line
+		due = window_end
 		boxes = imports
 		exports = export_room
+		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "cells": cells.duplicate(), "side": side, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed}
+		return {"kind": kind, "line": line, "due": due, "cells": cells.duplicate(), "side": side, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed}
 
 	static func from_dict(d: Dictionary) -> Ship:
-		var along: Array[Vector2i] = []
-		along.assign(d.cells)
-		var ship := Ship.new(d.kind, along, d.side, d.boxes, d.exports)
+		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
+		ship.cells.assign(d.cells)
+		ship.side = d.side
 		ship.state = d.state
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
@@ -141,6 +148,7 @@ func to_dict() -> Dictionary:
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
 		"ledger": ledger.to_dict(),
+		"contracts": contracts.to_dict(),
 		"delivered": delivered,
 		"events": events.duplicate(true),
 		"ship_log": ship_log.duplicate(true),
@@ -155,7 +163,6 @@ func to_dict() -> Dictionary:
 		"gave_up": gave_up,
 		"turn_times": turn_times.duplicate(),
 		"claimed": _claimed.duplicate(),
-		"until_ship": _until_ship,
 		"until_lorry": _until_lorry,
 		"until_export": _until_export,
 		"next_vehicle": _next_vehicle,
@@ -171,6 +178,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
 	sim.ledger = Ledger.from_dict(d.ledger, sim.rules.ledger_categories)
+	sim.contracts = Contracts.from_dict(d.contracts, sim.rules)
 	sim.delivered = d.delivered
 	sim.events.assign(d.events)
 	sim.ship_log.assign(d.ship_log)
@@ -191,7 +199,6 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.gave_up = d.gave_up
 	sim.turn_times.assign(d.turn_times)
 	sim._claimed = d.claimed.duplicate()
-	sim._until_ship = d.until_ship
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
 	sim._next_vehicle = d.next_vehicle
@@ -219,6 +226,10 @@ func apply(command: Dictionary) -> String:
 			return buy_tractors(command.count)
 		"set_yard":
 			return set_yard(command.cell, command.settings)
+		"accept_offer":
+			return contracts.accept(command.id)
+		"decline_offer":
+			return contracts.decline(command.id)
 	return "Unknown command: %s" % command.get("op")
 
 
@@ -338,10 +349,10 @@ func tick() -> void:
 	clock.tick()
 	if clock.ticks % SimClock.TICKS_PER_DAY == 0:
 		_end_of_day()
-	_until_ship -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_ship <= 0.0:
-		_until_ship = rules.ship_interval_minutes
-		_call_ship()
+	for service in contracts.due(clock.ticks % (SimClock.TICKS_PER_DAY * 7)):
+		_call(service)
+	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
+		_offer_service()
 	for ship: Ship in ships.duplicate():
 		_work(ship)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
@@ -411,37 +422,67 @@ func _end_of_day() -> void:
 	_event("Day %d: upkeep $%d, %d boxes through the gate" % [clock.game_day(), upkeep, delivered_yesterday])
 
 
-## A ship of a random class (weighted by the data) calls at the first free
-## berth long and deep enough with a road to the highway, or goes elsewhere.
-func _call_ship() -> void:
-	var kind := _pick_ship_kind()
-	var spec: Dictionary = rules.ship_classes[kind]
+## A service's ship arrives for its window. It berths at the first free
+## stretch of quay long enough with a road to the highway, or waits at
+## anchorage until one frees up. A ship no berth could ever take is missed.
+func _call(service: Dictionary) -> void:
+	var spec: Dictionary = rules.ship_classes[service.kind]
+	var who := contracts.name_of(service.line)
+	var why := ""
 	if rules.water_depth < spec.draft:
-		_event("A %s went elsewhere: it needs %.0f m of water, the port has %.0f m" % [kind, spec.draft, rules.water_depth])
+		why = "it needs %.0f m of water, the port has %.0f m" % [spec.draft, rules.water_depth]
+	elif not _could_berth(service.kind):
+		why = "no berth of %d quay tiles with a road to the highway" % spec.length
+	if why != "":
+		_event("%s's %s went elsewhere: %s" % [who, service.kind, why])
+		_event_if(contracts.missed(service.line))
 		return
+	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
+	ships.append(Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves))
+	_event("%s's %s has arrived" % [who, service.kind])
+
+
+## Moves an anchored ship to a free stretch of berth; false if there is none yet.
+func _berth(ship: Ship) -> bool:
+	var length: int = rules.ship_classes[ship.kind].length
 	for berth: Dictionary in map.berths():
 		var cells: Array[Vector2i] = berth.cells
 		# Any free stretch of the run will do; a berth can grow at either end.
-		for start in range(cells.size() - spec.length + 1):
-			var span := cells.slice(start, start + spec.length)
+		for start in range(cells.size() - length + 1):
+			var span := cells.slice(start, start + length)
 			if span.any(_ship_at) or _apron(span) == PortMap.NONE:
 				continue
-			ships.append(Ship.new(kind, span, berth.side, spec.import_moves, spec.export_moves))
-			_event("A %s is coming in" % kind)
-			return
-	_event("A %s went elsewhere: no free berth of %d quay tiles with a road to the highway" % [kind, spec.length])
+			ship.cells = span
+			ship.side = berth.side
+			ship.state = Ship.State.ARRIVING
+			return true
+	return false
 
 
-func _pick_ship_kind() -> String:
-	var total := 0.0
-	for kind: String in rules.ship_classes:
-		total += rules.ship_classes[kind].weight
-	var pick := rng.randf() * total
-	for kind: String in rules.ship_classes:
-		pick -= rules.ship_classes[kind].weight
-		if pick < 0.0:
-			return kind
-	return rules.ship_classes.keys()[-1]
+## Whether some berth is long enough for `kind`, busy or not.
+func _could_berth(kind: String) -> bool:
+	var spec: Dictionary = rules.ship_classes[kind]
+	if rules.water_depth < spec.draft:
+		return false
+	for berth: Dictionary in map.berths():
+		if berth.cells.size() >= spec.length and _apron(berth.cells) != PortMap.NONE:
+			return true
+	return false
+
+
+## Lines may offer a new service while the port has berths for it.
+func _offer_service() -> void:
+	var now := clock.calendar_minutes()
+	contracts.expire(now)
+	var berths := map.berths().filter(func(b: Dictionary) -> bool: return _apron(b.cells) != PortMap.NONE).size()
+	var offered := contracts.offer(rng, now, berths, _could_berth)
+	if not offered.is_empty():
+		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
+
+
+func _event_if(text: String) -> void:
+	if text != "":
+		_event(text)
 
 
 ## The first quay tile in `cells` with a road route to the highway, or NONE.
@@ -469,6 +510,8 @@ func _crane_at(cell: Vector2i) -> Crane:
 func _work(ship: Ship) -> void:
 	ship.prev_sail = ship.sail
 	match ship.state:
+		Ship.State.ANCHORED:
+			_berth(ship)
 		Ship.State.ARRIVING:
 			ship.sail = minf(ship.sail + SimClock.TICK_SECONDS / rules.sail_seconds, 1.0)
 			if ship.sail == 1.0:
@@ -501,9 +544,13 @@ func _work(ship: Ship) -> void:
 
 func _sail(ship: Ship, crane_count: int) -> void:
 	ship.state = Ship.State.LEAVING
-	ship_log.append({"kind": ship.kind, "moves": ship.moves, "hours": (clock.calendar_minutes() - ship.berthed) / 60.0, "cranes": crane_count})
+	var now := clock.calendar_minutes()
+	var hours := (now - ship.berthed) / 60.0
+	var late := maxf(now - ship.due, 0.0) / 60.0
+	ship_log.append({"kind": ship.kind, "line": ship.line, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
 	if ship_log.size() > 10:
 		ship_log.pop_front()
+	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, kpis().gate_turn_minutes))
 
 
 ## One crane's tick discharging: it needs a tractor sent under it, works its

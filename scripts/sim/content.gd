@@ -12,8 +12,6 @@ const SCHEMA := {
 	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT},
 	"gate_minutes": TYPE_FLOAT,
 	"upkeep": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT, "sts_crane": TYPE_INT, "tractor": TYPE_INT},
-	"first_ship_minutes": TYPE_FLOAT,
-	"ship_interval_minutes": TYPE_FLOAT,
 	"sail_seconds": TYPE_FLOAT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"export_lorry_interval_minutes": TYPE_FLOAT,
@@ -23,7 +21,16 @@ const SCHEMA := {
 	# Every way cash can move, with the label the ledger panel shows.
 	"ledger_categories": {"*": TYPE_STRING},
 	# "*" means any key, each holding the record that follows.
-	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "weight": TYPE_FLOAT}},
+	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT}},
+	# Fictional shipping lines: the classes they sail (relative weights) and how
+	# strongly their reputation of the port moves.
+	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT}},
+	"contracts": {"offer_check_minutes": TYPE_FLOAT, "offer_chance": TYPE_FLOAT, "max_offers": TYPE_INT, "offer_days": TYPE_FLOAT, "max_services_per_berth": TYPE_INT},
+	"reputation": {
+		"start": TYPE_FLOAT, "offer_above": TYPE_FLOAT, "cancel_below": TYPE_FLOAT, "on_time": TYPE_FLOAT,
+		"late_per_hour": TYPE_FLOAT, "moves_per_hour_target": TYPE_FLOAT, "per_move_per_hour": TYPE_FLOAT,
+		"turn_target_minutes": TYPE_FLOAT, "per_turn_minute": TYPE_FLOAT, "missed": TYPE_FLOAT,
+	},
 	"water_depth": TYPE_FLOAT,
 	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT},
 	"crane_interference": TYPE_FLOAT,
@@ -32,7 +39,7 @@ const SCHEMA := {
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["ship_interval_minutes", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
 
 static var _base := {}
 
@@ -72,6 +79,15 @@ static func load_dir(dir: String) -> Dictionary:
 		var err := _check(rules, key, SCHEMA.get(key), "%s: %s" % [source[key], key])
 		if err:
 			return {"error": err}
+	return _cross_check(rules)
+
+
+## Checks that need more than one key: every line sails known ship classes.
+static func _cross_check(rules: Dictionary) -> Dictionary:
+	for line: String in rules.lines:
+		for kind: String in rules.lines[line].classes:
+			if not rules.ship_classes.has(kind):
+				return {"error": "lines.%s.classes: unknown ship class \"%s\"" % [line, kind]}
 	return {"rules": rules}
 
 

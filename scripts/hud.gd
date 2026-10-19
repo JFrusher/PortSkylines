@@ -5,7 +5,8 @@ extends CanvasLayer
 
 signal save_pressed
 signal load_pressed
-signal tractors_pressed
+## A command for PortSim.apply, such as accepting an offer.
+signal command_issued(command: Dictionary)
 
 const BULLDOZE := -1
 const CRANE := -2
@@ -14,6 +15,7 @@ const IMPORT_YARD := -4
 const RTG := -5
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 const FLASH_SECONDS := 2.5
+const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 var sim: PortSim
 var tool: int = PortMap.Tile.ROAD
@@ -23,6 +25,9 @@ var _readout := Label.new()
 var _kpis := Label.new()
 var _message := Label.new()
 var _ledger := Label.new()
+var _contracts := VBoxContainer.new()
+## The contracts version and sim the contracts panel was last built for.
+var _contracts_drawn := [-1, null]
 var _flash_left := 0.0
 
 
@@ -44,10 +49,17 @@ func _ready() -> void:
 	ledger_button.toggle_mode = true
 	ledger_button.toggled.connect(func(on: bool) -> void: _ledger.visible = on)
 	top.add_child(ledger_button)
+	var contracts_button := Button.new()
+	contracts_button.text = "Contracts"
+	contracts_button.toggle_mode = true
+	contracts_button.toggled.connect(func(on: bool) -> void: _contracts.visible = on)
+	top.add_child(contracts_button)
 	root.add_child(_outlined(_kpis))
 	root.add_child(_outlined(_message))
 	_ledger.visible = false
 	root.add_child(_outlined(_ledger))
+	_contracts.visible = false
+	root.add_child(_contracts)
 
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -64,7 +76,10 @@ func _ready() -> void:
 	_button(bar, "Import yard", tools, false, func() -> void: tool = IMPORT_YARD)
 	_button(bar, "Export yard", tools, false, func() -> void: tool = EXPORT_YARD)
 	_button(bar, "RTG  $%d/tile" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG)
-	_action(bar, "+2 tractors  $%d" % (sim.rules.tractor.cost * 2), tractors_pressed)
+	var tractors := Button.new()
+	tractors.text = "+2 tractors  $%d" % (sim.rules.tractor.cost * 2)
+	tractors.pressed.connect(func() -> void: command_issued.emit({"op": "buy_tractors", "count": 2}))
+	bar.add_child(tractors)
 	_button(bar, "Bulldoze", tools, false, func() -> void: tool = BULLDOZE)
 
 
@@ -76,12 +91,15 @@ func flash(text: String) -> void:
 
 func _process(dt: float) -> void:
 	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
-	_readout.text = "$%d    Boxes delivered %d    Ships %d    Tractors %d/%d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size(), sim.vehicles.size() - lorries, sim.tractors, lorries]
+	var anchored := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state == PortSim.Ship.State.ANCHORED).size()
+	_readout.text = "$%d    Boxes delivered %d    Ships %d (%d at anchorage)    Tractors %d/%d    Lorries %d" % [sim.money, sim.delivered, sim.ships.size() - anchored, anchored, sim.vehicles.size() - lorries, sim.tractors, lorries]
 	var k := sim.kpis()
 	_kpis.text = "Berth %.0f moves/h    Crane %.0f moves/h    Gate turn %.0f min    Yard %d%% full    %d boxes/day    Upkeep $%d/day" % [
 		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]
 	if _ledger.visible:
 		_ledger.text = _ledger_text()
+	if _contracts.visible and _contracts_drawn != [sim.contracts.version, sim]:
+		_draw_contracts()
 	_flash_left -= dt
 	if _flash_left <= 0.0:
 		_message.text = "\n".join(sim.events.slice(-5).map(func(e: Dictionary) -> String: return "Day %d %02d:%02d  %s" % [int(e.minute / 1440), int(e.minute / 60) % 24, int(e.minute) % 60, e.text]))
@@ -105,6 +123,45 @@ func _ledger_text() -> String:
 				parts.append("%s %+d" % [ledger.categories[category], day.lines[category]])
 		lines.append("    Day %d  net %+d   %s" % [day.day, day.closed - day.opened, "   ".join(parts)])
 	return "\n".join(lines)
+
+
+## Reputation per line, the offers with Accept and Decline, and the agreed services.
+func _draw_contracts() -> void:
+	_contracts_drawn = [sim.contracts.version, sim]
+	for child in _contracts.get_children():
+		child.queue_free()
+	var contracts := sim.contracts
+	var standing: Array[String] = []
+	for line: String in contracts.reputation:
+		standing.append("%s %d" % [contracts.name_of(line), roundi(contracts.reputation[line])])
+	_contracts.add_child(_outlined(_label("Reputation   " + "    ".join(standing))))
+	_contracts.add_child(_outlined(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services while reputation is good and berths have room")))
+	for offer in contracts.offers:
+		var row := _row(_contracts)
+		row.add_child(_outlined(_label("    " + _service_text(offer) + "   offer ends day %d" % int(offer.expires / SimClock.MINUTES_PER_DAY))))
+		var id: int = offer.id
+		var accept := Button.new()
+		accept.text = "Accept"
+		accept.pressed.connect(func() -> void: command_issued.emit({"op": "accept_offer", "id": id}))
+		row.add_child(accept)
+		var decline := Button.new()
+		decline.text = "Decline"
+		decline.pressed.connect(func() -> void: command_issued.emit({"op": "decline_offer", "id": id}))
+		row.add_child(decline)
+	_contracts.add_child(_outlined(_label("Services" if not contracts.services.is_empty() else "No services yet")))
+	for service in contracts.services:
+		_contracts.add_child(_outlined(_label("    " + _service_text(service))))
+
+
+func _service_text(service: Dictionary) -> String:
+	var start: int = service.start
+	return "%s: %s every %s %02d:%02d, %d h window, %d moves" % [sim.contracts.name_of(service.line), service.kind, WEEKDAYS[start / SimClock.MINUTES_PER_DAY], start / 60 % 24, start % 60, roundi(service.window_hours), service.moves]
+
+
+func _label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	return label
 
 
 func _row(parent: Control) -> HBoxContainer:

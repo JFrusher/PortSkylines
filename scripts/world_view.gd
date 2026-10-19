@@ -114,10 +114,13 @@ func _draw_stacks() -> void:
 func _draw_ships() -> void:
 	_forget_gone(_ships, sim.ships)
 	for ship: PortSim.Ship in sim.ships:
+		# shortcut: ships at anchorage are only counted in the HUD; draw them offshore if players miss them.
+		if ship.state == PortSim.Ship.State.ANCHORED:
+			continue
 		var length := ship.cells.size()
 		var along_z := ship.side.x != 0
 		if ship not in _ships:
-			var hull := _box(Vector3(1.4, 0.6, length - 0.4) if along_z else Vector3(length - 0.4, 0.6, 1.4), Color(0.15, 0.2, 0.35))
+			var hull := _box(Vector3(1.4, 0.6, length - 0.4) if along_z else Vector3(length - 0.4, 0.6, 1.4), Color.html(sim.rules.lines[ship.line].livery))
 			var cargo := _box(Vector3(1.0, 0.6, length - 1.6) if along_z else Vector3(length - 1.6, 0.6, 1.0), BOX_COLOR)
 			cargo.name = "Cargo"
 			cargo.position.y = 0.6

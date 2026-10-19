@@ -68,13 +68,22 @@ static func _migrate(data: Dictionary) -> Dictionary:
 	return data
 
 
-## v3 (M3) moved cash into the ledger, which also records upkeep.
+## v3 (M3) moved cash into the ledger, which also records upkeep, and ships
+## into services agreed with shipping lines. Ships in port finish their call
+## for the first line, due a day after the save; no services are agreed yet.
 static func _v2_to_v3(data: Dictionary) -> Dictionary:
-	if not _has_fields(data.sim, {"money": TYPE_INT}):
+	if not (_has_fields(data.sim, {"money": TYPE_INT, "ticks": TYPE_INT, "ships": TYPE_ARRAY}) and data.sim.ships.all(func(s: Variant) -> bool: return s is Dictionary)):
 		return {}
 	data.sim.ledger = {"cash": data.sim.money, "opened": data.sim.money, "today": {}, "days": []}
 	data.sim.erase("money")
 	data.sim.erase("upkeep_paid")
+	var rules := Content.base()
+	data.sim.contracts = Contracts.new(rules).to_dict()
+	for ship: Dictionary in data.sim.ships:
+		ship.line = rules.lines.keys()[0]
+		ship.due = data.sim.ticks * SimClock.CALENDAR_MINUTES_PER_TICK + SimClock.MINUTES_PER_DAY
+	data.sim.erase("until_ship")
+	data.sim.events.append({"minute": data.sim.ticks * SimClock.CALENDAR_MINUTES_PER_TICK, "text": "Saved game updated: ships now come from contracts with shipping lines; accept their offers"})
 	data.version = 3
 	return data
 
@@ -142,7 +151,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"yard": TYPE_DICTIONARY, "boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
-		"until_ship": TYPE_FLOAT, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
+		"contracts": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 	}):
 		return false
@@ -161,6 +170,10 @@ static func _valid_sim(data: Variant) -> bool:
 		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "days": TYPE_ARRAY,
 	}):
 		return false
+	if not _has_fields(data.contracts, {
+		"reputation": TYPE_DICTIONARY, "services": TYPE_ARRAY, "offers": TYPE_ARRAY, "next_id": TYPE_INT,
+	}):
+		return false
 	if not _has_fields(data.yard, {
 		"stacks": TYPE_DICTIONARY, "reserved": TYPE_DICTIONARY, "role": TYPE_DICTIONARY,
 		"gear": TYPE_DICTIONARY, "busy": TYPE_DICTIONARY,
@@ -168,10 +181,10 @@ static func _valid_sim(data: Variant) -> bool:
 		return false
 	for ship: Variant in data.ships:
 		if not ship is Dictionary or not _has_fields(ship, {
-			"kind": TYPE_STRING, "cells": TYPE_ARRAY, "side": TYPE_VECTOR2I,
-			"boxes": TYPE_INT, "exports": TYPE_INT, "state": TYPE_INT, "sail": TYPE_FLOAT,
-			"prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
-		}) or not _all_cells(ship.cells, false):
+			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT, "cells": TYPE_ARRAY,
+			"side": TYPE_VECTOR2I, "boxes": TYPE_INT, "exports": TYPE_INT, "state": TYPE_INT,
+			"sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
+		}) or not _all_cells(ship.cells, ship.state == PortSim.Ship.State.ANCHORED):
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {
