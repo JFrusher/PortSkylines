@@ -21,6 +21,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `yard_gear.<key>.speed` | float | A yard machine's travel speed on an area, in m/s |
 | `yard_gear.<key>.lift_seconds`, `.set_down_seconds` | float | Seconds to lift a box and to set one down |
 | `yard_gear.<key>.bays_per_machine` | int | One machine per so many 12 m bays of an area |
+| `yard_gear.<key>.tiers` | int | How many boxes high the gear stacks on an area |
 | `start_money` | int | Money at the start of a new game |
 | `move_price.per_20ft` | int >0 | What a line pays per crane move of a 20 ft box |
 | `move_price.forty_factor` | number >0 | A 40 ft box's move price as a multiple of a 20 ft one |

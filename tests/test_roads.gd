@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_unconnected_areas()
 	_test_handovers()
 	_test_machine_jobs()
+	_test_area_stacks()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -398,6 +399,38 @@ func _test_machine_jobs() -> void:
 	while machines.tick().is_empty():
 		lift_only += 1
 	_expect(lift_only + 1, ceili((gear.reach_stacker.lift_seconds + gear.reach_stacker.set_down_seconds) / SimClock.TICK_SECONDS), "a move within one bay is just lift and set down")
+
+
+func _test_area_stacks() -> void:
+	var yard := AreaStacks.new(3, 4)
+	yard.place_at(0, 1, 2)
+	yard.place_at(0, 2, 2)
+	yard.place_at(0, 3, 2)
+	_expect(yard.above(1), 2, "a box under two others has two above it")
+	_expect(yard.take(1), 2, "taking out a buried box costs a rehandle per box above it")
+	_expect(yard.boxes().has(1), false, "and it is gone")
+	_expect([yard.stacks[0], yard.boxes().size()], [[], 2], "the boxes moved off it now sit on other stacks")
+	var mixed := AreaStacks.new(2, 3)
+	mixed.place_at(0, 10, 1)
+	_expect(mixed.fits(0, 2), false, "a 40 ft box never rests on a 20")
+	_expect(mixed.fits(0, 1), true, "a 20 ft box goes beside a lone 20")
+	mixed.place_at(0, 11, 1)
+	_expect(mixed.stacks[0], [[10, 11]], "two 20s share a tier")
+	_expect(mixed.place(12, 2), 1, "a 40 goes to the next stack that takes it")
+	_expect(mixed.place(13, 1), 0, "a 20 goes onto the 20s' tier stack")
+	_expect(mixed.take(10), 1, "a 20 under a box costs one rehandle")
+	_expect(mixed.stacks[0], [[11]], "its partner stays put")
+	var full := AreaStacks.new(1, 4)
+	for id in range(1, 4):
+		full.place_at(0, id, 2)
+	_expect(full.take(1), -1, "with nowhere to move the boxes above, a buried box can't come out")
+	var kept := AreaStacks.new(2, 4)
+	kept.place_at(0, 20, 2)
+	kept.place_at(0, 21, 2)
+	var due := {20: 10.0, 21: 50.0}
+	_expect(kept.housekeep(due), true, "in a quiet period a box burying one due out sooner is moved")
+	_expect(kept.above(20), 0, "so the box due first is on top")
+	_expect(kept.housekeep(due), false, "and then there is nothing to do")
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`
