@@ -76,3 +76,27 @@ one MultiMesh per chunk and gear brought it back to 80. Draw calls stay
 chunk-bound again. Frame time rose with the extra triangles, which on
 llvmpipe is CPU rasterisation; the 60 fps exit criterion still needs a run
 on a GTX 1660-class GPU.
+
+## M5 baseline profile (2026-10-19)
+
+`bench/profile_sim.gd` builds the endgame port (`bench/endgame_port.gd`: a
+160² map, 6 berths of 3 cranes, a road grid with 25 gates, RTG yard bands
+holding 20,000 imports) and times the sim's per-tick functions while
+lorries flow in at one a tick. Same container as earlier entries.
+**Command:** `godot --headless --script res://bench/profile_sim.gd -- 300`.
+
+300 ticks: **78.6 ms a tick** with only 47 vehicles on the map at the end,
+against a 1 ms budget. At this cost the endgame save's 2,000 lorries can't
+even be generated, so the hot spots go first.
+
+| Function | Share of the tick (inclusive) | Calls | Per call | Why |
+|---|---:|---:|---:|---|
+| `_route_via_gate` | 69% | 1,373 | 11.9 ms | A* to and from each of 25 gates for every lorry route |
+| `_queue_at` | 66% | 34,325 | 0.45 ms | scans every vehicle's remaining path, once per gate per route |
+| `_dispatch_import_lorry` | 56% | 300 | 43.9 ms | walks every stacked box, routing to each block |
+| `_dispatch_export_lorry` | 43% | 300 | 34.0 ms | mostly `_yard_tile_for` |
+| `_yard_tile_for` | 30% | 303 | 23.4 ms | routes to every yard block to find the nearest |
+
+Vehicle movement (`_drive_lorry`, `_advance`) is under 1%: the cost is
+routing and searching, not kinematics. Each M5 step below names the hot
+spot it removes and is re-measured with the same command.
