@@ -831,7 +831,7 @@ func tick() -> void:
 		_work(ship)
 	_berths_seen = berths_now
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_lorry <= 0.0 and _dispatch_import_lorry():
+	if _until_lorry <= 0.0 and (_dispatch_import_lorry() or AreaFlow.dispatch_import_lorry(self)):
 		_until_lorry = rules.lorry_interval_minutes
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_export <= 0.0 and _dispatch_export_lorry():

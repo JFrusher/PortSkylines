@@ -28,6 +28,16 @@ func is_junction(cell: Vector2i) -> bool:
 	return cell in _junction
 
 
+## The steps traffic may take out of `cell`, one per lane leading on.
+func steps_at(cell: Vector2i) -> Array[Vector2i]:
+	_refresh()
+	var found: Array[Vector2i] = []
+	for point: int in _at.get(cell, []):
+		for next: int in _all.get_point_connections(point):
+			found.append(Vector2i(_all.get_point_position(next)) - cell)
+	return found
+
+
 ## Which way traffic runs along area `id`: 1 from its start to its end, -1
 ## the other way, 0 when no road lane runs beside it.
 func flow_of(id: int) -> int:

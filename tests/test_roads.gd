@@ -27,6 +27,7 @@ func _initialize() -> void:
 	_test_driveways()
 	_test_apron_berths()
 	_test_discharge()
+	_test_delivery()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -519,6 +520,36 @@ func _test_discharge() -> void:
 		sim.tick()
 	_expect(sim.area_vehicles.is_empty(), true, "tractors return to the pool once their box is stacked")
 	_expect(sim.handovers.slots()[3].all(func(v: int) -> bool: return v == 0), true, "leaving every slot free")
+
+
+func _test_delivery() -> void:
+	var sim := AreaPort.working_terminal(2)
+	for i in 6000:
+		sim.tick()
+		if sim.area_stacks[3].boxes().size() == 2:
+			break
+	var stacks: AreaStacks = sim.area_stacks[3]
+	_expect(stacks.position_of(stacks.boxes()[0]) == stacks.position_of(stacks.boxes()[1]), true, "both boxes went on the first stack, one on the other")
+	for box: int in stacks.boxes():
+		sim.boxes[box].due = 0.0
+	var delivered := sim.delivered
+	var most_phases := 0
+	for i in 20000:
+		sim.tick()
+		for job: Dictionary in sim.machines.list.values().map(func(m: Dictionary) -> Dictionary: return m.job):
+			if not job.is_empty():
+				most_phases = maxi(most_phases, job.phases.size())
+		if sim.delivered == delivered + 2:
+			break
+	_expect(sim.delivered - delivered, 2, "lorries take both boxes out through the gate to the site exit")
+	_expect(most_phases >= 6, true, "fetching the buried box first moves the one on top: a lift and a set-down more")
+	_expect(sim.turn_times.size(), 2, "each lorry's gate turn is recorded")
+	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * sim.rules.gate_minutes), true, "a turn includes the gate time both ways")
+	_expect(sim.dwell_times.size() >= 2, true, "dwell is recorded at pickup")
+	_expect(stacks.boxes().is_empty() and sim._claimed.is_empty(), true, "the yard is empty and nothing is left claimed")
+	for i in 600:
+		sim.tick()
+	_expect(sim.area_vehicles.is_empty(), true, "every vehicle has left")
 
 
 ## A lane cell at the site entry a vehicle can drive in from.

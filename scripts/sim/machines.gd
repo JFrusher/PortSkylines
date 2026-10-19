@@ -33,17 +33,21 @@ func add(area: int, gear: String, bay: int) -> int:
 	return _next_id - 1
 
 
-## Gives idle machine `id` a job: fetch a box from bay `from`, put it at bay `to`.
-func give(id: int, from: int, to: int) -> void:
+## Gives idle machine `id` a job: fetch a box from bay `from`, put it at bay
+## `to`, first moving `rehandles` boxes off it, each a lift and a set-down.
+func give(id: int, from: int, to: int, rehandles := 0) -> void:
 	var machine: Dictionary = list[id]
 	assert(machine.job.is_empty(), "machine %d is already working" % id)
 	var gear: Dictionary = _gear[machine.gear]
-	var phases := [
-		{"kind": "travel", "seconds": _travel(gear, machine.bay, from), "bay": from},
+	var phases := [{"kind": "travel", "seconds": _travel(gear, machine.bay, from), "bay": from}]
+	for i in rehandles:
+		phases.append({"kind": "lift", "seconds": gear.lift_seconds, "bay": from})
+		phases.append({"kind": "set_down", "seconds": gear.set_down_seconds, "bay": from})
+	phases.append_array([
 		{"kind": "lift", "seconds": gear.lift_seconds, "bay": from},
 		{"kind": "travel", "seconds": _travel(gear, from, to), "bay": to},
 		{"kind": "set_down", "seconds": gear.set_down_seconds, "bay": to},
-	]
+	])
 	machine.job = {"phases": phases, "left": phases[0].seconds}
 
 

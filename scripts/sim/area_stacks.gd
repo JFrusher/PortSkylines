@@ -60,6 +60,11 @@ func place_at(position: int, id: int, teu: int) -> void:
 		tiers.append([id])
 
 
+## The stack position holding box `id`.
+func position_of(id: int) -> int:
+	return _where[id]
+
+
 ## How many boxes sit above box `id`: the rehandles taking it out costs.
 func above(id: int) -> int:
 	var tiers: Array = stacks[_where[id]]

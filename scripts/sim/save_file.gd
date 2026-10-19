@@ -7,6 +7,15 @@ extends RefCounted
 ## tests/fixtures/save_v<N>.bin.
 
 const VERSION := 10
+## Every field Vehicle.from_dict reads, for tile and area vehicles alike.
+const VEHICLE_FIELDS := {
+	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
+	"prev_t": TYPE_FLOAT, "lane": TYPE_VECTOR3I, "ahead": TYPE_VECTOR3I,
+	"waited": TYPE_INT, "replanned": TYPE_BOOL, "state": TYPE_STRING,
+	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
+	"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "block": TYPE_VECTOR2I,
+	"gate_in": TYPE_FLOAT, "area": TYPE_INT, "slot": TYPE_INT,
+}
 const MAGIC := "PSKY"
 
 
@@ -334,14 +343,7 @@ static func _valid_sim(data: Variant) -> bool:
 	if not (_valid_roads(data.roads) and _valid_areas(data.areas)):
 		return false
 	for vehicle: Variant in data.vehicles:
-		if not vehicle is Dictionary or not _has_fields(vehicle, {
-			"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
-			"prev_t": TYPE_FLOAT, "lane": TYPE_VECTOR3I, "ahead": TYPE_VECTOR3I,
-			"waited": TYPE_INT, "replanned": TYPE_BOOL, "state": TYPE_STRING,
-			"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
-			"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "block": TYPE_VECTOR2I,
-			"gate_in": TYPE_FLOAT, "area": TYPE_INT, "slot": TYPE_INT,
-		}) or not _all_cells(vehicle.path, true):
+		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, true):
 			return false
 	if not _valid_area_flow(data):
 		return false
@@ -360,11 +362,7 @@ static func _valid_sim(data: Variant) -> bool:
 static func _valid_area_flow(data: Dictionary) -> bool:
 	var ids := {}
 	for vehicle: Variant in data.area_vehicles:
-		if not vehicle is Dictionary or not _has_fields(vehicle, {
-			"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT, "prev_t": TYPE_FLOAT,
-			"waited": TYPE_INT, "state": TYPE_STRING, "box": TYPE_INT, "loaded": TYPE_BOOL,
-			"target": TYPE_VECTOR2I, "area": TYPE_INT, "slot": TYPE_INT,
-		}) or not _all_cells(vehicle.path, false):
+		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, false):
 			return false
 		ids[vehicle.id] = true
 	for id: Variant in data.lane_traffic:
