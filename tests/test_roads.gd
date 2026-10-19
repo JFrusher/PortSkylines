@@ -9,6 +9,7 @@ func _initialize() -> void:
 	_test_segments()
 	_test_lanes()
 	_test_junctions()
+	_test_routes()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -76,6 +77,47 @@ func _test_junctions() -> void:
 	for id: int in net.segments:
 		lengths += net.cells(id).size() - 1
 	_expect(lengths, 10 + 10 + 4 + 5, "splitting keeps every cell of road")
+
+
+func _test_routes() -> void:
+	var net := RoadNet.new(Content.base().road_types)
+	var lanes := LaneGraph.new(net)
+	net.add(Vector2i(0, 0), Vector2i(10, 0), "terminal_1_1")
+	net.add(Vector2i(10, 0), Vector2i(10, 10), "terminal_1_1")
+	var bend := lanes.route(Vector2i(0, 0), Vector2i(10, 10), true)
+	_expect(bend.size(), 21, "round a bend the route is the cells along both roads")
+	_expect(_steps_are_single(bend), true, "a route moves one cell at a time")
+	var back := lanes.route(Vector2i(4, 0), Vector2i(2, -1), true)
+	_expect(not back.is_empty(), true, "the other way is reached by the dead end's U-turn")
+	_expect(back.has(Vector2i(10, 10)) or back.has(Vector2i(11, 10)), true, "the U-turn is at the dead end")
+	var one_way := RoadNet.new(Content.base().road_types)
+	var one_way_lanes := LaneGraph.new(one_way)
+	one_way.add(Vector2i(0, 0), Vector2i(10, 0), "one_way")
+	_expect(one_way_lanes.route(Vector2i(0, 0), Vector2i(10, 0), true).size(), 11, "a one-way road is driven forward")
+	_expect(one_way_lanes.route(Vector2i(10, 0), Vector2i(0, 0), true), [] as Array[Vector2i], "a one-way road can't be driven backwards")
+	_expect(one_way_lanes.route(Vector2i(0, 0), Vector2i(10, 1), true).size(), 11, "a lane change costs no extra cells")
+	var tractors := RoadNet.new(Content.base().road_types)
+	var tractor_lanes := LaneGraph.new(tractors)
+	tractors.add(Vector2i(0, 5), Vector2i(10, 5), "tractor_lane")
+	_expect(tractor_lanes.route(Vector2i(0, 5), Vector2i(10, 5), true), [] as Array[Vector2i], "lorries can't use the tractor lane")
+	_expect(tractor_lanes.route(Vector2i(0, 5), Vector2i(10, 5), false).size(), 11, "tractors can")
+	var grid := RoadNet.new(Content.base().road_types)
+	var grid_lanes := LaneGraph.new(grid)
+	for i in 3:
+		grid.add(Vector2i(0, i * 10), Vector2i(30, i * 10), "terminal_2_2")
+		grid.add(Vector2i(i * 10 + 5, -5), Vector2i(i * 10 + 5, 25), "terminal_2_2")
+	var across := grid_lanes.route(Vector2i(0, 0), Vector2i(25, 20), true)
+	_expect(_steps_are_single(across), true, "junction crossings move one cell at a time")
+	# East along row 0's eastbound lane to column 25, then down its southbound lane.
+	_expect(across.size() - 1, 25 + 20, "a route across a road grid is the shortest by hand")
+
+
+func _steps_are_single(cells: Array[Vector2i]) -> bool:
+	for i in cells.size() - 1:
+		var d := (cells[i + 1] - cells[i]).abs()
+		if maxi(d.x, d.y) != 1:
+			return false
+	return true
 
 
 func _node(net: RoadNet, cell: Vector2i) -> int:

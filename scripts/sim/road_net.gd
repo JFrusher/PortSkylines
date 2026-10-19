@@ -10,6 +10,8 @@ var nodes := {}
 var segments := {}
 ## The data's road types: lanes each way, whether lorries may use them, costs.
 var types: Dictionary
+## Bumped on every change, so the lane graph knows to rebuild.
+var version := 0
 var _next_node := 1
 var _next_segment := 1
 
@@ -53,6 +55,7 @@ func add(from: Vector2i, to: Vector2i, type: String) -> String:
 	for i in stops.size() - 1:
 		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type}
 		_next_segment += 1
+	version += 1
 	return ""
 
 
