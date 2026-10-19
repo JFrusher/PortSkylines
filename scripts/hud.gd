@@ -3,7 +3,11 @@ extends CanvasLayer
 ## Toolbar, speed buttons and the money/status readout. Reports the player's
 ## choices through `tool` and `speed`; never changes the sim.
 
+signal save_pressed
+signal load_pressed
+
 const BULLDOZE := -1
+const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 const FLASH_SECONDS := 2.5
 
 var sim: PortSim
@@ -24,9 +28,10 @@ func _ready() -> void:
 	var top := _row(root)
 	top.add_child(_outlined(_readout))
 	var speeds := ButtonGroup.new()
-	for s in 4:
-		var label: String = ["Pause", "1×", "2×", "3×"][s]
-		_button(top, label, speeds, s == speed, func() -> void: speed = s)
+	for s: int in SPEEDS:
+		_button(top, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
+	_action(top, "Save", save_pressed)
+	_action(top, "Load", load_pressed)
 	root.add_child(_outlined(_message))
 
 	var spacer := Control.new()
@@ -36,8 +41,9 @@ func _ready() -> void:
 
 	var tools := ButtonGroup.new()
 	var bar := _row(root)
-	for kind: int in PortSim.COST:
-		var label := "%s  $%d" % [PortMap.Tile.keys()[kind].capitalize(), PortSim.COST[kind]]
+	for name: String in sim.rules.build_cost:
+		var kind: int = PortMap.Tile[name.to_upper()]
+		var label := "%s  $%d" % [name.capitalize(), sim.cost(kind)]
 		_button(bar, label, tools, kind == tool, func() -> void: tool = kind)
 	_button(bar, "Bulldoze", tools, false, func() -> void: tool = BULLDOZE)
 
@@ -70,6 +76,14 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 	button.button_group = group
 	button.button_pressed = pressed
 	button.pressed.connect(on_press)
+	row.add_child(button)
+
+
+## A plain button that reports a press through `pressed_signal`.
+func _action(row: HBoxContainer, text: String, pressed_signal: Signal) -> void:
+	var button := Button.new()
+	button.text = text
+	button.pressed.connect(pressed_signal.emit)
 	row.add_child(button)
 
 

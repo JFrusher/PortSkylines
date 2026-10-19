@@ -4,20 +4,31 @@ on:
   push:
   pull_request:
 
+env:
+  GODOT_VERSION: 4.7.2
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Godot 4.4.1
+      - name: Install Godot
         run: |
-          curl -sSL -o "$RUNNER_TEMP/godot.zip" https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip
+          curl -sSL -o "$RUNNER_TEMP/godot.zip" https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
           unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP"
-          echo "GODOT=$RUNNER_TEMP/Godot_v4.4.1-stable_linux.x86_64" >> "$GITHUB_ENV"
+          echo "GODOT=$RUNNER_TEMP/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
       - run: $GODOT --headless --import
-      - name: Sim tests
-        run: $GODOT --headless --script res://tests/test_sim.gd
+      - name: Tests
+        run: |
+          for t in tests/test_*.gd; do
+            # A script error before quit() leaves Godot running, so cap each test.
+            timeout 300 $GODOT --headless --script "res://$t" 2>&1 | tee test.log
+            test "${PIPESTATUS[0]}" -eq 0
+            if grep -E "SCRIPT ERROR|^ERROR" test.log; then
+              exit 1
+            fi
+          done
       - name: Main scene runs without script errors
         run: |
-          $GODOT --headless --quit-after 600 2>&1 | tee run.log
+          timeout 300 $GODOT --headless --quit-after 600 2>&1 | tee run.log
           ! grep -E "SCRIPT ERROR|^ERROR" run.log

@@ -7,6 +7,13 @@ var view := WorldView.new()
 var rig := CameraRig.new()
 var hud := Hud.new()
 
+## Most ticks one frame may run per speed step; a slower frame drops the rest.
+const MAX_TICKS_PER_FRAME := 8
+## shortcut: one save slot, add named slots and autosave in M11.
+const SAVE_PATH := "user://save.bin"
+
+## Play time not yet turned into ticks, in seconds.
+var _accumulated := 0.0
 var _painting := false
 var _last_cell := PortMap.NONE
 
@@ -20,12 +27,45 @@ func _ready() -> void:
 	rig.position = Vector3(sim.map.sea_width + 10, 0, sim.map.size.y / 2.0)
 	add_child(rig)
 	hud.sim = sim
+	hud.save_pressed.connect(_save)
+	hud.load_pressed.connect(_load)
 	add_child(hud)
 
 
+func _save() -> void:
+	var err := SaveFile.save(SAVE_PATH, sim)
+	hud.flash(err if err else "Saved")
+
+
+## Swaps in the saved sim and a fresh view of it.
+func _load() -> void:
+	var loaded := SaveFile.load_from(SAVE_PATH)
+	if loaded.has("error"):
+		hud.flash(loaded.error)
+		return
+	sim = loaded.sim
+	_painting = false
+	rig.bounds = Rect2(Vector2.ZERO, Vector2(sim.map.size))
+	_accumulated = 0.0
+	view.queue_free()
+	view = WorldView.new()
+	view.sim = sim
+	add_child(view)
+	hud.sim = sim
+	hud.flash("Loaded")
+
+
 func _process(dt: float) -> void:
-	for i in hud.speed:
-		sim.step(dt)
+	_accumulated += dt * hud.speed
+	var max_ticks := MAX_TICKS_PER_FRAME * hud.speed
+	var ticks := SimClock.ticks_for(_accumulated, max_ticks)
+	for i in ticks:
+		sim.tick()
+	var left := _accumulated - ticks * SimClock.TICK_SECONDS
+	if ticks == max_ticks and left >= SimClock.TICK_SECONDS and OS.is_debug_build():
+		print_debug("Dropped %.2f s of sim time after a slow frame" % left)
+	_accumulated = minf(left, SimClock.TICK_SECONDS)
+	view.alpha = _accumulated / SimClock.TICK_SECONDS
 	var cell := _hovered_cell()
 	view.show_hover(cell, _order_error(cell) == "")
 	if _painting:
@@ -45,7 +85,8 @@ func _unhandled_input(event: InputEvent) -> void:
 ## every cell a drag passes over.
 func _order(cell: Vector2i, report: bool) -> void:
 	_last_cell = cell
-	var err := sim.bulldoze(cell) if hud.tool == Hud.BULLDOZE else sim.build(hud.tool, cell)
+	var command := {"op": "bulldoze", "cell": cell} if hud.tool == Hud.BULLDOZE else {"op": "build", "kind": hud.tool, "cell": cell}
+	var err := sim.apply(command)
 	if err != "" and report:
 		hud.flash(err)
 

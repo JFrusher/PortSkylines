@@ -1,0 +1,14 @@
+{
+	"map": {"width": 64, "height": 48, "sea_width": 12},
+	"start_money": 5000,
+	"fee_per_box": 120,
+	"build_cost": {"road": 10, "quay": 200, "yard": 50},
+	"first_ship_minutes": 10,
+	"ship_interval_minutes": 45,
+	"ship_boxes": 12,
+	"sail_seconds": 4,
+	"crane_minutes": 2,
+	"yard_capacity": 6,
+	"lorry_interval_minutes": 1,
+	"lorry_speed": 5
+}

@@ -1,0 +1,30 @@
+class_name ChunkedMeshes
+extends Node3D
+## Many copies of a mesh drawn as one MultiMesh per key, where a key names a
+## map chunk (plus, say, a tile kind). Each part is one draw call, and parts
+## off screen are culled whole, so cost grows with chunks, not tiles.
+
+const CHUNK := 32
+
+var _parts := {}
+
+
+static func chunk_of(cell: Vector2i) -> Vector2i:
+	return Vector2i(floori(cell.x / float(CHUNK)), floori(cell.y / float(CHUNK)))
+
+
+## Draws `transforms` copies of `mesh` for `key`, replacing what `key` drew before.
+func show_part(key: Variant, mesh: Mesh, transforms: Array[Transform3D]) -> void:
+	if key not in _parts:
+		var part := MultiMeshInstance3D.new()
+		part.multimesh = MultiMesh.new()
+		part.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+		part.multimesh.mesh = mesh
+		add_child(part)
+		_parts[key] = part
+	var multimesh: MultiMesh = _parts[key].multimesh
+	if multimesh.instance_count < transforms.size():
+		multimesh.instance_count = transforms.size()
+	multimesh.visible_instance_count = transforms.size()
+	for i in transforms.size():
+		multimesh.set_instance_transform(i, transforms[i])
