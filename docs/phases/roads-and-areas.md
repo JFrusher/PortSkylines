@@ -70,12 +70,25 @@ Rules this sketch assumes:
 | D3 | Dual cycling | Not in the first slice. It arrives later as an M10 automation policy |
 | E4 | Follow camera | In the first slice: click a box or machine to follow it from ship to gate |
 | G2 | Scope | Nothing is cut. The total time to 1.0 grows |
+| A4 | Junctions | Formed automatically where roads meet |
+| A5 | Height | Flat at 1.0. Bridges and flyovers are likely in 2.0, so nothing should assume a road crosses nothing |
+| C3 | Handover slot size | One slot holds one 40 ft box or two 20 ft boxes |
+| B6 | Terminals | A terminal is a named group of areas (see below) |
+| F2 | Existing art | All M4 art that still applies carries over: containers, STS, RTG, reach stacker, tractor and lorry models, quay fenders, bollards, water, and road markings and arc corners redone for the 4 m grid |
 | G3 | First playable slice | One full chain: draw roads, then drag a quay apron, one RTG yard block and a gate. A box goes STS → tractor → RTG lane → stack → lorry → gate, with main-motion animations |
 
 What these change **[Inference]**:
 - With a grid under the roads and areas laid out automatically, D7 is answered (the sim stays on a grid), and B2 mostly is (yard areas are strips beside a road, so rows run parallel to it).
 - Fully automatic layout means C2–C4 become rules for the layout generator, not things the player places.
 - Main motions only keeps E3 cheap: every machine can animate, with no distance-based detail levels.
+
+### Terminals (B6) **[Inference: a proposal, open to change]**
+M7 step 1 defines a terminal as a set of owned tiles. With areas, a terminal becomes a named group of areas:
+- Each area belongs to exactly one terminal. A new area joins the terminal of the area it touches, or starts a new terminal if it touches none. The player can reassign an area.
+- Roads belong to no terminal. A road is shared, so two terminals can sit on one trunk road, and congestion on it is a shared problem.
+- A terminal needs at least one gate area and one quay apron to take contracts. Its KPIs and ledger section add up over its areas.
+- The machines of an area belong to that area (D5), so they belong to its terminal too.
+- This replaces M7 steps 1–2 (tile painting and refused overlaps) with "group areas, and refuse an area in two terminals".
 
 ## Questions to settle
 
