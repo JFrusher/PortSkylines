@@ -63,6 +63,10 @@ Rules this sketch assumes:
 | D5 | Equipment sharing | A machine belongs to one area only |
 | B5 | Area levels | None. Unlocks stay on the port-wide milestone ladder from M3 |
 | H1–H2 | Rail, barge and automation | Each is another area type in the same model: rail sidings (M5), the barge terminal (M8) and ASC blocks (M10) |
+| A2 | Grid size | 4 m cells, about one lane wide |
+| A3 | First road types | Terminal road 1+1, terminal road 2+2, one-way road, and an AGV/tractor-only lane |
+| B4 | First area types | Yard block, gate, quay apron, and depot or parking |
+| G3 | First playable slice | One full chain: draw roads, then drag a quay apron, one RTG yard block and a gate. A box goes STS → tractor → RTG lane → stack → lorry → gate, with main-motion animations |
 
 What these change **[Inference]**:
 - With a grid under the roads and areas laid out automatically, D7 is answered (the sim stays on a grid), and B2 mostly is (yard areas are strips beside a road, so rows run parallel to it).
