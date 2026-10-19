@@ -47,6 +47,14 @@ func _initialize() -> void:
 	_expect([spots[0].x, spots[1].x], [0.0, 0.0], "a 40 fills the slot's length")
 	_expect(spots[2].x < 0.0 and spots[3].x > 0.0 and is_equal_approx(spots[2].x, -spots[3].x), true, "a pair of 20s sits end to end")
 	_expect(absf(spots[2].x) * 2.0 >= WorldView.BOX_LENGTH[1], true, "paired 20s do not overlap")
+	var feeder := WorldView.deck_slots(8, 999)
+	_expect(feeder.size(), floori((8 - WorldView.SHIP_BOW - WorldView.SHIP_STERN) / WorldView.DECK_BAY) * WorldView.DECK_ROWS * WorldView.DECK_TIERS, "a full deck stops at the top tier")
+	_expect(WorldView.deck_slots(8, 5).size(), 5, "each box aboard gets a slot")
+	_expect(feeder.all(func(p: Vector3) -> bool: return absf(p.z) < 4.0 - 0.2 and absf(p.x) < 0.7), true, "deck boxes stay over the hull")
+	var unique := {}
+	for p: Vector3 in feeder:
+		unique[p] = true
+	_expect(unique.size(), feeder.size(), "no two deck boxes share a slot")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 

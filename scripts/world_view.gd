@@ -32,6 +32,13 @@ const CRANE_HEIGHT := 3.2
 const CRANE_BACK := -1.0
 const CRANE_REACH := 2.6
 const CRANE_COLOR := Color(0.85, 0.3, 0.2)
+## A ship's deck height, the room its bridge and bow take, and its deck stacks.
+const SHIP_DECK := 0.3
+const SHIP_STERN := 1.0
+const SHIP_BOW := 1.1
+const DECK_BAY := 0.48
+const DECK_ROWS := 3
+const DECK_TIERS := 4
 const SEA_START := -18.0  # how far the water reaches past the map
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
@@ -263,24 +270,68 @@ func _draw_ships() -> void:
 		if ship.state == PortSim.Ship.State.ANCHORED:
 			continue
 		var length := ship.cells.size()
-		var along_z := ship.side.x != 0
 		if ship not in _ships:
-			var hull := _box(Vector3(1.4, 0.6, length - 0.4) if along_z else Vector3(length - 0.4, 0.6, 1.4), Color.html(sim.rules.lines[ship.line].livery))
-			var cargo := _box(Vector3(1.0, 0.6, length - 1.6) if along_z else Vector3(length - 1.6, 0.6, 1.0), BOX_COLOR)
-			cargo.name = "Cargo"
-			cargo.position.y = 0.6
-			hull.add_child(cargo)
-			add_child(hull)
-			_ships[ship] = hull
-		var hull: Node3D = _ships[ship]
+			_ships[ship] = _ship_model(ship, length)
+		var model: Node3D = _ships[ship]
 		var sail := lerpf(ship.prev_sail, ship.sail, alpha)
 		var middle := (Vector2(ship.cells[0]) + Vector2(ship.cells[-1])) / 2.0 + Vector2(ship.side) + Vector2(0.5, 0.5)
-		var alongside := Vector3(middle.x, -0.05, middle.y)
+		var alongside := Vector3(middle.x, 0.0, middle.y)
 		var at_sea := alongside + Vector3(ship.side.x, 0, ship.side.y) * SEA_DISTANCE
-		hull.position = at_sea.lerp(alongside, ease(sail, -2.0))
-		var cargo: Node3D = hull.get_node("Cargo")
-		cargo.visible = ship.boxes > 0
-		cargo.scale.y = maxf(ship.boxes / float(sim.rules.ship_classes[ship.kind].import_moves), 0.01)
+		model.position = at_sea.lerp(alongside, ease(sail, -2.0))
+		var spec: Dictionary = sim.rules.ship_classes[ship.kind]
+		# Imports still aboard, plus the exports loaded so far.
+		var aboard: int = ship.boxes + spec.export_moves - ship.exports
+		var deck: MultiMesh = (model.get_node("Deck") as MultiMeshInstance3D).multimesh
+		if model.get_meta("aboard", -1) != aboard:
+			model.set_meta("aboard", aboard)
+			var slots := deck_slots(length, aboard)
+			deck.instance_count = maxi(deck.instance_count, slots.size())
+			deck.visible_instance_count = slots.size()
+			for i in slots.size():
+				deck.set_instance_transform(i, Transform3D(Basis(), slots[i]))
+				deck.set_instance_color(i, _livery(ship.line, i))
+
+
+## Where the first `count` boxes on deck of a ship `length` tiles long sit,
+## in the ship's frame (length along +Z, bow at +Z): 40 ft bays from behind
+## the bridge to short of the bow, three rows across, filled tier by tier.
+## Boxes past the top tier are not drawn.
+static func deck_slots(length: int, count: int) -> Array[Vector3]:
+	var bays := floori((length - SHIP_BOW - SHIP_STERN) / DECK_BAY)
+	var per_tier := bays * DECK_ROWS
+	var slots: Array[Vector3] = []
+	for i in mini(count, per_tier * DECK_TIERS):
+		var bay := (i % per_tier) / DECK_ROWS
+		var row := i % DECK_ROWS
+		slots.append(Vector3((row - (DECK_ROWS - 1) / 2.0) * 0.42, SHIP_DECK + (i / per_tier + 0.5) * BOX_HEIGHT * 0.8, -length / 2.0 + SHIP_STERN + (bay + 0.5) * DECK_BAY))
+	return slots
+
+
+## A hull in the line's livery with a pointed bow, a bridge at the stern
+## and a deck of boxes, turned so its length lies along the quay.
+func _ship_model(ship: PortSim.Ship, length: int) -> Node3D:
+	var model := Node3D.new()
+	model.rotation.y = 0.0 if ship.side.x != 0 else PI / 2
+	var half := length / 2.0 - 0.2
+	var outline := PackedVector2Array([Vector2(-0.7, -half), Vector2(0.7, -half), Vector2(0.7, half - 1.0), Vector2(0, half), Vector2(-0.7, half - 1.0)])
+	var hull := MeshInstance3D.new()
+	hull.mesh = _prism(outline, 0.6, Color.html(sim.rules.lines[ship.line].livery))
+	hull.position.y = SHIP_DECK - 0.3
+	model.add_child(hull)
+	var bridge := _box(Vector3(1.2, 0.9, 0.5), Color(0.92, 0.92, 0.9))
+	bridge.position = Vector3(0, SHIP_DECK + 0.45, -half + 0.35)
+	model.add_child(bridge)
+	var deck := MultiMeshInstance3D.new()
+	deck.name = "Deck"
+	deck.multimesh = MultiMesh.new()
+	deck.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	deck.multimesh.use_colors = true
+	var box := _box_mesh(Vector3(0.38, BOX_HEIGHT * 0.8 - 0.02, DECK_BAY - 0.04), Color.WHITE)
+	(box.material as StandardMaterial3D).vertex_color_use_as_albedo = true
+	deck.multimesh.mesh = box
+	model.add_child(deck)
+	add_child(model)
+	return model
 
 
 ## Where an STS crane's trolley and spreader are `phase` (0 to 1) into a

@@ -19,7 +19,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | `test_guide.gd` | The guided start, played by commands on the base rules, ends with the first ship worked |
 | `test_replay.gd` | The same command log gives the same state at 1, 3 and 6 ticks per frame |
 | `test_save.gd` | Save files, atomic replace, refusing bad files and payloads, and every committed fixture |
-| `test_view.gd` | Road pieces chosen from neighbours, vehicles drawn along corner arcs without jumps, and the STS crane's move cycle |
+| `test_view.gd` | Road pieces chosen from neighbours, vehicles drawn along corner arcs without jumps, the STS crane's move cycle, and deck stacks |
 | `test_crash_report.gd` | Errors, not warnings, ask for a crash report; a report holds the log, a loadable save and the content hash |
 | `test_content.gd` | The game data loader and its error messages |
 | `test_economy_scenarios.gd` | M3's scripted scenarios: overbooking makes calls late, higher storage fees lower dwell, and dredging lets a Panamax call |
