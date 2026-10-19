@@ -34,3 +34,33 @@ jobs:
         run: |
           timeout 300 $GODOT --headless --quit-after 600 2>&1 | tee run.log
           ! grep -E "SCRIPT ERROR|^ERROR" run.log
+
+  windows-build:
+    # A playable Windows zip for every tag, built once the tests pass.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot and the Windows export templates
+        run: |
+          curl -sSL -o "$RUNNER_TEMP/godot.zip" https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip
+          unzip -q "$RUNNER_TEMP/godot.zip" -d "$RUNNER_TEMP"
+          echo "GODOT=$RUNNER_TEMP/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+          curl -sSL -o "$RUNNER_TEMP/templates.tpz" https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz
+          templates="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$templates"
+          unzip -qj "$RUNNER_TEMP/templates.tpz" "templates/windows_*_x86_64*.exe" templates/version.txt -d "$templates"
+      - name: Export
+        # shortcut: headless export has no GPU, so the shader baker is skipped here; export from the editor on a GPU machine for a baked build.
+        run: |
+          $GODOT --headless --import
+          mkdir -p build/windows
+          $GODOT --headless --export-release "Windows" build/windows/PortSkylines.exe 2>&1 | tee export.log
+          test -f build/windows/PortSkylines.exe
+          ! grep -E "SCRIPT ERROR|^ERROR" export.log
+          cd build/windows && zip -q "../../PortSkylines-${GITHUB_REF_NAME}-windows.zip" PortSkylines.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PortSkylines-${{ github.ref_name }}-windows
+          path: PortSkylines-${{ github.ref_name }}-windows.zip

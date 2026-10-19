@@ -27,6 +27,19 @@ Open `project.godot` in Godot and press F5.
 | Q / E | Rotate |
 | Mouse wheel | Zoom |
 
+## Windows build
+
+`export_presets.cfg` has one preset, "Windows", with the shader baker on so
+shaders are compiled at export instead of stuttering on first use. Every
+pushed tag makes CI build `PortSkylines-<tag>-windows.zip` as a workflow
+artifact. CI exports headless, without a GPU, so its build skips the shader
+baker; export from the Godot editor on a machine with a GPU for a baked
+build:
+
+```bash
+godot --export-release "Windows" build/windows/PortSkylines.exe
+```
+
 ## Layout
 
 | Path | Role |
