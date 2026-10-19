@@ -8,29 +8,60 @@ const BASE_DIR := "res://data/base"
 const SCHEMA := {
 	"map": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
 	"start_money": TYPE_INT,
-	"fee_per_box": TYPE_INT,
+	# What a line pays per crane move: by box size, plus a reefer premium.
+	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
+	# Shares of 40 ft boxes and reefers among all boxes.
+	"box_mix": {"forty_share": TYPE_FLOAT, "reefer_share": TYPE_FLOAT},
+	# Starting storage terms, the fee cap, how fees shorten import dwell, and
+	# how shippers (and so lines) feel about fees above the fair rate.
+	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},
 	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT},
 	"gate_minutes": TYPE_FLOAT,
 	"upkeep": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT, "sts_crane": TYPE_INT, "tractor": TYPE_INT},
-	"first_ship_minutes": TYPE_FLOAT,
-	"ship_interval_minutes": TYPE_FLOAT,
 	"sail_seconds": TYPE_FLOAT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"export_lorry_interval_minutes": TYPE_FLOAT,
 	"import_dwell_minutes": TYPE_FLOAT,
 	"lorry_speed": TYPE_FLOAT,
 	"give_up_seconds": TYPE_FLOAT,
+	# Every way cash can move, with the label the ledger panel shows.
+	"ledger_categories": {"*": TYPE_STRING},
+	# Loans the port can take, up to max_loans at once, paid back daily.
+	"loans": {"*": {"amount": TYPE_INT, "yearly_rate": TYPE_FLOAT, "days": TYPE_INT}},
+	"max_loans": TYPE_INT,
+	# Milestones on TEU moved across the quay; each unlocks named content
+	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
+	# "contracts"), shown to the player with the given description.
+	"milestones": {"*": {"teu": TYPE_INT, "unlocks": {"*": TYPE_STRING}}},
+	# A game year, for the year-end scoreboard.
+	"year_days": TYPE_INT,
+	# After `days` midnights below zero the debt is cleared, every line's
+	# reputation changes by `reputation`, and no loans for `no_loans_days`.
+	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
 	# "*" means any key, each holding the record that follows.
-	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "weight": TYPE_FLOAT}},
-	"water_depth": TYPE_FLOAT,
-	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT},
+	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT}},
+	# Fictional shipping lines: the classes they sail (relative weights) and how
+	# strongly their reputation of the port moves.
+	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT}},
+	"contracts": {"offer_check_minutes": TYPE_FLOAT, "offer_chance": TYPE_FLOAT, "max_offers": TYPE_INT, "offer_days": TYPE_FLOAT, "max_services_per_berth": TYPE_INT},
+	"reputation": {
+		"start": TYPE_FLOAT, "offer_above": TYPE_FLOAT, "cancel_below": TYPE_FLOAT, "on_time": TYPE_FLOAT,
+		"late_per_hour": TYPE_FLOAT, "moves_per_hour_target": TYPE_FLOAT, "per_move_per_hour": TYPE_FLOAT,
+		"turn_target_minutes": TYPE_FLOAT, "per_turn_minute": TYPE_FLOAT, "missed": TYPE_FLOAT,
+	},
+	# shortcut: one channel depth serves every berth; give each berth its own route and depth when ports get several channels.
+	"channel": {"start_depth": TYPE_FLOAT, "max_depth": TYPE_FLOAT, "cost_per_metre": TYPE_INT, "maintenance_per_metre": TYPE_INT, "maintenance_days": TYPE_INT},
+	# The map is split into square land tiles of `cells` cells; the port owns
+	# the `start` block of tiles and buys the rest at `price`, paying `upkeep` a day each.
+	"land": {"cells": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
+	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
 	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT, "upkeep_per_machine": TYPE_INT}},
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["ship_interval_minutes", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["year_days", "cells", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
 
 static var _base := {}
 
@@ -70,6 +101,15 @@ static func load_dir(dir: String) -> Dictionary:
 		var err := _check(rules, key, SCHEMA.get(key), "%s: %s" % [source[key], key])
 		if err:
 			return {"error": err}
+	return _cross_check(rules)
+
+
+## Checks that need more than one key: every line sails known ship classes.
+static func _cross_check(rules: Dictionary) -> Dictionary:
+	for line: String in rules.lines:
+		for kind: String in rules.lines[line].classes:
+			if not rules.ship_classes.has(kind):
+				return {"error": "lines.%s.classes: unknown ship class \"%s\"" % [line, kind]}
 	return {"rules": rules}
 
 
@@ -98,6 +138,8 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 			if err:
 				return err
 		return ""
+	if want == TYPE_STRING:
+		return "" if got is String else "%s: must be text" % where
 	if not (got is float or got is int):
 		return "%s: must be a number" % where
 	if want == TYPE_INT:

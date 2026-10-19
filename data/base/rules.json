@@ -1,16 +1,42 @@
 {
-	"map": {"width": 64, "height": 48, "sea_width": 12},
+	"map": {"width": 96, "height": 96, "sea_width": 12},
+	"land": {"cells": 32, "price": 20000, "upkeep": 100, "start": {"x": 0, "y": 1, "width": 3, "height": 1}},
 	"start_money": 20000,
-	"fee_per_box": 120,
+	"move_price": {"per_20ft": 100, "forty_factor": 1.8, "reefer_premium": 60},
+	"box_mix": {"forty_share": 0.6, "reefer_share": 0.1},
+	"storage": {"free_days": 2, "fee": 20, "max_fee": 200, "dwell_per_dollar": 0.02, "min_dwell_factor": 0.3, "fair_fee": 40, "satisfaction_per_dollar": -0.02},
 	"build_cost": {"road": 10, "quay": 200, "yard": 50, "gate": 300},
 	"gate_minutes": 2,
 	"upkeep": {"road": 1, "quay": 5, "yard": 2, "gate": 20, "sts_crane": 150, "tractor": 30},
-	"first_ship_minutes": 10,
-	"ship_interval_minutes": 45,
 	"sail_seconds": 4,
 	"lorry_interval_minutes": 1,
 	"export_lorry_interval_minutes": 2,
 	"import_dwell_minutes": 1440,
 	"lorry_speed": 5,
-	"give_up_seconds": 30
+	"give_up_seconds": 30,
+	"ledger_categories": {
+		"moves": "Ship moves",
+		"storage": "Storage",
+		"construction": "Construction",
+		"equipment": "Equipment",
+		"upkeep": "Upkeep",
+		"loans": "Loans",
+		"loan_payments": "Loan payments",
+		"bailout": "Bailout",
+		"land": "Land",
+		"dredging": "Dredging"
+	},
+	"loans": {
+		"small": {"amount": 10000, "yearly_rate": 0.08, "days": 30},
+		"medium": {"amount": 25000, "yearly_rate": 0.1, "days": 60},
+		"large": {"amount": 60000, "yearly_rate": 0.12, "days": 120}
+	},
+	"max_loans": 3,
+	"milestones": {
+		"harbour": {"teu": 0, "unlocks": {"contracts": "contracts with shipping lines", "feeder": "feeder services", "reach_stacker": "reach stackers", "ledger": "the ledger"}},
+		"terminal": {"teu": 200, "unlocks": {"loans": "loans", "rtg": "RTG cranes for yard blocks"}},
+		"gateway": {"teu": 600, "unlocks": {"land": "buying land", "dredging": "dredging the channel", "panamax": "Panamax services"}}
+	},
+	"year_days": 28,
+	"bailout": {"days": 3, "reputation": -20, "no_loans_days": 14}
 }

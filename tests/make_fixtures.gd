@@ -4,8 +4,12 @@ extends SceneTree
 ## godot --headless --script res://tests/make_fixtures.gd
 
 
+const RandomPort := preload("res://tests/random_port.gd")
+
+
 func _initialize() -> void:
-	var sim := PortSim.new(1)
+	var sim := PortSim.new(1, RandomPort.quick())
+	RandomPort.calls(sim)
 	var row := sim.map.entry.y
 	for x in range(sim.map.sea_width + 1, sim.map.entry.x):
 		sim.apply({"op": "build", "kind": PortMap.Tile.GATE if x == sim.map.entry.x - 3 else PortMap.Tile.ROAD, "cell": Vector2i(x, row)})

@@ -1,6 +1,7 @@
 extends SceneTree
 ## Lanes: traffic passes both ways on a one-tile road, queues one way, and a
-## ring of vehicles all waiting on each other clears through the give-up valve.
+## ring of vehicles all waiting on each other clears through the give-up valve,
+## and a booking past a junction is let go if the map changes under it.
 ## godot --headless --script res://tests/test_traffic.gd
 
 var _failures := 0
@@ -11,6 +12,7 @@ func _initialize() -> void:
 	_test_queue_never_shares_a_lane()
 	_test_deadlocked_ring_clears()
 	_test_blocked_lorry_gives_up()
+	_test_booking_ahead_survives_a_map_change()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -24,7 +26,6 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 ## A sim with no ships, a straight road along row 5 from x=20 to x=40.
 func _road_sim() -> PortSim:
 	var rules := Content.base().duplicate(true)
-	rules.first_ship_minutes = 1e9
 	var sim := PortSim.new(0, rules)
 	for x in range(20, 41):
 		sim.map.place(PortMap.Tile.ROAD, Vector2i(x, 5))
@@ -80,7 +81,6 @@ func _test_queue_never_shares_a_lane() -> void:
 
 func _test_deadlocked_ring_clears() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.first_ship_minutes = 1e9
 	var sim := PortSim.new(0, rules)
 	var ring: Array[Vector2i] = [Vector2i(30, 30), Vector2i(31, 30), Vector2i(31, 31), Vector2i(30, 31)]
 	for cell in ring:
@@ -111,3 +111,21 @@ func _test_blocked_lorry_gives_up() -> void:
 	_expect(lorry.replanned, true, "the lorry looked for a way round")
 	_expect([sim.vehicles.size(), sim.gave_up], [0, 1], "then gave up and left")
 	_expect(sim.last_event().contains("gave up"), true, "the status says so")
+
+
+## A lorry in the junction at x=30 books the lane ahead in the junction at
+## x=31. The side road making x=31 a junction is bulldozed: the lorry enters
+## x=31's ordinary lane and must let its old booking go.
+func _test_booking_ahead_survives_a_map_change() -> void:
+	var sim := _road_sim()
+	for x: int in [30, 31]:
+		sim.map.place(PortMap.Tile.ROAD, Vector2i(x, 6))
+	var lorry := _lorry(sim, _row(28, 40))
+	while lorry.ahead == Traffic.NO_LANE and sim.clock.ticks < 2000:
+		sim.tick()
+	var booked := lorry.ahead
+	_expect(booked, Vector3i(31, 5, Traffic.JUNCTION), "in the first junction it books the second")
+	sim.map.place(PortMap.Tile.LAND, Vector2i(31, 6))
+	while int(lorry.t) < 4 and sim.clock.ticks < 4000:
+		sim.tick()
+	_expect([lorry.ahead, sim.traffic.holder(booked)], [Traffic.NO_LANE, 0], "past the old junction, nothing stays booked")

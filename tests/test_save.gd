@@ -12,6 +12,7 @@ func _initialize() -> void:
 	_test_failed_save_preserves_destination()
 	_test_malformed_payloads_are_refused()
 	_test_malformed_v1_is_refused()
+	_test_v2_cash_moves_into_the_ledger()
 	_test_every_fixture_loads()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -25,7 +26,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 
 func _test_save_load_save_is_identical() -> void:
 	var sim := PortSim.new(3)
-	sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(12, 3)})
+	sim.apply({"op": "build", "kind": PortMap.Tile.QUAY, "cell": Vector2i(12, 40)})
 	for i in 500:
 		sim.tick()
 	_expect(SaveFile.save("user://a.bin", sim), "", "save")
@@ -65,7 +66,7 @@ func _test_save_replaces_existing() -> void:
 	var path := "user://replace.bin"
 	var sim := PortSim.new(7)
 	_expect(SaveFile.save(path, sim), "", "initial save")
-	sim.money += 123
+	sim.ledger.post("moves", 123)
 	_expect(SaveFile.save(path, sim), "", "replace an existing save")
 	var loaded := SaveFile.load_from(path)
 	_expect(loaded.has("sim"), true, "replacement loads")
@@ -83,7 +84,7 @@ func _test_failed_save_preserves_destination() -> void:
 	var before := FileAccess.get_file_as_bytes(path)
 	# A directory at the temporary path prevents opening it for writing.
 	DirAccess.make_dir_absolute(path + ".tmp")
-	sim.money += 1
+	sim.ledger.post("moves", 1)
 	_expect(SaveFile.save(path, sim).is_empty(), false, "temporary open failure is reported")
 	_expect(FileAccess.get_file_as_bytes(path), before, "open failure preserves the existing save")
 	DirAccess.remove_absolute(path + ".tmp")
@@ -102,7 +103,7 @@ func _test_failed_save_preserves_destination() -> void:
 
 func _test_malformed_payloads_are_refused() -> void:
 	# A busy port, so ships, cranes and vehicles all have entries to break.
-	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v2.bin").sim
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v%d.bin" % SaveFile.VERSION).sim
 	for i in 40000:
 		if not (sim.ships.is_empty() or sim.cranes.is_empty() or sim.vehicles.is_empty() or sim.get("_claimed").is_empty()):
 			break
@@ -112,7 +113,7 @@ func _test_malformed_payloads_are_refused() -> void:
 	_expect(valid.claimed.is_empty(), false, "a box is claimed at save time")
 	_expect(SaveFile.load_from("user://valid.bin").has("sim"), true, "complete ship, crane, vehicle and claim payload loads")
 	# Every field each deserialiser reads, through the public load path.
-	for section: Array in [[], ["map"], ["yard"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
+	for section: Array in [[], ["map"], ["yard"], ["ledger"], ["contracts"], ["finance"], ["ships", 0], ["cranes", 0], ["vehicles", 0]]:
 		var original := _section(valid, section)
 		for key: String in original:
 			var missing := valid.duplicate(true)
@@ -136,7 +137,7 @@ func _test_malformed_payloads_are_refused() -> void:
 		_expect_payload_refused(bad, "invalid route %s" % [route_value])
 	var no_cells := valid.duplicate(true)
 	no_cells.ships[0].cells = []
-	_expect_payload_refused(no_cells, "a ship with no cells")
+	_expect_payload_refused(no_cells, "a berthed ship with no cells")
 	for size: Vector2i in [Vector2i.ZERO, Vector2i(-1, 48), Vector2i(64, 49)]:
 		var bad := valid.duplicate(true)
 		bad.map.size = size
@@ -157,6 +158,14 @@ func _test_malformed_v1_is_refused() -> void:
 		bad.sim.stacked = stacked
 		_write_payload("user://bad_v1.bin", bad)
 		_expect(SaveFile.load_from("user://bad_v1.bin").get("error", "").contains("not a Port Skylines save"), true, "v1 stacked %s is refused" % [stacked])
+
+
+func _test_v2_cash_moves_into_the_ledger() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v2.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var raw: Dictionary = file.get_var(false)
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v2.bin").sim
+	_expect([sim.money, sim.ledger.opened, sim.ledger.today_total()], [raw.sim.money, raw.sim.money, 0], "v2 cash opens the ledger")
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:

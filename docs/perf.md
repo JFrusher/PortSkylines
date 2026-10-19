@@ -23,3 +23,17 @@ box). They grow with chunks (16×) rather than tiles (19×), which is the M1
 exit criterion. The frame time growth on llvmpipe is CPU rasterisation of
 more triangles, not draw calls. It needs re-measuring on real GPUs before any
 conclusion about rendering cost.
+
+## M3 default map (2026-10-19)
+
+M3 grows the default map from 64×48 to 96×96, the 3×3 land tiles of 32
+cells. Same machine, renderer and command as the M1 baseline, run with `96`.
+
+| Map | Built tiles | MultiMesh parts (chunk × kind) | Draw calls | Avg frame | p95 frame |
+|---|---:|---:|---:|---:|---:|
+| 96×96 | 2,415 | 33 | 36 | 16.59 ms | 20.61 ms |
+
+**Reading.** Draw calls stay chunk-bound (36), between the 64² and 256²
+baselines. This run's frame times came out below the 64² baseline's, so this
+box's timings drift by more than the gap between those two map sizes. Treat
+the frame times as noise and keep the draw-call count as the result.

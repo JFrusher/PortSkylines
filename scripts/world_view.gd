@@ -34,6 +34,9 @@ var _ships := {}  # PortSim.Ship -> Node3D
 var _vehicles := {}  # Vehicle -> Node3D
 var _cranes := {}  # PortSim.Crane -> Node3D
 var _hover := _box(Vector3(1, 0.06, 1), Color(1, 1, 1, 0.5))
+## Shade over each land tile the port does not own; rebuilt when it buys one.
+var _unowned := {}  # land tile -> Node3D
+var _drawn_land := -1
 
 
 func _ready() -> void:
@@ -61,10 +64,33 @@ func show_hover(cell: Vector2i, ok: bool) -> void:
 func _process(_dt: float) -> void:
 	if sim.map.version != _drawn_version:
 		_draw_tiles()
+	if sim.land.size() != _drawn_land:
+		_draw_land()
 	_draw_stacks()
 	_draw_ships()
 	_draw_cranes()
 	_draw_vehicles()
+
+
+func _draw_land() -> void:
+	_drawn_land = sim.land.size()
+	var cells: int = sim.rules.land.cells
+	for y in ceili(sim.map.size.y / float(cells)):
+		for x in ceili(sim.map.size.x / float(cells)):
+			var tile := Vector2i(x, y)
+			if sim.land.has(tile) and _unowned.has(tile):
+				_unowned[tile].queue_free()
+				_unowned.erase(tile)
+			elif not sim.land.has(tile) and not _unowned.has(tile):
+				# Only the land part of the tile: the sea is nobody's to buy.
+				var from := maxi(x * cells, sim.map.sea_width)
+				var width := mini((x + 1) * cells, sim.map.size.x) - from
+				if width <= 0:
+					continue
+				var shade := _box(Vector3(width, 0.02, cells), Color(0, 0, 0, 0.3))
+				shade.position = Vector3(from + width / 2.0, 0.02, (y + 0.5) * cells)
+				add_child(shade)
+				_unowned[tile] = shade
 
 
 ## Redraws only the chunks whose tiles changed since the last draw.
@@ -114,10 +140,13 @@ func _draw_stacks() -> void:
 func _draw_ships() -> void:
 	_forget_gone(_ships, sim.ships)
 	for ship: PortSim.Ship in sim.ships:
+		# shortcut: ships at anchorage are only counted in the HUD; draw them offshore if players miss them.
+		if ship.state == PortSim.Ship.State.ANCHORED:
+			continue
 		var length := ship.cells.size()
 		var along_z := ship.side.x != 0
 		if ship not in _ships:
-			var hull := _box(Vector3(1.4, 0.6, length - 0.4) if along_z else Vector3(length - 0.4, 0.6, 1.4), Color(0.15, 0.2, 0.35))
+			var hull := _box(Vector3(1.4, 0.6, length - 0.4) if along_z else Vector3(length - 0.4, 0.6, 1.4), Color.html(sim.rules.lines[ship.line].livery))
 			var cargo := _box(Vector3(1.0, 0.6, length - 1.6) if along_z else Vector3(length - 1.6, 0.6, 1.0), BOX_COLOR)
 			cargo.name = "Cargo"
 			cargo.position.y = 0.6

@@ -1,16 +1,37 @@
 extends RefCounted
 ## Seeded command logs for tests: a working port (road from the highway,
 ## quay, cranes, tractors, an import and an export block), then random builds
-## and bulldozes near the coast at random ticks. Many are refused; that is
-## part of the log.
+## and bulldozes near the coast, and offer answers, loans, land, dredging and
+## storage terms, at random ticks. Many are refused; that is part of the log.
 
 
-## The base rules with imports dwelling 30 minutes, so lorries collect them
-## within a test's run.
+## A copy of `game_rules` for a port that works at once: cranes stand the
+## moment they are ordered, the channel is M2's 14 m, deep enough for every
+## class, and every milestone is already reached.
+static func quick(game_rules := Content.base()) -> Dictionary:
+	var copy := game_rules.duplicate(true)
+	copy.sts_crane.lead_days = 0.0
+	copy.channel.start_depth = 14.0
+	for milestone: Dictionary in copy.milestones.values():
+		milestone.teu = 0
+	return copy
+
+
+## quick() with imports dwelling 30 minutes, so lorries collect them within a
+## test's run.
 static func rules() -> Dictionary:
-	var quick := Content.base().duplicate(true)
-	quick.import_dwell_minutes = 30.0
-	return quick
+	var fast := quick()
+	fast.import_dwell_minutes = 30.0
+	return fast
+
+
+## Weekly services standing in for M2's ship timer: a ship of `kind` at
+## minute `first`, then every `every` minutes, `count` times, for the first line.
+static func calls(sim: PortSim, kind := "feeder", first := 10, every := 45, count := 32) -> void:
+	var line: String = sim.rules.lines.keys()[0]
+	var spec: Dictionary = sim.rules.ship_classes[kind]
+	for i in count:
+		sim.contracts.services.append({"id": 1000 + i, "line": line, "kind": kind, "start": first + every * i, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves})
 
 
 static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Array[Dictionary]:
@@ -39,7 +60,20 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	var extra: Array[Dictionary] = []
 	for i in extra_commands:
 		var cell := Vector2i(rng.randi_range(map.sea_width - 1, map.sea_width + 8), rng.randi_range(map.entry.y - 5, map.entry.y + 5))
-		var command := {"op": "bulldoze", "cell": cell} if rng.randf() < 0.2 else {"op": "build", "kind": kinds[rng.randi() % kinds.size()], "cell": cell}
+		var roll := rng.randf()
+		var command := {"op": "bulldoze", "cell": cell} if roll < 0.2 else {"op": "build", "kind": kinds[rng.randi() % kinds.size()], "cell": cell}
+		# The economy: offers are numbered from 1, so some answers find one and
+		# some are refused; loans, land and dredging are refused without the cash.
+		if roll > 0.88:
+			var economy: Array[Dictionary] = [
+				{"op": "accept_offer", "id": rng.randi_range(1, 10)},
+				{"op": "decline_offer", "id": rng.randi_range(1, 10)},
+				{"op": "take_loan", "kind": ["small", "medium"][rng.randi() % 2]},
+				{"op": "buy_land", "tile": Vector2i(rng.randi_range(0, 2), rng.randi_range(0, 2))},
+				{"op": "dredge", "metres": 1},
+				{"op": "set_storage", "free_days": rng.randi_range(0, 3), "fee": rng.randi_range(0, 20) * 10},
+			]
+			command = economy[rng.randi() % economy.size()]
 		extra.append({"tick": rng.randi_range(0, ticks - 1), "command": command})
 	extra.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.tick < b.tick)
 	log.append_array(extra)
