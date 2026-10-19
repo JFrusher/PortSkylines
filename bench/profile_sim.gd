@@ -54,11 +54,11 @@ class ProfiledSim extends PortSim:
 		_time("_route_via_gate", start)
 		return path
 
-	func _queue_at(gate: Vector2i, lane: Vector3i) -> int:
+	func _gate_queues() -> Dictionary:
 		var start := Time.get_ticks_usec()
-		var count := super(gate, lane)
-		_time("_queue_at", start)
-		return count
+		var counts := super()
+		_time("_gate_queues", start)
+		return counts
 
 	func _yard_tile_for(role: String, from: Vector2i) -> Vector2i:
 		var start := Time.get_ticks_usec()

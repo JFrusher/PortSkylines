@@ -72,6 +72,8 @@ var storage := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
+## Derived, not saved: per vehicle id, [its path, the steps of that path on a gate].
+var _gate_steps_of := {}
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
@@ -1057,30 +1059,34 @@ func _cranes_for(ship: Ship) -> Array[Crane]:
 ## The roomiest tile of the nearest yard block with `role` and room, by road
 ## from `from`, or NONE.
 func _yard_tile_for(role: String, from: Vector2i) -> Vector2i:
-	var best := PortMap.NONE
-	var best_length := 1 << 30
-	for block_anchor in yard.anchors():
-		if yard.role_of(block_anchor) != role:
-			continue
-		var tile := yard.roomiest(block_anchor)
-		var way_in := yard.entrance(block_anchor)
-		if tile == PortMap.NONE or way_in == PortMap.NONE:
-			continue
-		var path := map.route(from, way_in)
-		if not path.is_empty() and path.size() < best_length:
-			best = tile
-			best_length = path.size()
-	return best
+	# Nearest first, ties to the first block in map order, and only then look
+	# for room, which costs a scan of the block.
+	var anchors := yard.anchors()
+	var nearest: Array[Vector2i] = []  # (road length, index into anchors)
+	for i in anchors.size():
+		var way_in := yard.entrance(anchors[i]) if yard.role_of(anchors[i]) == role else PortMap.NONE
+		var length := map.distance(way_in, from) if way_in != PortMap.NONE else -1
+		if length >= 0:
+			nearest.append(Vector2i(length, i))
+	nearest.sort()
+	for candidate in nearest:
+		var tile := yard.roomiest(anchors[candidate.y])
+		if tile != PortMap.NONE:
+			return tile
+	return PortMap.NONE
 
 
 ## Sends a lorry from the highway for an import box whose dwell is over.
 func _dispatch_import_lorry() -> bool:
 	var now := clock.calendar_minutes()
 	var gated := not map.cells_of(PortMap.Tile.GATE).is_empty()
+	var reachable := {}  # block entrance -> whether lorries can get there through a gate
 	for tile: Vector2i in yard.stacks:
 		var way_in := yard.entrance(tile)
+		if way_in not in reachable:
+			reachable[way_in] = way_in != PortMap.NONE and _through_a_gate(map.entry, way_in)
 		# A block lorries can't reach must not hold up the others.
-		if gated and (way_in == PortMap.NONE or _route_via_gate(map.entry, way_in).is_empty()):
+		if gated and not reachable[way_in]:
 			continue
 		for id: int in yard.stacks[tile]:
 			if id in _claimed or boxes[id].kind != "import" or boxes[id].due > now:
@@ -1178,33 +1184,78 @@ func _drive_lorry(lorry: Vehicle) -> void:
 ## as rules.gate_minutes of driving, so lorries spread over parallel gates.
 ## Empty when no gate connects them.
 func _route_via_gate(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	# A gate's route is at least as long as its road distance, and the queue
+	# only adds, so gates are tried from the shortest distance up and only
+	# searched while one could still win; ties go to the first gate in map
+	# order, exactly as trying every gate would.
+	var gates := map.cells_of(PortMap.Tile.GATE)
+	var bounds: Array[Vector2i] = []  # (shortest possible cost, gate index)
+	for i in gates.size():
+		var there := map.distance(from, gates[i])
+		var on := map.distance(to, gates[i]) if to != PortMap.NONE else -1
+		if there >= 0 and on >= 0:
+			bounds.append(Vector2i(there + on + 1, i))
+	bounds.sort()
 	var best: Array[Vector2i] = []
 	var best_cost := INF
-	for gate in map.cells_of(PortMap.Tile.GATE):
+	var best_index := -1
+	var queues := {}
+	for bound in bounds:
+		if bound.x > best_cost or (bound.x == best_cost and bound.y > best_index):
+			break
+		var gate := gates[bound.y]
 		var there := map.route(from, gate)
-		var on := map.route(gate, to) if to != PortMap.NONE else ([] as Array[Vector2i])
-		if there.is_empty() or on.is_empty():
-			continue
-		var route := there + on.slice(1)
-		var queue := _queue_at(gate, Traffic.lane(map, route, there.size() - 1))
+		var route := there + map.route(gate, to).slice(1)
+		if queues.is_empty():
+			queues = _gate_queues()
+		var queue: int = queues.get(Traffic.lane(map, route, there.size() - 1), 0)
 		var cost: float = route.size() + queue * rules.gate_minutes * rules.lorry_speed
-		if cost < best_cost:
+		if cost < best_cost or (cost == best_cost and bound.y < best_index):
 			best_cost = cost
+			best_index = bound.y
 			best = route
 	return best
 
 
-## Lorries that have yet to cross `gate` in `lane`.
-func _queue_at(gate: Vector2i, lane: Vector3i) -> int:
-	var count := 0
+## The steps of `vehicle`'s path that are gates, found once per path: a path
+## is replaced, never edited, and a gate on it can't change without the
+## vehicle being rerouted or scrapped.
+func _gate_steps(vehicle: Vehicle) -> PackedInt32Array:
+	var cached: Array = _gate_steps_of.get(vehicle.id, [])
+	if not cached.is_empty() and is_same(cached[0], vehicle.path):
+		return cached[1]
+	var steps := PackedInt32Array()
+	for k in vehicle.path.size():
+		if map.tile(vehicle.path[k]) == PortMap.Tile.GATE:
+			steps.append(k)
+	_gate_steps_of[vehicle.id] = [vehicle.path, steps]
+	return steps
+
+
+## Whether some gate joins `from` and `to` by road, which is when
+## _route_via_gate finds a route, without finding it.
+func _through_a_gate(from: Vector2i, to: Vector2i) -> bool:
+	for gate in map.cells_of(PortMap.Tile.GATE):
+		if map.distance(from, gate) >= 0 and map.distance(to, gate) >= 0:
+			return true
+	return false
+
+
+## Lorries yet to cross each gate lane, by lane: one pass over the lorries.
+## A lorry crossing the same gate lane twice counts once.
+func _gate_queues() -> Dictionary:
+	var counts := {"": 0}  # never empty, so callers can tell it has been made
 	for vehicle in vehicles:
 		if vehicle.kind != "lorry":
 			continue
-		for k in range(int(vehicle.t), vehicle.path.size()):
-			if vehicle.path[k] == gate and Traffic.lane(map, vehicle.path, k) == lane:
-				count += 1
-				break
-	return count
+		var counted := {}
+		for k in _gate_steps(vehicle):
+			if k >= int(vehicle.t):
+				var lane := Traffic.lane(map, vehicle.path, k)
+				if lane not in counted:
+					counted[lane] = true
+					counts[lane] = counts.get(lane, 0) + 1
+	return counts
 
 
 ## Tractors carry imports from under a crane to a block, and fetch exports
@@ -1415,3 +1466,4 @@ func _leave(vehicle: Vehicle) -> void:
 	traffic.release(vehicle.lane, vehicle.id)
 	traffic.release(vehicle.ahead, vehicle.id)
 	vehicles.erase(vehicle)
+	_gate_steps_of.erase(vehicle.id)

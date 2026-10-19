@@ -100,3 +100,17 @@ even be generated, so the hot spots go first.
 Vehicle movement (`_drive_lorry`, `_advance`) is under 1%: the cost is
 routing and searching, not kinematics. Each M5 step below names the hot
 spot it removes and is re-measured with the same command.
+
+### Routing hot spots removed (M5 step 7, distance fields)
+
+Same command. The sim's state hash after 30,000 ticks of the soak ports and
+300 ticks of the endgame port is identical before and after: every choice
+is the same, only found faster.
+
+| Change | Hot spot removed | ms a tick |
+|---|---|---:|
+| Baseline | | 78.6 |
+| Gate queues counted in one pass per route, not one per gate; gates tried from the shortest road distance (cached BFS fields from each gate, rebuilt only when roads change) and searched only while one could win | `_queue_at`, `_route_via_gate` | 37.6 |
+| Nearest block with room found by road distance, scanning blocks for room only from the nearest; gate reachability for dispatch read from the fields; each path's gate steps found once | `_yard_tile_for`, `_dispatch_import_lorry`, `_gate_queues` | 3.0 |
+
+The soak port's sim bench dropped from 0.20 to 0.12 ms a tick.
