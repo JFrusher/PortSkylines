@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_crane_timing()
 	_test_outreach()
 	_test_yard_machines_set_the_pace()
+	_test_changing_gear_replaces_machines()
 	_test_import_dwell()
 	_test_gate()
 	_test_upkeep_at_midnight()
@@ -171,6 +172,20 @@ func _test_yard_machines_set_the_pace() -> void:
 			ticks += 1
 		minutes.append(ticks * SimClock.CALENDAR_MINUTES_PER_TICK)
 	_expect(absf(minutes[1] / minutes[0] - 2.0) < 0.25, true, "half the machines take twice as long to stack the ship (%.0f vs %.0f min)" % [minutes[1], minutes[0]])
+
+
+## A block switched to RTGs in use gets RTGs in place of its reach stackers,
+## once each has finished the box it is handling, and stacks RTG high.
+func _test_changing_gear_replaces_machines() -> void:
+	var sim := AreaPort.base()
+	_run(sim, FIRST_SHIP + 30)
+	var gears := func() -> Array: return sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == 3).map(func(m: Dictionary) -> String: return m.gear)
+	_expect(_stacked(sim) > 0 and gears.call().has("reach_stacker"), true, "the block works with reach stackers")
+	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"gear": "rtg"}}), "", "switch it to RTGs")
+	_run(sim, 10)
+	var count := sim.machines.count_for("rtg", sim.areas.layout(3).slots.size())
+	_expect(gears.call(), range(count).map(func(_i: int) -> String: return "rtg"), "its machines are RTGs now")
+	_expect(sim.area_stacks[3].to_dict().tiers, sim.rules.yard_gear.rtg.tiers, "and its stacks go RTG high")
 
 
 func _stacked(sim: PortSim) -> int:

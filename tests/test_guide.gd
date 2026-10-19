@@ -13,15 +13,18 @@ var _failures := 0
 func _initialize() -> void:
 	var sim := PortSim.new(1)
 	var entry := sim.site_entry()
-	# The coast road runs south along x = 85, so an apron on its west side
-	# reaches the water; the east road runs from it to the highway.
+	# The coast road runs south along x = 85 past the east road, which meets
+	# it in a T, so both its ends are dead ends to turn at. An apron on its
+	# west side reaches the water, and the yard block sits behind it on the
+	# east side; the gate is on the east road's inbound lane near the highway.
+	# Segments: 1 the coast road north of the T, 2 south of it, 3 the east road.
 	var steps: Array[Array] = [
-		[{"op": "build_road", "from": Vector2i(85, entry.y - 70), "to": Vector2i(85, entry.y), "type": "terminal_1_1"},
+		[{"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, 340), "type": "terminal_1_1"},
 			{"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"}],
-		[{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 5, "to": 64}],
-		[{"op": "build_area", "type": "gate", "segment": 2, "side": -1, "from": 480, "to": 494}],
+		[{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 30, "to": 89}],
+		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 420, "to": 434}],
 		[{"op": "set_terminal", "id": 2, "terminal": 1}],
-		[{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 30, "to": 59}, {"op": "set_terminal", "id": 3, "terminal": 1}],
+		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 50, "to": 79}, {"op": "set_terminal", "id": 3, "terminal": 1}],
 		[{"op": "place_sts", "apron": 1, "along": 30}],
 		[{"op": "buy_tractors", "count": 4}],
 	]
@@ -44,6 +47,8 @@ func _initialize() -> void:
 	_expect(Guide.current(sim), steps.size() + 1, "accepting the offers finishes their step")
 	_expect(_run_until(sim, func() -> bool: return not sim.ship_log.is_empty()), true, "the first ship is worked")
 	_expect(Guide.current(sim), Guide.steps(sim).size(), "the guide ends with the first ship worked")
+	var call: Dictionary = sim.ship_log[0]
+	_expect(call.hours < sim.rules.ship_classes.feeder.window_hours, true, "the first feeder is worked within its window (%.1f h)" % call.hours)
 	_expect(sim.money > 0, true, "the port is still in the black after its first ship ($%d)" % sim.money)
 	_expect(sim.apply({"op": "remove_area", "id": 2}), "", "bulldoze the gate")
 	_expect(Guide.current(sim), Guide.steps(sim).size(), "a finished guide stays finished")

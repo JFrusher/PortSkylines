@@ -597,10 +597,28 @@ static func _fit_machines(sim: PortSim) -> void:
 		if sim.areas.list[area].type != "yard_block":
 			continue
 		var gear: String = sim.areas.list[area].settings.gear
+		# Machines of the gear the block had go once idle; until the busy ones
+		# have finished their box, fit again next tick.
+		for id: int in sim.machines.list.keys():
+			var machine: Dictionary = sim.machines.list[id]
+			if machine.area != area or machine.gear == gear:
+				continue
+			if id in sim.machine_jobs:
+				sim._machines_fit_for = -1
+			else:
+				sim.machines.list.erase(id)
 		var bays: int = sim.areas.layout(area).slots.size()
-		var have := sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == area).size()
-		for i in sim.machines.count_for(gear, bays) - have:
+		var have := sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == area and m.gear == gear).size()
+		var missing := sim.machines.count_for(gear, bays) - have
+		for i in missing:
 			sim.machines.add(area, gear, 0)
+		if missing > 0:
+			# Vehicles waiting in the block's slots ask the new machines.
+			for other: Vehicle in sim.vehicles:
+				if other.area == area and other.state == "handling":
+					_start_handling(sim, other)
+		if area in sim.area_stacks:
+			sim.area_stacks[area].set_tiers(sim.rules.yard_gear[gear].tiers)
 
 
 ## Takes away area `id` and everything working there: boxes stacked in it

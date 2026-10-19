@@ -21,6 +21,12 @@ func _init(positions: int, tiers: int) -> void:
 		stacks.append([])
 
 
+## Sets how many tiers high stacks go, for a block's new gear. Stacks already
+## higher keep their boxes; nothing more goes on them.
+func set_tiers(height: int) -> void:
+	_tiers = height
+
+
 ## Puts box `id` of `teu` on the first stack that takes it, in layout order.
 ## Returns the position, or -1 when the area is full for it.
 func place(id: int, teu: int) -> int:
