@@ -83,6 +83,9 @@ func _process(dt: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		if hud.tool == Hud.INSPECT:
+			hud.inspect(_hovered_cell())
+			return
 		_painting = true
 		_order(_hovered_cell(), true)
 
@@ -126,6 +129,8 @@ func _yard_settings() -> Dictionary:
 
 func _order_error(cell: Vector2i) -> String:
 	match hud.tool:
+		Hud.INSPECT:
+			return ""
 		Hud.BULLDOZE:
 			return sim.bulldoze_error(cell)
 		Hud.CRANE:

@@ -49,6 +49,7 @@ func _initialize() -> void:
 	_test_bailout_fires_once()
 	_test_saved_reputation_meets_a_new_line()
 	_test_creative_mode_builds_without_cash()
+	_test_inspect_each_entity()
 	_test_land_must_be_bought()
 	_test_cranes_arrive_after_their_lead_time()
 	_test_dredging()
@@ -770,3 +771,21 @@ func _test_year_end_scoreboard() -> void:
 	_expect(absf(closed.port_hours - hours / sailed.size()) < 1e-6 and absf(closed.moves_per_hour - moves / hours) < 1e-6, true, "the scoreboard matches the year's calls (%s)" % closed)
 	_expect(closed.turn_minutes > 2 * rules.gate_minutes, true, "and reports the gate turn")
 	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.begins_with("Year 1: ")), true, "the year is reported")
+
+
+func _test_inspect_each_entity() -> void:
+	var sim := _port()
+	_run(sim, FIRST_SHIP + 30)
+	var ship := sim.ships[0]
+	var crane := sim.cranes[0]
+	var vehicle := sim.vehicles[0]
+	var yard := sim.map.cells_of(YARD)[0]
+	_expect(Inspect.pick(sim, ship.cells[0] + ship.side), ship, "a click on the water beside a quay picks its ship")
+	_expect(Inspect.describe(sim, ship)[0], "%s feeder" % sim.contracts.name_of(ship.line), "a ship is named by line and class")
+	_expect(Inspect.pick(sim, crane.cell), crane, "a click on a crane's quay tile picks the crane")
+	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
+	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
+	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
+	_expect(Inspect.describe(sim, yard).slice(0, 2), ["Yard", "Import block, reach stacker"] as Array[String], "a yard tile shows its block")
+	sim.vehicles.erase(vehicle)
+	_expect(Inspect.describe(sim, vehicle), [] as Array[String], "a vehicle that left shows nothing")

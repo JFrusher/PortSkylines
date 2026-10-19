@@ -16,9 +16,10 @@ const EXPORT_YARD := -3
 const IMPORT_YARD := -4
 const RTG := -5
 const BUY_LAND := -6
+const INSPECT := -7
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-9.
-const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze"]
+const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
 const FLASH_SECONDS := 2.5
 const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -43,6 +44,10 @@ var _contracts := VBoxContainer.new()
 var _contracts_drawn := [-1, null, {}]
 var _flash_left := 0.0
 var _category_buttons: Array[Button] = []
+## What the inspect panel shows, from Inspect.pick.
+var _inspected: Variant
+var _inspect_name := Label.new()
+var _inspect_lines := Label.new()
 
 
 func _ready() -> void:
@@ -71,6 +76,11 @@ func _ready() -> void:
 		_gate("loans", _action_button(_borrow, "Borrow %s\n%d days, %d%% a year" % [_dollars(terms.amount), terms.days, roundi(terms.yearly_rate * 100)], {"op": "take_loan", "kind": kind}))
 	var contracts_panel := _panel(left, "Contracts")
 	contracts_panel.add_child(_contracts)
+	var inspect_panel := _panel(left, "Inspect")
+	_inspect_name.theme_type_variation = "ClockLabel"
+	inspect_panel.add_child(_inspect_name)
+	inspect_panel.add_child(_inspect_lines)
+	_panel_of(inspect_panel).visible = false
 
 	# Top right: the clock and speeds, then the panels and the game menu.
 	var right := _corner(Control.PRESET_TOP_RIGHT)
@@ -126,6 +136,7 @@ func _ready() -> void:
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + _dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND))
 	_item(_button(rows.Bulldoze, "Bulldoze\ntile", tools, false, func() -> void: tool = BULLDOZE))
+	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT))
 	_category_buttons[0].button_pressed = true
 
 
@@ -134,6 +145,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	var i := key.keycode - KEY_1
 	if key.pressed and not key.echo and i >= 0 and i < _category_buttons.size() and _category_buttons[i].visible:
 		_category_buttons[i].button_pressed = true
+
+
+## Opens the inspect panel on whatever is at `cell`.
+func inspect(cell: Vector2i) -> void:
+	_inspected = Inspect.pick(sim, cell)
+	_panel_of(_inspect_name).visible = true
 
 
 ## Shows a short-lived message, such as why a build was refused.
@@ -159,6 +176,12 @@ func _process(dt: float) -> void:
 	_events.visible = _message.text != ""
 	if _ledger.is_visible_in_tree():
 		_ledger.text = _ledger_text()
+	if _inspect_name.is_visible_in_tree():
+		var lines := Inspect.describe(sim, _inspected)
+		_panel_of(_inspect_name).visible = not lines.is_empty()
+		if not lines.is_empty():
+			_inspect_name.text = lines[0]
+			_inspect_lines.text = "\n".join(lines.slice(1))
 	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
 		_draw_contracts()
 	_flash_left -= dt
