@@ -58,6 +58,27 @@ runners. At 21 µs per vehicle, 2,000 lorries would cost about 42 ms a tick,
 far over the M5 target; packed vehicle state and threaded paths in M5 are
 what close that gap.
 
+## M5 budget on roads and areas (2026-10-19)
+
+The tile model is gone, so `bench/sim_bench.gd` now runs the soak test's
+port on roads and areas: AreaPort's chain built by commands, with a lorry
+every quarter minute. Its lorries drive the 2 km from the highway to the
+coast at the data's 125 m a game minute, so about 280 vehicles are on the
+roads at once, where the tile bench port held 8.5. The whole-tick budget
+rises with that, and the per-vehicle one tightens.
+
+| Entity | Measured (this box) | Budget |
+|---|---:|---:|
+| Whole tick, bench port | 2.5–2.8 ms | 12 ms |
+| Per vehicle per tick | 8.8–9.8 µs | 50 µs |
+
+**Machine:** the same cloud container (4 vCPU Xeon at 2.8 GHz). **Command:**
+`godot --headless --script res://bench/sim_bench.gd`. At 10 µs a vehicle,
+the endgame's 2,000 lorries would cost about 20 ms a tick, still over the
+M6 target. The render bench, the endgame port and the sim profiler built
+tile ports, so they went with the tile model; M6 steps 1 and 2 rebuild them
+on roads and areas, and the M4 and M6 render figures below were measured on tiles.
+
 ## M4 render check (2026-10-19)
 
 Same machine, renderer and command as the M1 baseline. The M4 view adds
@@ -78,6 +99,8 @@ llvmpipe is CPU rasterisation; the 60 fps exit criterion still needs a run
 on a GTX 1660-class GPU.
 
 ## M5 baseline profile (2026-10-19)
+
+Scale and rail was M5 when these steps were done; it is now M6. Step numbers here are that phase's.
 
 `bench/profile_sim.gd` builds the endgame port (`bench/endgame_port.gd`: a
 160² map, 6 berths of 3 cranes, a road grid with 25 gates, RTG yard bands

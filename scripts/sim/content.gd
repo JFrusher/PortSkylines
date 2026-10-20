@@ -6,7 +6,8 @@ extends RefCounted
 
 const BASE_DIR := "res://data/base"
 const SCHEMA := {
-	"map": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
+	# The site for roads and areas, in metres, each a whole number of Grid cells.
+	"site": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
 	"start_money": TYPE_INT,
 	# What a line pays per crane move: by box size, plus a reefer premium.
 	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
@@ -15,13 +16,13 @@ const SCHEMA := {
 	# Starting storage terms, the fee cap, how fees shorten import dwell, and
 	# how shippers (and so lines) feel about fees above the fair rate.
 	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},
-	"build_cost": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT},
 	"gate_minutes": TYPE_FLOAT,
-	"upkeep": {"road": TYPE_INT, "quay": TYPE_INT, "yard": TYPE_INT, "gate": TYPE_INT, "sts_crane": TYPE_INT, "tractor": TYPE_INT},
+	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"sail_seconds": TYPE_FLOAT,
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"export_lorry_interval_minutes": TYPE_FLOAT,
 	"import_dwell_minutes": TYPE_FLOAT,
+	# Metres a vehicle second, which is one game minute; the tractor's too.
 	"lorry_speed": TYPE_FLOAT,
 	"give_up_seconds": TYPE_FLOAT,
 	# Every way cash can move, with the label the ledger panel shows.
@@ -39,6 +40,7 @@ const SCHEMA := {
 	# reputation changes by `reputation`, and no loans for `no_loans_days`.
 	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
 	# "*" means any key, each holding the record that follows.
+	# Length in metres, draft in metres, outreach in box rows.
 	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT}},
 	# Fictional shipping lines: the classes they sail (relative weights) and how
 	# strongly their reputation of the port moves.
@@ -51,17 +53,27 @@ const SCHEMA := {
 	},
 	# shortcut: one channel depth serves every berth; give each berth its own route and depth when ports get several channels.
 	"channel": {"start_depth": TYPE_FLOAT, "max_depth": TYPE_FLOAT, "cost_per_metre": TYPE_INT, "maintenance_per_metre": TYPE_INT, "maintenance_days": TYPE_INT},
-	# The map is split into square land tiles of `cells` cells; the port owns
+	# The site is split into square land tiles `metres` across; the port owns
 	# the `start` block of tiles and buys the rest at `price`, paying `upkeep` a day each.
-	"land": {"cells": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
-	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT},
+	"land": {"metres": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
+	# An STS crane: its price, moves an hour, outreach in box rows, days from
+	# order to standing, and width along the quay in metres.
+	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
-	"yard_gear": {"*": {"capacity": TYPE_INT, "handling_minutes": TYPE_FLOAT, "tiles_per_machine": TYPE_INT, "cost_per_tile": TYPE_INT, "upkeep_per_machine": TYPE_INT}},
+	# Roads the player draws: lanes each way along the drawn direction, whether
+	# lorries may use it (tractors and AGVs always may), and cost and daily upkeep per 4 m cell.
+	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
+	# Areas dragged along a road edge: how deep they reach from the road and
+	# their shortest length, in 4 m cells, and cost and daily upkeep per cell.
+	"area_types": {"*": {"name": TYPE_STRING, "depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
+	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
+	# down a box, one machine per so many bays of an area, and how high they stack.
+	"yard_gear": {"*": {"upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
 }
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["year_days", "cells", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed", "capacity", "handling_minutes", "tiles_per_machine"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed"]
 
 static var _base := {}
 
@@ -104,8 +116,16 @@ static func load_dir(dir: String) -> Dictionary:
 	return _cross_check(rules)
 
 
-## Checks that need more than one key: every line sails known ship classes.
+## Checks that need more than one key: the site is whole grid cells, and
+## every line sails known ship classes.
 static func _cross_check(rules: Dictionary) -> Dictionary:
+	for key: String in rules.site:
+		if rules.site[key] <= 0 or rules.site[key] % Grid.CELL != 0:
+			return {"error": "site.%s: must be a positive multiple of %d m" % [key, Grid.CELL]}
+	for kind: String in rules.road_types:
+		var road: Dictionary = rules.road_types[kind]
+		if road.forward < 0 or road.backward < 0 or road.forward + road.backward == 0 or road.forward < road.backward:
+			return {"error": "road_types.%s: needs lanes, with at least as many forward as backward" % kind}
 	for line: String in rules.lines:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):
@@ -140,6 +160,8 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 		return ""
 	if want == TYPE_STRING:
 		return "" if got is String else "%s: must be text" % where
+	if want == TYPE_BOOL:
+		return "" if got is bool else "%s: must be true or false" % where
 	if not (got is float or got is int):
 		return "%s: must be a number" % where
 	if want == TYPE_INT:

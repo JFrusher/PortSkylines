@@ -1,15 +1,18 @@
 extends SceneTree
-## Two game days of a seeded random port, with the sim's invariants checked
-## after every tick: cash moves only through the ledger and every closed day
-## adds up to its change in cash (loans, land and dredging included), yards stay
-## within capacity, every box is in exactly one place, busy yard machines match
-## the vehicles they serve, every vehicle drives on road, and no two vehicles
-## ever share a lane.
+## Two game days of a seeded random port on roads and areas, with the sim's
+## invariants checked as it runs: after every tick, cash moves only through the ledger
+## and every closed day adds up to its change in cash (loans, land and
+## dredging included); every vehicle second, stacks stay within their tiers, every box is in
+## exactly one place (a stack, a vehicle or a machine's spreader), every vehicle holds the cell it is on and no two share
+## one, and slots and machine jobs belong to vehicles that are there.
 ## godot --headless --script res://tests/test_soak.gd
 
 const RandomPort := preload("res://tests/random_port.gd")
 # Two game days and a bit, so midnight closes the books twice.
 const TICKS := SimClock.TICKS_PER_DAY * 2 + 1000
+## Ticks between checks of every box, cell and slot, which cost more than
+## the sim's own tick: one vehicle second, shorter than any state lasts.
+const DEEP_EVERY := 20
 
 var _failures := 0
 
@@ -22,13 +25,13 @@ func _initialize() -> void:
 	var congested_rules := RandomPort.rules()
 	congested_rules.lorry_interval_minutes = 600.0
 	var congested := _soak(congested_rules)
-	_expect(congested.yard.stacks.keys().any(func(t: Vector2i) -> bool: return congested.yard.count(t) == congested.yard.capacity(t)), true, "the congested port fills a yard tile to capacity")
+	_expect(congested.area_stacks.values().any(func(stacks: AreaStacks) -> bool: return stacks.room() <= 0), true, "the congested port fills a yard block")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
 
 func _soak(rules: Dictionary) -> PortSim:
-	var sim := PortSim.new(2, rules)
+	var sim := PortSim.new(2, rules, true)
 	RandomPort.calls(sim)
 	var log := RandomPort.command_log(11, TICKS, 400)
 	var next := 0
@@ -36,6 +39,9 @@ func _soak(rules: Dictionary) -> PortSim:
 		while next < log.size() and log[next].tick == sim.clock.ticks:
 			sim.apply(log[next].command)
 			next += 1
+		# The port is built for free, then plays for money.
+		if sim.clock.ticks == 0:
+			sim.creative = false
 		sim.tick()
 		_check(sim)
 	return sim
@@ -58,41 +64,41 @@ func _check(sim: PortSim) -> void:
 		for category: String in day.lines:
 			total += day.lines[category]
 		_expect(total, day.closed - day.opened, "day %d's ledger adds up to its change in cash" % day.day)
+	if sim.clock.ticks % DEEP_EVERY != 0:
+		return
 	# Every box is in exactly one place: a yard stack or a vehicle's load.
 	var seen := {}
-	for tile: Vector2i in sim.yard.stacks:
-		var count := sim.yard.count(tile)
-		_expect(count + sim.yard.reserved.get(tile, 0) <= sim.yard.capacity(tile), true, "yard %s holds %d + %d reserved %s" % [tile, count, sim.yard.reserved.get(tile, 0), at])
-		for id: int in sim.yard.stacks[tile]:
+	for area: int in sim.area_stacks:
+		var stacks: AreaStacks = sim.area_stacks[area]
+		var tiers: int = sim.rules.yard_gear[sim.areas.list[area].settings.gear].tiers
+		_expect(stacks.stacks.all(func(stack: Array) -> bool: return stack.size() <= tiers), true, "area %d's stacks stay within %d tiers %s" % [area, tiers, at])
+		for id: int in stacks.boxes():
 			_expect(seen.has(id), false, "box %d is in one place only %s" % [id, at])
-			seen[id] = tile
-	var handling := {}
-	var lanes := {}
+			seen[id] = area
+	# A machine fetching a vehicle's box has lifted it off its stack.
+	var lifting := {}
+	for job: Dictionary in sim.machine_jobs.values():
+		if job.position < 0:
+			lifting[job.vehicle] = true
+	var cells := {}
+	var ids := {}
 	for vehicle: Vehicle in sim.vehicles:
+		ids[vehicle.id] = true
 		if vehicle.loaded:
 			_expect(seen.has(vehicle.box), false, "box %d on vehicle %d is in one place only %s" % [vehicle.box, vehicle.id, at])
 			seen[vehicle.box] = vehicle.id
+		elif vehicle.id in lifting:
+			_expect(seen.has(vehicle.box), false, "box %d on the machine for %s %d is in one place only %s" % [vehicle.box, vehicle.kind, vehicle.id, at])
+			seen[vehicle.box] = vehicle.id
 		elif vehicle.box != 0:
-			_expect(seen.get(vehicle.box) == vehicle.target, true, "%s %d's box %d waits at its target %s" % [vehicle.kind, vehicle.id, vehicle.box, at])
-		if vehicle.state == "handling":
-			handling[vehicle.block] = handling.get(vehicle.block, 0) + 1
-		if vehicle.lane == Traffic.NO_LANE:
-			_expect(vehicle.state in ["under_crane", "handling", "no_route"], true, "vehicle %d is off the road only under a crane, in a bay or waiting to re-enter %s" % [vehicle.id, at])
-			continue
-		if vehicle.lane in lanes:
-			_expect(vehicle.lane, null, "vehicles %d and %d share a lane %s" % [vehicle.id, lanes[vehicle.lane], at])
-		lanes[vehicle.lane] = vehicle.id
-		if vehicle.ahead != Traffic.NO_LANE:
-			_expect(vehicle.lane.z, Traffic.JUNCTION, "vehicle %d holds a lane ahead only while in a junction %s" % [vehicle.id, at])
-			_expect(sim.traffic.holder(vehicle.ahead), vehicle.id, "vehicle %d holds its lane past the junction %s" % [vehicle.id, at])
-			_expect(lanes.has(vehicle.ahead), false, "vehicle %d's lane ahead is its own %s" % [vehicle.id, at])
-			lanes[vehicle.ahead] = vehicle.id
-		_expect(Vector2i(vehicle.lane.x, vehicle.lane.y), vehicle.path[int(vehicle.t)], "vehicle %d holds the lane of the tile it is on %s" % [vehicle.id, at])
-		_expect(sim.traffic.holder(vehicle.lane), vehicle.id, "traffic agrees vehicle %d holds its lane %s" % [vehicle.id, at])
-		# Road already driven may since have been bulldozed; the road ahead may not.
-		for cell: Vector2i in vehicle.path.slice(int(vehicle.t)):
-			if not PortMap.is_road(sim.map.tile(cell)):
-				_expect(sim.map.tile(cell), PortMap.Tile.ROAD, "vehicle path cell %s is road %s" % [cell, at])
-				return
+			_expect(seen.has(vehicle.box), true, "%s %d's box %d waits in a stack %s" % [vehicle.kind, vehicle.id, vehicle.box, at])
+		var cell := vehicle.path[int(vehicle.t)]
+		_expect(sim.lane_traffic.holder(cell), vehicle.id, "%s %d holds the cell it is on %s" % [vehicle.kind, vehicle.id, at])
+		_expect(cells.has(cell), false, "vehicles %d and %d share cell %s %s" % [vehicle.id, cells.get(cell, 0), cell, at])
+		cells[cell] = vehicle.id
 	_expect(seen.size(), sim.boxes.size(), "every box in the port is somewhere %s" % at)
-	_expect(handling, sim.yard.busy, "busy machines match the vehicles being handled %s" % at)
+	for area: int in sim.handovers.slots():
+		for holder: int in sim.handovers.slots()[area]:
+			_expect(holder == 0 or holder in ids, true, "area %d's slots hold vehicles that are there %s" % [area, at])
+	for machine: int in sim.machine_jobs:
+		_expect(sim.machine_jobs[machine].vehicle in ids, true, "machine %d works for a vehicle that is there %s" % [machine, at])

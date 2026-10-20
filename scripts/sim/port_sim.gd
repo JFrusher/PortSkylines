@@ -10,7 +10,6 @@ extends RefCounted
 
 ## Every tunable number, from data/base/*.json; see Content.
 var rules: Dictionary
-var map: PortMap
 var clock := SimClock.new()
 ## The only source of randomness in the sim, so a seed and a command log replay exactly.
 var rng := RandomNumberGenerator.new()
@@ -25,7 +24,8 @@ var delivered := 0
 var contracts: Contracts
 ## Loans and the bailout.
 var finance: Finance
-## Land tiles (rules.land.cells square) the port owns, as tile coordinates.
+## Land tiles (rules.land.metres square) the port owns, as tile coordinates;
+## roads and areas are built only on land it owns.
 var land := {}
 ## Depth of the channel from the sea to the berths, in metres.
 var channel_depth := 0.0
@@ -49,9 +49,30 @@ var ship_log: Array[Dictionary] = []
 var delivered_yesterday := 0
 var ships: Array[Ship] = []
 var cranes: Array[Crane] = []
+## Lorries and tractors on roads and areas, moved by the area flow.
 var vehicles: Array[Vehicle] = []
-var traffic := Traffic.new()
-var yard: Yard
+## The area flow's state: who holds each lane cell, each area's handover
+## slots and queues, the yard machines and what each is carrying, and the
+## boxes stacked in each yard block (area id -> AreaStacks).
+var lane_traffic: LaneTraffic
+var handovers: Handovers
+var machines: Machines
+var machine_jobs := {}
+var area_stacks := {}
+## The areas version yard machines were last fitted to; not saved, so a
+## loaded port refits once, which adds nothing.
+var _machines_fit_for := -1
+## The rules each area type takes, and what a new area starts with.
+const AREA_SETTINGS := {
+	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
+	"quay_apron": {"lines": []},
+}
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer"]
+## The roads drawn on the 4 m grid, and the lanes routed over them.
+var roads: RoadNet
+var lanes: LaneGraph
+## The areas dragged along those roads.
+var areas: Areas
 ## Every box in the port by id: {"kind": "import" or "export", "due": the
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
@@ -61,7 +82,7 @@ var yard: Yard
 var boxes := {}
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
-## Lorries that gave up on a traffic jam and left; see _unstick.
+## Lorries that gave up on a traffic jam and left; see AreaFlow.
 var gave_up := 0
 ## Gate-in to gate-out minutes of the latest lorries, newest last.
 var turn_times: Array[float] = []
@@ -72,21 +93,16 @@ var storage := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
-## Derived, not saved: per vehicle id, [its path, the steps of that path on a gate].
-var _gate_steps_of := {}
-## Derived, not saved: gate queues as counted on tick _queues_tick.
-var _queues := {}
-var _queues_tick := -1
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
 var _next_vehicle := 1
 var _next_box := 1
 var _delivered_at_midnight := 0
-## Ships that have left, and the map version and departures when anchored
-## ships last looked for a berth. A berth frees only when one of these
-## changes, so until then looking again would find nothing; a new arrival
-## resets it to look once.
+## Ships that have left, and the departures and road and area versions when
+## anchored ships last looked for a berth. A berth frees only when one of
+## these changes, so until then looking again would find nothing; a new
+## arrival resets it to look once.
 var _departures := 0
 var _berths_seen := Vector2i(-1, -1)
 
@@ -94,8 +110,13 @@ var _berths_seen := Vector2i(-1, -1)
 func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false) -> void:
 	rules = game_rules
 	creative = creative_mode
-	map = PortMap.new(Vector2i(rules.map.width, rules.map.height), rules.map.sea_width)
-	yard = Yard.new(map, rules)
+	roads = RoadNet.new(rules.road_types)
+	lanes = LaneGraph.new(roads)
+	areas = Areas.new(rules.area_types, roads, rules.site)
+	lanes.areas = areas
+	lane_traffic = LaneTraffic.new(lanes)
+	handovers = Handovers.new(areas)
+	machines = Machines.new(rules.yard_gear)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
@@ -107,11 +128,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 			land[Vector2i(x, y)] = true
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
-	_event("Run a road from the highway to the coast through a gate, then build a quay, cranes, tractors and a yard")
-
-
-func cost(kind: int) -> int:
-	return rules.build_cost[PortMap.Tile.keys()[kind].to_lower()]
+	_event("Draw a road from the highway to the coast, then drag out a quay apron, a gate and a yard block along it")
 
 
 class Ship:
@@ -123,10 +140,10 @@ class Ship:
 	var line: String
 	## The calendar minute its berth window closes; sailing later is late.
 	var due: float
-	## The quay tiles it lies along, in order; empty while anchored.
-	var cells: Array[Vector2i]
-	## The step from those quay tiles to the water the ship is in.
-	var side: Vector2i
+	## The quay apron it lies along (0 while anchored), and the cell along the
+	## apron its length starts at.
+	var apron := 0
+	var from := 0
 	## Import boxes still on board, and exports it still has room for.
 	var boxes: int
 	var exports: int
@@ -148,38 +165,40 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "cells": cells.duplicate(), "side": side, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
-		ship.cells.assign(d.cells)
-		ship.side = d.side
 		ship.state = d.state
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
 		ship.moves = d.moves
 		ship.berthed = d.berthed
+		ship.apron = d.apron
+		ship.from = d.from
 		return ship
 
 
-## A ship-to-shore crane on a quay tile. It works any ship lying along its
-## tile that its outreach can reach across, one box per move, to or from the
-## tractor beneath it.
+## A ship-to-shore crane on a quay apron's rails. It works the ship lying
+## along its place, one box per move, to or from the tractor beneath it.
 class Crane:
-	var cell: Vector2i
+	## The quay apron it stands on, and how many cells along it.
+	var apron := 0
+	var along := 0
 	## Calendar minutes into the current move.
 	var timer := 0.0
 	## The tractor sent to it (a vehicle id), or 0.
 	var tractor := 0
 
-	func _init(at: Vector2i) -> void:
-		cell = at
+	func _init(on: int, at: int) -> void:
+		apron = on
+		along = at
 
 	func to_dict() -> Dictionary:
-		return {"cell": cell, "timer": timer, "tractor": tractor}
+		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along}
 
 	static func from_dict(d: Dictionary) -> Crane:
-		var crane := Crane.new(d.cell)
+		var crane := Crane.new(d.apron, d.along)
 		crane.timer = d.timer
 		crane.tractor = d.tractor
 		return crane
@@ -188,7 +207,8 @@ class Crane:
 ## Everything the sim needs to carry on exactly where it was, in plain types.
 func to_dict() -> Dictionary:
 	return {
-		"map": map.to_dict(),
+		"roads": roads.to_dict(),
+		"areas": areas.to_dict(),
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
@@ -210,7 +230,6 @@ func to_dict() -> Dictionary:
 		"ships": ships.map(func(ship: Ship) -> Dictionary: return ship.to_dict()),
 		"cranes": cranes.map(func(crane: Crane) -> Dictionary: return crane.to_dict()),
 		"vehicles": vehicles.map(func(vehicle: Vehicle) -> Dictionary: return vehicle.to_dict()),
-		"yard": yard.to_dict(),
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
 		"gave_up": gave_up,
@@ -222,13 +241,27 @@ func to_dict() -> Dictionary:
 		"until_export": _until_export,
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
+		"lane_traffic": lane_traffic.to_dict(),
+		"handovers": handovers.to_dict(),
+		"machines": machines.to_dict(),
+		"machine_jobs": machine_jobs.duplicate(true),
+		"area_stacks": _area_stacks_dict(),
 	}
+
+
+func _area_stacks_dict() -> Dictionary:
+	var found := {}
+	for area: int in area_stacks:
+		found[area] = area_stacks[area].to_dict()
+	return found
 
 
 static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
-	sim.map = PortMap.from_dict(d.map)
-	sim.yard = Yard.from_dict(d.yard, sim.map, sim.rules)
+	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
+	sim.lanes = LaneGraph.new(sim.roads)
+	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
+	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
@@ -251,12 +284,6 @@ static func from_dict(d: Dictionary) -> PortSim:
 		sim.ships.append(Ship.from_dict(ship))
 	for crane: Dictionary in d.cranes:
 		sim.cranes.append(Crane.from_dict(crane))
-	for data: Dictionary in d.vehicles:
-		var vehicle := Vehicle.from_dict(data)
-		sim.vehicles.append(vehicle)
-		for held: Vector3i in [vehicle.lane, vehicle.ahead]:
-			if held != Traffic.NO_LANE:
-				sim.traffic.claim(held, vehicle.id)
 	sim.boxes = d.boxes.duplicate(true)
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
@@ -268,6 +295,14 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._until_export = d.until_export
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
+	for data: Dictionary in d.vehicles:
+		sim.vehicles.append(Vehicle.from_dict(data))
+	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes)
+	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
+	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
+	sim.machine_jobs = d.machine_jobs.duplicate(true)
+	for area: int in d.area_stacks:
+		sim.area_stacks[area] = AreaStacks.from_dict(d.area_stacks[area])
 	return sim
 
 
@@ -281,16 +316,10 @@ func state_hash() -> int:
 ## refused, or "".
 func apply(command: Dictionary) -> String:
 	match command.get("op"):
-		"build":
-			return build(command.kind, command.cell)
-		"bulldoze":
-			return bulldoze(command.cell)
-		"place_crane":
-			return place_crane(command.cell)
+		"place_sts":
+			return place_sts(command.apron, command.along)
 		"buy_tractors":
 			return buy_tractors(command.count)
-		"set_yard":
-			return set_yard(command.cell, command.settings)
 		"accept_offer":
 			return contracts.accept(command.id)
 		"decline_offer":
@@ -304,64 +333,131 @@ func apply(command: Dictionary) -> String:
 			return buy_land(command.tile)
 		"dredge":
 			return dredge(command.metres)
+		"build_road":
+			return build_road(command.from, command.to, command.type)
+		"remove_road":
+			return remove_road(command.segment)
+		"build_area":
+			return build_area(command.type, command.segment, command.side, command.from, command.to)
+		"remove_area":
+			return remove_area(command.id)
+		"set_area":
+			return set_area(command.id, command.settings)
+		"set_terminal":
+			return areas.set_terminal(command.id, command.terminal)
 	return "Unknown command: %s" % command.get("op")
 
 
-func build_error(kind: int, cell: Vector2i) -> String:
-	var err := map.build_error(kind, cell)
-	if err == "" and not owns(cell):
+## Where the highway meets the site: the middle of its east edge. A road
+## with a lane on this cell connects the port to the outside world.
+func site_entry() -> Vector2i:
+	var size := Grid.size(rules.site)
+	return Vector2i(size.x - 1, size.y / 2)
+
+
+func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
+	var err := roads.add_error(from, to, type)
+	if err == "" and not RoadNet.line(from, to).all(owns):
 		err = "Buy this land first"
-	if err == "" and not _afford(_price(kind, cell)):
+	if err == "":
+		var built := {}
+		for id: int in areas.list:
+			for cell in areas.cells(id):
+				built[cell] = true
+		if roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return c in built):
+			err = "Something is already built here"
+	if err == "" and not _afford(road_price(from, to, type)):
 		err = "Not enough money"
 	return err
 
 
-func build(kind: int, cell: Vector2i) -> String:
-	var err := build_error(kind, cell)
+func build_road(from: Vector2i, to: Vector2i, type: String) -> String:
+	var err := build_road_error(from, to, type)
 	if err == "":
-		ledger.post("construction", -_price(kind, cell))
-		var settings_from := _joined_block(kind, cell)
-		if settings_from != PortMap.NONE:
-			yard.role[cell] = yard.role_of(settings_from)
-			yard.gear[cell] = yard.gear_of(settings_from)
-		map.place(kind, cell)
+		ledger.post("construction", -road_price(from, to, type))
+		roads.add(from, to, type)
 	return err
 
 
-## The tile's build cost, plus the per-tile gear cost of a yard block it joins.
-func _price(kind: int, cell: Vector2i) -> int:
-	var settings_from := _joined_block(kind, cell)
-	if settings_from == PortMap.NONE:
-		return cost(kind)
-	return cost(kind) + rules.yard_gear[yard.gear_of(settings_from)].cost_per_tile
+func road_price(from: Vector2i, to: Vector2i, type: String) -> int:
+	return RoadNet.length(from, to) * rules.road_types[type].cost_per_cell
 
 
-## The anchor of the yard block a new yard tile at `cell` joins, or NONE. The
-## tile takes that block's settings, whichever tile anchors it afterwards.
-func _joined_block(kind: int, cell: Vector2i) -> Vector2i:
-	if kind != PortMap.Tile.YARD:
-		return PortMap.NONE
-	var next := map.neighbor(cell, PortMap.Tile.YARD)
-	return PortMap.NONE if next == PortMap.NONE else yard.anchor(next)
-
-
-func crane_error(cell: Vector2i) -> String:
-	if map.tile(cell) != PortMap.Tile.QUAY:
-		return "Cranes stand on quay tiles"
-	if _crane_at(cell) or crane_orders.any(func(o: Dictionary) -> bool: return o.cell == cell):
-		return "There is a crane here already"
-	if not _afford(rules.sts_crane.cost):
-		return "Not enough money"
+func remove_road(segment: int) -> String:
+	if segment not in roads.segments:
+		return "No road there"
+	roads.remove(segment)
 	return ""
 
 
-## Orders an STS crane for the quay tile `cell`. It is paid now and stands
-## there after rules.sts_crane.lead_days.
-func place_crane(cell: Vector2i) -> String:
-	var err := crane_error(cell)
+func build_area_error(type: String, segment: int, side: int, from: int, to: int) -> String:
+	var err := areas.add_error(type, segment, side, from, to)
+	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
+		err = "Buy this land first"
+	if err == "" and not _afford(area_price(type, segment, side, from, to)):
+		err = "Not enough money"
+	return err
+
+
+func build_area(type: String, segment: int, side: int, from: int, to: int) -> String:
+	var err := build_area_error(type, segment, side, from, to)
+	if err == "":
+		ledger.post("construction", -area_price(type, segment, side, from, to))
+		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(type, {}).duplicate(true))
+	return err
+
+
+func area_price(type: String, segment: int, side: int, from: int, to: int) -> int:
+	return areas.cells_of(type, segment, side, from, to).size() * rules.area_types[type].cost_per_cell
+
+
+## shortcut: changing gear is free; machines are bought per area in M5 step 17.
+func set_area_error(id: int, settings: Dictionary) -> String:
+	if id not in areas.list:
+		return "No area there"
+	var type: String = areas.list[id].type
+	for key: String in settings:
+		if key not in AREA_SETTINGS.get(type, {}):
+			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
+	if settings.has("role") and settings.role not in AREA_ROLES:
+		return "Unknown yard role: %s" % settings.role
+	if settings.has("gear"):
+		if not rules.yard_gear.has(settings.gear):
+			return "Unknown yard gear: %s" % settings.gear
+		var locked := lock_error(settings.gear)
+		if locked:
+			return locked
+	if settings.has("lines"):
+		if not settings.lines is Array or not settings.lines.all(func(line: Variant) -> bool: return line is String and rules.lines.has(line)):
+			return "Line priority lists known shipping lines"
+	return ""
+
+
+## Sets some of area `id`'s rules: a yard block's role, gear and the lines it
+## favours; a quay apron's lines.
+func set_area(id: int, settings: Dictionary) -> String:
+	var err := set_area_error(id, settings)
+	if err == "":
+		areas.list[id].settings.merge(settings.duplicate(true), true)
+		areas.version += 1
+	return err
+
+
+func remove_area(id: int) -> String:
+	if id not in areas.list:
+		return "No area there"
+	AreaFlow.remove(self, id)
+	return ""
+
+
+## Orders an STS crane for apron `apron`, `along` cells along its rails.
+func place_sts(apron: int, along: int) -> String:
+	var err := AreaFlow.sts_error(self, apron, along)
+	if err == "" and not _afford(rules.sts_crane.cost):
+		err = "Not enough money"
 	if err == "":
 		ledger.post("equipment", -rules.sts_crane.cost)
-		crane_orders.append({"cell": cell, "due": clock.calendar_minutes() + rules.sts_crane.lead_days * SimClock.MINUTES_PER_DAY})
+		crane_orders.append({"apron": apron, "along": along, "due": clock.calendar_minutes() + rules.sts_crane.lead_days * SimClock.MINUTES_PER_DAY})
 		_deliver_cranes()
 	return err
 
@@ -373,18 +469,19 @@ func _deliver_cranes() -> void:
 		if order.due > now:
 			continue
 		crane_orders.erase(order)
-		if map.tile(order.cell) == PortMap.Tile.QUAY and not _crane_at(order.cell):
-			cranes.append(Crane.new(order.cell))
-			_event("A new STS crane is up at %s" % order.cell)
+		if order.apron in areas.list:
+			cranes.append(Crane.new(order.apron, order.along))
+			_event("A new STS crane is up on %s" % areas.terminals[areas.list[order.apron].terminal].name)
 		else:
 			ledger.post("equipment", rules.sts_crane.cost)
-			_event("A crane arrived with no quay at %s to stand on; it went back, refunded" % order.cell)
+			_event("A crane arrived with no quay apron to stand on; it went back, refunded")
 
 
-## The land tile holding map cell `cell`.
+## The land tile holding grid cell `cell`.
 func land_tile(cell: Vector2i) -> Vector2i:
-	# Floored, so a cell off the map's top or left edge is off the map's tiles too.
-	return Vector2i(floori(cell.x / float(rules.land.cells)), floori(cell.y / float(rules.land.cells)))
+	# Floored, so a cell off the site's top or left edge is off its tiles too.
+	var metres: float = rules.land.metres
+	return Vector2i(floori(cell.x * Grid.CELL / metres), floori(cell.y * Grid.CELL / metres))
 
 
 func owns(cell: Vector2i) -> bool:
@@ -440,9 +537,9 @@ func buy_land_error(tile: Vector2i) -> String:
 	var locked := lock_error("land")
 	if locked:
 		return locked
-	var tiles: Vector2i = (map.size + Vector2i.ONE * (rules.land.cells - 1)) / rules.land.cells
+	var tiles := Vector2i(ceili(rules.site.width / float(rules.land.metres)), ceili(rules.site.height / float(rules.land.metres)))
 	if tile.x < 0 or tile.y < 0 or tile.x >= tiles.x or tile.y >= tiles.y:
-		return "Off the map"
+		return "Off the site"
 	if land.has(tile):
 		return "The port owns this land already"
 	if not _afford(rules.land.price):
@@ -484,25 +581,6 @@ func buy_tractors(count: int) -> String:
 	return ""
 
 
-func set_yard_error(cell: Vector2i, settings: Dictionary) -> String:
-	var err := yard.settings_error(cell, settings)
-	if err == "" and settings.has("gear"):
-		err = lock_error(settings.gear)
-	if err == "" and settings.has("gear") and not _afford(yard.gear_cost(cell, settings.gear)):
-		err = "Not enough money"
-	return err
-
-
-## Sets the role ("import"/"export") and/or gear of the yard block at `cell`.
-func set_yard(cell: Vector2i, settings: Dictionary) -> String:
-	var err := set_yard_error(cell, settings)
-	if err == "":
-		if settings.has("gear"):
-			ledger.post("equipment", -yard.gear_cost(cell, settings.gear))
-		yard.apply_settings(cell, settings)
-	return err
-
-
 ## Whether the port can pay `amount` now: always, in creative mode.
 func _afford(amount: int) -> bool:
 	return creative or money >= amount
@@ -523,100 +601,6 @@ func move_price(box: Dictionary) -> int:
 	return roundi(price) + (rules.move_price.reefer_premium if box.reefer else 0)
 
 
-## Why `cell` can't be bulldozed, or "". Anything built can be, in use or
-## not, as in Cities: Skylines; bulldoze() deals with what was using it.
-func bulldoze_error(cell: Vector2i) -> String:
-	return "" if _crane_at(cell) else map.bulldoze_error(cell)
-
-
-## Clears `cell`: a crane first if one stands there, else the tile. Boxes
-## stacked there are lost; vehicles bound for it, standing on it or parked
-## behind it are scrapped with their loads; vehicles that would drive over
-## it find another way or are scrapped; a ship alongside sails at once.
-func bulldoze(cell: Vector2i) -> String:
-	var err := bulldoze_error(cell)
-	if err != "":
-		return err
-	var boxes_before := boxes.size()
-	var vehicles_before := vehicles.size()
-	var crane := _crane_at(cell)
-	if crane:
-		if crane.tractor != 0:
-			_scrap(_vehicle(crane.tractor))
-		cranes.erase(crane)
-	else:
-		for ship: Ship in ships.duplicate():
-			if cell in ship.cells:
-				_send_off(ship)
-		for vehicle: Vehicle in vehicles.duplicate():
-			if vehicle.target == cell or vehicle.home == cell or vehicle.path[int(vehicle.t)] == cell:
-				_scrap(vehicle)
-		for id: int in yard.stacks.get(cell, []):
-			boxes.erase(id)
-			_claimed.erase(id)
-		yard.stacks.erase(cell)
-		yard.reserved.erase(cell)
-		map.place(PortMap.Tile.LAND, cell)
-		yard.forget_tile(cell)
-		for vehicle: Vehicle in vehicles.duplicate():
-			if vehicle.state in ["drive", "gate", "no_route"] and cell in vehicle.path.slice(int(vehicle.t)):
-				_reroute(vehicle)
-	if boxes.size() < boxes_before or vehicles.size() < vehicles_before:
-		_event("Bulldozing scrapped %d vehicles and lost %d boxes" % [vehicles_before - vehicles.size(), boxes_before - boxes.size()])
-	return ""
-
-
-## A ship whose berth is bulldozed: alongside, it sails at once with what it
-## has; still coming in, it turns back to anchor to wait for another berth.
-func _send_off(ship: Ship) -> void:
-	match ship.state:
-		Ship.State.WORKING:
-			var working := _cranes_for(ship)
-			for crane in working:
-				if crane.tractor != 0:
-					_scrap(_vehicle(crane.tractor))
-			_sail(ship, working.size())
-			_event("A %s sailed early: its berth was bulldozed" % ship.kind)
-		Ship.State.ARRIVING:
-			ship.state = Ship.State.ANCHORED
-			ship.cells.clear()
-			ship.sail = 0.0
-			ship.prev_sail = 0.0
-
-
-## Takes `vehicle` off the map at once: its load is lost, and the yard space,
-## box, yard machine and crane it had booked are let go.
-func _scrap(vehicle: Vehicle) -> void:
-	if vehicle.state == "handling":
-		vehicle.timer = 0.0
-		_handled(vehicle)
-	var importing := vehicle.state == "under_crane" and vehicle.box == 0
-	if importing or (vehicle.loaded and boxes[vehicle.box].kind == ("import" if vehicle.kind == "tractor" else "export")):
-		yard.reserve(vehicle.target, -1)
-	if vehicle.loaded:
-		boxes.erase(vehicle.box)
-	elif vehicle.box != 0:
-		_claimed.erase(vehicle.box)
-	for crane in cranes:
-		if crane.tractor == vehicle.id:
-			crane.tractor = 0
-			crane.timer = 0.0
-	_leave(vehicle)
-
-
-## Sends `vehicle` a new way to where it is going after the road ahead of it
-## was bulldozed, or scraps it when there is none.
-func _reroute(vehicle: Vehicle) -> void:
-	var to := _destination(vehicle)
-	if _route(vehicle, vehicle.path[int(vehicle.t)], to).is_empty():
-		_scrap(vehicle)
-		return
-	traffic.release(vehicle.ahead, vehicle.id)
-	vehicle.ahead = Traffic.NO_LANE
-	# shortcut: a lorry rerouted while stopped at a gate skips the rest of its stop; rare, fine until gates get queues of their own.
-	_head_for(vehicle, to)
-
-
 func tick() -> void:
 	clock.tick()
 	if clock.ticks % SimClock.TICKS_PER_DAY == 0:
@@ -627,34 +611,36 @@ func tick() -> void:
 		_call(service)
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
-	var berths_now := Vector2i(map.version, _departures)
+	var berths_now := Vector2i(_departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
 		if ship.state == Ship.State.ANCHORED and berths_now == _berths_seen:
 			continue
 		_work(ship)
 	_berths_seen = berths_now
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_lorry <= 0.0 and _dispatch_import_lorry():
+	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_export <= 0.0 and _dispatch_export_lorry():
+	if _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
-	for vehicle: Vehicle in vehicles.duplicate():
-		if vehicle.kind == "lorry":
-			_drive_lorry(vehicle)
-		else:
-			_drive_tractor(vehicle)
+	AreaFlow.tick(self)
 
 
-## What the port costs to keep each day: tiles, cranes, tractors and yard machines.
+## What the port costs to keep each day: roads, areas, cranes, tractors,
+## yard machines and land.
 func daily_upkeep() -> int:
 	var total := 0
-	for name: String in rules.upkeep:
-		if name in rules.build_cost:
-			total += rules.upkeep[name] * map.cells_of(PortMap.Tile[name.to_upper()]).size()
+	# Roads and areas cost a fraction of a dollar a cell, so they are summed before rounding.
+	var cells := 0.0
+	for segment: int in roads.segments:
+		var road: Dictionary = roads.segments[segment]
+		cells += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+	for id: int in areas.list:
+		cells += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
+	total += roundi(cells)
 	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
-	for block_anchor in yard.anchors():
-		total += rules.yard_gear[yard.gear_of(block_anchor)].upkeep_per_machine * yard.machines(block_anchor)
+	for machine: Dictionary in machines.list.values():
+		total += rules.yard_gear[machine.gear].upkeep_per_machine
 	return total
 
 
@@ -663,9 +649,11 @@ func kpis() -> Dictionary:
 	var last: Dictionary = ship_log[-1] if not ship_log.is_empty() else {}
 	var capacity := 0
 	var held := 0
-	for tile in map.cells_of(PortMap.Tile.YARD):
-		capacity += yard.capacity(tile)
-		held += yard.count(tile)
+	for area: int in area_stacks:
+		if area in areas.list:
+			var stacks: AreaStacks = area_stacks[area]
+			capacity += stacks.stacks.size() * rules.yard_gear[areas.list[area].settings.gear].tiers
+			held += stacks.boxes().size()
 	return {
 		"berth_moves_per_hour": last.moves / last.hours if last else 0.0,
 		"crane_moves_per_hour": last.moves / last.hours / last.cranes if last else 0.0,
@@ -737,8 +725,8 @@ func _end_of_year() -> void:
 
 
 ## A service's ship arrives for its window. It berths at the first free
-## stretch of quay long enough with a road to the highway, or waits at
-## anchorage until one frees up. A ship no berth could ever take is missed.
+## stretch of a ready quay apron long enough, or waits at anchorage until one
+## frees up. A ship no apron could ever take is missed.
 func _call(service: Dictionary) -> void:
 	var spec: Dictionary = rules.ship_classes[service.kind]
 	var who := contracts.name_of(service.line)
@@ -746,7 +734,7 @@ func _call(service: Dictionary) -> void:
 	if channel_depth < spec.draft:
 		why = "it needs %.0f m of channel, the port has %.0f m" % [spec.draft, channel_depth]
 	elif not _could_berth(service.kind):
-		why = "no berth of %d quay tiles with a road to the highway" % spec.length
+		why = "no quay apron of %d m in a terminal with a gate and a road" % Grid.metres(AreaFlow.ship_cells(self, service.kind))
 	if why != "":
 		_event("%s's %s went elsewhere: %s" % [who, service.kind, why])
 		_event_if(contracts.missed(service.line))
@@ -757,42 +745,16 @@ func _call(service: Dictionary) -> void:
 	_event("%s's %s has arrived" % [who, service.kind])
 
 
-## Moves an anchored ship to a free stretch of berth; false if there is none yet.
-func _berth(ship: Ship) -> bool:
-	var length: int = rules.ship_classes[ship.kind].length
-	for berth: Dictionary in map.berths():
-		var cells: Array[Vector2i] = berth.cells
-		# Any free stretch of the run will do; a berth can grow at either end.
-		for start in range(cells.size() - length + 1):
-			var span := cells.slice(start, start + length)
-			if span.any(_ship_at) or _apron(span) == PortMap.NONE:
-				continue
-			ship.cells = span
-			ship.side = berth.side
-			ship.state = Ship.State.ARRIVING
-			return true
-	return false
-
-
-## Whether some berth is long enough for `kind`, busy or not.
+## Whether the channel is deep enough for `kind` and some apron long enough, busy or not.
 func _could_berth(kind: String) -> bool:
-	var spec: Dictionary = rules.ship_classes[kind]
-	if channel_depth < spec.draft:
-		return false
-	for berth: Dictionary in map.berths():
-		if berth.cells.size() >= spec.length and _apron(berth.cells) != PortMap.NONE:
-			return true
-	return false
+	return channel_depth >= rules.ship_classes[kind].draft and AreaFlow.could_berth(self, kind)
 
 
 ## Lines may offer a new service while the port has berths for it.
 func _offer_service() -> void:
 	var now := clock.calendar_minutes()
 	contracts.expire(now)
-	# A berth counts once lorries can reach it and a crane stands on it, so a
-	# first call never arrives before the port can work it.
-	var berths := map.berths().filter(func(b: Dictionary) -> bool: return _apron(b.cells) != PortMap.NONE and cranes.any(func(c: Crane) -> bool: return c.cell in b.cells)).size()
-	var offered := contracts.offer(rng, now, berths, func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind))
+	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind))
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
 
@@ -802,33 +764,11 @@ func _event_if(text: String) -> void:
 		_event(text)
 
 
-## The first quay tile in `cells` with a road route to the highway, or NONE.
-func _apron(cells: Array[Vector2i]) -> Vector2i:
-	for cell in cells:
-		if not map.route(map.entry, cell).is_empty():
-			return cell
-	return PortMap.NONE
-
-
-func _ship_at(quay: Vector2i) -> bool:
-	for ship in ships:
-		if quay in ship.cells:
-			return true
-	return false
-
-
-func _crane_at(cell: Vector2i) -> Crane:
-	for crane in cranes:
-		if crane.cell == cell:
-			return crane
-	return null
-
-
 func _work(ship: Ship) -> void:
 	ship.prev_sail = ship.sail
 	match ship.state:
 		Ship.State.ANCHORED:
-			_berth(ship)
+			AreaFlow.berth(self, ship)
 		Ship.State.ARRIVING:
 			ship.sail = minf(ship.sail + SimClock.TICK_SECONDS / rules.sail_seconds, 1.0)
 			if ship.sail == 1.0:
@@ -836,23 +776,7 @@ func _work(ship: Ship) -> void:
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind)
 		Ship.State.WORKING:
-			var working := _cranes_for(ship)
-			if working.is_empty():
-				_event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rules.ship_classes[ship.kind].outreach])
-				return
-			var move_minutes: float = 60.0 / (rules.sts_crane.rate * rules.crane_interference)
-			for crane in working:
-				if ship.boxes > 0:
-					_discharge(crane, ship, move_minutes)
-				else:
-					_load(crane, ship, move_minutes)
-			if ship.boxes == 0 and working.all(func(c: Crane) -> bool: return c.tractor == 0):
-				if ship.exports == 0:
-					_sail(ship, working.size())
-					_event("A %s is sailing, fully loaded" % ship.kind)
-				elif _export_for(map.access_road(working[0].cell)).is_empty():
-					_sail(ship, working.size())
-					_event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports])
+			AreaFlow.work(self, ship)
 		Ship.State.LEAVING:
 			ship.sail -= SimClock.TICK_SECONDS / rules.sail_seconds
 			if ship.sail <= 0.0:
@@ -876,52 +800,6 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, kpis().gate_turn_minutes, fees))
 
 
-## One crane's tick discharging: it needs a tractor sent under it, works its
-## move while the tractor comes, and lowers the box once the tractor is there.
-func _discharge(crane: Crane, ship: Ship, move_minutes: float) -> void:
-	if crane.tractor == 0 and not _send_tractor(crane):
-		return
-	crane.timer = minf(crane.timer + SimClock.CALENDAR_MINUTES_PER_TICK, move_minutes)
-	var tractor := _vehicle(crane.tractor)
-	if crane.timer < move_minutes or tractor.state != "under_crane":
-		return
-	crane.timer = 0.0
-	crane.tractor = 0
-	var id := _new_box("import", clock.calendar_minutes() + rules.import_dwell_minutes * _dwell_factor(), ship.line)
-	ship.boxes -= 1
-	ship.moves += 1
-	_moved(boxes[id])
-	tractor.box = id
-	tractor.loaded = true
-	_head_for(tractor, yard.entrance(tractor.target))
-	if ship.boxes == 0:
-		_release_idle_tractors(ship)
-
-
-## One crane's tick loading: it sends a tractor to fetch an export while the
-## ship has room for more than are already on their way, then lifts the box
-## aboard once the tractor is back beneath it.
-func _load(crane: Crane, ship: Ship, move_minutes: float) -> void:
-	if crane.tractor == 0:
-		var fetching := _cranes_for(ship).filter(func(c: Crane) -> bool: return c.tractor != 0).size()
-		if ship.exports > fetching:
-			_send_fetcher(crane)
-		return
-	var tractor := _vehicle(crane.tractor)
-	if tractor.state != "under_crane":
-		return
-	crane.timer += SimClock.CALENDAR_MINUTES_PER_TICK
-	if crane.timer < move_minutes:
-		return
-	crane.timer = 0.0
-	crane.tractor = 0
-	_moved(boxes[tractor.box])
-	boxes.erase(tractor.box)
-	ship.exports -= 1
-	ship.moves += 1
-	_leave(tractor)
-
-
 func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
@@ -930,20 +808,16 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	return id
 
 
-## Puts `box` into the yard at `tile` and starts its storage clock.
-func _stack(tile: Vector2i, box: int) -> void:
-	yard.add(tile, box)
-	boxes[box].in = clock.calendar_minutes()
-
-
 ## Boxes in the yard past their free days.
 func _storage_due() -> int:
 	var now := clock.calendar_minutes()
 	var count := 0
-	for tile: Vector2i in yard.stacks:
-		for id: int in yard.stacks[tile]:
-			if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
-				count += 1
+	var stacked: Array = []
+	for area: int in area_stacks:
+		stacked.append_array(area_stacks[area].boxes())
+	for id: int in stacked:
+		if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
+			count += 1
 	return count
 
 
@@ -952,526 +826,5 @@ func _dwell_factor() -> float:
 	return maxf(rules.storage.min_dwell_factor, 1.0 / (1.0 + storage.fee * rules.storage.dwell_per_dollar))
 
 
-## Sends a parked tractor under `crane`, off the road on the quay, with an
-## import yard tile reserved for the box it will take. False, with the
-## reason in the events, when that can't happen yet.
-func _send_tractor(crane: Crane) -> bool:
-	var home := _tractor_home(crane)
-	if home == PortMap.NONE:
-		return false
-	var tile := _yard_tile_for("import", home)
-	if tile == PortMap.NONE:
-		_event("A ship is waiting: no import yard space reachable from its quay")
-		return false
-	var path: Array[Vector2i] = [home]
-	var tractor := Vehicle.new(_next_vehicle, "tractor", path)
-	_next_vehicle += 1
-	tractor.state = "under_crane"
-	tractor.home = home
-	tractor.target = tile
-	yard.reserve(tile, 1)
-	vehicles.append(tractor)
-	crane.tractor = tractor.id
-	return true
-
-
-## Sends a parked tractor from behind `crane` to fetch the nearest export.
-func _send_fetcher(crane: Crane) -> void:
-	var home := _tractor_home(crane)
-	if home == PortMap.NONE:
-		return
-	var found := _export_for(home)
-	if found.is_empty():
-		return
-	var path := map.route(home, yard.entrance(found.tile))
-	var tractor := Vehicle.new(_next_vehicle, "tractor", path)
-	tractor.lane = Traffic.lane(map, path, 0)
-	if not traffic.claim(tractor.lane, tractor.id):
-		return
-	_next_vehicle += 1
-	tractor.home = home
-	tractor.target = found.tile
-	tractor.box = found.box
-	_claimed[found.box] = true
-	vehicles.append(tractor)
-	crane.tractor = tractor.id
-
-
-## The road behind `crane` if a tractor is free to park there, else NONE
-## with the reason in the events.
-func _tractor_home(crane: Crane) -> Vector2i:
-	if _tractors_out() >= tractors:
-		_event("A crane is waiting for a free tractor")
-		return PortMap.NONE
-	var home := map.access_road(crane.cell)
-	if home == PortMap.NONE:
-		_event("A crane has no road behind it for tractors")
-	return home
-
-
-## The nearest unclaimed export by road from `from`: {"box", "tile"}, or {}.
-func _export_for(from: Vector2i) -> Dictionary:
-	var best := {}
-	var best_length := 1 << 30
-	for block_anchor in yard.anchors():
-		if yard.role_of(block_anchor) != "export":
-			continue
-		var way_in := yard.entrance(block_anchor)
-		var path := map.route(from, way_in) if way_in != PortMap.NONE else ([] as Array[Vector2i])
-		if path.is_empty() or path.size() >= best_length:
-			continue
-		for tile in yard.block(block_anchor):
-			for id: int in yard.stacks.get(tile, []):
-				if id not in _claimed and boxes[id].kind == "export":
-					best = {"box": id, "tile": tile}
-					best_length = path.size()
-					break
-			if best_length == path.size():
-				break
-	return best
-
-
-## Tractors sent under `ship`'s cranes for imports that never came go back to park.
-func _release_idle_tractors(ship: Ship) -> void:
-	for crane in _cranes_for(ship):
-		var tractor := _vehicle(crane.tractor)
-		if tractor and tractor.state == "under_crane" and not tractor.loaded:
-			_scrap(tractor)
-
-
 func _tractors_out() -> int:
 	return vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor").size()
-
-
-func _vehicle(id: int) -> Vehicle:
-	for vehicle in vehicles:
-		if vehicle.id == id:
-			return vehicle
-	return null
-
-
-## The cranes along `ship` whose outreach reaches across it.
-func _cranes_for(ship: Ship) -> Array[Crane]:
-	var found: Array[Crane] = []
-	for crane in cranes:
-		if crane.cell in ship.cells and rules.sts_crane.outreach >= rules.ship_classes[ship.kind].outreach:
-			found.append(crane)
-	return found
-
-
-## The roomiest tile of the nearest yard block with `role` and room, by road
-## from `from`, or NONE.
-func _yard_tile_for(role: String, from: Vector2i) -> Vector2i:
-	# Nearest first, ties to the first block in map order, and only then look
-	# for room, which costs a scan of the block.
-	var anchors := yard.anchors()
-	var nearest: Array[Vector2i] = []  # (road length, index into anchors)
-	for i in anchors.size():
-		var way_in := yard.entrance(anchors[i]) if yard.role_of(anchors[i]) == role else PortMap.NONE
-		var length := map.distance(way_in, from) if way_in != PortMap.NONE else -1
-		if length >= 0:
-			nearest.append(Vector2i(length, i))
-	nearest.sort()
-	for candidate in nearest:
-		var tile := yard.roomiest(anchors[candidate.y])
-		if tile != PortMap.NONE:
-			return tile
-	return PortMap.NONE
-
-
-## Sends a lorry from the highway for an import box whose dwell is over.
-func _dispatch_import_lorry() -> bool:
-	var now := clock.calendar_minutes()
-	var gated := not map.cells_of(PortMap.Tile.GATE).is_empty()
-	var reachable := {}  # block entrance -> whether lorries can get there through a gate
-	for tile: Vector2i in yard.stacks:
-		var way_in := yard.entrance(tile)
-		if way_in not in reachable:
-			reachable[way_in] = way_in != PortMap.NONE and _through_a_gate(map.entry, way_in)
-		# A block lorries can't reach must not hold up the others.
-		if gated and not reachable[way_in]:
-			continue
-		for id: int in yard.stacks[tile]:
-			if id in _claimed or boxes[id].kind != "import" or boxes[id].due > now:
-				continue
-			var lorry := _new_lorry(way_in)
-			if lorry == null:
-				return false
-			lorry.box = id
-			lorry.target = tile
-			_claimed[id] = true
-			return true
-	return false
-
-
-## Sends a lorry from the highway with an export box for the nearest export
-## block with room.
-func _dispatch_export_lorry() -> bool:
-	var tile := _yard_tile_for("export", map.entry)
-	if tile == PortMap.NONE:
-		return false
-	var lorry := _new_lorry(yard.entrance(tile))
-	if lorry == null:
-		return false
-	# shortcut: an export is booked on no line until a ship loads it, so it shows no livery; give exports a line when lines book export cargo.
-	lorry.box = _new_box("export", 0.0, "")
-	lorry.loaded = true
-	lorry.target = tile
-	yard.reserve(tile, 1)
-	return true
-
-
-## A lorry at the highway heading for `to` through a gate, or null when
-## there is no such road or the highway's lane is taken this tick.
-func _new_lorry(to: Vector2i) -> Vehicle:
-	if map.cells_of(PortMap.Tile.GATE).is_empty():
-		_event("Lorries can't come in: build a gate on the road from the highway")
-		return null
-	var path := _route_via_gate(map.entry, to)
-	if path.is_empty():
-		return null
-	var lorry := Vehicle.new(_next_vehicle, "lorry", path)
-	lorry.lane = Traffic.lane(map, path, 0)
-	if not traffic.claim(lorry.lane, lorry.id):
-		return null
-	_next_vehicle += 1
-	vehicles.append(lorry)
-	return lorry
-
-
-## Import lorries drive to their box's block, wait for a machine to load it,
-## drive back to the highway and pay. Export lorries drive their box to its
-## block, are paid once a machine has stacked it, and drive back empty.
-func _drive_lorry(lorry: Vehicle) -> void:
-	match lorry.state:
-		"drive":
-			if not _advance(lorry, rules.lorry_speed):
-				_unstick(lorry)
-			elif lorry.box == 0:
-				_leave(lorry)
-			elif lorry.loaded and boxes[lorry.box].kind == "import":
-				boxes.erase(lorry.box)
-				_leave(lorry)
-				delivered += 1
-			else:
-				lorry.state = "yard"
-		"yard":
-			_start_handling(lorry)
-		"handling":
-			if not _handled(lorry):
-				return
-			if lorry.loaded:
-				yard.reserve(lorry.target, -1)
-				_stack(lorry.target, lorry.box)
-				lorry.box = 0
-				lorry.loaded = false
-				delivered += 1
-			else:
-				dwell_times.append(clock.calendar_minutes() - boxes[lorry.box].in)
-				if dwell_times.size() > 50:
-					dwell_times.pop_front()
-				yard.take(lorry.target, lorry.box)
-				_claimed.erase(lorry.box)
-				lorry.loaded = true
-			_head_for(lorry, map.entry)
-		"gate":
-			lorry.timer -= SimClock.CALENDAR_MINUTES_PER_TICK
-			if lorry.timer <= 0.0:
-				lorry.state = "drive"
-		"no_route":
-			_head_for(lorry, _destination(lorry))
-
-
-## The cheapest road route from `from` to `to` through a gate, counting each
-## lorry still to cross that gate the same way (a gate has a lane each way)
-## as rules.gate_minutes of driving, so lorries spread over parallel gates.
-## Empty when no gate connects them.
-func _route_via_gate(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
-	# A gate's route is at least as long as its road distance, and the queue
-	# only adds, so gates are tried from the shortest distance up and only
-	# searched while one could still win; ties go to the first gate in map
-	# order, exactly as trying every gate would.
-	var gates := map.cells_of(PortMap.Tile.GATE)
-	var bounds: Array[Vector2i] = []  # (shortest possible cost, gate index)
-	for i in gates.size():
-		var there := map.distance(from, gates[i])
-		var on := map.distance(to, gates[i]) if to != PortMap.NONE else -1
-		if there >= 0 and on >= 0:
-			bounds.append(Vector2i(there + on + 1, i))
-	bounds.sort()
-	var best: Array[Vector2i] = []
-	var best_cost := INF
-	var best_index := -1
-	var queues := {}
-	for bound in bounds:
-		if bound.x > best_cost or (bound.x == best_cost and bound.y > best_index):
-			break
-		var gate := gates[bound.y]
-		var there := map.route(from, gate)
-		var route := there + map.route(gate, to).slice(1)
-		if queues.is_empty():
-			queues = _gate_queues()
-		var queue: int = queues.get(Traffic.lane(map, route, there.size() - 1), 0)
-		var cost: float = route.size() + queue * rules.gate_minutes * rules.lorry_speed
-		if cost < best_cost or (cost == best_cost and bound.y < best_index):
-			best_cost = cost
-			best_index = bound.y
-			best = route
-	return best
-
-
-## The steps of `vehicle`'s path that are gates, found once per path: a path
-## is replaced, never edited, and a gate on it can't change without the
-## vehicle being rerouted or scrapped.
-func _gate_steps(vehicle: Vehicle) -> PackedInt32Array:
-	var cached: Array = _gate_steps_of.get(vehicle.id, [])
-	if not cached.is_empty() and is_same(cached[0], vehicle.path):
-		return cached[1]
-	var steps := PackedInt32Array()
-	for k in vehicle.path.size():
-		if map.tile(vehicle.path[k]) == PortMap.Tile.GATE:
-			steps.append(k)
-	_gate_steps_of[vehicle.id] = [vehicle.path, steps]
-	return steps
-
-
-## Whether some gate joins `from` and `to` by road, which is when
-## _route_via_gate finds a route, without finding it.
-func _through_a_gate(from: Vector2i, to: Vector2i) -> bool:
-	for gate in map.cells_of(PortMap.Tile.GATE):
-		if map.distance(from, gate) >= 0 and map.distance(to, gate) >= 0:
-			return true
-	return false
-
-
-## Lorries yet to cross each gate lane, by lane, as at the start of this
-## tick: one pass over the lorries a tick, shared by every route chosen in
-## it. A lorry crossing the same gate lane twice counts once.
-func _gate_queues() -> Dictionary:
-	if _queues_tick == clock.ticks:
-		return _queues
-	var counts := {"": 0}  # never empty, so callers can tell it has been made
-	for vehicle in vehicles:
-		if vehicle.kind != "lorry":
-			continue
-		var counted := {}
-		for k in _gate_steps(vehicle):
-			if k >= int(vehicle.t):
-				var lane := Traffic.lane(map, vehicle.path, k)
-				if lane not in counted:
-					counted[lane] = true
-					counts[lane] = counts.get(lane, 0) + 1
-	_queues = counts
-	_queues_tick = clock.ticks
-	return counts
-
-
-## Tractors carry imports from under a crane to a block, and fetch exports
-## from a block back to under a crane, waiting for a machine at the block.
-func _drive_tractor(tractor: Vehicle) -> void:
-	match tractor.state:
-		"drive":
-			if not _advance(tractor, rules.tractor.speed):
-				_unstick(tractor)
-			elif tractor.box == 0:
-				_leave(tractor)
-			elif tractor.loaded and boxes[tractor.box].kind == "export":
-				traffic.release(tractor.lane, tractor.id)
-				tractor.lane = Traffic.NO_LANE
-				tractor.state = "under_crane"
-			else:
-				tractor.state = "yard"
-		"yard":
-			_start_handling(tractor)
-		"handling":
-			if not _handled(tractor):
-				return
-			if tractor.loaded:
-				yard.reserve(tractor.target, -1)
-				_stack(tractor.target, tractor.box)
-				tractor.box = 0
-				tractor.loaded = false
-			else:
-				yard.take(tractor.target, tractor.box)
-				_claimed.erase(tractor.box)
-				tractor.loaded = true
-			_head_for(tractor, tractor.home)
-		"no_route":
-			_head_for(tractor, _destination(tractor))
-
-
-## Starts a machine of the vehicle's target block working for it, if one is
-## free. The vehicle pulls off the road into the block's bay, so the queue
-## behind it and traffic the other way can move.
-func _start_handling(vehicle: Vehicle) -> void:
-	var block_anchor := yard.anchor(vehicle.target)
-	if not yard.machine_free(block_anchor):
-		return
-	traffic.release(vehicle.lane, vehicle.id)
-	vehicle.lane = Traffic.NO_LANE
-	yard.busy[block_anchor] = yard.busy.get(block_anchor, 0) + 1
-	vehicle.block = block_anchor
-	vehicle.timer = yard.handling_minutes(vehicle.target)
-	vehicle.state = "handling"
-
-
-## Counts down the machine's work; true, with the machine freed, once done.
-func _handled(vehicle: Vehicle) -> bool:
-	vehicle.timer -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if vehicle.timer > 0.0:
-		return false
-	yard.busy[vehicle.block] -= 1
-	if yard.busy[vehicle.block] == 0:
-		yard.busy.erase(vehicle.block)
-	return true
-
-
-## Points `vehicle` along the road from where it stands to `to`'s access road.
-## With no such road, or its first lane taken, it waits in "no_route" and
-## tries again next tick.
-func _head_for(vehicle: Vehicle, to: Vector2i) -> void:
-	var path := _route(vehicle, vehicle.path[int(vehicle.t)], to)
-	if path.is_empty() or not _move_to_lane(vehicle, Traffic.lane(map, path, 0)):
-		vehicle.state = "no_route"
-		return
-	vehicle.path = path
-	vehicle.t = 0.0
-	vehicle.prev_t = 0.0
-	vehicle.waited = 0
-	vehicle.replanned = false
-	vehicle.state = "drive"
-
-
-## Where `vehicle` is heading: a lorry to the highway once it is done with
-## the yard, else to its block; a tractor to its block while it carries an
-## import or fetches an export, else home behind its crane.
-func _destination(vehicle: Vehicle) -> Vector2i:
-	if vehicle.kind == "lorry":
-		return map.entry if _outbound(vehicle) else yard.entrance(vehicle.target)
-	var to_yard: bool = vehicle.box != 0 and (not vehicle.loaded or boxes[vehicle.box].kind == "import")
-	return yard.entrance(vehicle.target) if to_yard else vehicle.home
-
-
-func _outbound(lorry: Vehicle) -> bool:
-	return lorry.box == 0 or (lorry.loaded and boxes[lorry.box].kind == "import")
-
-
-## The road route for `vehicle` from `from` to `to`, or empty. A lorry goes
-## through a gate on its way in, and again on its way out until it has.
-func _route(vehicle: Vehicle, from: Vector2i, to: Vector2i) -> Array[Vector2i]:
-	if to == PortMap.NONE:
-		return []
-	if vehicle.kind == "lorry" and (vehicle.gate_in < 0.0) != _outbound(vehicle):
-		return _route_via_gate(from, to)
-	return map.route(from, to)
-
-
-## Moves `vehicle` up to one tile along its path at `speed` tiles per vehicle
-## second, entering the next tile only once it holds that tile's lane.
-## Returns whether it is at the end of its path.
-func _advance(vehicle: Vehicle, speed: float) -> bool:
-	vehicle.prev_t = vehicle.t
-	if vehicle.at_end():
-		return true
-	var i := int(vehicle.t)
-	var target := minf(vehicle.t + speed * SimClock.TICK_SECONDS, i + 1.99)
-	if int(target) > i:
-		if not _enter(vehicle, i + 1):
-			vehicle.t = maxf(vehicle.t, minf(target, i + 0.95))
-			vehicle.waited += 1
-			return false
-		vehicle.waited = 0
-		if vehicle.kind == "lorry" and map.tile(vehicle.path[i + 1]) == PortMap.Tile.GATE:
-			vehicle.t = i + 1
-			_at_gate(vehicle)
-			return false
-	vehicle.t = minf(target, vehicle.path.size() - 1)
-	return vehicle.at_end()
-
-
-## A lorry entering a gate stops to be processed. Coming in it starts its
-## turn-time clock; going out it records the turn time.
-func _at_gate(lorry: Vehicle) -> void:
-	lorry.state = "gate"
-	lorry.timer = rules.gate_minutes
-	var now := clock.calendar_minutes()
-	if lorry.gate_in < 0.0:
-		lorry.gate_in = now
-		return
-	turn_times.append(now - lorry.gate_in)
-	year.turns += 1
-	year.turn_minutes += now - lorry.gate_in
-	if turn_times.size() > 50:
-		turn_times.pop_front()
-	lorry.gate_in = -1.0
-
-
-## The safety valve for jams: after give_up_seconds a vehicle tries a route
-## around the tile it is waiting for; after twice that, a lorry gives up and
-## leaves with whatever it carries, paying nothing. Tractors keep waiting.
-func _unstick(vehicle: Vehicle) -> void:
-	var limit := roundi(rules.give_up_seconds / SimClock.TICK_SECONDS)
-	if vehicle.waited >= limit and not vehicle.replanned:
-		vehicle.replanned = true
-		var i := int(vehicle.t)
-		var around := map.route_avoiding(vehicle.path[i], vehicle.path[-1], vehicle.path[i + 1])
-		if not around.is_empty():
-			vehicle.path = around
-			vehicle.t = 0.0
-			vehicle.prev_t = 0.0
-	# shortcut: a lorry's way round ignores gates, so it may skip one; rare, revisit with cost routing in M6.
-	elif vehicle.waited >= limit * 2 and vehicle.kind == "lorry":
-		if vehicle.loaded:
-			if boxes[vehicle.box].kind == "export":
-				yard.reserve(vehicle.target, -1)
-			boxes.erase(vehicle.box)
-		elif vehicle.box != 0:
-			_claimed.erase(vehicle.box)
-		_leave(vehicle)
-		gave_up += 1
-		_event("A lorry gave up on a traffic jam and left")
-
-
-## Moves `vehicle` into the lane of `path[i]`. Don't block the box: it enters
-## a junction only if it can also take the lane just past it, so it never
-## stands in a junction blocking crossing traffic.
-func _enter(vehicle: Vehicle, i: int) -> bool:
-	var next := Traffic.lane(map, vehicle.path, i)
-	if next == vehicle.ahead:
-		vehicle.ahead = Traffic.NO_LANE
-		return _move_to_lane(vehicle, next)
-	if vehicle.ahead != Traffic.NO_LANE:
-		# The map changed under it, so the lane it booked past the junction
-		# is not its next lane any more: let that booking go.
-		traffic.release(vehicle.ahead, vehicle.id)
-		vehicle.ahead = Traffic.NO_LANE
-	if next.z != Traffic.JUNCTION or i + 1 >= vehicle.path.size():
-		# shortcut: a path that ends in a junction stops in it; fine while yard entrances and homes rarely sit on junctions.
-		return _move_to_lane(vehicle, next)
-	var after := Traffic.lane(map, vehicle.path, i + 1)
-	if not traffic.claim(after, vehicle.id):
-		return false
-	if not _move_to_lane(vehicle, next):
-		traffic.release(after, vehicle.id)
-		return false
-	vehicle.ahead = after
-	return true
-
-
-## Takes `lane` for `vehicle` and lets go of the one it held. At a junction
-## both can be the same shared lane, which must then stay held.
-func _move_to_lane(vehicle: Vehicle, lane: Vector3i) -> bool:
-	if lane == vehicle.lane:
-		return true
-	if not traffic.claim(lane, vehicle.id):
-		return false
-	traffic.release(vehicle.lane, vehicle.id)
-	vehicle.lane = lane
-	return true
-
-
-func _leave(vehicle: Vehicle) -> void:
-	traffic.release(vehicle.lane, vehicle.id)
-	traffic.release(vehicle.ahead, vehicle.id)
-	vehicles.erase(vehicle)
-	_gate_steps_of.erase(vehicle.id)

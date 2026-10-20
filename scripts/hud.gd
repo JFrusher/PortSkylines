@@ -7,7 +7,7 @@ signal save_pressed
 signal load_pressed
 ## A command for PortSim.apply, such as accepting an offer.
 signal command_issued(command: Dictionary)
-## shortcut: two buttons stand in for the new-game screen until M11 builds it.
+## shortcut: two buttons stand in for the new-game screen until M12 builds it.
 signal new_game_pressed(creative: bool)
 
 const BULLDOZE := -1
@@ -17,6 +17,12 @@ const IMPORT_YARD := -4
 const RTG := -5
 const BUY_LAND := -6
 const INSPECT := -7
+## Draws a road of road_type on the 4 m grid by dragging.
+const DRAW_ROAD := -8
+## Drags an area of area_type out along a road's edge.
+const DRAW_AREA := -9
+## The build menu row each area type sits in.
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-9.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
@@ -27,7 +33,11 @@ const SETTINGS_PATH := "user://settings.cfg"
 const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 var sim: PortSim
-var tool: int = PortMap.Tile.ROAD
+var tool := DRAW_ROAD
+## The road type DRAW_ROAD draws, a key of rules.road_types.
+var road_type := ""
+## The area type DRAW_AREA drags out, a key of rules.area_types.
+var area_type := ""
 var speed := 1
 
 var _money := Label.new()
@@ -51,6 +61,9 @@ var _category_buttons: Array[Button] = []
 var _inspected: Variant
 var _inspect_name := Label.new()
 var _inspect_lines := Label.new()
+## Buttons for the inspected area's terminal, and what they were last built for.
+var _inspect_actions := HBoxContainer.new()
+var _actions_drawn := []
 var _guide_step := Label.new()
 var _guide_text := Label.new()
 
@@ -85,6 +98,7 @@ func _ready() -> void:
 	_inspect_name.theme_type_variation = "ClockLabel"
 	inspect_panel.add_child(_inspect_name)
 	inspect_panel.add_child(_inspect_lines)
+	inspect_panel.add_child(_inspect_actions)
 	_panel_of(inspect_panel).visible = false
 
 	# Top right: the clock and speeds, then the panels and the game menu.
@@ -146,18 +160,25 @@ func _ready() -> void:
 		open.theme_type_variation = "CategoryButton"
 		open.custom_minimum_size = Vector2(84, 48)
 		_category_buttons.append(open)
-	for name: String in sim.rules.build_cost:
-		var kind: int = PortMap.Tile[name.to_upper()]
-		_item(_button(rows[{"road": "Roads", "quay": "Quay", "yard": "Yard", "gate": "Gate"}[name]], "%s\n$%d" % [name.capitalize(), sim.cost(kind)], tools, kind == tool, func() -> void: tool = kind))
+	for key: String in sim.rules.road_types:
+		var road: Dictionary = sim.rules.road_types[key]
+		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
+			tool = DRAW_ROAD
+			road_type = key))
+	for key: String in sim.rules.area_types:
+		var area: Dictionary = sim.rules.area_types[key]
+		_item(_button(rows[AREA_ROWS[key]], "%s\n$%d per 4 m cell" % [area.name, area.cost_per_cell], tools, false, func() -> void:
+			tool = DRAW_AREA
+			area_type = key))
 	_gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n$%d" % sim.rules.channel.cost_per_metre, {"op": "dredge", "metres": 1})))
 	_item(_button(rows.Cranes, "STS crane\n" + _dollars(sim.rules.sts_crane.cost), tools, false, func() -> void: tool = CRANE))
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2}))
 	_item(_button(rows.Yard, "Import\nblock", tools, false, func() -> void: tool = IMPORT_YARD))
 	_item(_button(rows.Yard, "Export\nblock", tools, false, func() -> void: tool = EXPORT_YARD))
-	_gate("rtg", _item(_button(rows.Yard, "RTG\n$%d a tile" % sim.rules.yard_gear.rtg.cost_per_tile, tools, false, func() -> void: tool = RTG)))
+	_gate("rtg", _item(_button(rows.Yard, "RTG\nfor a block", tools, false, func() -> void: tool = RTG)))
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + _dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND))
-	_item(_button(rows.Bulldoze, "Bulldoze\ntile", tools, false, func() -> void: tool = BULLDOZE))
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE))
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT))
 	_category_buttons[0].button_pressed = true
 
@@ -174,7 +195,7 @@ func _set_ui_scale(factor: float, button: Button) -> void:
 	button.text = "UI %d%%" % roundi(factor * 100)
 
 
-## Opens the inspect panel on whatever is at `cell`.
+## Opens the inspect panel on whatever is at grid cell `cell`.
 func inspect(cell: Vector2i) -> void:
 	_inspected = Inspect.pick(sim, cell)
 	_panel_of(_inspect_name).visible = true
@@ -190,7 +211,7 @@ func _process(dt: float) -> void:
 	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
 	var anchored := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state == PortSim.Ship.State.ANCHORED).size()
 	_money.text = _dollars(sim.money)
-	_readout.text = "Boxes %d   Ships %d (%d at anchor)   Tractors %d/%d   Lorries %d   Channel %.0f m" % [sim.delivered, sim.ships.size() - anchored, anchored, sim.vehicles.size() - lorries, sim.tractors, lorries, sim.channel_depth]
+	_readout.text = "Boxes %d   Ships %d (%d at anchor)   Tractors %d/%d   Lorries %d   Channel %.0f m" % [sim.delivered, sim.ships.size() - anchored, anchored, sim._tractors_out(), sim.tractors, lorries, sim.channel_depth]
 	var k := sim.kpis()
 	_kpis.text = "Berth %.0f moves/h   Crane %.0f moves/h   Gate turn %.0f min\nYard %d%% full   %d boxes/day   Upkeep $%d/day" % [
 		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]
@@ -211,6 +232,8 @@ func _process(dt: float) -> void:
 			_inspect_name.text = lines[0]
 			_inspect_lines.text = "\n".join(lines.slice(1))
 			_inspect_lines.visible = lines.size() > 1
+		if _actions_drawn != [sim, sim.areas.version, _inspected]:
+			_draw_inspect_actions()
 	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
 		_draw_contracts()
 	_flash_left -= dt
@@ -317,6 +340,22 @@ func _draw_contracts() -> void:
 	_contracts.add_child(_label("Services" if not contracts.services.is_empty() else "No services yet"))
 	for service in contracts.services:
 		_contracts.add_child(_label("    " + _service_text(service)))
+
+
+## For an inspected area: join each other terminal, or split off into a new one.
+func _draw_inspect_actions() -> void:
+	_actions_drawn = [sim, sim.areas.version, _inspected]
+	for child in _inspect_actions.get_children():
+		child.queue_free()
+	if not (_inspected is Dictionary and _inspected.area in sim.areas.list):
+		return
+	var id: int = _inspected.area
+	var own: int = sim.areas.list[id].terminal
+	for terminal: int in sim.areas.terminals:
+		if terminal != own:
+			_action_button(_inspect_actions, "Join %s" % sim.areas.terminals[terminal].name, {"op": "set_terminal", "id": id, "terminal": terminal})
+	if sim.areas.list.values().filter(func(a: Dictionary) -> bool: return a.terminal == own).size() > 1:
+		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
 
 
 func _service_text(service: Dictionary) -> String:

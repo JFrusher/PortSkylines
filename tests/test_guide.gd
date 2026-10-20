@@ -1,12 +1,9 @@
 extends SceneTree
-## The guided start, played by commands on the base rules: each command group
-## completes the next step, in order, and the guide ends once a ship is worked.
+## The guided start, played by commands on the base rules from the start
+## money: each command group completes the next step, in order, and the guide
+## ends once a ship is worked.
 ## godot --headless --script res://tests/test_guide.gd
 
-const ROAD := PortMap.Tile.ROAD
-const GATE := PortMap.Tile.GATE
-const QUAY := PortMap.Tile.QUAY
-const YARD := PortMap.Tile.YARD
 ## Calendar days the test waits at most for an offer and then for a ship.
 const DAYS := 7
 
@@ -15,21 +12,28 @@ var _failures := 0
 
 func _initialize() -> void:
 	var sim := PortSim.new(1)
-	var row := sim.map.entry.y
-	var coast := sim.map.sea_width
+	var entry := sim.site_entry()
+	# The coast road runs south along x = 85 past the east road, which meets
+	# it in a T, so both its ends are dead ends to turn at. An apron on its
+	# west side reaches the water, and the yard block sits behind it on the
+	# east side; the gate is on the east road's inbound lane near the highway.
+	# Segments: 1 the coast road north of the T, 2 south of it, 3 the east road.
 	var steps: Array[Array] = [
-		_line(ROAD, Vector2i(coast + 1, row), Vector2i(sim.map.entry.x - 1, row)),
-		[{"op": "bulldoze", "cell": Vector2i(sim.map.entry.x - 3, row)}, {"op": "build", "kind": GATE, "cell": Vector2i(sim.map.entry.x - 3, row)}],
-		_line(QUAY, Vector2i(coast, row - 4), Vector2i(coast, row + 4)) + _line(ROAD, Vector2i(coast + 1, row - 4), Vector2i(coast + 1, row - 1)) + _line(ROAD, Vector2i(coast + 1, row + 1), Vector2i(coast + 1, row + 4)),
-		[{"op": "place_crane", "cell": Vector2i(coast, row)}],
-		[{"op": "buy_tractors", "count": 2}],
-		_line(YARD, Vector2i(coast + 2, row - 3), Vector2i(coast + 4, row - 2)),
+		[{"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, 340), "type": "terminal_1_1"},
+			{"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"}],
+		[{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 30, "to": 89}],
+		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 420, "to": 434}],
+		[{"op": "set_terminal", "id": 2, "terminal": 1}],
+		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 50, "to": 79}, {"op": "set_terminal", "id": 3, "terminal": 1}],
+		[{"op": "place_sts", "apron": 1, "along": 30}],
+		[{"op": "buy_tractors", "count": 4}],
 	]
 	_expect(Guide.current(sim), 0, "a new game starts at the first step")
 	for i in steps.size():
 		for command: Dictionary in steps[i]:
 			_expect(sim.apply(command), "", "step %d: %s" % [i, command])
 		_expect(Guide.current(sim), i + 1, "step %d's commands finish it" % i)
+	_expect(sim.money > sim.rules.start_money / 2, true, "the first chain costs less than half the start money ($%d left)" % sim.money)
 	var crane_up := -1.0
 	var accepted := _run_until(sim, func() -> bool:
 		if crane_up < 0.0 and not sim.cranes.is_empty():
@@ -43,19 +47,13 @@ func _initialize() -> void:
 	_expect(Guide.current(sim), steps.size() + 1, "accepting the offers finishes their step")
 	_expect(_run_until(sim, func() -> bool: return not sim.ship_log.is_empty()), true, "the first ship is worked")
 	_expect(Guide.current(sim), Guide.steps(sim).size(), "the guide ends with the first ship worked")
-	_expect(sim.apply({"op": "bulldoze", "cell": Vector2i(sim.map.entry.x - 3, row)}), "", "bulldoze the gate")
+	var call: Dictionary = sim.ship_log[0]
+	_expect(call.hours < sim.rules.ship_classes.feeder.window_hours, true, "the first feeder is worked within its window (%.1f h)" % call.hours)
+	_expect(sim.money > 0, true, "the port is still in the black after its first ship ($%d)" % sim.money)
+	_expect(sim.apply({"op": "remove_area", "id": 2}), "", "bulldoze the gate")
 	_expect(Guide.current(sim), Guide.steps(sim).size(), "a finished guide stays finished")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
-
-
-## Build commands for every cell of the rectangle from `a` to `b`.
-func _line(kind: int, a: Vector2i, b: Vector2i) -> Array[Dictionary]:
-	var commands: Array[Dictionary] = []
-	for y in range(a.y, b.y + 1):
-		for x in range(a.x, b.x + 1):
-			commands.append({"op": "build", "kind": kind, "cell": Vector2i(x, y)})
-	return commands
 
 
 ## Ticks `sim` until `done` returns true, for at most DAYS days.

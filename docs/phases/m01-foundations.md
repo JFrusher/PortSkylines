@@ -103,7 +103,7 @@
 
     Check: a screenshot matches the previous build.
 24. **Draw yard stacks as one MultiMesh per chunk,** with height from `stacked[cell]`. Check: a screenshot with a full yard looks right.
-25. **Mark vehicles and ships.** They stay as nodes for now (fewer than 100). Add a `shortcut:` comment that M5 moves them to MultiMesh.
+25. **Mark vehicles and ships.** They stay as nodes for now (fewer than 100). Add a `shortcut:` comment that M6 moves them to MultiMesh.
 
 ### Benchmarks and soak
 26. **Add `bench/bench.gd`.**
