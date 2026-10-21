@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=15 format=3]
+[gd_resource type="Theme" load_steps=21 format=3]
 
 [ext_resource type="FontFile" path="res://ui/fonts/Inter.ttf" id="1"]
 
@@ -167,6 +167,84 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="group_box"]
+content_margin_left = 6.0
+content_margin_top = 4.0
+content_margin_right = 6.0
+content_margin_bottom = 4.0
+bg_color = Color(0.137, 0.184, 0.251, 0.4)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.08)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="stat_card"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.094, 0.125, 0.173, 0.78)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.1)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="divider"]
+content_margin_left = 0.0
+content_margin_top = 1.0
+content_margin_right = 0.0
+content_margin_bottom = 1.0
+bg_color = Color(1, 1, 1, 0.1)
+
+[sub_resource type="StyleBoxFlat" id="warning_card"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.95, 0.6, 0.2, 0.14)
+border_width_left = 3
+border_color = Color(0.95, 0.6, 0.2, 0.7)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="danger_card"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.95, 0.3, 0.3, 0.14)
+border_width_left = 3
+border_color = Color(0.95, 0.3, 0.3, 0.7)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
+[sub_resource type="StyleBoxFlat" id="good_card"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.3, 0.85, 0.5, 0.12)
+border_width_left = 3
+border_color = Color(0.3, 0.85, 0.5, 0.7)
+corner_radius_top_left = 10
+corner_radius_top_right = 10
+corner_radius_bottom_right = 10
+corner_radius_bottom_left = 10
+
 [resource]
 default_font = SubResource("regular")
 default_font_size = 15
@@ -215,3 +293,29 @@ PanelBody/base_type = &"MarginContainer"
 PanelBody/constants/margin_left = 16
 PanelBody/constants/margin_top = 12
 PanelBody/constants/margin_right = 16
+ToolbarGroup/base_type = &"PanelContainer"
+ToolbarGroup/styles/panel = SubResource("group_box")
+ToolbarGroup/constants/separation = 4
+CategoryHeader/base_type = &"Label"
+CategoryHeader/fonts/font = SubResource("semibold")
+CategoryHeader/font_sizes/font_size = 13
+CategoryHeader/colors/font_color = Color(0.58, 0.639, 0.722, 1)
+StatValue/base_type = &"Label"
+StatValue/fonts/font = SubResource("semibold")
+StatValue/font_sizes/font_size = 22
+StatLabel/base_type = &"Label"
+StatLabel/font_sizes/font_size = 12
+StatLabel/colors/font_color = Color(0.58, 0.639, 0.722, 1)
+StatCard/base_type = &"PanelContainer"
+StatCard/styles/panel = SubResource("stat_card")
+WarnCard/base_type = &"PanelContainer"
+WarnCard/styles/panel = SubResource("warning_card")
+DangerCard/base_type = &"PanelContainer"
+DangerCard/styles/panel = SubResource("danger_card")
+GoodCard/base_type = &"PanelContainer"
+GoodCard/styles/panel = SubResource("good_card")
+Divider/base_type = &"Panel"
+Divider/styles/panel = SubResource("divider")
+KeyHint/base_type = &"Label"
+KeyHint/font_sizes/font_size = 11
+KeyHint/colors/font_color = Color(0.58, 0.639, 0.722, 0.7)
