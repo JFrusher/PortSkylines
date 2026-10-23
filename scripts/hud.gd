@@ -1,7 +1,9 @@
 class_name Hud
 extends CanvasLayer
-## Toolbar, speed buttons and the money/status readout. Reports the player's
+## Toolbar, speed buttons and the KPI/figure dashboard. Reports the player's
 ## choices through `tool` and `speed`; never changes the sim.
+
+const HudDetails := preload("res://scripts/hud_details.gd")
 
 signal save_pressed
 signal load_pressed
@@ -24,13 +26,14 @@ const DRAW_AREA := -9
 ## The build menu row each area type sits in.
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
-## The build menu's categories, in key order 1-9.
+## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
 const FLASH_SECONDS := 2.5
 ## UI scales the settings button steps through, and where the choice is kept.
 const UI_SCALES: Array[float] = [1.0, 1.25, 1.5]
 const SETTINGS_PATH := "user://settings.cfg"
 const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+const REFRESH_SECONDS := 0.25
 
 var sim: PortSim
 var tool := DRAW_ROAD
@@ -41,10 +44,9 @@ var area_type := ""
 var speed := 1
 
 var _money := Label.new()
-var _readout := Label.new()
-var _kpis := Label.new()
 var _milestone := Label.new()
 var _milestone_bar := ProgressBar.new()
+var _kpi_cards: Array[Dictionary] = []
 var _clock := Label.new()
 var _message := Label.new()
 var _events: PanelContainer
@@ -56,7 +58,9 @@ var _contracts := VBoxContainer.new()
 ## The contracts version, sim and storage terms the contracts panel was last built for.
 var _contracts_drawn := [-1, null, {}]
 var _flash_left := 0.0
+var _refresh_left := 0.0
 var _category_buttons: Array[Button] = []
+var _figure_buttons := {}
 ## What the inspect panel shows, from Inspect.pick.
 var _inspected: Variant
 var _inspect_name := Label.new()
@@ -67,13 +71,22 @@ var _actions_drawn := []
 var _guide_step := Label.new()
 var _guide_text := Label.new()
 
+## The details drawer panel and its internal layout.
+var _drawer_panel: PanelContainer
+var _drawer_title_label: Label
+var _drawer_cards_container: HBoxContainer
+var _drawer_rows_container: VBoxContainer
+var _drawer_extra_container: VBoxContainer
+var _active_drawer_group := ""
+
 
 func _ready() -> void:
-	# Left column: city stats, then events and the panels the top-right buttons open.
+	# Left column: city stats, headline KPI cards, detail drawer, and panels.
 	var left := _corner(Control.PRESET_TOP_LEFT)
 	var stats := _panel(left)
 	_money.theme_type_variation = "MoneyLabel"
 	stats.add_child(_money)
+
 	var progress := HBoxContainer.new()
 	stats.add_child(progress)
 	progress.add_child(_milestone)
@@ -81,19 +94,22 @@ func _ready() -> void:
 	_milestone_bar.show_percentage = false
 	_milestone_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	progress.add_child(_milestone_bar)
-	stats.add_child(_readout)
-	_kpis.theme_type_variation = "MutedLabel"
-	stats.add_child(_kpis)
+
+	# Headline KPI cards row across the top of the port status panel.
+	var kpi_row := HBoxContainer.new()
+	kpi_row.add_theme_constant_override("separation", 6)
+	stats.add_child(kpi_row)
+	_build_kpi_cards(kpi_row)
+
 	_panel(left).add_child(_message)
 	_events = _panel_of(_message)
-	var ledger_panel := _panel(left, "Ledger")
-	ledger_panel.add_child(_ledger)
-	ledger_panel.add_child(_borrow)
-	for kind: String in sim.rules.loans:
-		var terms: Dictionary = sim.rules.loans[kind]
-		_gate("loans", _action_button(_borrow, "Borrow %s\n%d days, %d%% a year" % [_dollars(terms.amount), terms.days, roundi(terms.yearly_rate * 100)], {"op": "take_loan", "kind": kind}))
+
+	# The Details Drawer: shows detailed metrics for whichever figure group is open.
+	_build_drawer(left)
+
 	var contracts_panel := _panel(left, "Contracts")
 	contracts_panel.add_child(_contracts)
+
 	var inspect_panel := _panel(left, "Inspect")
 	_inspect_name.theme_type_variation = "ClockLabel"
 	inspect_panel.add_child(_inspect_name)
@@ -110,8 +126,13 @@ func _ready() -> void:
 	var speeds := ButtonGroup.new()
 	for s: int in SPEEDS:
 		_button(speeds_row, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
+
 	var menu := _row(time)
-	_gate("ledger", _toggle(menu, "Ledger", _panel_of(ledger_panel)))
+	var ledger_btn := _action_button(menu, "Ledger", {})
+	ledger_btn.pressed.disconnect(ledger_btn.pressed.get_connections()[0].callable)
+	ledger_btn.pressed.connect(func() -> void: _toggle_drawer(HudDetails.GROUP_FINANCE))
+	_gate("ledger", ledger_btn)
+
 	_gate("contracts", _toggle(menu, "Contracts", _panel_of(contracts_panel)))
 	_action(menu, "Save", save_pressed)
 	_action(menu, "Load", load_pressed)
@@ -120,8 +141,9 @@ func _ready() -> void:
 		button.text = "New creative" if creative else "New game"
 		button.pressed.connect(func() -> void: new_game_pressed.emit(creative))
 		menu.add_child(button)
+
 	var settings := ConfigFile.new()
-	settings.load(SETTINGS_PATH)  # A missing file leaves the defaults.
+	settings.load(SETTINGS_PATH)
 	var scale_button := Button.new()
 	scale_button.tooltip_text = "Interface size"
 	scale_button.pressed.connect(func() -> void:
@@ -138,28 +160,59 @@ func _ready() -> void:
 	_guide_text.custom_minimum_size.x = 320
 	guide.add_child(_guide_text)
 
-	# Bottom centre: the items of the open category above the category bar; keys 1-9 open a category.
+	# Bottom centre: unified toolbar containing build menu categories and figure groups.
 	var bottom := _corner(Control.PRESET_CENTER_BOTTOM)
 	var items := _panel(bottom)
 	var tools := ButtonGroup.new()
 	var rows := {}
 	for category: String in CATEGORIES:
 		rows[category] = _row(items)
-	var bar := _row(_panel(bottom))
+
+	var bar_container := _panel(bottom)
+	var bar := _row(bar_container)
 	_panel_of(bar).theme_type_variation = "Toolbar"
+
+	# Group 1: Build Menu Categories
+	var build_group := PanelContainer.new()
+	build_group.theme_type_variation = "ToolbarGroup"
+	bar.add_child(build_group)
+	var cat_row := HBoxContainer.new()
+	cat_row.add_theme_constant_override("separation", 4)
+	build_group.add_child(cat_row)
+
 	var categories := ButtonGroup.new()
 	for category: String in CATEGORIES:
 		var row: HBoxContainer = rows[category]
 		row.visible = false
-		var open := _button(bar, "%s\n%d" % [category, _category_buttons.size() + 1], categories, false, func() -> void:
+		var open := _button(cat_row, "%s\n%d" % [category, _category_buttons.size() + 1], categories, false, func() -> void:
 			for other: HBoxContainer in rows.values():
 				other.visible = other == row
 			var first: Button = row.get_children().filter(func(b: Button) -> bool: return b.visible and b.toggle_mode).front()
 			if first:
 				first.button_pressed = true)
 		open.theme_type_variation = "CategoryButton"
-		open.custom_minimum_size = Vector2(84, 48)
+		open.custom_minimum_size = Vector2(80, 48)
 		_category_buttons.append(open)
+
+	# Group 2: Figure / Info-Views Group
+	var figures_group := PanelContainer.new()
+	figures_group.theme_type_variation = "ToolbarGroup"
+	bar.add_child(figures_group)
+	var fig_row := HBoxContainer.new()
+	fig_row.add_theme_constant_override("separation", 4)
+	figures_group.add_child(fig_row)
+
+	for group_name: String in HudDetails.GROUPS:
+		var fig_btn := Button.new()
+		fig_btn.theme_type_variation = "CategoryButton"
+		fig_btn.custom_minimum_size = Vector2(88, 48)
+		fig_btn.toggle_mode = true
+		fig_btn.text = "%s\n..." % group_name
+		fig_btn.pressed.connect(func() -> void: _toggle_drawer(group_name))
+		fig_row.add_child(fig_btn)
+		_figure_buttons[group_name] = fig_btn
+
+	# Build tool item buttons
 	for key: String in sim.rules.road_types:
 		var road: Dictionary = sim.rules.road_types[key]
 		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
@@ -171,16 +224,161 @@ func _ready() -> void:
 			tool = DRAW_AREA
 			area_type = key))
 	_gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n$%d" % sim.rules.channel.cost_per_metre, {"op": "dredge", "metres": 1})))
-	_item(_button(rows.Cranes, "STS crane\n" + _dollars(sim.rules.sts_crane.cost), tools, false, func() -> void: tool = CRANE))
+	_item(_button(rows.Cranes, "STS crane\n" + HudDetails.dollars(sim.rules.sts_crane.cost), tools, false, func() -> void: tool = CRANE))
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2}))
 	_item(_button(rows.Yard, "Import\nblock", tools, false, func() -> void: tool = IMPORT_YARD))
 	_item(_button(rows.Yard, "Export\nblock", tools, false, func() -> void: tool = EXPORT_YARD))
 	_gate("rtg", _item(_button(rows.Yard, "RTG\nfor a block", tools, false, func() -> void: tool = RTG)))
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
-	_item(_button(rows.Land, "Land tile\n" + _dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND))
+	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND))
 	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE))
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT))
 	_category_buttons[0].button_pressed = true
+
+
+func _build_kpi_cards(row: HBoxContainer) -> void:
+	for kpi: Dictionary in HudDetails.port_kpis(sim):
+		var card := PanelContainer.new()
+		card.theme_type_variation = "StatCard"
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 2)
+		card.add_child(col)
+
+		var lbl := Label.new()
+		lbl.theme_type_variation = "StatLabel"
+		lbl.text = kpi.label
+		col.add_child(lbl)
+
+		var val := Label.new()
+		val.theme_type_variation = "StatValue"
+		val.add_theme_font_size_override("font_size", 16)
+		val.text = kpi.value
+		col.add_child(val)
+
+		row.add_child(card)
+		_kpi_cards.append({"panel": card, "label": lbl, "value": val, "state": ""})
+
+
+func _build_drawer(left: Control) -> void:
+	var drawer := _panel(left, "Details")
+	_drawer_panel = _panel_of(drawer)
+	_drawer_panel.visible = false
+
+	# Find the panel title label so we can change it dynamically
+	for child in _drawer_panel.find_children("", "Label", true, false):
+		if (child as Label).theme_type_variation == "PanelTitle":
+			_drawer_title_label = child as Label
+			break
+
+	# When the drawer is closed via the '×' button, deselect the figure buttons
+	_drawer_panel.visibility_changed.connect(func() -> void:
+		if not _drawer_panel.visible:
+			_active_drawer_group = ""
+			for g: String in _figure_buttons:
+				(_figure_buttons[g] as Button).set_pressed_no_signal(false))
+
+	_drawer_cards_container = HBoxContainer.new()
+	_drawer_cards_container.add_theme_constant_override("separation", 6)
+	drawer.add_child(_drawer_cards_container)
+
+	var div := Panel.new()
+	div.theme_type_variation = "Divider"
+	div.custom_minimum_size = Vector2(0, 1)
+	drawer.add_child(div)
+
+	_drawer_rows_container = VBoxContainer.new()
+	_drawer_rows_container.add_theme_constant_override("separation", 4)
+	drawer.add_child(_drawer_rows_container)
+
+	_drawer_extra_container = VBoxContainer.new()
+	drawer.add_child(_drawer_extra_container)
+	_ledger.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ledger.custom_minimum_size.x = 340
+	_drawer_extra_container.add_child(_ledger)
+	_drawer_extra_container.add_child(_borrow)
+
+	for kind: String in sim.rules.loans:
+		var terms: Dictionary = sim.rules.loans[kind]
+		_gate("loans", _action_button(_borrow, "Borrow %s\n%d days, %d%% a year" % [HudDetails.dollars(terms.amount), terms.days, roundi(terms.yearly_rate * 100)], {"op": "take_loan", "kind": kind}))
+
+
+func _toggle_drawer(group_name: String) -> void:
+	if _active_drawer_group == group_name and _drawer_panel.visible:
+		_close_drawer()
+		return
+	_active_drawer_group = group_name
+	if _drawer_title_label:
+		_drawer_title_label.text = "%s Details" % group_name
+	_drawer_panel.visible = true
+	for g: String in _figure_buttons:
+		(_figure_buttons[g] as Button).set_pressed_no_signal(g == group_name)
+	_fill_drawer(group_name)
+
+
+func _close_drawer() -> void:
+	_active_drawer_group = ""
+	_drawer_panel.visible = false
+	for g: String in _figure_buttons:
+		(_figure_buttons[g] as Button).set_pressed_no_signal(false)
+
+
+func _fill_drawer(group_name: String) -> void:
+	# Populate cards
+	for child in _drawer_cards_container.get_children():
+		child.queue_free()
+	for c: Dictionary in HudDetails.cards_for(group_name, sim):
+		var card := PanelContainer.new()
+		card.theme_type_variation = _card_style(c.get("state", ""))
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 2)
+		card.add_child(col)
+
+		var lbl := Label.new()
+		lbl.theme_type_variation = "StatLabel"
+		lbl.text = c.label
+		col.add_child(lbl)
+
+		var val := Label.new()
+		val.theme_type_variation = "StatValue"
+		val.add_theme_font_size_override("font_size", 16)
+		val.text = c.value
+		col.add_child(val)
+		_drawer_cards_container.add_child(card)
+
+	# Populate detail rows
+	for child in _drawer_rows_container.get_children():
+		child.queue_free()
+	for r: Dictionary in HudDetails.rows_for(group_name, sim):
+		var line := HBoxContainer.new()
+		_drawer_rows_container.add_child(line)
+
+		var lbl := Label.new()
+		lbl.text = r.label
+		lbl.theme_type_variation = "MutedLabel"
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(lbl)
+
+		var val := Label.new()
+		val.text = r.value
+		val.theme_type_variation = "StatValue"
+		val.add_theme_font_size_override("font_size", 14)
+		line.add_child(val)
+
+	# Extra content for Finance (ledger text + loan borrowing)
+	_drawer_extra_container.visible = (group_name == HudDetails.GROUP_FINANCE)
+	if group_name == HudDetails.GROUP_FINANCE:
+		_ledger.text = HudDetails.ledger_text(sim)
+
+
+func _card_style(state: String) -> String:
+	match state:
+		"good":
+			return "GoodCard"
+		"warn":
+			return "WarnCard"
+		"danger":
+			return "DangerCard"
+	return "StatCard"
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -208,23 +406,20 @@ func flash(text: String) -> void:
 
 
 func _process(dt: float) -> void:
-	var lorries := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry").size()
-	var anchored := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state == PortSim.Ship.State.ANCHORED).size()
-	_money.text = _dollars(sim.money)
-	_readout.text = "Boxes %d   Ships %d (%d at anchor)   Tractors %d/%d   Lorries %d   Channel %.0f m" % [sim.delivered, sim.ships.size() - anchored, anchored, sim._tractors_out(), sim.tractors, lorries, sim.channel_depth]
-	var k := sim.kpis()
-	_kpis.text = "Berth %.0f moves/h   Crane %.0f moves/h   Gate turn %.0f min\nYard %d%% full   %d boxes/day   Upkeep $%d/day" % [
-		k.berth_moves_per_hour, k.crane_moves_per_hour, k.gate_turn_minutes, roundi(k.yard_use * 100), k.boxes_per_day, k.upkeep_per_day]
+	_money.text = HudDetails.dollars(sim.money)
 	_show_milestone()
+
 	var minute := sim.clock.calendar_minutes()
 	_clock.text = "%s  Day %d  %02d:%02d" % [WEEKDAYS[sim.clock.game_day() % 7], sim.clock.game_day(), sim.clock.game_hour(), int(minute) % 60]
+
 	for name: String in _gated:
 		for control: Control in _gated[name]:
-			control.visible = sim.unlocked(name)
+			if is_instance_valid(control):
+				control.visible = sim.unlocked(name)
+
 	_events.visible = _message.text != ""
-	if _ledger.is_visible_in_tree():
-		_ledger.text = _ledger_text()
 	_show_guide()
+
 	if _inspect_name.is_visible_in_tree():
 		var lines := Inspect.describe(sim, _inspected)
 		_panel_of(_inspect_name).visible = not lines.is_empty()
@@ -234,11 +429,68 @@ func _process(dt: float) -> void:
 			_inspect_lines.visible = lines.size() > 1
 		if _actions_drawn != [sim, sim.areas.version, _inspected]:
 			_draw_inspect_actions()
+
 	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
 		_draw_contracts()
+
+	# Throttled refresh of figure headlines and open drawer contents
+	_refresh_left -= dt
+	if _refresh_left <= 0.0:
+		_refresh_left = REFRESH_SECONDS
+		_update_kpis()
+		_update_figure_buttons()
+		if _drawer_panel.visible and _active_drawer_group != "":
+			_refresh_drawer()
+
 	_flash_left -= dt
 	if _flash_left <= 0.0:
 		_message.text = "\n".join(sim.events.slice(-5).map(func(e: Dictionary) -> String: return "Day %d %02d:%02d  %s" % [int(e.minute / 1440), int(e.minute / 60) % 24, int(e.minute) % 60, e.text]))
+
+
+func _update_kpis() -> void:
+	var kpis := HudDetails.port_kpis(sim)
+	for i in mini(kpis.size(), _kpi_cards.size()):
+		var data: Dictionary = kpis[i]
+		var item: Dictionary = _kpi_cards[i]
+		(item.value as Label).text = data.value
+		var state: String = data.state
+		if item.state != state:
+			item.state = state
+			(item.panel as PanelContainer).theme_type_variation = _card_style(state)
+
+
+func _update_figure_buttons() -> void:
+	for group_name: String in _figure_buttons:
+		var btn: Button = _figure_buttons[group_name]
+		var hl := HudDetails.headline(group_name, sim)
+		btn.text = "%s\n%s" % [group_name, hl]
+
+
+func _refresh_drawer() -> void:
+	# Update values of drawer cards without reallocating when counts match
+	var current_cards := HudDetails.cards_for(_active_drawer_group, sim)
+	var card_nodes := _drawer_cards_container.get_children()
+	if card_nodes.size() == current_cards.size():
+		for i in card_nodes.size():
+			var card_panel := card_nodes[i] as PanelContainer
+			var col := card_panel.get_child(0) as VBoxContainer
+			var val_lbl := col.get_child(1) as Label
+			val_lbl.text = current_cards[i].value
+			card_panel.theme_type_variation = _card_style(current_cards[i].get("state", ""))
+	else:
+		_fill_drawer(_active_drawer_group)
+
+	# Update values of drawer rows without reallocating when counts match
+	var current_rows := HudDetails.rows_for(_active_drawer_group, sim)
+	var row_nodes := _drawer_rows_container.get_children()
+	if row_nodes.size() == current_rows.size():
+		for i in row_nodes.size():
+			var line := row_nodes[i] as HBoxContainer
+			var val_lbl := line.get_child(1) as Label
+			val_lbl.text = current_rows[i].value
+
+	if _active_drawer_group == HudDetails.GROUP_FINANCE:
+		_ledger.text = HudDetails.ledger_text(sim)
 
 
 func _gate(name: String, control: Control) -> Control:
@@ -246,14 +498,6 @@ func _gate(name: String, control: Control) -> Control:
 		_gated[name] = []
 	_gated[name].append(control)
 	return control
-
-
-## "$12,345" or "-$12,345".
-static func _dollars(amount: int) -> String:
-	var digits := str(absi(amount))
-	for i in range(digits.length() - 3, 0, -3):
-		digits = digits.insert(i, ",")
-	return ("-$" if amount < 0 else "$") + digits
 
 
 ## The guided start's current step; its panel hides once the first ship is worked.
@@ -277,30 +521,6 @@ func _show_milestone() -> void:
 	_milestone.text = "Milestone %d/%d   %d/%d TEU" % [reached, milestones.size(), sim.teu_handled, milestones[reached].teu]
 	_milestone_bar.max_value = milestones[reached].teu
 	_milestone_bar.value = sim.teu_handled
-
-
-## Today by category, then each of the last days, all read from the ledger.
-func _ledger_text() -> String:
-	var ledger := sim.ledger
-	var lines: Array[String] = ["Creative mode: cash never limits building" if sim.creative else "Today"]
-	for category: String in ledger.categories:
-		if ledger.today.has(category):
-			lines.append("    %s  %+d" % [ledger.categories[category], ledger.today[category]])
-	lines.append("    Net  %+d" % ledger.today_total())
-	for loan in sim.finance.loans:
-		lines.append("Loan (%s): $%d owed, $%d a day for %d days" % [loan.kind, loan.owed, mini(loan.payment, loan.owed), loan.days_left])
-	for closed: Dictionary in sim.scoreboard.slice(-2):
-		lines.append("Year %d: %.1f h in port per call, %.1f moves an hour, %.0f min gate turn" % [closed.year, closed.port_hours, closed.moves_per_hour, closed.turn_minutes])
-	if not ledger.days.is_empty():
-		lines.append("Recent days")
-	for i in range(ledger.days.size() - 1, -1, -1):
-		var day: Dictionary = ledger.days[i]
-		var parts: Array[String] = []
-		for category: String in ledger.categories:
-			if day.lines.has(category):
-				parts.append("%s %+d" % [ledger.categories[category], day.lines[category]])
-		lines.append("    Day %d  net %+d   %s" % [day.day, day.closed - day.opened, "   ".join(parts)])
-	return "\n".join(lines)
 
 
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.

@@ -1,7 +1,27 @@
 {
 	"ship_classes": {
-		"feeder": {"length": 200, "draft": 10, "outreach": 8, "import_moves": 24, "export_moves": 16, "window_hours": 12},
-		"panamax": {"length": 300, "draft": 13, "outreach": 13, "import_moves": 70, "export_moves": 50, "window_hours": 24}
+		"feeder": {
+			"length": 200.0,
+			"draft": 10.0,
+			"outreach": 8.0,
+			"import_moves": 24.0,
+			"export_moves": 16.0,
+			"window_hours": 12.0
+		},
+		"panamax": {
+			"length": 300.0,
+			"draft": 13.0,
+			"outreach": 13.0,
+			"import_moves": 70.0,
+			"export_moves": 50.0,
+			"window_hours": 24.0
+		}
 	},
-	"channel": {"start_depth": 11, "max_depth": 16, "cost_per_metre": 15000, "maintenance_per_metre": 2000, "maintenance_days": 30}
+	"channel": {
+		"start_depth": 11.0,
+		"max_depth": 16.0,
+		"cost_per_metre": 15000.0,
+		"maintenance_per_metre": 2000.0,
+		"maintenance_days": 30.0
+	}
 }

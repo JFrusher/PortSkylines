@@ -1,13 +1,49 @@
 {
 	"lines": {
-		"aurora": {"name": "Aurora Lines", "livery": "#d55e00", "classes": {"feeder": 3, "panamax": 1}, "sensitivity": 1.0},
-		"kestrel": {"name": "Kestrel Shipping", "livery": "#0072b2", "classes": {"feeder": 1}, "sensitivity": 1.5},
-		"meridian": {"name": "Meridian Box", "livery": "#f0e442", "classes": {"panamax": 2, "feeder": 1}, "sensitivity": 0.7}
+		"aurora": {
+			"name": "Aurora Lines",
+			"livery": "#d55e00",
+			"classes": {
+				"feeder": 3.0,
+				"panamax": 1.0
+			},
+			"sensitivity": 1.0
+		},
+		"kestrel": {
+			"name": "Kestrel Shipping",
+			"livery": "#0072b2",
+			"classes": {
+				"feeder": 1.0
+			},
+			"sensitivity": 1.5
+		},
+		"meridian": {
+			"name": "Meridian Box",
+			"livery": "#f0e442",
+			"classes": {
+				"panamax": 2.0,
+				"feeder": 1.0
+			},
+			"sensitivity": 0.7
+		}
 	},
-	"contracts": {"offer_check_minutes": 60, "offer_chance": 0.35, "max_offers": 3, "offer_days": 3, "max_services_per_berth": 12},
+	"contracts": {
+		"offer_check_minutes": 60.0,
+		"offer_chance": 0.35,
+		"max_offers": 3.0,
+		"offer_days": 3.0,
+		"max_services_per_berth": 12.0
+	},
 	"reputation": {
-		"start": 60, "offer_above": 40, "cancel_below": 25, "on_time": 3, "late_per_hour": -2,
-		"moves_per_hour_target": 20, "per_move_per_hour": 0.25,
-		"turn_target_minutes": 60, "per_turn_minute": -0.05, "missed": -15
+		"start": 60.0,
+		"offer_above": 40.0,
+		"cancel_below": 25.0,
+		"on_time": 3.0,
+		"late_per_hour": -2.0,
+		"moves_per_hour_target": 20.0,
+		"per_move_per_hour": 0.25,
+		"turn_target_minutes": 60.0,
+		"per_turn_minute": -0.05,
+		"missed": -15.0
 	}
 }

@@ -1,0 +1,22 @@
+weekly calendar for scheduling contracts
+contracts overhaul
+city skylines building, road, area etc breakdown and then resetup everything
+make quays buildings?
+big move away from locked to square tiles
+city skylines 2 buildng addons for quay like extend the STS backwards with road addon or train addon or both etc
+proper overhaul of AGV interacting with yards
+yards ovberhaul possible into areas like indsutry with buildings that do things like park gates etc for the AGVs and maybe AGV depot
+more "things" like data, power, depots and charging/fueling stuff
+make it harder with things like reefers, sensitive, or needed quickly containers
+deal with trafdfic and junctions on a bigger scale
+massive UI overhaul, the current setup is unfit for purpose from the base up, hnjeed proper CS redesign
+CS tax window becomes PS cost per container
+like CS never ending enlargement or optimisation ability
+real thought into "feeds and speeds"
+build a better CS ish road system
+ship lanes and tug depots etc for faster times
+better animations all over
+think about whole game life cycle progression
+
+
+allow players to make decisions like AGV vs driven ones or this v that for cost/size etc

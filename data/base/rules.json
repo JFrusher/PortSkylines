@@ -1,18 +1,50 @@
 {
-	"site": {"width": 2400, "height": 2400, "sea_width": 300},
-	"land": {"metres": 800, "price": 20000, "upkeep": 100, "start": {"x": 0, "y": 1, "width": 3, "height": 1}},
-	"start_money": 20000,
-	"move_price": {"per_20ft": 100, "forty_factor": 1.8, "reefer_premium": 60},
-	"box_mix": {"forty_share": 0.6, "reefer_share": 0.1},
-	"storage": {"free_days": 2, "fee": 20, "max_fee": 200, "dwell_per_dollar": 0.02, "min_dwell_factor": 0.3, "fair_fee": 40, "satisfaction_per_dollar": -0.02},
-	"gate_minutes": 2,
-	"upkeep": {"sts_crane": 150, "tractor": 30},
-	"sail_seconds": 4,
-	"lorry_interval_minutes": 1,
-	"export_lorry_interval_minutes": 2,
-	"import_dwell_minutes": 1440,
-	"lorry_speed": 125,
-	"give_up_seconds": 30,
+	"site": {
+		"width": 2400.0,
+		"height": 2400.0,
+		"sea_width": 300.0
+	},
+	"land": {
+		"metres": 800.0,
+		"price": 20000.0,
+		"upkeep": 100.0,
+		"start": {
+			"x": 0.0,
+			"y": 1.0,
+			"width": 3.0,
+			"height": 1.0
+		}
+	},
+	"start_money": 20000.0,
+	"move_price": {
+		"per_20ft": 100.0,
+		"forty_factor": 1.8,
+		"reefer_premium": 60.0
+	},
+	"box_mix": {
+		"forty_share": 0.6,
+		"reefer_share": 0.1
+	},
+	"storage": {
+		"free_days": 2.0,
+		"fee": 20.0,
+		"max_fee": 200.0,
+		"dwell_per_dollar": 0.02,
+		"min_dwell_factor": 0.3,
+		"fair_fee": 40.0,
+		"satisfaction_per_dollar": -0.02
+	},
+	"gate_minutes": 2.0,
+	"upkeep": {
+		"sts_crane": 150.0,
+		"tractor": 30.0
+	},
+	"sail_seconds": 4.0,
+	"lorry_interval_minutes": 1.0,
+	"export_lorry_interval_minutes": 2.0,
+	"import_dwell_minutes": 1440.0,
+	"lorry_speed": 125.0,
+	"give_up_seconds": 30.0,
 	"ledger_categories": {
 		"moves": "Ship moves",
 		"storage": "Storage",
@@ -26,16 +58,53 @@
 		"dredging": "Dredging"
 	},
 	"loans": {
-		"small": {"amount": 10000, "yearly_rate": 0.08, "days": 30},
-		"medium": {"amount": 25000, "yearly_rate": 0.1, "days": 60},
-		"large": {"amount": 60000, "yearly_rate": 0.12, "days": 120}
+		"small": {
+			"amount": 10000.0,
+			"yearly_rate": 0.08,
+			"days": 30.0
+		},
+		"medium": {
+			"amount": 25000.0,
+			"yearly_rate": 0.1,
+			"days": 60.0
+		},
+		"large": {
+			"amount": 60000.0,
+			"yearly_rate": 0.12,
+			"days": 120.0
+		}
 	},
-	"max_loans": 3,
+	"max_loans": 3.0,
 	"milestones": {
-		"harbour": {"teu": 0, "unlocks": {"contracts": "contracts with shipping lines", "feeder": "feeder services", "reach_stacker": "reach stackers", "ledger": "the ledger"}},
-		"terminal": {"teu": 200, "unlocks": {"loans": "loans", "rtg": "RTG cranes for yard blocks"}},
-		"gateway": {"teu": 600, "unlocks": {"land": "buying land", "dredging": "dredging the channel", "panamax": "Panamax services"}}
+		"harbour": {
+			"teu": 0.0,
+			"unlocks": {
+				"contracts": "contracts with shipping lines",
+				"feeder": "feeder services",
+				"reach_stacker": "reach stackers",
+				"ledger": "the ledger"
+			}
+		},
+		"terminal": {
+			"teu": 200.0,
+			"unlocks": {
+				"loans": "loans",
+				"rtg": "RTG cranes for yard blocks"
+			}
+		},
+		"gateway": {
+			"teu": 600.0,
+			"unlocks": {
+				"land": "buying land",
+				"dredging": "dredging the channel",
+				"panamax": "Panamax services"
+			}
+		}
 	},
-	"year_days": 28,
-	"bailout": {"days": 3, "reputation": -20, "no_loans_days": 14}
+	"year_days": 28.0,
+	"bailout": {
+		"days": 3.0,
+		"reputation": -20.0,
+		"no_loans_days": 14.0
+	}
 }

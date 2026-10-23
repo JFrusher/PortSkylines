@@ -1,9 +1,32 @@
 {
-	"sts_crane": {"cost": 1500, "rate": 25, "outreach": 13, "lead_days": 1, "width": 28},
+	"sts_crane": {
+		"cost": 1500.0,
+		"rate": 25.0,
+		"outreach": 13.0,
+		"lead_days": 1.0,
+		"width": 28.0
+	},
 	"crane_interference": 0.9,
-	"tractor": {"cost": 400, "speed": 150},
+	"tractor": {
+		"cost": 400.0,
+		"speed": 150.0
+	},
 	"yard_gear": {
-		"reach_stacker": {"upkeep_per_machine": 40, "speed": 7.0, "lift_seconds": 20, "set_down_seconds": 20, "bays_per_machine": 4, "tiers": 4},
-		"rtg": {"upkeep_per_machine": 60, "speed": 2.0, "lift_seconds": 30, "set_down_seconds": 25, "bays_per_machine": 10, "tiers": 5}
+		"reach_stacker": {
+			"upkeep_per_machine": 40.0,
+			"speed": 7.0,
+			"lift_seconds": 20.0,
+			"set_down_seconds": 20.0,
+			"bays_per_machine": 4.0,
+			"tiers": 4.0
+		},
+		"rtg": {
+			"upkeep_per_machine": 60.0,
+			"speed": 2.0,
+			"lift_seconds": 30.0,
+			"set_down_seconds": 25.0,
+			"bays_per_machine": 10.0,
+			"tiers": 5.0
+		}
 	}
 }
