@@ -96,7 +96,7 @@ func set_terminal(id: int, terminal: int) -> String:
 ## Why `terminal` can't take contracts yet, or "": it needs a gate for lorries
 ## and a quay apron for ships.
 func terminal_error(terminal: int) -> String:
-	var kinds := list.values().filter(func(a: Dictionary) -> bool: return a.terminal == terminal).map(func(a: Dictionary) -> String: return a.type)
+	var kinds := list.values().filter(func(a: Dictionary) -> bool: return a.terminal == terminal).map(func(a: Dictionary) -> String: return kind_of(a))
 	if "quay_apron" not in kinds:
 		return "%s needs a quay apron" % terminals[terminal].name
 	if "gate" not in kinds:
@@ -135,7 +135,7 @@ func layout(id: int) -> Dictionary:
 		_layouts.clear()
 	if id not in _layouts:
 		var area: Dictionary = list[id]
-		match area.type:
+		match kind_of(area):
 			"yard_block":
 				_layouts[id] = AreaLayout.yard_block(area, depth_of(area))
 			"quay_apron":
@@ -244,6 +244,11 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	# Lanes reach `forward` cells to the right of the drawn line (counting it) and `backward` to the left.
 	var edge: int = road.forward if side == 1 else road.backward + 1
 	return {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
+
+
+## What `area` does, from its type: a gate of any size is a "gate".
+func kind_of(area: Dictionary) -> String:
+	return types[area.type].kind
 
 
 ## How many rows deep `area` is: its type's depth, except that a quay apron

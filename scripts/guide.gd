@@ -36,8 +36,8 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 	]
 
 
-static func _areas(sim: PortSim, type: String) -> Array:
-	return sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.list[id].type == type)
+static func _areas(sim: PortSim, kind: String) -> Array:
+	return sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == kind)
 
 
 ## The index of the step to do now, or steps().size() once the first ship has

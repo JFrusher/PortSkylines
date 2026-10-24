@@ -67,11 +67,14 @@ const SCHEMA := {
 	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
 	# Areas dragged along a road edge: how deep they reach from the road and
 	# their shortest length, in 4 m cells, and cost and daily upkeep per cell.
-	"area_types": {"*": {"name": TYPE_STRING, "depth": TYPE_INT, "max_depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
+	"area_types": {"*": {"name": TYPE_STRING, "kind": TYPE_STRING, "depth": TYPE_INT, "max_depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
 	"yard_gear": {"*": {"upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
 }
+
+## What an area type does; several types may share a kind, as gates of different sizes do.
+const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
 const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "rate", "crane_interference", "speed"]
@@ -130,6 +133,8 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 	for kind: String in rules.area_types:
 		if rules.area_types[kind].max_depth < rules.area_types[kind].depth:
 			return {"error": "area_types.%s: max_depth must be at least depth" % kind}
+		if rules.area_types[kind].kind not in AREA_KINDS:
+			return {"error": "area_types.%s.kind: must be one of %s" % [kind, AREA_KINDS]}
 	for line: String in rules.lines:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):

@@ -201,10 +201,10 @@ func _add_area(id: int, next_id: int) -> int:
 	for road_point: int in _at.get(cell.call(0, length - 1) - area.out, []):
 		if not at.values().has(road_point):
 			_connect(at[cell.call(0, length - 1)], road_point, lorries and _lorries.has_point(road_point))
-	if area.type in ["quay_apron", "gate"]:
+	if areas.kind_of(area) in ["quay_apron", "gate"]:
 		# Drive-through lanes: out from the buffer down the area's first column,
 		# along each lane, and back to the buffer up its last column.
-		var lane_rows: Array = [2] if area.type == "quay_apron" else range(1, areas.types.gate.depth - 1)
+		var lane_rows: Array = [2] if area.type == "quay_apron" else range(1, areas.depth_of(area) - 1)
 		for row in range(1, lane_rows[-1] + 1):
 			_connect(point.call(cell.call(row - 1, 0)), point.call(cell.call(row, 0)), lorries)
 			_connect(point.call(cell.call(row, length - 1)), point.call(cell.call(row - 1, length - 1)), lorries)

@@ -309,6 +309,12 @@ func _test_apron_and_gate_layouts() -> void:
 	_expect(gate.slots.size(), gate.lanes.size(), "one booth slot per lane")
 	_expect(gate.slots.all(func(s: Array) -> bool: return s[0].y == 106), true, "booths sit at the gate's middle bay")
 	_expect(gate.lanes.all(func(l: Array) -> bool: return l.size() == 15), true, "gate lanes run the gate's length")
+	_expect(sim.apply({"op": "build_area", "type": "gate_small", "segment": 1, "side": -1, "from": 16, "to": 30}), "", "a small gate is built")
+	_expect(sim.areas.layout(3).lanes.size(), 2, "a small gate has 2 lanes")
+	_expect(sim.apply({"op": "build_area", "type": "gate_large", "segment": 1, "side": -1, "from": 32, "to": 46}), "", "a large gate is built")
+	_expect(sim.areas.layout(4).lanes.size(), 6, "a large gate has 6 lanes, each with its booth")
+	_expect(sim.areas.layout(4).slots.size(), 6, "so 6 lorries are checked at once")
+	_expect(sim.areas.kind_of(sim.areas.list[4]), "gate", "every size is a gate")
 
 
 func _test_area_settings() -> void:

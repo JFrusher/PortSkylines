@@ -220,7 +220,7 @@ func _ready() -> void:
 			road_type = key))
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
-		_item(_button(rows[AREA_ROWS[key]], "%s\n$%d per 4 m cell" % [area.name, area.cost_per_cell], tools, false, func() -> void:
+		_item(_button(rows[AREA_ROWS[area.kind]], "%s\n$%d per 4 m cell" % [area.name, area.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_AREA
 			area_type = key))
 	_gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n$%d" % sim.rules.channel.cost_per_metre, {"op": "dredge", "metres": 1})))

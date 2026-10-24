@@ -25,7 +25,7 @@ const ASPHALT := Color(0.2, 0.2, 0.22)
 ## The surface of a road lorries may not use, so tractor lanes read at a glance.
 const TRACTOR_ONLY := Color(0.36, 0.24, 0.2)
 const MARKING := Color(0.92, 0.92, 0.85)
-## Area ground by type, a little below road level.
+## Area ground by kind, a little below road level.
 const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
@@ -213,7 +213,7 @@ func _draw_areas() -> void:
 	for id: int in sim.areas.list:
 		var colors := {}
 		for cell in sim.areas.cells(id):
-			colors[cell] = AREA_COLOR[sim.areas.list[id].type]
+			colors[cell] = AREA_COLOR[sim.areas.kind_of(sim.areas.list[id])]
 		var layout := sim.areas.layout(id)
 		for cell: Vector2i in layout.get("buffer", []):
 			colors[cell] = BUFFER_COLOR

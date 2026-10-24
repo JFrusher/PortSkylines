@@ -378,7 +378,7 @@ static func _gates(sim: PortSim, terminal: int) -> Array[int]:
 	var found: Array[int] = []
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
-		if area.type == "gate" and area.terminal == terminal and sim.areas.idle_reason(id) == "":
+		if sim.areas.kind_of(area) == "gate" and area.terminal == terminal and sim.areas.idle_reason(id) == "":
 			found.append(id)
 	return found
 
@@ -521,7 +521,7 @@ static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
 ## time, which starts a lorry's turn on the way in and ends it on the way
 ## out; at a yard block a machine is asked for.
 static func _arrived(sim: PortSim, vehicle: Vehicle) -> void:
-	if sim.areas.list[vehicle.area].type != "gate":
+	if sim.areas.kind_of(sim.areas.list[vehicle.area]) != "gate":
 		vehicle.state = "handling"
 		_start_handling(sim, vehicle)
 		return
