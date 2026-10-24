@@ -130,8 +130,10 @@ func _test_routes() -> void:
 		grid.add(Vector2i(i * 10 + 5, -5), Vector2i(i * 10 + 5, 25), "terminal_2_2")
 	var across := grid_lanes.route(Vector2i(0, 0), Vector2i(25, 20), true)
 	_expect(_steps_are_single(across), true, "junction crossings move one cell at a time")
-	# East along row 0's eastbound lane to column 25, then down its southbound lane.
-	_expect(across.size() - 1, 25 + 20, "a route across a road grid is the shortest by hand")
+	# 25 east and 20 south, less one diagonal lane change on each of four
+	# straight runs: turns join where lanes cross, so the route staircases
+	# down the columns at 5 and 15, turning at each junction's inner corner.
+	_expect(across.size() - 1, 25 + 20 - 4, "a route across a road grid is the shortest by hand")
 
 
 func _test_editing() -> void:

@@ -117,7 +117,7 @@ func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i
 			var d := maxi(absi(cell.x - near.x), absi(cell.y - near.y))
 			if d > SNAP_CELLS or (from != Grid.NONE and snap(from, cell) != cell):
 				continue
-			var score := d - (SNAP_CELLS + 1 if cell in ends else 0)
+			var score := Vector2(cell - near).length() - (SNAP_CELLS * 2 if cell in ends else 0)
 			if score < best_score:
 				best = cell
 				best_score = score
