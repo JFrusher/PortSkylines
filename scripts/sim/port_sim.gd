@@ -340,6 +340,8 @@ func apply(command: Dictionary) -> String:
 			return remove_road(command.segment)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
+		"build_two_way_gate":
+			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
 			return remove_area(command.id)
 		"set_area":
@@ -405,6 +407,33 @@ func build_area(type: String, segment: int, side: int, from: int, to: int) -> St
 	if err == "":
 		ledger.post("construction", -area_price(type, segment, side, from, to))
 		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(rules.area_types[type].kind, {}).duplicate(true))
+	return err
+
+
+## Why a gate of `type` can't be built on both sides of `segment` from
+## `from` to `to`, or "".
+func build_two_way_gate_error(type: String, segment: int, from: int, to: int) -> String:
+	if type not in rules.area_types or rules.area_types[type].kind != "gate":
+		return "Only gates are built on both sides of a road"
+	for side: int in [1, -1]:
+		var err := build_area_error(type, segment, side, from, to)
+		if err:
+			return err
+	if not _afford(area_price(type, segment, 1, from, to) + area_price(type, segment, -1, from, to)):
+		return "Not enough money"
+	return ""
+
+
+## A gate of `type` on each side of `segment` over the same stretch, in one
+## terminal: lorries check in on the side they arrive by and out on the side
+## they leave by, so none turns round to pass a gate.
+func build_two_way_gate(type: String, segment: int, from: int, to: int) -> String:
+	var err := build_two_way_gate_error(type, segment, from, to)
+	if err == "":
+		build_area(type, segment, 1, from, to)
+		var first: int = areas.list.keys().max()
+		build_area(type, segment, -1, from, to)
+		areas.set_terminal(areas.list.keys().max(), areas.list[first].terminal)
 	return err
 
 

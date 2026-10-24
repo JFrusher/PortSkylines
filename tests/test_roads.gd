@@ -33,6 +33,7 @@ func _initialize() -> void:
 	_test_crane_keeps_tractors_busy()
 	_test_exports_wait_for_calls()
 	_test_lorries_use_the_gate_on_their_side()
+	_test_two_way_gate()
 	_test_lorry_gives_up()
 	_test_following_a_box()
 	print("tests: %d failure(s)" % _failures)
@@ -691,6 +692,22 @@ func _test_lorries_use_the_gate_on_their_side() -> void:
 			break
 	_expect(sim.delivered, 1, "the import leaves by lorry")
 	_expect(out_gates.keys(), [south], "the lorry checks out at the gate on its way out, not the inbound one")
+
+
+func _test_two_way_gate() -> void:
+	var sim := AreaPort.owned(PortSim.new())
+	var entry := sim.site_entry()
+	sim.apply({"op": "build_road", "from": Vector2i(400, entry.y), "to": entry, "type": "terminal_1_1"})
+	var money := sim.money
+	_expect(sim.apply({"op": "build_two_way_gate", "type": "gate_small", "segment": 1, "from": 10, "to": 24}), "", "a two-way gate is built")
+	var gates := sim.areas.list.keys()
+	_expect(gates.size(), 2, "it is a gate on each side of the road")
+	_expect(sim.areas.list[gates[0]].out, -sim.areas.list[gates[1]].out, "facing opposite ways")
+	_expect(sim.areas.list[gates[0]].terminal, sim.areas.list[gates[1]].terminal, "in one terminal")
+	_expect(money - sim.money, 2 * sim.area_price("gate_small", 1, 1, 10, 24), "both sides are paid for")
+	_expect(sim.apply({"op": "build_two_way_gate", "type": "yard_block", "segment": 1, "from": 30, "to": 50}), "Only gates are built on both sides of a road", "only gates are two-way")
+	_expect(sim.apply({"op": "build_two_way_gate", "type": "gate", "segment": 1, "from": 20, "to": 34}), "Something is already built here", "neither side may overlap")
+	_expect(sim.areas.list.size(), 2, "a refused two-way gate builds neither side")
 
 
 func _test_lorry_gives_up() -> void:

@@ -93,7 +93,8 @@ func _process(dt: float) -> void:
 	var dragged: Array[Vector2i] = []
 	if not _area_from.is_empty():
 		var area := _area_command()
-		dragged = sim.areas.cells_of(area.type, area.segment, area.side, area.from, area.to)
+		for side: int in ([1, -1] if hud.two_way else [area.side]):
+			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
 	view.show_area_preview(dragged, _order_error(cell) == "")
 	view.show_road_preview(_road_from, _road_to() if _road_from != Grid.NONE else _road_from, hud.road_type, _order_error(cell) == "")
 	if _painting:
@@ -114,7 +115,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
 		if hud.tool == Hud.DRAW_AREA:
-			_report(sim.apply(_area_command()))
+			var area := _area_command()
+			if hud.two_way:
+				area = {"op": "build_two_way_gate", "type": area.type, "segment": area.segment, "from": area.from, "to": area.to}
+			_report(sim.apply(area))
 		_area_from = {}
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -205,6 +209,8 @@ func _order_error(cell: Vector2i) -> String:
 			if _area_from.is_empty():
 				return ""
 			var area := _area_command()
+			if hud.two_way:
+				return sim.build_two_way_gate_error(area.type, area.segment, area.from, area.to)
 			return sim.build_area_error(area.type, area.segment, area.side, area.from, area.to)
 		Hud.BULLDOZE:
 			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) else "Nothing to bulldoze here"
