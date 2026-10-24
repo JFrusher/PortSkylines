@@ -6,8 +6,6 @@ extends RefCounted
 
 ## Node id -> its cell.
 var nodes := {}
-## Mapping from cell coordinates to their node id for O(1) lookup.
-var _node_at_cell := {}
 ## Segment id -> {"a": node id, "b": node id, "type": a key of road_types}.
 var segments := {}
 ## The data's road types: lanes each way, whether lorries may use them, costs.
@@ -57,9 +55,7 @@ func remove(segment: int) -> void:
 	segments.erase(segment)
 	for node: int in [road.a, road.b]:
 		if degree(node) == 0:
-			var cell := nodes[node]
 			nodes.erase(node)
-			_node_at_cell.erase(cell)
 	version += 1
 
 
@@ -224,14 +220,6 @@ func _node_at(cell: Vector2i) -> int:
 	for id: int in nodes:
 		if nodes[id] == cell:
 			return id
-	var new_id := _next_node
-	nodes[new_id] = cell
-	_node_at_cell[cell] = new_id
+	nodes[_next_node] = cell
 	_next_node += 1
 	return _next_node - 1
-
-
-## Returns the node id for `cell`, creating one if necessary. Uses the internal
-## _node_at_cell dict for O(1) lookup after first call.
-func node_at_cell(cell: Vector2i) -> int:
-	return _node_at_cell.get(cell, _node_at(cell))
