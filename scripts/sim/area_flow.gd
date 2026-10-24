@@ -257,9 +257,9 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	for block: int in sim.area_stacks:
 		if block not in sim.areas.list or sim.areas.idle_reason(block) != "":
 			continue
-		var gate := _gate_of(sim, sim.areas.list[block].terminal)
-		if gate == 0:
-			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[sim.areas.list[block].terminal].name)
+		var terminal: int = sim.areas.list[block].terminal
+		if not _has_gate(sim, terminal):
+			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[terminal].name)
 			continue
 		for box: int in sim.area_stacks[block].boxes():
 			if box in sim._claimed or sim.boxes[box].kind != "import" or sim.boxes[box].due > now:
@@ -267,6 +267,7 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 			var entry := _entry_cell(sim)
 			if entry == Grid.NONE:
 				return false
+			var gate := _gate_of(sim, terminal, entry)
 			var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 			sim.lane_traffic.place(lorry)
 			sim._next_vehicle += 1
@@ -286,12 +287,12 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 	if export_demand(sim) <= 0:
 		return false
 	for terminal: int in sim.areas.terminals:
-		var gate := _gate_of(sim, terminal)
-		if gate == 0 or _export_room(sim, terminal) <= 0:
+		if not _has_gate(sim, terminal) or _export_room(sim, terminal) <= 0:
 			continue
 		var entry := _entry_cell(sim)
 		if entry == Grid.NONE:
 			return false
+		var gate := _gate_of(sim, terminal, entry)
 		var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 		sim.lane_traffic.place(lorry)
 		sim._next_vehicle += 1
@@ -327,7 +328,7 @@ static func export_demand(sim: PortSim) -> int:
 ## Whether exports are on their way into `terminal`, or can still be sent:
 ## wanted, with a gate to come in by and room in its export blocks.
 static func _exports_coming(sim: PortSim, terminal: int) -> bool:
-	if export_demand(sim) > 0 and _gate_of(sim, terminal) != 0 and _export_room(sim, terminal) > 0:
+	if export_demand(sim) > 0 and _has_gate(sim, terminal) and _export_room(sim, terminal) > 0:
 		return true
 	return sim.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry" and v.loaded and sim.boxes[v.box].kind == "export" and v.area in sim.areas.list and sim.areas.list[v.area].terminal == terminal)
 
@@ -372,13 +373,34 @@ static func _edge_cells(sim: PortSim) -> Array[Vector2i]:
 	return found
 
 
-## The first working gate of `terminal`, or 0.
-static func _gate_of(sim: PortSim, terminal: int) -> int:
+## The working gates of `terminal`.
+static func _gates(sim: PortSim, terminal: int) -> Array[int]:
+	var found: Array[int] = []
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type == "gate" and area.terminal == terminal and sim.areas.idle_reason(id) == "":
-			return id
-	return 0
+			found.append(id)
+	return found
+
+
+static func _has_gate(sim: PortSim, terminal: int) -> bool:
+	return not _gates(sim, terminal).is_empty()
+
+
+## The working gate of `terminal` a lorry at `from` reaches by the shortest
+## route, so lorries check in and out at the gate on their side of the road;
+## 0 when the terminal has none.
+# shortcut: ranks by route length alone, not queues; weigh each gate's queue when one gate of several jams.
+static func _gate_of(sim: PortSim, terminal: int, from: Vector2i) -> int:
+	var best := 0
+	var shortest := INF
+	for gate in _gates(sim, terminal):
+		var route := sim.lanes.route(from, _buffer_start(sim, gate), true)
+		var length: float = route.size() if not route.is_empty() else INF
+		if best == 0 or length < shortest:
+			best = gate
+			shortest = length
+	return best
 
 
 ## The yard block holding `box`, or 0.
@@ -397,8 +419,13 @@ static func _block_of(sim: PortSim, box: int) -> int:
 static func _go_to(sim: PortSim, vehicle: Vehicle, area: int) -> void:
 	vehicle.area = area
 	vehicle.slot = -1
+	_head(sim, vehicle, _buffer_start(sim, area), "arriving")
+
+
+## The first cell of `area`'s buffer strip in driving order, where vehicles come in.
+static func _buffer_start(sim: PortSim, area: int) -> Vector2i:
 	var buffer: Array = sim.areas.layout(area).buffer
-	_head(sim, vehicle, buffer[0] if sim.lanes.flow_of(area) > 0 else buffer[-1], "arriving")
+	return buffer[0] if sim.lanes.flow_of(area) > 0 else buffer[-1]
 
 
 ## `vehicle` reached the start of its area's buffer strip: it books a slot.
@@ -615,7 +642,7 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 ## Sends a lorry out through `terminal`'s gate, or straight to the site
 ## exit when there is no gate to pass.
 static func _go_out(sim: PortSim, vehicle: Vehicle, terminal: int) -> void:
-	var gate := _gate_of(sim, terminal) if terminal else 0
+	var gate := _gate_of(sim, terminal, vehicle.path[int(vehicle.t)]) if terminal else 0
 	if gate:
 		_go_to(sim, vehicle, gate)
 		return

@@ -32,6 +32,7 @@ func _initialize() -> void:
 	_test_exports()
 	_test_crane_keeps_tractors_busy()
 	_test_exports_wait_for_calls()
+	_test_lorries_use_the_gate_on_their_side()
 	_test_lorry_gives_up()
 	_test_following_a_box()
 	print("tests: %d failure(s)" % _failures)
@@ -654,6 +655,25 @@ func _test_exports_wait_for_calls() -> void:
 		sim.tick()
 	var exports := sim.boxes.values().filter(func(b: Dictionary) -> bool: return b.kind == "export").size()
 	_expect(exports, 0, "with no call booked, no exports come in two hours")
+
+
+func _test_lorries_use_the_gate_on_their_side() -> void:
+	var sim := AreaPort.working_terminal(1)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	# A second gate across the road from the first, on the eastbound side lorries leave by.
+	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": 1, "from": 300, "to": 314}), "", "a gate is built on the outbound side")
+	var south: int = sim.areas.list.keys().max()
+	sim.apply({"op": "set_terminal", "id": south, "terminal": 1})
+	var out_gates := {}
+	for i in 30000:
+		sim.tick()
+		for v: Vehicle in sim.vehicles:
+			if v.kind == "lorry" and v.state == "at_gate" and v.loaded:
+				out_gates[v.area] = true
+		if sim.delivered == 1:
+			break
+	_expect(sim.delivered, 1, "the import leaves by lorry")
+	_expect(out_gates.keys(), [south], "the lorry checks out at the gate on its way out, not the inbound one")
 
 
 func _test_lorry_gives_up() -> void:
