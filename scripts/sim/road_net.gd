@@ -14,6 +14,8 @@ var types: Dictionary
 var version := 0
 var _next_node := 1
 var _next_segment := 1
+## How near, in cells, a drawn road's ends must come to a road to snap onto it.
+const SNAP_CELLS := 3
 
 
 func _init(road_types: Dictionary) -> void:
@@ -83,6 +85,43 @@ static func snap(from: Vector2i, to: Vector2i) -> Vector2i:
 		return from + Vector2i(0, d.y)
 	var run := roundi((absi(d.x) + absi(d.y)) / 2.0)
 	return from + d.sign() * run
+
+
+## Where a road drag starts: on the nearest road within SNAP_CELLS of `cell`,
+## a junction or road end before any other point, as Cities: Skylines snaps;
+## `cell` itself when no road is that close.
+func snap_start(cell: Vector2i) -> Vector2i:
+	return _snap_onto(cell, Grid.NONE, cell)
+
+
+## Where a drag from `from` towards `to` ends: on the nearest road within
+## SNAP_CELLS of `to` that a straight or 45° road from `from` reaches, a
+## junction or road end first; otherwise `to` snapped straight or to 45°.
+## Roads `from` is on don't count, so a drag never snaps back along its own road.
+func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
+	return _snap_onto(to, from, snap(from, to))
+
+
+## The road cell nearest `near` within SNAP_CELLS, nodes first, reachable
+## from `from` unless that is NONE; else `otherwise`.
+## shortcut: scans every road cell each call, fine for hundreds of segments; index cells by chunk if drawing slows on big ports.
+func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i:
+	var best := otherwise
+	var best_score := INF
+	for id: int in segments:
+		var road := cells(id)
+		if from in road:
+			continue
+		var ends := [road[0], road[-1]]
+		for cell in road:
+			var d := maxi(absi(cell.x - near.x), absi(cell.y - near.y))
+			if d > SNAP_CELLS or (from != Grid.NONE and snap(from, cell) != cell):
+				continue
+			var score := d - (SNAP_CELLS + 1 if cell in ends else 0)
+			if score < best_score:
+				best = cell
+				best_score = score
+	return best
 
 
 func to_dict() -> Dictionary:
