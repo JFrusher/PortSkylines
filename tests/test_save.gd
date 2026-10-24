@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_every_fixture_loads_or_is_refused()
 	_test_area_flow_round_trips()
 	_test_a_removed_apron_saves()
+	_test_v11_gates_get_manual_booths()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -66,6 +67,12 @@ func _test_every_fixture_loads_or_is_refused() -> void:
 			for i in 100:
 				sim.tick()
 			_expect(sim.clock.ticks > 100, true, "%s plays on after loading" % name)
+
+
+func _test_v11_gates_get_manual_booths() -> void:
+	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v11.bin").sim
+	var gates := sim.areas.list.values().filter(func(a: Dictionary) -> bool: return sim.areas.kind_of(a) == "gate")
+	_expect(not gates.is_empty() and gates.all(func(a: Dictionary) -> bool: return a.settings.level == "manual"), true, "a v11 save's gates load with manual booths")
 
 
 func _test_save_replaces_existing() -> void:

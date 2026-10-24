@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 11
+const VERSION := 12
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -70,8 +70,19 @@ static func load_from(path: String) -> Dictionary:
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time; none yet.
+## Brings an older save up to VERSION one step at a time.
 static func _migrate(data: Dictionary) -> Dictionary:
+	if data.version == 11:
+		data = _migrate_v11(data)
+	return data
+
+
+## v12 gives gates a level; every gate before it had manual booths.
+static func _migrate_v11(data: Dictionary) -> Dictionary:
+	for area: Variant in data.sim.areas.list.values():
+		if area is Dictionary and area.get("type") == "gate" and area.get("settings") is Dictionary:
+			area.settings.level = "manual"
+	data.version = 12
 	return data
 
 
@@ -196,9 +207,12 @@ static func _valid_areas(areas: Dictionary) -> bool:
 	if not areas.terminals.keys().all(func(id: Variant) -> bool: return id is int and areas.terminals[id] is Dictionary and _has_fields(areas.terminals[id], {"name": TYPE_STRING})):
 		return false
 	var types: Dictionary = Content.base().area_types
+	var levels: Dictionary = Content.base().gate_levels
 	return areas.list.keys().all(func(id: Variant) -> bool:
 		var area: Variant = areas.list[id]
-		return id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and area.terminal in areas.terminals)
+		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and area.terminal in areas.terminals):
+			return false
+		return types[area.type].kind != "gate" or area.settings.get("level") in levels)
 
 
 ## True when `cells` holds only Vector2i, and some unless `may_be_empty`.

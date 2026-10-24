@@ -223,7 +223,7 @@ func _test_gate() -> void:
 	var sim := AreaPort.base(rules)
 	_run(sim, FIRST_SHIP + 240)
 	_expect(sim.turn_times.size() > 5, true, "lorries record turn times (%d)" % sim.turn_times.size())
-	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * rules.gate_minutes), true, "every turn includes a stop at the gate each way")
+	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * rules.gate_levels.manual.minutes), true, "every turn includes a stop at the gate each way")
 
 
 func _test_upkeep_at_midnight() -> void:
@@ -536,7 +536,7 @@ func _test_year_end_scoreboard() -> void:
 	var closed: Dictionary = sim.scoreboard[0]
 	_expect(sailed.size() > 3, true, "calls sailed in the year (%d)" % sailed.size())
 	_expect(absf(closed.port_hours - hours / sailed.size()) < 1e-6 and absf(closed.moves_per_hour - moves / hours) < 1e-6, true, "the scoreboard matches the year's calls (%s)" % closed)
-	_expect(closed.turn_minutes > 2 * rules.gate_minutes, true, "and reports the gate turn")
+	_expect(closed.turn_minutes > 2 * rules.gate_levels.manual.minutes, true, "and reports the gate turn")
 	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.begins_with("Year 1: ")), true, "the year is reported")
 
 

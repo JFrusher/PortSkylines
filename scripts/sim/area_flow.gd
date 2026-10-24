@@ -373,6 +373,16 @@ static func _edge_cells(sim: PortSim) -> Array[Vector2i]:
 	return found
 
 
+## Minutes gate `gate` takes to check one lorry, from its level.
+static func gate_minutes(sim: PortSim, gate: int) -> float:
+	return sim.rules.gate_levels[sim.areas.list[gate].settings.level].minutes
+
+
+## Lorries an hour gate `gate` can check: a booth per lane, each taking its level's minutes.
+static func gate_throughput(sim: PortSim, gate: int) -> float:
+	return sim.areas.layout(gate).lanes.size() * 60.0 / gate_minutes(sim, gate)
+
+
 ## The working gates of `terminal`.
 static func _gates(sim: PortSim, terminal: int) -> Array[int]:
 	var found: Array[int] = []
@@ -526,7 +536,7 @@ static func _arrived(sim: PortSim, vehicle: Vehicle) -> void:
 		_start_handling(sim, vehicle)
 		return
 	vehicle.state = "at_gate"
-	vehicle.timer = sim.rules.gate_minutes
+	vehicle.timer = gate_minutes(sim, vehicle.area)
 	var now := sim.clock.calendar_minutes()
 	if vehicle.gate_in < 0.0:
 		vehicle.gate_in = now

@@ -315,6 +315,17 @@ func _test_apron_and_gate_layouts() -> void:
 	_expect(sim.areas.layout(4).lanes.size(), 6, "a large gate has 6 lanes, each with its booth")
 	_expect(sim.areas.layout(4).slots.size(), 6, "so 6 lorries are checked at once")
 	_expect(sim.areas.kind_of(sim.areas.list[4]), "gate", "every size is a gate")
+	_expect(sim.areas.list[2].settings, {"level": "manual"}, "a new gate has manual booths")
+	_expect(AreaFlow.gate_throughput(sim, 2), 4 * 60.0 / sim.rules.gate_levels.manual.minutes, "throughput is lanes times lorries a booth checks an hour")
+	var upkeep := sim.daily_upkeep()
+	sim.teu_handled = int(sim.rules.milestones.terminal.teu)
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"level": "ocr"}}), "", "past the terminal milestone, a gate is upgraded in place to OCR")
+	_expect(AreaFlow.gate_minutes(sim, 2), sim.rules.gate_levels.ocr.minutes, "an OCR portal checks a lorry faster")
+	_expect(sim.daily_upkeep() - upkeep, 4 * sim.rules.gate_levels.ocr.upkeep_per_lane, "and costs upkeep per lane")
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"level": "teleporter"}}), "Unknown gate level: teleporter", "unknown levels are refused")
+	_expect(sim.apply({"op": "set_area", "id": 1, "settings": {"level": "ocr"}}), "A quay apron has no level setting", "only gates have a level")
+	var locked := AreaPort.terminal(30)
+	_expect(locked.apply({"op": "set_area", "id": 2, "settings": {"level": "automated"}}), locked.lock_error("automated"), "automated gates wait for their milestone")
 
 
 func _test_area_settings() -> void:
@@ -611,7 +622,7 @@ func _test_delivery() -> void:
 	_expect(sim.delivered - delivered, 2, "lorries take both boxes out through the gate to the site exit")
 	_expect(most_phases >= 6, true, "fetching the buried box first moves the one on top: a lift and a set-down more")
 	_expect(sim.turn_times.size(), 2, "each lorry's gate turn is recorded")
-	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * sim.rules.gate_minutes), true, "a turn includes the gate time both ways")
+	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * sim.rules.gate_levels.manual.minutes), true, "a turn includes the gate time both ways")
 	_expect(sim.dwell_times.size() >= 2, true, "dwell is recorded at pickup")
 	_expect(stacks.boxes().is_empty() and sim._claimed.is_empty(), true, "the yard is empty and nothing is left claimed")
 	for i in 600:
