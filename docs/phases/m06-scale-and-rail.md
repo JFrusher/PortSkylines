@@ -66,6 +66,16 @@
 17. **Reefers.** Reefer plug yard tiles. Reefer boxes must be plugged within N minutes or the line is fined. Power demand is 4 kW average and 7 kW on hot days, billed with a peak demand charge. Test: a ship of reefers sets a measurable peak.
 18. **Neopanamax.** Add the class with its berth length, depth and outreach requirements, and wider-outreach cranes unlocked by milestone. Test: berth and channel gating as in M2/M3.
 
+### From the developer's notes and the M5 playtest (24 Oct 2026)
+- **Speeds above 2 cells a tick.** `LaneTraffic.advance` moves a vehicle less than 2 cells a tick, which caps every vehicle near 160 m a game minute (9.6 km/h) whatever the data says (M5 playtest, open 5). Let `advance` enter cells one at a time up to its speed, then raise lorry and tractor speeds in the data. Test: a 2 km trip takes the data's time, and the replay hash holds.
+- **Exports only for booked calls.** Export lorries come only for exports wanted by calls due within a lead time from the data (step 16 drives the mix). Test: no export waits in the yard longer than the lead time plus a call's window (M5 playtest, open 2).
+- **Rush and sensitive boxes.** Beside reefers: rush boxes carry a deadline that a late call misses with a fine, and sensitive (dangerous goods) boxes need a block whose rules allow them, kept a data distance from other blocks. Test: a rush box past its deadline fines its line, and a sensitive box is never stacked in a block that refuses it.
+- **Quay add-ons.** Behind an STS crane's apron, a rail siding or road add-on snapped to the apron's land side, as CS2 building upgrades snap on. Boxes for rail go straight to the siding. Test: an add-on is only built behind an apron, and rail-booked imports never pass the gate.
+- **Weekly calendar.** A panel showing each agreed service's window across the week, and the berth each will use, with clashes in red. Check: screenshot; test: a clash is listed when two windows overlap on one berth.
+- **Cost per box.** A panel replacing a tax-style view: income, upkeep and labour per move, per terminal and per line, as the port's main money lever. Test: the panel's per-move figure equals the ledger's totals over moves.
+- **Remove one STS crane** without bulldozing its apron (M5 playtest, open 6). Test: removing a crane frees its fetchers and leaves the apron.
+- **Ships and STS cranes at true scale** (M5 playtest, open 7). Check: screenshot beside yard boxes.
+
 ### Close
 19. **Endgame bench passes** on the target PC. Record it.
 20. **Fixtures and soak.** Add the new save fixture and rail to the soak test.

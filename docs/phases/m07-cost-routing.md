@@ -34,6 +34,10 @@
 11. **Priority signs** *(cuttable)*: yield and stop. Test: a yielding vehicle waits for a gap.
 12. **Traffic overlay.** A view mode colours lanes by speed relative to free flow. Check: screenshot.
 
+### From the M5 follow-up (24 Oct 2026)
+Done already, on the M5 lane graph: turns join where the two lanes cross (no turn drives back over a cell), traffic turns back at junctions as well as dead ends, every cell where roads meeting at a junction overlap is a junction cell, and the road tool snaps onto nearby roads (`tests/test_junctions.gd`, `test_roads`). Step 2's turn rules (which lane may turn which way) are still to do.
+- **Gates across both directions** (M5 playtest, open 3): a gate laid across a road, or paired in and out gates, so an outbound lorry passes it without turning round. Test: an outbound lorry's gate turn takes no dead-end detour.
+
 ### Close
 13. **Bench and replay.** Endgame bench within budget, and the replay hash test with threads.
 14. **Fixture and soak.** New save fixture, and lane invariants in the soak test.

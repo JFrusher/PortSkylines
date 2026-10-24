@@ -33,6 +33,10 @@
 12. **Inter-terminal transfers.** A box can move by road between terminals of the same port. Transfers are paid as internal moves in the ledger. Test: a box bound for terminal B reaches B's yard.
 13. **Port authority fees** *(cuttable)*: channel and pilotage income charged per call by the port, separate from terminal handling. Test: ledger lines.
 
+### From the developer's notes (24 Oct 2026)
+- **Tug depot and ship lanes as things you build.** Tugs (step 8) come from a tug depot placed on the water, and the channel (step 5) is drawn as ship lanes; a nearer depot berths ships sooner. Test: moving the depot closer shortens berthing time by the data's tug speed.
+- **Life cycle.** Write `docs/progression.md`: from a regional pier to an automated mega-port, which milestone unlocks what, and the late-game optimisation loop (bigger ships, denser yards, automation) that keeps the port growing. Check: every unlock in the data appears in it.
+
 ### Close
 14. **Bench at port scale.** Set new targets in `docs/perf.md` and meet them.
 15. **Fixture and soak.** New save fixture, and multi-terminal commands in the soak test.
