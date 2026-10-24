@@ -42,6 +42,7 @@
 	"sail_seconds": 4.0,
 	"lorry_interval_minutes": 1.0,
 	"export_lorry_interval_minutes": 2.0,
+	"export_lead_hours": 48.0,
 	"import_dwell_minutes": 1440.0,
 	"lorry_speed": 125.0,
 	"give_up_seconds": 30.0,

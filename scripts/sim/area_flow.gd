@@ -110,7 +110,7 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		if ship.exports == 0:
 			sim._sail(ship, working.size())
 			sim._event("A %s is sailing, fully loaded" % ship.kind)
-		elif _export_box(sim, sim.areas.list[ship.apron].terminal) == 0:
+		elif _export_box(sim, sim.areas.list[ship.apron].terminal) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
 			sim._sail(ship, working.size())
 			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports])
 
@@ -278,10 +278,13 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	return false
 
 
-## Sends a lorry in from the site entry with an export box, to a terminal
-## with a gate whose export blocks have room for more than the export lorries
-## already on their way; false when there is none or the way in is busy.
+## Sends a lorry in from the site entry with an export box, while calls want
+## more exports than the port holds, to a terminal with a gate whose export
+## blocks have room for more than the export lorries already on their way;
+## false when none is wanted, there is no room, or the way in is busy.
 static func dispatch_export_lorry(sim: PortSim) -> bool:
+	if export_demand(sim) <= 0:
+		return false
 	for terminal: int in sim.areas.terminals:
 		var gate := _gate_of(sim, terminal)
 		if gate == 0 or _export_room(sim, terminal) <= 0:
@@ -299,6 +302,34 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		_go_to(sim, lorry, gate)
 		return true
 	return false
+
+
+## Exports wanted and not yet in the port: room on ships in port, and on the
+## calls of agreed services due within export_lead_hours, less every export
+## box already in a yard, on a vehicle or on its way.
+# shortcut: demand is port-wide; split it per terminal when contracts belong to one (M8 step 3).
+static func export_demand(sim: PortSim) -> int:
+	var week_now := fposmod(sim.clock.calendar_minutes(), Contracts.MINUTES_PER_WEEK)
+	var wanted := 0
+	for ship: PortSim.Ship in sim.ships:
+		if ship.state != PortSim.Ship.State.LEAVING:
+			wanted += ship.exports
+	for service: Dictionary in sim.contracts.services:
+		var until := fposmod(service.start - week_now, Contracts.MINUTES_PER_WEEK)
+		if until > 0.0 and until <= sim.rules.export_lead_hours * 60.0:
+			wanted += sim.rules.ship_classes[service.kind].export_moves
+	for box: Dictionary in sim.boxes.values():
+		if box.kind == "export":
+			wanted -= 1
+	return wanted
+
+
+## Whether exports are on their way into `terminal`, or can still be sent:
+## wanted, with a gate to come in by and room in its export blocks.
+static func _exports_coming(sim: PortSim, terminal: int) -> bool:
+	if export_demand(sim) > 0 and _gate_of(sim, terminal) != 0 and _export_room(sim, terminal) > 0:
+		return true
+	return sim.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry" and v.loaded and sim.boxes[v.box].kind == "export" and v.area in sim.areas.list and sim.areas.list[v.area].terminal == terminal)
 
 
 ## Room left in `terminal`'s working export blocks, less the export lorries

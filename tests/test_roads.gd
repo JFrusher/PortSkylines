@@ -31,6 +31,7 @@ func _initialize() -> void:
 	_test_delivery()
 	_test_exports()
 	_test_crane_keeps_tractors_busy()
+	_test_exports_wait_for_calls()
 	_test_lorry_gives_up()
 	_test_following_a_box()
 	print("tests: %d failure(s)" % _failures)
@@ -641,6 +642,18 @@ func _test_crane_keeps_tractors_busy() -> void:
 	_expect(most >= 2, true, "a loading crane has more than one tractor fetching exports at once (most %d)" % most)
 	_expect(ship.exports, 0, "and loads them all")
 	_expect(ship.state, PortSim.Ship.State.LEAVING, "then sails")
+
+
+func _test_exports_wait_for_calls() -> void:
+	var sim := AreaPort.terminal(60)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90})
+	sim.apply({"op": "set_area", "id": 3, "settings": {"role": "export"}})
+	sim.apply({"op": "set_terminal", "id": 3, "terminal": 1})
+	for i in roundi(120 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+	var exports := sim.boxes.values().filter(func(b: Dictionary) -> bool: return b.kind == "export").size()
+	_expect(exports, 0, "with no call booked, no exports come in two hours")
 
 
 func _test_lorry_gives_up() -> void:
