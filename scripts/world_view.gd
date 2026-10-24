@@ -411,7 +411,7 @@ func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
 	var along := Vector2((area.end - area.start).sign())
 	var side := Vector2(area.out).normalized()
 	var span := AreaFlow.ship_cells(sim, ship.kind)
-	var depth: int = sim.rules.area_types.quay_apron.depth
+	var depth := sim.areas.depth_of(area)
 	var edge := (Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * (depth - 1) + Vector2(0.5, 0.5)) * Grid.CELL
 	return [edge / METRES_PER_UNIT + side, side]
 
@@ -501,7 +501,7 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var model := Node3D.new()
 	# Between its apron's rails, facing the water.
 	var area: Dictionary = sim.areas.list[crane.apron]
-	var depth: int = sim.rules.area_types.quay_apron.depth
+	var depth := sim.areas.depth_of(area)
 	var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 	model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
 	model.rotation.y = atan2(area.out.x, area.out.y)

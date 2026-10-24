@@ -13,9 +13,10 @@ const SERVICES := 3
 static func steps(sim: PortSim) -> Array[Dictionary]:
 	var feeder := AreaFlow.ship_cells(sim, "feeder")
 	var depth: int = sim.rules.area_types.quay_apron.depth
+	var max_depth: int = sim.rules.area_types.quay_apron.max_depth
 	return [
-		{"text": "Draw a terminal road from the highway at the middle of the east edge to the coast, and a coast road %d m in from the water that runs on past it both ways: vehicles turn round only at a road's dead ends (Roads, key 1)." % Grid.metres(depth + 1), "done": func() -> bool:
-			return sim.roads.segment_at(sim.site_entry()) != 0 and sim.roads.segments.keys().any(func(s: int) -> bool: return sim.roads.cells(s).any(func(c: Vector2i) -> bool: return c.x <= Grid.cells(sim.rules.site.sea_width) + depth + 2))},
+		{"text": "Draw a terminal road from the highway at the middle of the east edge to the coast, and a coast road %d–%d m in from the water that runs on past it both ways, so vehicles can turn round at the junction (Roads, key 1)." % [Grid.metres(depth + 1), Grid.metres(max_depth + 1)], "done": func() -> bool:
+			return sim.roads.segment_at(sim.site_entry()) != 0 and sim.roads.segments.keys().any(func(s: int) -> bool: return sim.roads.cells(s).any(func(c: Vector2i) -> bool: return c.x <= Grid.cells(sim.rules.site.sea_width) + max_depth + 2))},
 		{"text": "Drag a quay apron at least %d m long along the coast road's sea side, reaching the water (Quay, key 2)." % Grid.metres(feeder), "done": func() -> bool:
 			return _areas(sim, "quay_apron").any(func(id: int) -> bool: return RoadNet.length(sim.areas.list[id].start, sim.areas.list[id].end) + 1 >= feeder)},
 		{"text": "Drag a gate along the road near the highway, beside the lane coming in, where lorries check in (Gate, key 5).", "done": func() -> bool:

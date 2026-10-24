@@ -66,7 +66,7 @@ const SCHEMA := {
 	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
 	# Areas dragged along a road edge: how deep they reach from the road and
 	# their shortest length, in 4 m cells, and cost and daily upkeep per cell.
-	"area_types": {"*": {"name": TYPE_STRING, "depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
+	"area_types": {"*": {"name": TYPE_STRING, "depth": TYPE_INT, "max_depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
 	"yard_gear": {"*": {"upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
@@ -126,6 +126,9 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		var road: Dictionary = rules.road_types[kind]
 		if road.forward < 0 or road.backward < 0 or road.forward + road.backward == 0 or road.forward < road.backward:
 			return {"error": "road_types.%s: needs lanes, with at least as many forward as backward" % kind}
+	for kind: String in rules.area_types:
+		if rules.area_types[kind].max_depth < rules.area_types[kind].depth:
+			return {"error": "area_types.%s: max_depth must be at least depth" % kind}
 	for line: String in rules.lines:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):

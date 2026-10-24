@@ -44,7 +44,7 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 static func _ship_water(sim: PortSim, ship: PortSim.Ship) -> Array[Vector2i]:
 	var area: Dictionary = sim.areas.list[ship.apron]
 	var along: Vector2i = (area.end - area.start).sign()
-	var depth: int = sim.rules.area_types.quay_apron.depth
+	var depth := sim.areas.depth_of(area)
 	var found: Array[Vector2i] = []
 	for k in range(ship.from, ship.from + AreaFlow.ship_cells(sim, ship.kind)):
 		for beam in range(depth, depth + 8):
@@ -57,7 +57,7 @@ static func _crane_cells(sim: PortSim, crane: PortSim.Crane) -> Array[Vector2i]:
 	var area: Dictionary = sim.areas.list[crane.apron]
 	var along: Vector2i = (area.end - area.start).sign()
 	var found: Array[Vector2i] = []
-	for row in range(1, sim.rules.area_types.quay_apron.depth - 1):
+	for row in range(1, sim.areas.depth_of(area) - 1):
 		found.append(area.start + along * crane.along + area.out * row)
 	return found
 
