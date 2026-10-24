@@ -106,7 +106,7 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 			crane.tractor = 0
 			crane.timer = 0.0
 		_load(sim, crane, ship, move_minutes)
-	if ship.boxes == 0 and working.all(func(c: PortSim.Crane) -> bool: return c.tractor == 0):
+	if ship.boxes == 0 and working.all(func(c: PortSim.Crane) -> bool: return c.tractor == 0) and _fetchers(sim, ship).is_empty():
 		if ship.exports == 0:
 			sim._sail(ship, working.size())
 			sim._event("A %s is sailing, fully loaded" % ship.kind)
@@ -136,14 +136,20 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 
 
 ## One crane's tick loading: while the ship has room for more exports than
-## are already being fetched, it sends a tractor for one, then lifts the box
-## aboard once the tractor is back beneath it.
+## are already being fetched, it keeps up to max_fetchers tractors fetching
+## them, and lifts each box aboard once its tractor is back beneath it, so
+## the crane works while others drive.
 static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_minutes: float) -> void:
+	var fetchers := _fetchers(sim, ship)
+	var slot := _crane_slot(sim, crane, ship)
+	var mine := fetchers.filter(func(v: Vehicle) -> bool: return v.home == slot)
+	if ship.exports > fetchers.size() and mine.size() < sim.rules.sts_crane.max_fetchers:
+		_send_fetcher(sim, crane, ship)
 	if crane.tractor == 0:
-		var fetching := cranes_for(sim, ship).filter(func(c: PortSim.Crane) -> bool: return c.tractor != 0).size()
-		if ship.exports > fetching:
-			_send_fetcher(sim, crane, ship)
-		return
+		var back := mine.filter(func(v: Vehicle) -> bool: return v.state == "under_crane")
+		if back.is_empty():
+			return
+		crane.tractor = back[0].id
 	var tractor := _vehicle(sim, crane.tractor)
 	if tractor.state != "under_crane":
 		return
@@ -175,8 +181,18 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	tractor.box = box
 	sim._claimed[box] = true
 	sim.vehicles.append(tractor)
-	crane.tractor = tractor.id
 	_go_to(sim, tractor, _block_of(sim, box))
+
+
+## The tractors out fetching exports for `ship`: each has its home in the
+## apron slot under one of the ship's cranes.
+static func _fetchers(sim: PortSim, ship: PortSim.Ship) -> Array[Vehicle]:
+	var slots := cranes_for(sim, ship).map(func(c: PortSim.Crane) -> Vector2i: return _crane_slot(sim, c, ship))
+	var found: Array[Vehicle] = []
+	for vehicle in sim.vehicles:
+		if vehicle.kind == "tractor" and vehicle.home in slots:
+			found.append(vehicle)
+	return found
 
 
 ## The least buried export box waiting in a working export block of
@@ -633,11 +649,18 @@ static func remove(sim: PortSim, id: int) -> void:
 			sim.boxes.erase(box)
 			lost += 1
 		sim.area_stacks.erase(id)
+	var cells := sim.areas.cells(id)
 	for vehicle: Vehicle in sim.vehicles.duplicate():
-		if vehicle.area == id:
+		# Bound for the area, or fetching an export for a crane on it.
+		if vehicle.area == id or vehicle.home in cells:
 			if vehicle.loaded:
 				sim.boxes.erase(vehicle.box)
 				lost += 1
+			elif vehicle.box != 0:
+				sim._claimed.erase(vehicle.box)
+			if vehicle.area != id and vehicle.area in sim.areas.list:
+				sim.handovers.drop(vehicle.area, vehicle.id)
+				_promote(sim, vehicle.area)
 			sim.lane_traffic.leave(vehicle)
 			sim.vehicles.erase(vehicle)
 	for machine: int in sim.machines.list.keys():
