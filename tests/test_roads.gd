@@ -30,6 +30,10 @@ func _initialize() -> void:
 	_test_discharge()
 	_test_delivery()
 	_test_exports()
+	_test_crane_keeps_tractors_busy()
+	_test_exports_wait_for_calls()
+	_test_lorries_use_the_gate_on_their_side()
+	_test_two_way_gate()
 	_test_lorry_gives_up()
 	_test_following_a_box()
 	print("tests: %d failure(s)" % _failures)
@@ -130,8 +134,10 @@ func _test_routes() -> void:
 		grid.add(Vector2i(i * 10 + 5, -5), Vector2i(i * 10 + 5, 25), "terminal_2_2")
 	var across := grid_lanes.route(Vector2i(0, 0), Vector2i(25, 20), true)
 	_expect(_steps_are_single(across), true, "junction crossings move one cell at a time")
-	# East along row 0's eastbound lane to column 25, then down its southbound lane.
-	_expect(across.size() - 1, 25 + 20, "a route across a road grid is the shortest by hand")
+	# 25 east and 20 south, less one diagonal lane change on each of four
+	# straight runs: turns join where lanes cross, so the route staircases
+	# down the columns at 5 and 15, turning at each junction's inner corner.
+	_expect(across.size() - 1, 25 + 20 - 4, "a route across a road grid is the shortest by hand")
 
 
 func _test_editing() -> void:
@@ -139,6 +145,17 @@ func _test_editing() -> void:
 	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(1, -9)), Vector2i(0, -9), "a nearly upright drag snaps straight")
 	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(6, 4)), Vector2i(5, 5), "an in-between drag snaps to 45°")
 	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(-4, 6)), Vector2i(-5, 5), "45° snapping keeps the drag's direction")
+	var snapping := RoadNet.new(Content.base().road_types)
+	snapping.add(Vector2i(0, 50), Vector2i(40, 50), "terminal_1_1")
+	_expect(snapping.snap_start(Vector2i(20, 52)), Vector2i(20, 50), "a drag starting beside a road starts on it")
+	_expect(snapping.snap_start(Vector2i(38, 51)), Vector2i(40, 50), "a road's end wins over the cells beside it")
+	_expect(snapping.snap_start(Vector2i(20, 60)), Vector2i(20, 60), "a drag starting away from roads stays put")
+	_expect(snapping.snap_end(Vector2i(22, 20), Vector2i(21, 48)), Vector2i(22, 50), "a drag ending near a road ends on it, straight from its start")
+	_expect(snapping.add(Vector2i(22, 20), snapping.snap_end(Vector2i(22, 20), Vector2i(21, 48)), "terminal_1_1"), "", "and that road is built, joining at a T")
+	_expect(snapping.degree(snapping.nodes.find_key(Vector2i(22, 50))), 3, "the snapped end is a junction")
+	_expect(snapping.snap_end(Vector2i(10, 30), Vector2i(32, 49)), Vector2i(30, 50), "a 45° drag ends on the road at 45°, where plain snapping gives (31, 51)")
+	_expect(snapping.snap_end(Vector2i(40, 50), Vector2i(38, 53)), Vector2i(37, 53), "a drag from a road's end doesn't snap back onto that road")
+	_expect(snapping.snap_end(Vector2i(60, 20), Vector2i(61, 30)), Vector2i(60, 30), "away from roads the end snaps straight as before")
 	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
 	var net := RoadNet.new(Content.base().road_types)
 	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
@@ -204,8 +221,15 @@ func _test_areas() -> void:
 	_expect(areas.add("depot", north, -1, 60, net.cells(north).size() - 1), "Something is already built here", "an area can't cover a road")
 	var inland := RoadNet.new(rules.road_types)
 	var inland_areas := Areas.new(rules.area_types, inland, rules.site)
-	inland.add(Vector2i(90, 100), Vector2i(90, 200), "terminal_1_1")
+	inland.add(Vector2i(95, 100), Vector2i(95, 200), "terminal_1_1")
 	_expect(inland_areas.add("quay_apron", 1, 1, 0, 40), "A quay apron runs along the water's edge", "an apron must reach the water")
+	var wide := RoadNet.new(rules.road_types)
+	var wide_areas := Areas.new(rules.area_types, wide, rules.site)
+	# The sea ends at x = 75 and the area starts at x = 89, so the apron is 15 rows deep.
+	wide.add(Vector2i(90, 100), Vector2i(90, 200), "terminal_1_1")
+	_expect(wide_areas.add("quay_apron", 1, 1, 0, 40), "", "an apron reaches out to the water from a road further in")
+	_expect(wide_areas.depth_of(wide_areas.list[1]), 15, "it is as deep as the gap to the water")
+	_expect(wide_areas.layout(1).edge.all(func(c: Vector2i) -> bool: return c.x == 75), true, "its quay edge is at the water")
 	var coast := RoadNet.new(rules.road_types)
 	var coast_areas := Areas.new(rules.area_types, coast, rules.site)
 	coast.add(Vector2i(78, 100), Vector2i(78, 200), "terminal_1_1")
@@ -286,6 +310,23 @@ func _test_apron_and_gate_layouts() -> void:
 	_expect(gate.slots.size(), gate.lanes.size(), "one booth slot per lane")
 	_expect(gate.slots.all(func(s: Array) -> bool: return s[0].y == 106), true, "booths sit at the gate's middle bay")
 	_expect(gate.lanes.all(func(l: Array) -> bool: return l.size() == 15), true, "gate lanes run the gate's length")
+	_expect(sim.apply({"op": "build_area", "type": "gate_small", "segment": 1, "side": -1, "from": 16, "to": 30}), "", "a small gate is built")
+	_expect(sim.areas.layout(3).lanes.size(), 2, "a small gate has 2 lanes")
+	_expect(sim.apply({"op": "build_area", "type": "gate_large", "segment": 1, "side": -1, "from": 32, "to": 46}), "", "a large gate is built")
+	_expect(sim.areas.layout(4).lanes.size(), 6, "a large gate has 6 lanes, each with its booth")
+	_expect(sim.areas.layout(4).slots.size(), 6, "so 6 lorries are checked at once")
+	_expect(sim.areas.kind_of(sim.areas.list[4]), "gate", "every size is a gate")
+	_expect(sim.areas.list[2].settings, {"level": "manual"}, "a new gate has manual booths")
+	_expect(AreaFlow.gate_throughput(sim, 2), 4 * 60.0 / sim.rules.gate_levels.manual.minutes, "throughput is lanes times lorries a booth checks an hour")
+	var upkeep := sim.daily_upkeep()
+	sim.teu_handled = int(sim.rules.milestones.terminal.teu)
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"level": "ocr"}}), "", "past the terminal milestone, a gate is upgraded in place to OCR")
+	_expect(AreaFlow.gate_minutes(sim, 2), sim.rules.gate_levels.ocr.minutes, "an OCR portal checks a lorry faster")
+	_expect(sim.daily_upkeep() - upkeep, 4 * sim.rules.gate_levels.ocr.upkeep_per_lane, "and costs upkeep per lane")
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"level": "teleporter"}}), "Unknown gate level: teleporter", "unknown levels are refused")
+	_expect(sim.apply({"op": "set_area", "id": 1, "settings": {"level": "ocr"}}), "A quay apron has no level setting", "only gates have a level")
+	var locked := AreaPort.terminal(30)
+	_expect(locked.apply({"op": "set_area", "id": 2, "settings": {"level": "automated"}}), locked.lock_error("automated"), "automated gates wait for their milestone")
 
 
 func _test_area_settings() -> void:
@@ -582,7 +623,7 @@ func _test_delivery() -> void:
 	_expect(sim.delivered - delivered, 2, "lorries take both boxes out through the gate to the site exit")
 	_expect(most_phases >= 6, true, "fetching the buried box first moves the one on top: a lift and a set-down more")
 	_expect(sim.turn_times.size(), 2, "each lorry's gate turn is recorded")
-	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * sim.rules.gate_minutes), true, "a turn includes the gate time both ways")
+	_expect(sim.turn_times.all(func(t: float) -> bool: return t >= 2 * sim.rules.gate_levels.manual.minutes), true, "a turn includes the gate time both ways")
 	_expect(sim.dwell_times.size() >= 2, true, "dwell is recorded at pickup")
 	_expect(stacks.boxes().is_empty() and sim._claimed.is_empty(), true, "the yard is empty and nothing is left claimed")
 	for i in 600:
@@ -605,6 +646,68 @@ func _test_exports() -> void:
 	_expect(ship.exports, 0, "tractors fetch exports to the crane, which loads them all")
 	_expect(ship.moves, 3, "the ship counts its import and both exports")
 	_expect(ship.state, PortSim.Ship.State.LEAVING, "and sails fully loaded")
+
+
+func _test_crane_keeps_tractors_busy() -> void:
+	# One crane, four tractors, a ship taking 8 exports and bringing none.
+	var sim := AreaPort.working_terminal(0, 8)
+	var ship := sim.ships[0]
+	var most := 0
+	for i in 80000:
+		sim.tick()
+		most = maxi(most, sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor" and v.home != Grid.NONE).size())
+		if ship.state == PortSim.Ship.State.LEAVING:
+			break
+	_expect(most >= 2, true, "a loading crane has more than one tractor fetching exports at once (most %d)" % most)
+	_expect(ship.exports, 0, "and loads them all")
+	_expect(ship.state, PortSim.Ship.State.LEAVING, "then sails")
+
+
+func _test_exports_wait_for_calls() -> void:
+	var sim := AreaPort.terminal(60)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90})
+	sim.apply({"op": "set_area", "id": 3, "settings": {"role": "export"}})
+	sim.apply({"op": "set_terminal", "id": 3, "terminal": 1})
+	for i in roundi(120 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+	var exports := sim.boxes.values().filter(func(b: Dictionary) -> bool: return b.kind == "export").size()
+	_expect(exports, 0, "with no call booked, no exports come in two hours")
+
+
+func _test_lorries_use_the_gate_on_their_side() -> void:
+	var sim := AreaPort.working_terminal(1)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	# A second gate across the road from the first, on the eastbound side lorries leave by.
+	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": 1, "from": 300, "to": 314}), "", "a gate is built on the outbound side")
+	var south: int = sim.areas.list.keys().max()
+	sim.apply({"op": "set_terminal", "id": south, "terminal": 1})
+	var out_gates := {}
+	for i in 30000:
+		sim.tick()
+		for v: Vehicle in sim.vehicles:
+			if v.kind == "lorry" and v.state == "at_gate" and v.loaded:
+				out_gates[v.area] = true
+		if sim.delivered == 1:
+			break
+	_expect(sim.delivered, 1, "the import leaves by lorry")
+	_expect(out_gates.keys(), [south], "the lorry checks out at the gate on its way out, not the inbound one")
+
+
+func _test_two_way_gate() -> void:
+	var sim := AreaPort.owned(PortSim.new())
+	var entry := sim.site_entry()
+	sim.apply({"op": "build_road", "from": Vector2i(400, entry.y), "to": entry, "type": "terminal_1_1"})
+	var money := sim.money
+	_expect(sim.apply({"op": "build_two_way_gate", "type": "gate_small", "segment": 1, "from": 10, "to": 24}), "", "a two-way gate is built")
+	var gates := sim.areas.list.keys()
+	_expect(gates.size(), 2, "it is a gate on each side of the road")
+	_expect(sim.areas.list[gates[0]].out, -sim.areas.list[gates[1]].out, "facing opposite ways")
+	_expect(sim.areas.list[gates[0]].terminal, sim.areas.list[gates[1]].terminal, "in one terminal")
+	_expect(money - sim.money, 2 * sim.area_price("gate_small", 1, 1, 10, 24), "both sides are paid for")
+	_expect(sim.apply({"op": "build_two_way_gate", "type": "yard_block", "segment": 1, "from": 30, "to": 50}), "Only gates are built on both sides of a road", "only gates are two-way")
+	_expect(sim.apply({"op": "build_two_way_gate", "type": "gate", "segment": 1, "from": 20, "to": 34}), "Something is already built here", "neither side may overlap")
+	_expect(sim.areas.list.size(), 2, "a refused two-way gate builds neither side")
 
 
 func _test_lorry_gives_up() -> void:

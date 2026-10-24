@@ -39,8 +39,10 @@ var sim: PortSim
 var tool := DRAW_ROAD
 ## The road type DRAW_ROAD draws, a key of rules.road_types.
 var road_type := ""
-## The area type DRAW_AREA drags out, a key of rules.area_types.
+## The area type DRAW_AREA drags out, a key of rules.area_types, and for a
+## gate whether it is built on both sides of the road.
 var area_type := ""
+var two_way := false
 var speed := 1
 
 var _money := Label.new()
@@ -220,9 +222,16 @@ func _ready() -> void:
 			road_type = key))
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
-		_item(_button(rows[AREA_ROWS[key]], "%s\n$%d per 4 m cell" % [area.name, area.cost_per_cell], tools, false, func() -> void:
+		var detail := "%d lanes, $%d a cell" % [area.depth - 2, area.cost_per_cell] if area.kind == "gate" else "$%d per 4 m cell" % area.cost_per_cell
+		_item(_button(rows[AREA_ROWS[area.kind]], "%s\n%s" % [area.name, detail], tools, false, func() -> void:
 			tool = DRAW_AREA
-			area_type = key))
+			area_type = key
+			two_way = false))
+		if area.kind == "gate":
+			_item(_button(rows.Gate, "Two-way %s\n%d lanes each way" % [area.name.to_lower(), area.depth - 2], tools, false, func() -> void:
+				tool = DRAW_AREA
+				area_type = key
+				two_way = true))
 	_gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n$%d" % sim.rules.channel.cost_per_metre, {"op": "dredge", "metres": 1})))
 	_item(_button(rows.Cranes, "STS crane\n" + HudDetails.dollars(sim.rules.sts_crane.cost), tools, false, func() -> void: tool = CRANE))
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2}))
@@ -576,6 +585,10 @@ func _draw_inspect_actions() -> void:
 			_action_button(_inspect_actions, "Join %s" % sim.areas.terminals[terminal].name, {"op": "set_terminal", "id": id, "terminal": terminal})
 	if sim.areas.list.values().filter(func(a: Dictionary) -> bool: return a.terminal == own).size() > 1:
 		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
+	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
+		for level: String in sim.rules.gate_levels:
+			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
+				_action_button(_inspect_actions, "Make %s" % sim.rules.gate_levels[level].name, {"op": "set_area", "id": id, "settings": {"level": level}})
 
 
 func _service_text(service: Dictionary) -> String:

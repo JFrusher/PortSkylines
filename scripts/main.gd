@@ -88,11 +88,13 @@ func _process(dt: float) -> void:
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
 	_follow(dt)
 	var cell := _hovered_grid_cell()
-	view.show_hover(cell, _order_error(cell) == "")
+	# Before a road drag, the hover shows where the drag would snap on.
+	view.show_hover(sim.roads.snap_start(cell) if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE else cell, _order_error(cell) == "")
 	var dragged: Array[Vector2i] = []
 	if not _area_from.is_empty():
 		var area := _area_command()
-		dragged = sim.areas.cells_of(area.type, area.segment, area.side, area.from, area.to)
+		for side: int in ([1, -1] if hud.two_way else [area.side]):
+			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
 	view.show_area_preview(dragged, _order_error(cell) == "")
 	view.show_road_preview(_road_from, _road_to() if _road_from != Grid.NONE else _road_from, hud.road_type, _order_error(cell) == "")
 	if _painting:
@@ -113,7 +115,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
 		if hud.tool == Hud.DRAW_AREA:
-			_report(sim.apply(_area_command()))
+			var area := _area_command()
+			if hud.two_way:
+				area = {"op": "build_two_way_gate", "type": area.type, "segment": area.segment, "from": area.from, "to": area.to}
+			_report(sim.apply(area))
 		_area_from = {}
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
@@ -123,7 +128,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				hud.flash("Drag areas out along a road's edge")
 			return
 		if hud.tool == Hud.DRAW_ROAD:
-			_road_from = _hovered_grid_cell()
+			_road_from = sim.roads.snap_start(_hovered_grid_cell())
 			return
 		if hud.tool == Hud.INSPECT:
 			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
@@ -204,6 +209,8 @@ func _order_error(cell: Vector2i) -> String:
 			if _area_from.is_empty():
 				return ""
 			var area := _area_command()
+			if hud.two_way:
+				return sim.build_two_way_gate_error(area.type, area.segment, area.from, area.to)
 			return sim.build_area_error(area.type, area.segment, area.side, area.from, area.to)
 		Hud.BULLDOZE:
 			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) else "Nothing to bulldoze here"
@@ -221,9 +228,10 @@ func _hovered_grid_cell() -> Vector2i:
 	return Grid.NONE if hit == null else WorldView.grid_cell(hit)
 
 
-## Where a road drag from _road_from ends, snapped straight or to 45°.
+## Where a road drag from _road_from ends: snapped onto a road near the
+## mouse, else straight or to 45°.
 func _road_to() -> Vector2i:
-	return RoadNet.snap(_road_from, _hovered_grid_cell())
+	return sim.roads.snap_end(_road_from, _hovered_grid_cell())
 
 
 ## The build_area command for the area dragged from _area_from to the mouse.

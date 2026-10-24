@@ -1,8 +1,10 @@
 {
 	"area_types": {
-		"yard_block": {"name": "Yard block", "depth": 8, "min_length": 10, "cost_per_cell": 2, "upkeep_per_cell": 0.05},
-		"quay_apron": {"name": "Quay apron", "depth": 10, "min_length": 20, "cost_per_cell": 3, "upkeep_per_cell": 0.1},
-		"gate": {"name": "Gate", "depth": 6, "min_length": 5, "cost_per_cell": 8, "upkeep_per_cell": 0.5},
-		"depot": {"name": "Depot", "depth": 6, "min_length": 5, "cost_per_cell": 1, "upkeep_per_cell": 0.05}
+		"yard_block": {"name": "Yard block", "kind": "yard_block", "depth": 8, "max_depth": 8, "min_length": 10, "cost_per_cell": 2, "upkeep_per_cell": 0.05},
+		"quay_apron": {"name": "Quay apron", "kind": "quay_apron", "depth": 10, "max_depth": 16, "min_length": 20, "cost_per_cell": 3, "upkeep_per_cell": 0.1},
+		"gate_small": {"name": "Small gate", "kind": "gate", "depth": 4, "max_depth": 4, "min_length": 5, "cost_per_cell": 8, "upkeep_per_cell": 0.5},
+		"gate": {"name": "Gate", "kind": "gate", "depth": 6, "max_depth": 6, "min_length": 5, "cost_per_cell": 8, "upkeep_per_cell": 0.5},
+		"gate_large": {"name": "Large gate", "kind": "gate", "depth": 8, "max_depth": 8, "min_length": 5, "cost_per_cell": 8, "upkeep_per_cell": 0.5},
+		"depot": {"name": "Depot", "kind": "depot", "depth": 6, "max_depth": 6, "min_length": 5, "cost_per_cell": 1, "upkeep_per_cell": 0.05}
 	}
 }

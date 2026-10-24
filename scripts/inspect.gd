@@ -44,7 +44,7 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 static func _ship_water(sim: PortSim, ship: PortSim.Ship) -> Array[Vector2i]:
 	var area: Dictionary = sim.areas.list[ship.apron]
 	var along: Vector2i = (area.end - area.start).sign()
-	var depth: int = sim.rules.area_types.quay_apron.depth
+	var depth := sim.areas.depth_of(area)
 	var found: Array[Vector2i] = []
 	for k in range(ship.from, ship.from + AreaFlow.ship_cells(sim, ship.kind)):
 		for beam in range(depth, depth + 8):
@@ -57,7 +57,7 @@ static func _crane_cells(sim: PortSim, crane: PortSim.Crane) -> Array[Vector2i]:
 	var area: Dictionary = sim.areas.list[crane.apron]
 	var along: Vector2i = (area.end - area.start).sign()
 	var found: Array[Vector2i] = []
-	for row in range(1, sim.rules.area_types.quay_apron.depth - 1):
+	for row in range(1, sim.areas.depth_of(area) - 1):
 		found.append(area.start + along * crane.along + area.out * row)
 	return found
 
@@ -97,6 +97,8 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 	var settings: Dictionary = area.settings
 	if settings.has("role"):
 		lines.append("%s block, %s" % [settings.role.capitalize(), settings.gear.replace("_", " ")])
+	if settings.has("level"):
+		lines.append("%s, %d lanes: %.1f min a lorry, %d lorries an hour" % [sim.rules.gate_levels[settings.level].name, sim.areas.layout(id).lanes.size(), AreaFlow.gate_minutes(sim, id), roundi(AreaFlow.gate_throughput(sim, id))])
 	if settings.has("lines") and not settings.lines.is_empty():
 		lines.append("Favours " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
 	var idle := sim.areas.idle_reason(id)

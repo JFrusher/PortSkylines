@@ -96,7 +96,7 @@ func set_terminal(id: int, terminal: int) -> String:
 ## Why `terminal` can't take contracts yet, or "": it needs a gate for lorries
 ## and a quay apron for ships.
 func terminal_error(terminal: int) -> String:
-	var kinds := list.values().filter(func(a: Dictionary) -> bool: return a.terminal == terminal).map(func(a: Dictionary) -> String: return a.type)
+	var kinds := list.values().filter(func(a: Dictionary) -> bool: return a.terminal == terminal).map(func(a: Dictionary) -> String: return kind_of(a))
 	if "quay_apron" not in kinds:
 		return "%s needs a quay apron" % terminals[terminal].name
 	if "gate" not in kinds:
@@ -135,13 +135,13 @@ func layout(id: int) -> Dictionary:
 		_layouts.clear()
 	if id not in _layouts:
 		var area: Dictionary = list[id]
-		match area.type:
+		match kind_of(area):
 			"yard_block":
-				_layouts[id] = AreaLayout.yard_block(area, types.yard_block.depth)
+				_layouts[id] = AreaLayout.yard_block(area, depth_of(area))
 			"quay_apron":
-				_layouts[id] = AreaLayout.quay_apron(area, types.quay_apron.depth)
+				_layouts[id] = AreaLayout.quay_apron(area, depth_of(area))
 			"gate":
-				_layouts[id] = AreaLayout.gate(area, types.gate.depth)
+				_layouts[id] = AreaLayout.gate(area, depth_of(area))
 			_:
 				_layouts[id] = {}
 	return _layouts[id]
@@ -160,7 +160,7 @@ func along(id: int, cell: Vector2i) -> int:
 	var area: Dictionary = list[id]
 	var front := RoadNet.line(area.start, area.end)
 	for k in front.size():
-		for d: int in types[area.type].depth:
+		for d in depth_of(area):
 			if front[k] + area.out * d == cell:
 				return k
 	return -1
@@ -179,7 +179,7 @@ func attach(cell: Vector2i, type: String) -> Dictionary:
 		var along := _roads.cells(segment)
 		for side: int in [1, -1]:
 			var front := _placed(type, segment, side, 0, along.size() - 1)
-			for d: int in types[type].depth:
+			for d: int in types[type].max_depth:
 				for i in along.size():
 					if front.start + _step(front) * i + front.out * d == cell:
 						return {"segment": segment, "side": side, "index": i}
@@ -246,6 +246,21 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	return {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
 
 
+## What `area` does, from its type: a gate of any size is a "gate".
+func kind_of(area: Dictionary) -> String:
+	return types[area.type].kind
+
+
+## How many rows deep `area` is: its type's depth, except that a quay apron
+## facing the sea reaches out to the water, up to its type's max_depth, so
+## its road needn't be an exact distance from the water.
+func depth_of(area: Dictionary) -> int:
+	var type: Dictionary = types[area.type]
+	if area.type == "quay_apron" and area.out == Vector2i(-1, 0):
+		return clampi(area.start.x - _sea + 1, type.depth, type.max_depth)
+	return type.depth
+
+
 static func _step(area: Dictionary) -> Vector2i:
 	return (area.end - area.start).sign()
 
@@ -253,7 +268,7 @@ static func _step(area: Dictionary) -> Vector2i:
 func _cells(area: Dictionary) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
 	for cell in RoadNet.line(area.start, area.end):
-		for d: int in types[area.type].depth:
+		for d in depth_of(area):
 			found.append(cell + area.out * d)
 	return found
 

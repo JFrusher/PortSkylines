@@ -30,6 +30,12 @@
 10. **Auto-replace and auto-order** *(cuttable)*. Optional rules: replace broken equipment, and order cranes when berth productivity drops below a target. Test: rules fire at their thresholds.
 11. **Month-long hands-off soak.** A scripted large port runs a game month with no commands and stays solvent and stable. Test: the exit criterion.
 
+### From the developer's notes (24 Oct 2026)
+- **Buildings inside areas, as Industries.** An area gains buildings that serve it: an AGV depot with charging bays, a yard gatehouse, a maintenance bay. A block's AGVs need a depot in reach. Test: AGVs with no depot in reach stay idle.
+- **AGVs as agents.** AGVs queue at block transfer points and charge at their depot when low. Test: an AGV below its charge limit drives to a charger before its next job.
+- **Utilities.** Power (reefers, shore power, chargers) and data (automation needs a link) as networks drawn like roads, with substations. Test: an unpowered charger charges nothing, and an unlinked ASC doesn't work.
+- **Manned or automated, per area.** Each block and the horizontal transport choose manned (cheap, slower, labour cost) or automated (capex, ramp-up, IT upkeep), so the trade-off is the player's. Test: switching a block changes its costs and rates as the data says.
+
 ### Close
 12. **Fixture and soak.** New save fixture, and policies and rules in the soak test.
 13. **Public playtest build.** Notes go in `docs/playtests/m11.md`.

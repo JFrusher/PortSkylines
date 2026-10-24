@@ -85,8 +85,9 @@ func _rebuild() -> void:
 	_at.clear()
 	_junction.clear()
 	_flows.clear()
-	var ends := {}  # node -> [segment, last point] of lanes arriving there
-	var starts := {}  # node -> [segment, first point] of lanes leaving there
+	var ends := {}  # node -> [segment, first point, cells] of lanes arriving there
+	var starts := {}  # node -> [segment, first point, cells] of lanes leaving there
+	var covers := {}  # cell -> {segment: true} for each segment with a lane there
 	var next_id := 0
 	for segment: int in _net.segments:
 		var road: Dictionary = _net.segments[segment]
@@ -100,10 +101,12 @@ func _rebuild() -> void:
 				_add_point(next_id + i, cells[i], lorries)
 				if i > 0:
 					_connect(next_id + i - 1, next_id + i, lorries)
+				covers[cells[i]] = covers.get(cells[i], {})
+				covers[cells[i]][segment] = true
 			var arrive: int = road.b if lane.forward else road.a
 			var leave: int = road.a if lane.forward else road.b
-			ends[arrive] = ends.get(arrive, []) + [[segment, next_id + cells.size() - 1]]
-			starts[leave] = starts.get(leave, []) + [[segment, next_id]]
+			ends[arrive] = ends.get(arrive, []) + [[segment, next_id, cells]]
+			starts[leave] = starts.get(leave, []) + [[segment, next_id, cells]]
 			next_id += cells.size()
 		# Lane changes: one cell on and one across, between lanes going the same way.
 		for k in lanes.size() - 1:
@@ -113,19 +116,54 @@ func _rebuild() -> void:
 				_connect(first_ids[k] + i, first_ids[k + 1] + i + 1, lorries)
 				_connect(first_ids[k + 1] + i, first_ids[k] + i + 1, lorries)
 	for node: int in ends:
-		var dead_end := _net.degree(node) == 1
+		# Traffic turns back at dead ends and junctions, never on a bend.
+		var turns_back := _net.degree(node) != 2
 		for arriving: Array in ends[node]:
 			for leaving: Array in starts.get(node, []):
-				if leaving[0] != arriving[0] or dead_end:
-					_connect(arriving[1], leaving[1], _lorries.has_point(arriving[1]) and _lorries.has_point(leaving[1]))
-					if _net.degree(node) >= 3:
-						var from := Vector2i(_all.get_point_position(arriving[1]))
-						var to := Vector2i(_all.get_point_position(leaving[1]))
-						for cell: Vector2i in [from, to] + _steps(from, to):
-							_junction[cell] = true
+				if leaving[0] == arriving[0] and not turns_back:
+					continue
+				var turn := _turn(arriving, leaving)
+				_connect(turn[0], turn[1], _lorries.has_point(turn[0]) and _lorries.has_point(turn[1]))
+				if _net.degree(node) >= 3:
+					var from := Vector2i(_all.get_point_position(turn[0]))
+					var to := Vector2i(_all.get_point_position(turn[1]))
+					for cell: Vector2i in [from, to] + _steps(from, to):
+						_junction[cell] = true
+	# Where roads meeting at a junction overlap, crossing traffic shares the
+	# cell, so it is a junction cell too and nobody stops in the box.
+	for cell: Vector2i in covers:
+		var meeting: Array = covers[cell].keys()
+		for k in meeting.size():
+			for m in range(k + 1, meeting.size()):
+				if _meet_at_junction(meeting[k], meeting[m]):
+					_junction[cell] = true
 	if areas:
 		for id: int in areas.list:
 			next_id = _add_area(id, next_id)
+
+
+## The [from, to] points a turn from lane `arriving` onto lane `leaving` joins,
+## each [segment, first point, cells]: the first cell where the two lanes
+## cross, so a turning vehicle never drives on past it and back; else the
+## arriving lane's last cell to the leaving lane's first.
+func _turn(arriving: Array, leaving: Array) -> Array:
+	var into: Array = arriving[2]
+	var out: Array = leaving[2]
+	for i in into.size():
+		var j := out.find(into[i])
+		if j >= 0:
+			return [arriving[1] + i, leaving[1] + j]
+	return [arriving[1] + into.size() - 1, leaving[1]]
+
+
+## Whether segments `s` and `t` end at one node that is a junction.
+func _meet_at_junction(s: int, t: int) -> bool:
+	var a: Dictionary = _net.segments[s]
+	var b: Dictionary = _net.segments[t]
+	for node: int in [a.a, a.b]:
+		if node in [b.a, b.b] and _net.degree(node) >= 3:
+			return true
+	return false
 
 
 ## Adds area `id`'s driveways from point id `next_id` on; returns the next free
@@ -163,10 +201,10 @@ func _add_area(id: int, next_id: int) -> int:
 	for road_point: int in _at.get(cell.call(0, length - 1) - area.out, []):
 		if not at.values().has(road_point):
 			_connect(at[cell.call(0, length - 1)], road_point, lorries and _lorries.has_point(road_point))
-	if area.type in ["quay_apron", "gate"]:
+	if areas.kind_of(area) in ["quay_apron", "gate"]:
 		# Drive-through lanes: out from the buffer down the area's first column,
 		# along each lane, and back to the buffer up its last column.
-		var lane_rows: Array = [2] if area.type == "quay_apron" else range(1, areas.types.gate.depth - 1)
+		var lane_rows: Array = [2] if area.type == "quay_apron" else range(1, areas.depth_of(area) - 1)
 		for row in range(1, lane_rows[-1] + 1):
 			_connect(point.call(cell.call(row - 1, 0)), point.call(cell.call(row, 0)), lorries)
 			_connect(point.call(cell.call(row, length - 1)), point.call(cell.call(row - 1, length - 1)), lorries)

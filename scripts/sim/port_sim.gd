@@ -62,10 +62,11 @@ var area_stacks := {}
 ## The areas version yard machines were last fitted to; not saved, so a
 ## loaded port refits once, which adds nothing.
 var _machines_fit_for := -1
-## The rules each area type takes, and what a new area starts with.
+## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
 	"quay_apron": {"lines": []},
+	"gate": {"level": "manual"},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer"]
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
@@ -339,6 +340,8 @@ func apply(command: Dictionary) -> String:
 			return remove_road(command.segment)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
+		"build_two_way_gate":
+			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
 			return remove_area(command.id)
 		"set_area":
@@ -403,7 +406,34 @@ func build_area(type: String, segment: int, side: int, from: int, to: int) -> St
 	var err := build_area_error(type, segment, side, from, to)
 	if err == "":
 		ledger.post("construction", -area_price(type, segment, side, from, to))
-		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(type, {}).duplicate(true))
+		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(rules.area_types[type].kind, {}).duplicate(true))
+	return err
+
+
+## Why a gate of `type` can't be built on both sides of `segment` from
+## `from` to `to`, or "".
+func build_two_way_gate_error(type: String, segment: int, from: int, to: int) -> String:
+	if type not in rules.area_types or rules.area_types[type].kind != "gate":
+		return "Only gates are built on both sides of a road"
+	for side: int in [1, -1]:
+		var err := build_area_error(type, segment, side, from, to)
+		if err:
+			return err
+	if not _afford(area_price(type, segment, 1, from, to) + area_price(type, segment, -1, from, to)):
+		return "Not enough money"
+	return ""
+
+
+## A gate of `type` on each side of `segment` over the same stretch, in one
+## terminal: lorries check in on the side they arrive by and out on the side
+## they leave by, so none turns round to pass a gate.
+func build_two_way_gate(type: String, segment: int, from: int, to: int) -> String:
+	var err := build_two_way_gate_error(type, segment, from, to)
+	if err == "":
+		build_area(type, segment, 1, from, to)
+		var first: int = areas.list.keys().max()
+		build_area(type, segment, -1, from, to)
+		areas.set_terminal(areas.list.keys().max(), areas.list[first].terminal)
 	return err
 
 
@@ -417,8 +447,14 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		return "No area there"
 	var type: String = areas.list[id].type
 	for key: String in settings:
-		if key not in AREA_SETTINGS.get(type, {}):
+		if key not in AREA_SETTINGS.get(areas.kind_of(areas.list[id]), {}):
 			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
+	if settings.has("level"):
+		if not rules.gate_levels.has(settings.level):
+			return "Unknown gate level: %s" % settings.level
+		var level_locked := lock_error(settings.level)
+		if level_locked:
+			return level_locked
 	if settings.has("role") and settings.role not in AREA_ROLES:
 		return "Unknown yard role: %s" % settings.role
 	if settings.has("gear"):
@@ -641,6 +677,9 @@ func daily_upkeep() -> int:
 	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for machine: Dictionary in machines.list.values():
 		total += rules.yard_gear[machine.gear].upkeep_per_machine
+	for id: int in areas.list:
+		if areas.kind_of(areas.list[id]) == "gate":
+			total += rules.gate_levels[areas.list[id].settings.level].upkeep_per_lane * areas.layout(id).lanes.size()
 	return total
 
 

@@ -34,7 +34,11 @@
 		"fair_fee": 40.0,
 		"satisfaction_per_dollar": -0.02
 	},
-	"gate_minutes": 2.0,
+	"gate_levels": {
+		"manual": {"name": "Manual booths", "minutes": 2.0, "upkeep_per_lane": 0},
+		"ocr": {"name": "OCR portal", "minutes": 1.0, "upkeep_per_lane": 15},
+		"automated": {"name": "Automated gate", "minutes": 0.5, "upkeep_per_lane": 40}
+	},
 	"upkeep": {
 		"sts_crane": 150.0,
 		"tractor": 30.0
@@ -42,6 +46,7 @@
 	"sail_seconds": 4.0,
 	"lorry_interval_minutes": 1.0,
 	"export_lorry_interval_minutes": 2.0,
+	"export_lead_hours": 48.0,
 	"import_dwell_minutes": 1440.0,
 	"lorry_speed": 125.0,
 	"give_up_seconds": 30.0,
@@ -89,7 +94,8 @@
 			"teu": 200.0,
 			"unlocks": {
 				"loans": "loans",
-				"rtg": "RTG cranes for yard blocks"
+				"rtg": "RTG cranes for yard blocks",
+				"ocr": "OCR gate portals"
 			}
 		},
 		"gateway": {
@@ -97,7 +103,8 @@
 			"unlocks": {
 				"land": "buying land",
 				"dredging": "dredging the channel",
-				"panamax": "Panamax services"
+				"panamax": "Panamax services",
+				"automated": "automated gates"
 			}
 		}
 	},

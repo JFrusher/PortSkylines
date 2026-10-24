@@ -25,7 +25,7 @@ const ASPHALT := Color(0.2, 0.2, 0.22)
 ## The surface of a road lorries may not use, so tractor lanes read at a glance.
 const TRACTOR_ONLY := Color(0.36, 0.24, 0.2)
 const MARKING := Color(0.92, 0.92, 0.85)
-## Area ground by type, a little below road level.
+## Area ground by kind, a little below road level.
 const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
@@ -213,7 +213,7 @@ func _draw_areas() -> void:
 	for id: int in sim.areas.list:
 		var colors := {}
 		for cell in sim.areas.cells(id):
-			colors[cell] = AREA_COLOR[sim.areas.list[id].type]
+			colors[cell] = AREA_COLOR[sim.areas.kind_of(sim.areas.list[id])]
 		var layout := sim.areas.layout(id)
 		for cell: Vector2i in layout.get("buffer", []):
 			colors[cell] = BUFFER_COLOR
@@ -411,7 +411,7 @@ func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
 	var along := Vector2((area.end - area.start).sign())
 	var side := Vector2(area.out).normalized()
 	var span := AreaFlow.ship_cells(sim, ship.kind)
-	var depth: int = sim.rules.area_types.quay_apron.depth
+	var depth := sim.areas.depth_of(area)
 	var edge := (Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * (depth - 1) + Vector2(0.5, 0.5)) * Grid.CELL
 	return [edge / METRES_PER_UNIT + side, side]
 
@@ -501,7 +501,7 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var model := Node3D.new()
 	# Between its apron's rails, facing the water.
 	var area: Dictionary = sim.areas.list[crane.apron]
-	var depth: int = sim.rules.area_types.quay_apron.depth
+	var depth := sim.areas.depth_of(area)
 	var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 	model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
 	model.rotation.y = atan2(area.out.x, area.out.y)
