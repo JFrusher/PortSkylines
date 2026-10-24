@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_test_discharge()
 	_test_delivery()
 	_test_exports()
+	_test_crane_keeps_tractors_busy()
 	_test_lorry_gives_up()
 	_test_following_a_box()
 	print("tests: %d failure(s)" % _failures)
@@ -625,6 +626,21 @@ func _test_exports() -> void:
 	_expect(ship.exports, 0, "tractors fetch exports to the crane, which loads them all")
 	_expect(ship.moves, 3, "the ship counts its import and both exports")
 	_expect(ship.state, PortSim.Ship.State.LEAVING, "and sails fully loaded")
+
+
+func _test_crane_keeps_tractors_busy() -> void:
+	# One crane, four tractors, a ship taking 8 exports and bringing none.
+	var sim := AreaPort.working_terminal(0, 8)
+	var ship := sim.ships[0]
+	var most := 0
+	for i in 80000:
+		sim.tick()
+		most = maxi(most, sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor" and v.home != Grid.NONE).size())
+		if ship.state == PortSim.Ship.State.LEAVING:
+			break
+	_expect(most >= 2, true, "a loading crane has more than one tractor fetching exports at once (most %d)" % most)
+	_expect(ship.exports, 0, "and loads them all")
+	_expect(ship.state, PortSim.Ship.State.LEAVING, "then sails")
 
 
 func _test_lorry_gives_up() -> void:
