@@ -10,7 +10,7 @@
 	"crane_interference": 0.9,
 	"tractor": {
 		"cost": 400.0,
-		"speed": 150.0
+		"speed": 500.0
 	},
 	"yard_gear": {
 		"reach_stacker": {
