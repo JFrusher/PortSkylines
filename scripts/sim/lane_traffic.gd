@@ -20,20 +20,25 @@ func place(vehicle: Vehicle) -> bool:
 	return _take(vehicle.id, [vehicle.path[0]])
 
 
-## Moves `vehicle` up to `speed` cells a second for one tick, stopping short
-## of a cell it can't take. True once it is at the end of its route.
+## Moves `vehicle` up to `speed` cells a second for one tick, entering each
+## cell on the way in turn and stopping short of the first it can't take.
+## True once it is at the end of its route.
 func advance(vehicle: Vehicle, speed: float) -> bool:
 	vehicle.prev_t = vehicle.t
 	if vehicle.at_end():
 		return true
-	var i := int(vehicle.t)
-	var target := minf(vehicle.t + speed * SimClock.TICK_SECONDS, i + 1.99)
-	if int(target) > i and not _enter(vehicle, i + 1):
-		vehicle.t = maxf(vehicle.t, minf(target, i + 0.95))
-		vehicle.waited += 1
-		return false
+	var target := minf(vehicle.t + speed * SimClock.TICK_SECONDS, vehicle.path.size() - 1)
+	var start := int(vehicle.t)
+	while int(target) > int(vehicle.t):
+		var i := int(vehicle.t)
+		if not _enter(vehicle, i + 1):
+			vehicle.t = maxf(vehicle.t, i + 0.95)
+			# Waiting counts only ticks it entered no cell at all.
+			vehicle.waited = vehicle.waited + 1 if i == start else 0
+			return false
+		vehicle.t = i + 1
 	vehicle.waited = 0
-	vehicle.t = minf(target, vehicle.path.size() - 1)
+	vehicle.t = target
 	return vehicle.at_end()
 
 

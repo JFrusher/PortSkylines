@@ -37,14 +37,14 @@ func _run(sim: PortSim, minutes: float) -> void:
 		sim.tick()
 
 
-## One berth sold a Panamax every 2 hours, each taking longer than that to
-## work: every call waits longer at anchorage than the one before.
+## One berth sold a Panamax every 90 minutes, each taking longer than that to
+## work (about 1.6 h): every call waits longer at anchorage than the one before.
 func _test_overbooking_makes_ships_late() -> void:
 	var rules := RandomPort.quick()
-	rules.ship_classes.panamax.window_hours = 2.0
+	rules.ship_classes.panamax.window_hours = 1.5
 	rules.import_dwell_minutes = 0.0
 	var sim := _port(rules)
-	RandomPort.calls(sim, "panamax", 10, 120, 12)
+	RandomPort.calls(sim, "panamax", 10, 90, 12)
 	_run(sim, SimClock.MINUTES_PER_DAY)
 	var late: Array = sim.ship_log.map(func(entry: Dictionary) -> float: return entry.late)
 	_expect(late.size() >= 3, true, "several overbooked calls sailed (%d)" % late.size())
