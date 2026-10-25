@@ -41,8 +41,6 @@ func _test_figure_groups() -> void:
 		_expect(cards.size() >= 3, true, "%s has cards (%d)" % [group, cards.size()])
 		var rows := HudDetails.rows_for(group, sim)
 		_expect(rows.size() >= 3, true, "%s has rows (%d)" % [group, rows.size()])
-		var hl := HudDetails.headline(group, sim)
-		_expect(hl != "", true, "%s has headline" % group)
 	var ledger := HudDetails.ledger_text(sim)
 	_expect(ledger.contains("Today") or ledger.contains("Creative"), true, "ledger text has Today/Creative")
 
