@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_never_stops_in_a_junction()
 	_test_merge_at_45()
 	_test_coming_back_frees_the_cell()
+	_test_moves_at_its_speed()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -125,6 +126,24 @@ func _test_coming_back_frees_the_cell() -> void:
 		traffic.advance(vehicle, SPEED)
 	_expect(traffic.holder(Vector2i(1, 0)), 0, "a cell left behind is free, even though the route comes back to it")
 	_expect(traffic.holder(Vector2i(2, 0)), vehicle.id, "the cell it is in is held")
+
+
+func _test_moves_at_its_speed() -> void:
+	var lanes := LaneGraph.new(_net([[Vector2i(0, 5), Vector2i(200, 5), "terminal_1_1"]]))
+	var traffic := LaneTraffic.new(lanes)
+	for speed: float in [10.0, 31.25, 37.5]:
+		var vehicle := _vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(200, 5), true))
+		for i in SimClock.TICKS_PER_SECOND:
+			traffic.advance(vehicle, speed)
+		_expect(absf(vehicle.t - speed) < 0.01, true, "on a clear road a vehicle covers its speed in cells a vehicle second (%.2f at %.2f)" % [vehicle.t, speed])
+		traffic.leave(vehicle)
+	var front := _vehicle(traffic, [Vector2i(30, 5)] as Array[Vector2i])
+	var behind := _vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(200, 5), true))
+	for i in SimClock.TICKS_PER_SECOND:
+		traffic.advance(behind, 37.5)
+	_expect(behind.path[int(behind.t)], Vector2i(29, 5), "a fast vehicle still stops in the cell behind one ahead")
+	traffic.leave(front)
+	traffic.leave(behind)
 
 
 ## Runs `vehicles` for `ticks`, removing each at its end. Returns the longest wait.
