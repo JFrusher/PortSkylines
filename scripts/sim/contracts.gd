@@ -46,9 +46,8 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable) 
 	var spec: Dictionary = rules.ship_classes[kind]
 	var service := {
 		"id": _next_id, "line": line, "kind": kind,
-		# Its first call comes 2 to 48 hours from now; whole hours, so every
-		# call starts exactly on a tick.
-		"start": (floori(now / 60.0) + rng.randi_range(2, 48)) % (7 * 24) * 60,
+		# Whole hours, so every call starts exactly on a tick.
+		"start": _quietest_hour(now) * 60,
 		"window_hours": spec.window_hours,
 		"moves": spec.import_moves + spec.export_moves,
 		"expires": now + terms.offer_days * SimClock.MINUTES_PER_DAY,
@@ -57,6 +56,26 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable) 
 	offers.append(service)
 	version += 1
 	return service
+
+
+## The hour of the week for a new service's calls: the one furthest from
+## every call already agreed or on offer, as a terminal plans its berth
+## windows, at least 2 h ahead; the soonest of equals, so a port's first
+## service calls soon.
+func _quietest_hour(now: float) -> int:
+	var week := 7 * 24
+	var booked := (services + offers).map(func(s: Dictionary) -> int: return s.start / 60)
+	var best := 0
+	var widest := -1
+	for ahead in range(2, week + 2):
+		var hour := (floori(now / 60.0) + ahead) % week
+		var gap := week
+		for other: int in booked:
+			gap = mini(gap, mini(absi(hour - other), week - absi(hour - other)))
+		if gap > widest:
+			best = hour
+			widest = gap
+	return best
 
 
 func accept_error(id: int) -> String:
