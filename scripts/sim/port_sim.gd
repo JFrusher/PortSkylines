@@ -684,6 +684,12 @@ func daily_upkeep() -> int:
 
 
 ## The numbers a terminal manager watches.
+## Boxes in yard block `id` and the most it holds, as (held, room).
+func block_fill(id: int) -> Vector2i:
+	var room: int = areas.layout(id).stacks.size() * rules.yard_gear[areas.list[id].settings.gear].tiers
+	return Vector2i(area_stacks[id].boxes().size() if id in area_stacks else 0, room)
+
+
 func kpis() -> Dictionary:
 	var last: Dictionary = ship_log[-1] if not ship_log.is_empty() else {}
 	var capacity := 0

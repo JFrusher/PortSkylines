@@ -3,11 +3,15 @@ extends SceneTree
 ## the STS crane's move and ships' deck stacks.
 ## godot --headless --script res://tests/test_view.gd
 
+const AreaPort := preload("res://tests/area_port.gd")
+const RandomPort := preload("res://tests/random_port.gd")
+
 var _failures := 0
 
 
 func _initialize() -> void:
 	_test_road_mesh_faces_up()
+	_test_info_views()
 	_expect(WorldView.grid_cell(Vector3(1, 0, 0.5)), Vector2i(6, 3), "a world point finds its 4 m cell (25 m a unit)")
 	var path: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1)]
 	_expect(WorldView.path_pose(path, 0.25), [Vector2(0.25, 0), Vector2(1, 0)] as Array[Vector2], "a straight stretch lerps")
@@ -43,6 +47,23 @@ func _initialize() -> void:
 
 ## Godot draws a triangle's front when its corners run clockwise seen from
 ## the camera; a road wound the other way vanishes from above.
+## The Traffic view colours the area a stopped vehicle is in; Containers colours yard blocks by fill.
+func _test_info_views() -> void:
+	var sim := AreaPort.base(RandomPort.quick())
+	while not sim.vehicles.any(func(v: Vehicle) -> bool: return v.waited > 0):
+		sim.tick()
+	var stuck: Vehicle = sim.vehicles.filter(func(v: Vehicle) -> bool: return v.waited > 0)[0]
+	var shares := WorldView.info_shares(sim, HudDetails.GROUP_TRAFFIC)
+	var where: Array = shares.keys().filter(func(cells: Array) -> bool: return Vector2i(stuck.position(1.0).round()) in cells)
+	_expect(where.size() == 1 and shares[where[0]] > 0.0, true, "a stopped vehicle's place shows as stopped")
+	var yard := WorldView.info_shares(sim, HudDetails.GROUP_CONTAINERS)
+	var blocks := sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "yard_block")
+	_expect(yard.size(), blocks.size(), "each yard block has a fill")
+	for id: int in blocks:
+		var fill := sim.block_fill(id)
+		_expect(yard[sim.areas.cells(id)], fill.x / float(fill.y), "block %d shows its fill" % id)
+
+
 func _test_road_mesh_faces_up() -> void:
 	var types: Dictionary = Content.base().road_types
 	var surface := WorldView._road_tool()

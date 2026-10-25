@@ -83,6 +83,8 @@ var _drawer_cards_container: HBoxContainer
 var _drawer_rows_container: VBoxContainer
 var _drawer_extra_container: VBoxContainer
 var _active_drawer_group := ""
+## The open drawer's map colours, from WorldView.INFO_LEGENDS.
+var _legend := HBoxContainer.new()
 ## The bottom column (build menu and toolbar), and the left column's
 ## scrolling panel bodies, fitted between the stats and the build menu.
 var _bottom: Control
@@ -335,6 +337,8 @@ func _build_drawer(left: Control) -> void:
 			for g: String in _figure_buttons:
 				(_figure_buttons[g] as Button).set_pressed_no_signal(false))
 
+	_legend.add_theme_constant_override("separation", 6)
+	drawer.add_child(_legend)
 	_drawer_cards_container = HBoxContainer.new()
 	_drawer_cards_container.add_theme_constant_override("separation", 6)
 	drawer.add_child(_drawer_cards_container)
@@ -374,6 +378,11 @@ func _toggle_drawer(group_name: String) -> void:
 	_fill_drawer(group_name)
 
 
+## The info view the map should draw: the open drawer's group, or "".
+func info_view() -> String:
+	return _active_drawer_group if _drawer_panel.visible else ""
+
+
 func _close_drawer() -> void:
 	_active_drawer_group = ""
 	_drawer_panel.visible = false
@@ -382,6 +391,18 @@ func _close_drawer() -> void:
 
 
 func _fill_drawer(group_name: String) -> void:
+	for child in _legend.get_children():
+		child.queue_free()
+	_legend.visible = group_name in WorldView.INFO_LEGENDS
+	for entry: Array in WorldView.INFO_LEGENDS.get(group_name, []):
+		var swatch := ColorRect.new()
+		swatch.color = entry[1]
+		swatch.custom_minimum_size = Vector2(12, 12)
+		swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		_legend.add_child(swatch)
+		var label := _label(entry[0] + "  ")
+		label.theme_type_variation = "MutedLabel"
+		_legend.add_child(label)
 	# Populate cards
 	for child in _drawer_cards_container.get_children():
 		child.queue_free()
@@ -757,7 +778,7 @@ func _week(contracts: Contracts) -> Control:
 				var into := minute % SimClock.MINUTES_PER_DAY
 				var span := mini(left, SimClock.MINUTES_PER_DAY - into)
 				var bar := Rect2(40 + into / 60.0 * hour, day * 16 + 2, span / 60.0 * hour, 12)
-				week.draw_rect(bar, Color(0.369, 0.643, 1) if offered else Color(0, 0.439, 0.867), not offered, 1.5)
+				week.draw_rect(bar, Color(0.369, 0.643, 1) if offered else Color(0, 0.439, 0.867), not offered, 1.5 if offered else -1.0)
 				minute += span
 				left -= span)
 	return week

@@ -95,3 +95,36 @@ matches the style guide. The problems are structure and missing information.
 Bugs 1–3 first (all small). Then 4, 7 and 10 (small, and they tidy the
 screen). Then 8 and 9 together, then 6, then 11 with the M6 calendar, then
 the info views (5), one at a time, starting with yard fill and traffic.
+
+## Done, 25 Oct 2026
+
+All but 13 are fixed on this branch, in the order above. After shots are in
+`docs/ui-audit/after/`, rendered the same way from the same port.
+
+1. New game, New creative and Load sit in a pause menu (Esc or Menu) and
+   ask before replacing the port. *(09_pause_menu, 08_confirm_new_game.)*
+2. One left panel shows at a time, each scrolling above whatever bottom panel
+   overlaps it. *(04_drawer_finance, 05_contracts_table.)*
+3. Depot is out of the build menu until depots have a job.
+4. The KPI cards are the only info bar; the bottom-right buttons are plain
+   names, Contracts joined them, and Ledger is gone.
+5. Traffic and Containers are map views with a legend: roads and areas by the
+   share of their vehicles stopped, yard blocks by fill. Traffic shows the
+   moment, not an average (a `shortcut:` in `WorldView.info_shares`). The
+   other three groups are still stat lists. *(11_traffic_view, 11_yard_view.)*
+6. The event log is one line; clicking it lists the last ten, and an event
+   that happened somewhere moves the camera there and inspects it.
+   *(10_events_open.)*
+7. The top right holds only the clock, speeds and Menu.
+8. Yard blocks show fill against room and machines, with role and gear
+   actions; quay aprons show size, berths, cranes and the ship alongside;
+   gates show the lorries queuing. *(06_inspect_\*.)*
+9. The Yard menu only builds; role and gear moved to Inspect, and locked
+   items show greyed with the milestone that unlocks them. *(03_menu_4_yard.)*
+10. Every build item has a tooltip: what it is, size, cost and upkeep.
+11. Contracts is one table (line, ship, calls, window, moves, value per call,
+    clash) under a week calendar, agreed windows solid and offers outlined.
+    *(05_contracts, 05_contracts_table.)*
+12. The lane is a "Tractor lane".
+
+Open: 13 (model scale), and info views for Logistics, Quay & Power and Finance.

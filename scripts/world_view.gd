@@ -62,10 +62,19 @@ const DECK_ROWS := 3
 const DECK_TIERS := 4
 ## A 40 ft box turned along the ship and sized to a deck bay.
 var _deck_box := Basis(Vector3.UP, PI / 2) * Basis.from_scale(Vector3((DECK_BAY - 0.04) / 0.78, 0.8, 1.27))
+## Each info view's colours and what they mean, by HudDetails group.
+const INFO_LEGENDS := {
+	HudDetails.GROUP_TRAFFIC: [["Flowing", Color(0.2, 0.8, 0.35)], ["Half stopped", Color(0.95, 0.75, 0.15)], ["Stopped", Color(0.9, 0.2, 0.15)]],
+	HudDetails.GROUP_CONTAINERS: [["Empty", Color(0.2, 0.8, 0.35)], ["Half full", Color(0.95, 0.75, 0.15)], ["Full", Color(0.9, 0.2, 0.15)]],
+}
+const INFO_TOP := 0.6
+const INFO_SECONDS := 0.25
 const SEA_START := -18.0  # how far the water reaches past the site
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
 var sim: PortSim
+## The info view drawn over the map: a key of INFO_LEGENDS, or "" for none.
+var info_view := ""
 ## How far play has moved from the last tick towards the next, 0 to 1.
 var alpha := 1.0
 
@@ -103,6 +112,8 @@ var _area_preview := MeshInstance3D.new()
 var _road_preview := MeshInstance3D.new()
 var _hover := _box(Vector3(Grid.CELL, 1.5, Grid.CELL) / METRES_PER_UNIT, Color(1, 1, 1, 0.5))
 ## Shade over each land tile the port does not own; rebuilt when it buys one.
+var _info := MeshInstance3D.new()
+var _info_left := 0.0
 var _unowned := {}  # land tile -> Node3D
 var _drawn_land := -1
 
@@ -122,10 +133,12 @@ func _ready() -> void:
 	add_child(_hover)
 	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _areas, _area_preview]:
 		add_child(node)
-	for preview: MeshInstance3D in [_road_preview, _area_preview]:
+	add_child(_info)
+	for preview: MeshInstance3D in [_road_preview, _area_preview, _info]:
 		preview.material_override = StandardMaterial3D.new()
 		preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		preview.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_info.material_override.vertex_color_use_as_albedo = true
 	for gear: String in sim.rules.yard_gear:
 		_machine_meshes[gear] = _machine_mesh(gear)
 		_machine_heights[gear] = _machine_meshes[gear].get_aabb().end.y
@@ -172,7 +185,12 @@ func show_area_preview(cells: Array[Vector2i], ok: bool) -> void:
 	_area_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
+	_info.visible = info_view in INFO_LEGENDS
+	_info_left -= dt
+	if _info.visible and _info_left <= 0.0:
+		_info_left = INFO_SECONDS
+		_draw_info()
 	if sim.roads.version != _roads_drawn:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
@@ -233,6 +251,54 @@ func _draw_areas() -> void:
 			tool.set_color(colors[cell].lerp(IDLE_TINT, 0.4) if idle else colors[cell])
 			_cell_quad(tool, cell, AREA_TOP)
 	_areas.mesh = tool.commit()
+
+
+## Colours each place info_shares gives from green through amber to red.
+func _draw_info() -> void:
+	var legend: Array = INFO_LEGENDS[info_view]
+	var shares := info_shares(sim, info_view)
+	var tool := _road_tool()
+	for cells: Array in shares:
+		var share: float = shares[cells]
+		var color: Color = legend[0][1].lerp(legend[1][1], share * 2.0) if share < 0.5 else legend[1][1].lerp(legend[2][1], share * 2.0 - 1.0)
+		tool.set_color(Color(color, 0.7))
+		for cell: Vector2i in cells:
+			_cell_quad(tool, cell, INFO_TOP)
+	_info.mesh = tool.commit()
+
+
+## For the Traffic view, each road's or area's cells -> the share of the
+## vehicles in it that are stopped; for Containers, each yard block's cells ->
+## how full it is.
+# shortcut: traffic shows this moment only, not an average over time; average once players ask where jams were.
+static func info_shares(sim: PortSim, view: String) -> Dictionary:
+	var shares := {}
+	if view == HudDetails.GROUP_TRAFFIC:
+		var places: Array[Array] = []
+		for id: int in sim.roads.segments:
+			var cells: Array[Vector2i] = []
+			for lane: Dictionary in sim.roads.lanes(id):
+				cells.append_array(lane.cells)
+			places.append(cells)
+		for id: int in sim.areas.list:
+			places.append(sim.areas.cells(id))
+		var place_of := {}
+		for cells in places:
+			for cell: Vector2i in cells:
+				place_of[cell] = cells
+		var counts := {}  # cells -> (stopped, vehicles)
+		for vehicle in sim.vehicles:
+			var cells: Variant = place_of.get(Vector2i(vehicle.position(1.0).round()))
+			if cells != null:
+				counts[cells] = counts.get(cells, Vector2i.ZERO) + Vector2i(1 if vehicle.waited > 0 else 0, 1)
+		for cells: Array in counts:
+			shares[cells] = counts[cells].x / float(counts[cells].y)
+	else:
+		for id: int in sim.areas.list:
+			if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
+				var fill := sim.block_fill(id)
+				shares[sim.areas.cells(id)] = fill.x / float(maxi(fill.y, 1))
+	return shares
 
 
 ## One 4 m cell as a flat square `height` metres up.

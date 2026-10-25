@@ -87,6 +87,7 @@ func _process(dt: float) -> void:
 		print_debug("Dropped %.2f s of sim time after a slow frame" % left)
 	_accumulated = minf(left, SimClock.TICK_SECONDS)
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
+	view.info_view = hud.info_view()
 	_follow(dt)
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would snap on.

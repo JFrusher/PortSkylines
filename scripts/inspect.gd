@@ -93,11 +93,9 @@ static func _crane(sim: PortSim, crane: PortSim.Crane) -> Array[String]:
 
 ## A yard block's boxes against its room, and its machines.
 static func _yard_fill(sim: PortSim, id: int) -> String:
-	var gear: String = sim.areas.list[id].settings.gear
-	var room: int = sim.areas.layout(id).stacks.size() * sim.rules.yard_gear[gear].tiers
-	var held: int = sim.area_stacks[id].boxes().size() if id in sim.area_stacks else 0
+	var fill := sim.block_fill(id)
 	var machines := sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == id).size()
-	return "%d of %d boxes (%d%%), %d machine%s" % [held, room, roundi(100.0 * held / maxi(room, 1)), machines, "" if machines == 1 else "s"]
+	return "%d of %d boxes (%d%%), %d machine%s" % [fill.x, fill.y, roundi(100.0 * fill.x / maxi(fill.y, 1)), machines, "" if machines == 1 else "s"]
 
 
 ## A quay apron's size, the ships it fits, its cranes and the ship alongside.
