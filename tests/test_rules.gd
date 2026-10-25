@@ -150,6 +150,7 @@ func _test_outreach() -> void:
 	_run(sim, FIRST_SHIP + 30)
 	_expect(sim.ships.size() == 1 and sim.ships[0].boxes == rules.ship_classes.panamax.import_moves, true, "a panamax gets no moves from cranes that are too short")
 	_expect(sim.last_event().contains("reaches 13 rows"), true, "the status says why (%s)" % sim.last_event())
+	_expect(sim.events[-1].get("at"), sim.areas.list[1].start, "and links to the ship's apron")
 
 
 ## One machine per bay against one per two bays, with lifts slow enough that
@@ -247,7 +248,7 @@ func _test_upkeep_at_midnight() -> void:
 	var before := sim.money
 	sim.tick()
 	_expect([before - sim.money, -sim.ledger.days[-1].lines.upkeep], [upkeep, upkeep], "upkeep is charged exactly at midnight")
-	_expect(sim.last_event().begins_with("Day 1: upkeep"), true, "and reported (%s)" % sim.last_event())
+	_expect(sim.last_event().begins_with("Upkeep"), true, "and reported (%s)" % sim.last_event())
 
 
 func _test_events_do_not_repeat() -> void:

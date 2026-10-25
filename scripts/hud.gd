@@ -11,6 +11,8 @@ signal load_pressed
 signal command_issued(command: Dictionary)
 ## shortcut: two buttons stand in for the new-game screen until M12 builds it.
 signal new_game_pressed(creative: bool)
+## A recent event was clicked: the camera goes to grid cell `cell`.
+signal event_picked(cell: Vector2i)
 
 const BULLDOZE := -1
 const CRANE := -2
@@ -47,8 +49,12 @@ var _milestone := Label.new()
 var _milestone_bar := ProgressBar.new()
 var _kpi_cards: Array[Dictionary] = []
 var _clock := Label.new()
-var _message := Label.new()
+## The latest event, or a flash; pressing it lists the recent ones.
+var _message := Button.new()
 var _events: PanelContainer
+var _event_list := VBoxContainer.new()
+## The sim, last event and count the event list was last built for.
+var _events_drawn := []
 var _ledger := Label.new()
 var _borrow := HBoxContainer.new()
 ## Controls shown only once a milestone unlocks them: name -> controls.
@@ -110,7 +116,15 @@ func _ready() -> void:
 	stats.add_child(kpi_row)
 	_build_kpi_cards(kpi_row)
 
-	_panel(left).add_child(_message)
+	var ticker := _panel(left)
+	_message.theme_type_variation = "EventLink"
+	_message.toggle_mode = true
+	_message.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_message.tooltip_text = "Show or hide recent events"
+	_message.toggled.connect(func(on: bool) -> void: _event_list.visible = on)
+	ticker.add_child(_message)
+	_event_list.visible = false
+	ticker.add_child(_event_list)
 	_events = _panel_of(_message)
 
 	# The Details Drawer: shows detailed metrics for whichever figure group is open.
@@ -498,7 +512,35 @@ func _process(dt: float) -> void:
 
 	_flash_left -= dt
 	if _flash_left <= 0.0:
-		_message.text = "\n".join(sim.events.slice(-5).map(func(e: Dictionary) -> String: return "Day %d %02d:%02d  %s" % [int(e.minute / 1440), int(e.minute / 60) % 24, int(e.minute) % 60, e.text]))
+		_message.text = "Recent events" if _event_list.visible else _stamp(sim.events[-1]) if not sim.events.is_empty() else ""
+	if _event_list.visible and _events_drawn != [sim, sim.last_event(), sim.events.size()]:
+		_draw_events()
+
+
+## "Day 2 20:04  text" for a sim event.
+static func _stamp(event: Dictionary) -> String:
+	return "Day %d %02d:%02d  %s" % [int(event.minute / 1440), int(event.minute / 60) % 24, int(event.minute) % 60, event.text]
+
+
+## The last ten events, newest first; one that happened somewhere is a link there.
+func _draw_events() -> void:
+	_events_drawn = [sim, sim.last_event(), sim.events.size()]
+	for child in _event_list.get_children():
+		child.queue_free()
+	for event: Dictionary in sim.events.slice(-10):
+		if event.has("at"):
+			var link := Button.new()
+			link.text = _stamp(event) + "  ›"
+			link.theme_type_variation = "EventLink"
+			link.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			link.tooltip_text = "Go there"
+			link.pressed.connect(func() -> void:
+				_message.button_pressed = false
+				event_picked.emit(event.at))
+			_event_list.add_child(link)
+		else:
+			_event_list.add_child(_label(_stamp(event)))
+		_event_list.move_child(_event_list.get_child(-1), 0)
 
 
 func _update_kpis() -> void:

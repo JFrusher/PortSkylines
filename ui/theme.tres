@@ -248,6 +248,8 @@ variation_opentype = {
 2003265652: 450
 }
 
+[sub_resource type="StyleBoxEmpty" id="none"]
+
 [resource]
 default_font = SubResource("regular")
 default_font_size = 15
@@ -276,6 +278,14 @@ DangerCard/base_type = &"PanelContainer"
 DangerCard/styles/panel = SubResource("danger_card")
 Divider/base_type = &"Panel"
 Divider/styles/panel = SubResource("divider")
+EventLink/base_type = &"Button"
+EventLink/colors/font_hover_color = Color(0.369, 0.643, 1, 1)
+EventLink/colors/font_hover_pressed_color = Color(0.369, 0.643, 1, 1)
+EventLink/styles/focus = SubResource("none")
+EventLink/styles/hover = SubResource("none")
+EventLink/styles/hover_pressed = SubResource("none")
+EventLink/styles/normal = SubResource("none")
+EventLink/styles/pressed = SubResource("none")
 GoodCard/base_type = &"PanelContainer"
 GoodCard/styles/panel = SubResource("good_card")
 HBoxContainer/constants/separation = 8

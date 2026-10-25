@@ -93,7 +93,7 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 	var working := cranes_for(sim, ship)
 	var rows: int = sim.rules.ship_classes[ship.kind].outreach
 	if working.is_empty() or sim.rules.sts_crane.outreach < rows:
-		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rows])
+		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rows], sim.areas.list[ship.apron].start)
 		return
 	var move_minutes: float = 60.0 / (sim.rules.sts_crane.rate * sim.rules.crane_interference)
 	for crane in working:
@@ -109,10 +109,10 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 	if ship.boxes == 0 and working.all(func(c: PortSim.Crane) -> bool: return c.tractor == 0) and _fetchers(sim, ship).is_empty():
 		if ship.exports == 0:
 			sim._sail(ship, working.size())
-			sim._event("A %s is sailing, fully loaded" % ship.kind)
+			sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.list[ship.apron].start)
 		elif _export_box(sim, sim.areas.list[ship.apron].terminal) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
 			sim._sail(ship, working.size())
-			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports])
+			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.list[ship.apron].start)
 
 
 ## One crane's tick discharging: a tractor waits in the apron slot below it
@@ -517,9 +517,10 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 		sim.boxes.erase(vehicle.box)
 	elif vehicle.box != 0:
 		sim._claimed.erase(vehicle.box)
+	var at := Vector2i(vehicle.position(1.0).round())
 	_gone(sim, vehicle)
 	sim.gave_up += 1
-	sim._event("A lorry gave up on a traffic jam and left")
+	sim._event("A lorry gave up on a traffic jam and left", at)
 
 
 static func _gone(sim: PortSim, vehicle: Vehicle) -> void:

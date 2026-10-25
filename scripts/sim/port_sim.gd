@@ -507,7 +507,7 @@ func _deliver_cranes() -> void:
 		crane_orders.erase(order)
 		if order.apron in areas.list:
 			cranes.append(Crane.new(order.apron, order.along))
-			_event("A new STS crane is up on %s" % areas.terminals[areas.list[order.apron].terminal].name)
+			_event("A new STS crane is up on %s" % areas.terminals[areas.list[order.apron].terminal].name, areas.list[order.apron].start)
 		else:
 			ledger.post("equipment", rules.sts_crane.cost)
 			_event("A crane arrived with no quay apron to stand on; it went back, refunded")
@@ -715,10 +715,14 @@ func last_event() -> String:
 	return events[-1].text if not events.is_empty() else ""
 
 
-func _event(text: String) -> void:
+## Logs `text`; `at` is the grid cell it happened at, which the HUD links to.
+func _event(text: String, at := Grid.NONE) -> void:
 	if last_event() == text:
 		return
-	events.append({"minute": clock.calendar_minutes(), "text": text})
+	var event := {"minute": clock.calendar_minutes(), "text": text}
+	if at != Grid.NONE:
+		event.at = at
+	events.append(event)
 	if events.size() > 50:
 		events.pop_front()
 
@@ -739,7 +743,7 @@ func _end_of_day() -> void:
 		_end_of_year()
 	delivered_yesterday = delivered - _delivered_at_midnight
 	_delivered_at_midnight = delivered
-	_event("Day %d: upkeep $%d, %d boxes through the gate" % [clock.game_day(), upkeep, delivered_yesterday])
+	_event("Upkeep $%d, %d boxes through the gate" % [upkeep, delivered_yesterday])
 
 
 func _new_year() -> Dictionary:
@@ -813,7 +817,7 @@ func _work(ship: Ship) -> void:
 			if ship.sail == 1.0:
 				ship.state = Ship.State.WORKING
 				ship.berthed = clock.calendar_minutes()
-				_event("A %s is unloading" % ship.kind)
+				_event("A %s is unloading" % ship.kind, areas.list[ship.apron].start)
 		Ship.State.WORKING:
 			AreaFlow.work(self, ship)
 		Ship.State.LEAVING:

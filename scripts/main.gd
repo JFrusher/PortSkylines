@@ -40,6 +40,7 @@ func _ready() -> void:
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
 	hud.new_game_pressed.connect(func(creative: bool) -> void: _use(PortSim.new(randi(), Content.base(), creative)))
+	hud.event_picked.connect(_go_to)
 	add_child(hud)
 
 
@@ -151,8 +152,20 @@ func _follow(dt: float) -> void:
 		_following = 0
 		hud.flash("The box has left the port")
 		return
+	rig.position = rig.position.lerp(_over(at), minf(1.0, dt * 4.0))
+
+
+## Moves the camera over grid cell `cell` and inspects what is there.
+func _go_to(cell: Vector2i) -> void:
+	_following = 0
+	rig.position = _over(cell)
+	hud.inspect(cell)
+
+
+## The camera rig position over the middle of grid cell `at`.
+func _over(at: Vector2) -> Vector3:
 	var world := (at + Vector2(0.5, 0.5)) * Grid.CELL / WorldView.METRES_PER_UNIT
-	rig.position = rig.position.lerp(Vector3(world.x, 0, world.y), minf(1.0, dt * 4.0))
+	return Vector3(world.x, 0, world.y)
 
 
 ## Gives the selected tool's order for grid cell `cell`. Refusals are only
