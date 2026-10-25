@@ -179,24 +179,13 @@ func _command(cell: Vector2i) -> Dictionary:
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return {"op": "place_sts", "apron": apron, "along": sim.areas.along(apron, cell) if apron else 0}
-		Hud.BUY_LAND:
-			return {"op": "buy_land", "tile": sim.land_tile(cell)}
-	return {"op": "set_area", "id": sim.areas.area_at(cell), "settings": _yard_settings()}
+	return {"op": "buy_land", "tile": sim.land_tile(cell)}
 
 
 ## The quay apron covering grid cell `cell`, or 0.
 func _apron_at(cell: Vector2i) -> int:
 	var area := sim.areas.area_at(cell)
 	return area if area and sim.areas.list[area].type == "quay_apron" else 0
-
-
-func _yard_settings() -> Dictionary:
-	match hud.tool:
-		Hud.IMPORT_YARD:
-			return {"role": "import"}
-		Hud.EXPORT_YARD:
-			return {"role": "export"}
-	return {"gear": "rtg"}
 
 
 func _order_error(cell: Vector2i) -> String:
@@ -217,9 +206,7 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, sim.areas.along(apron, cell) if apron else 0)
-		Hud.BUY_LAND:
-			return sim.buy_land_error(sim.land_tile(cell))
-	return sim.set_area_error(sim.areas.area_at(cell), _yard_settings())
+	return sim.buy_land_error(sim.land_tile(cell))
 
 
 ## The 4 m grid cell under the mouse, or NONE.

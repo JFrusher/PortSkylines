@@ -14,9 +14,6 @@ signal new_game_pressed(creative: bool)
 
 const BULLDOZE := -1
 const CRANE := -2
-const EXPORT_YARD := -3
-const IMPORT_YARD := -4
-const RTG := -5
 const BUY_LAND := -6
 const INSPECT := -7
 ## Draws a road of road_type on the 4 m grid by dragging.
@@ -68,7 +65,7 @@ var _inspected: Variant
 var _inspect_name := Label.new()
 var _inspect_lines := Label.new()
 ## Buttons for the inspected area's terminal, and what they were last built for.
-var _inspect_actions := HBoxContainer.new()
+var _inspect_actions := HFlowContainer.new()
 var _actions_drawn := []
 var _guide_step := Label.new()
 var _guide_text := Label.new()
@@ -221,7 +218,7 @@ func _ready() -> void:
 			if first:
 				first.button_pressed = true)
 		open.theme_type_variation = "CategoryButton"
-		open.custom_minimum_size = Vector2(80, 48)
+		open.custom_minimum_size = Vector2(72, 48)
 		_category_buttons.append(open)
 
 	# Group 2: Figure / Info-Views Group
@@ -236,7 +233,7 @@ func _ready() -> void:
 	for group_name: String in HudDetails.GROUPS:
 		var fig_btn := Button.new()
 		fig_btn.theme_type_variation = "CategoryButton"
-		fig_btn.custom_minimum_size = Vector2(88, 48)
+		fig_btn.custom_minimum_size = Vector2(72, 48)
 		fig_btn.toggle_mode = true
 		fig_btn.text = group_name
 		fig_btn.pressed.connect(func() -> void: _toggle_drawer(group_name))
@@ -244,7 +241,7 @@ func _ready() -> void:
 		_figure_buttons[group_name] = fig_btn
 	var contracts_button := _toggle(fig_row, "Contracts", _panel_of(contracts_panel))
 	contracts_button.theme_type_variation = "CategoryButton"
-	contracts_button.custom_minimum_size = Vector2(88, 48)
+	contracts_button.custom_minimum_size = Vector2(72, 48)
 	contracts_button.toggled.connect(func(on: bool) -> void:
 		if on:
 			_show_only(_panel_of(contracts_panel)))
@@ -276,9 +273,6 @@ func _ready() -> void:
 	var crane: Dictionary = sim.rules.sts_crane
 	_item(_button(rows.Cranes, "STS crane\n" + HudDetails.dollars(crane.cost), tools, false, func() -> void: tool = CRANE)).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day, arrives %d day after ordering." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane, crane.lead_days]
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
-	_item(_button(rows.Yard, "Import\nblock", tools, false, func() -> void: tool = IMPORT_YARD)).tooltip_text = "Click a yard block to store imports in it. Free."
-	_item(_button(rows.Yard, "Export\nblock", tools, false, func() -> void: tool = EXPORT_YARD)).tooltip_text = "Click a yard block to store exports in it. Free."
-	_gate("rtg", _item(_button(rows.Yard, "RTG\nfor a block", tools, false, func() -> void: tool = RTG))).tooltip_text = "Click a yard block to work it with RTG cranes: stacks %d high instead of %d, upkeep $%d a machine a day." % [sim.rules.yard_gear.rtg.tiers, sim.rules.yard_gear.reach_stacker.tiers, sim.rules.yard_gear.rtg.upkeep_per_machine]
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
 	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road or area to remove it. Boxes stored in an area are lost."
@@ -438,7 +432,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_toggle_menu()
 		return
 	var i := key.keycode - KEY_1
-	if key.pressed and not key.echo and i >= 0 and i < _category_buttons.size() and _category_buttons[i].visible:
+	if key.pressed and not key.echo and i >= 0 and i < _category_buttons.size() and not _category_buttons[i].disabled:
 		_category_buttons[i].button_pressed = true
 
 
@@ -466,10 +460,16 @@ func _process(dt: float) -> void:
 	var minute := sim.clock.calendar_minutes()
 	_clock.text = "%s  Day %d  %02d:%02d" % [WEEKDAYS[sim.clock.game_day() % 7], sim.clock.game_day(), sim.clock.game_hour(), int(minute) % 60]
 
+	# Locked controls show greyed, their tooltip naming the milestone.
 	for name: String in _gated:
+		var locked := sim.lock_error(name)
 		for control: Control in _gated[name]:
-			if is_instance_valid(control):
-				control.visible = sim.unlocked(name)
+			if not is_instance_valid(control):
+				continue
+			if not control.has_meta("tip"):
+				control.set_meta("tip", control.tooltip_text)
+			(control as BaseButton).disabled = locked != ""
+			control.tooltip_text = locked if locked else control.get_meta("tip")
 
 	_events.visible = _message.text != ""
 	_show_guide()
@@ -564,12 +564,20 @@ func _show_only(panel: PanelContainer) -> void:
 ## Gives each open left-column panel the height left above the build menu,
 ## scrolling what doesn't fit.
 func _fit_left_panels() -> void:
-	var limit := _bottom.get_global_rect().position.y - 12
 	for scroll in _left_scrolls:
-		if not _panel_of(scroll).visible:
+		var panel := _panel_of(scroll)
+		if not panel.visible:
 			continue
+		# Down to the first bottom panel beside it, so a narrow build-item row
+		# to its right doesn't cut it short.
+		var limit := get_viewport().get_visible_rect().size.y
+		var across := panel.get_global_rect()
+		for below: Control in _bottom.get_children():
+			var rect := below.get_global_rect()
+			if below.visible and rect.position.x < across.end.x and rect.end.x > across.position.x:
+				limit = minf(limit, rect.position.y)
 		var wanted := (scroll.get_child(0) as Control).get_combined_minimum_size().y
-		var room := limit - scroll.get_global_rect().position.y - 16
+		var room := limit - 12 - scroll.get_global_rect().position.y - 16
 		scroll.custom_minimum_size.y = clampf(room, 48.0, wanted)
 
 
@@ -691,6 +699,16 @@ func _draw_inspect_actions() -> void:
 			_action_button(_inspect_actions, "Join %s" % sim.areas.terminals[terminal].name, {"op": "set_terminal", "id": id, "terminal": terminal})
 	if sim.areas.list.values().filter(func(a: Dictionary) -> bool: return a.terminal == own).size() > 1:
 		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
+	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
+		var settings: Dictionary = sim.areas.list[id].settings
+		for role: String in ["import", "export"]:
+			if role != settings.role:
+				_action_button(_inspect_actions, "Make %s block" % role, {"op": "set_area", "id": id, "settings": {"role": role}})
+		for gear: String in sim.rules.yard_gear:
+			if gear != settings.gear:
+				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
+				button.disabled = sim.lock_error(gear) != ""
+				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
@@ -811,7 +829,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 
 
 ## A plain button that issues `command` on each press.
-func _action_button(row: HBoxContainer, text: String, command: Dictionary) -> Button:
+func _action_button(row: Container, text: String, command: Dictionary) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.pressed.connect(func() -> void: command_issued.emit(command))

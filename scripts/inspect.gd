@@ -91,6 +91,29 @@ static func _crane(sim: PortSim, crane: PortSim.Crane) -> Array[String]:
 	return lines
 
 
+## A yard block's boxes against its room, and its machines.
+static func _yard_fill(sim: PortSim, id: int) -> String:
+	var gear: String = sim.areas.list[id].settings.gear
+	var room: int = sim.areas.layout(id).stacks.size() * sim.rules.yard_gear[gear].tiers
+	var held: int = sim.area_stacks[id].boxes().size() if id in sim.area_stacks else 0
+	var machines := sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == id).size()
+	return "%d of %d boxes (%d%%), %d machine%s" % [held, room, roundi(100.0 * held / maxi(room, 1)), machines, "" if machines == 1 else "s"]
+
+
+## A quay apron's size, the ships it fits, its cranes and the ship alongside.
+static func _apron(sim: PortSim, id: int) -> Array[String]:
+	var area: Dictionary = sim.areas.list[id]
+	var length := RoadNet.length(area.start, area.end) + 1
+	var fits: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return AreaFlow.ship_cells(sim, kind) <= length)
+	var lines: Array[String] = ["%d m long, %d m deep: berths %s" % [Grid.metres(length), Grid.metres(sim.areas.depth_of(area)), ", ".join(fits) if not fits.is_empty() else "no ship yet"]]
+	var cranes := sim.cranes.filter(func(c: PortSim.Crane) -> bool: return c.apron == id).size()
+	lines.append("%d STS crane%s" % [cranes, "" if cranes == 1 else "s"])
+	for ship: PortSim.Ship in sim.ships:
+		if ship.apron == id:
+			lines.append("Alongside: %s %s, %s" % [sim.contracts.name_of(ship.line), ship.kind, SHIP_STATES[ship.state].to_lower()])
+	return lines
+
+
 static func _area(sim: PortSim, id: int) -> Array[String]:
 	var area: Dictionary = sim.areas.list[id]
 	var lines: Array[String] = [sim.rules.area_types[area.type].name, sim.areas.terminals[area.terminal].name]
@@ -99,9 +122,14 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		lines.append(unready)
 	var settings: Dictionary = area.settings
 	if settings.has("role"):
-		lines.append("%s block, %s" % [settings.role.capitalize(), settings.gear.replace("_", " ")])
+		lines.append("%s block, worked by %s" % [settings.role.capitalize(), sim.rules.yard_gear[settings.gear].name])
+		lines.append(_yard_fill(sim, id))
+	if area.type == "quay_apron":
+		lines.append_array(_apron(sim, id))
 	if settings.has("level"):
 		lines.append("%s, %d lanes: %.1f min a lorry, %d lorries an hour" % [sim.rules.gate_levels[settings.level].name, sim.areas.layout(id).lanes.size(), AreaFlow.gate_minutes(sim, id), roundi(AreaFlow.gate_throughput(sim, id))])
+		var waiting := sim.handovers.waiting(id)
+		lines.append("%d lorries queuing" % (waiting.buffer.size() + waiting.road.size()))
 	if settings.has("lines") and not settings.lines.is_empty():
 		lines.append("Favours " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
 	var idle := sim.areas.idle_reason(id)
