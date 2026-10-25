@@ -79,6 +79,26 @@ M6 target. The render bench, the endgame port and the sim profiler built
 tile ports, so they went with the tile model; M6 steps 1 and 2 rebuild them
 on roads and areas, and the M4 and M6 render figures below were measured on tiles.
 
+## Vehicles at their data speed, then realistic speeds (2026-10-25)
+
+Until 25 Oct every vehicle moved one cell a tick at most, 80 m a game
+minute, so the bench port's lorries never drove at the 125 m above.
+`LaneTraffic.advance` now enters cells up to a vehicle's speed, and the
+data speeds became 25 km/h for lorries and 30 km/h for tractors (417 and
+500 m a game minute). Faster trips leave fewer vehicles on the roads at
+once, each crossing more cells a tick, so the cost per vehicle-tick rises
+while the whole tick holds.
+
+| Bench run | ms a tick | Vehicles on average | µs per vehicle-tick |
+|---|---:|---:|---:|
+| One cell a tick (before) | 0.73 | 100 | 7.3 |
+| Data speed, 125 and 150 m | 0.66 | 80 | 8.3 |
+| 417 and 500 m | 0.67 | 59 | 11.5 |
+
+Budgets are unchanged (12 ms, 50 µs). For the endgame, cost now scales with
+cells crossed a tick, not vehicles alone: M6's packed data and path
+threading should be measured in cells a tick too.
+
 ## M4 render check (2026-10-19)
 
 Same machine, renderer and command as the M1 baseline. The M4 view adds

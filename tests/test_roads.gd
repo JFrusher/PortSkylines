@@ -603,6 +603,9 @@ func _test_discharge() -> void:
 
 func _test_delivery() -> void:
 	var sim := AreaPort.working_terminal(2)
+	# 40 ft boxes only, so the second is stacked on the first, not beside it.
+	sim.rules = sim.rules.duplicate(true)
+	sim.rules.box_mix.forty_share = 1.0
 	for i in 6000:
 		sim.tick()
 		if sim.area_stacks[3].boxes().size() == 2:

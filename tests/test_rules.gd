@@ -30,6 +30,7 @@ func _initialize() -> void:
 	_test_only_the_ledger_moves_cash()
 	_test_a_service_calls_on_its_slot()
 	_test_offers_accept_and_decline()
+	_test_services_spread_across_the_week()
 	_test_reputation_cancels_and_recovers()
 	_test_storage_is_charged_per_day()
 	_test_a_call_earns_its_moves()
@@ -308,6 +309,28 @@ func _test_offers_accept_and_decline() -> void:
 	var minute_of_week := fmod(sim.clock.calendar_minutes(), Contracts.MINUTES_PER_WEEK)
 	_run(sim, fposmod(offer.start - minute_of_week, Contracts.MINUTES_PER_WEEK) + 1)
 	_expect(sim.ships.size() == 1 and sim.ships[0].line == offer.line, true, "and its ship calls")
+
+
+## Services agreed one after another call on different days: each new offer
+## takes the hour of the week furthest from the calls already agreed or offered.
+func _test_services_spread_across_the_week() -> void:
+	var rules := Content.base().duplicate(true)
+	rules.contracts.offer_chance = 1.0
+	rules.contracts.max_offers = 1
+	var contracts := Contracts.new(rules)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 3
+	while contracts.services.size() < 4:
+		var offer := contracts.offer(rng, 8 * 60.0, 10, func(_kind: String) -> bool: return true)
+		if not offer.is_empty():
+			contracts.accept(offer.id)
+	var hours: Array = contracts.services.map(func(s: Dictionary) -> int: return s.start / 60)
+	var closest := 7 * 24
+	for a: int in hours:
+		for b: int in hours:
+			if a != b:
+				closest = mini(closest, mini(absi(a - b), 7 * 24 - absi(a - b)))
+	_expect(closest >= 36, true, "four services agreed on one morning call at least 36 h apart (hours of the week %s)" % [hours])
 
 
 ## Late calls cost a line's reputation until it cancels a service; good calls

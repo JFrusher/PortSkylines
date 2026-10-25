@@ -44,7 +44,8 @@ func _initialize() -> void:
 			sim.apply({"op": "accept_offer", "id": offer.id})
 		return sim.contracts.services.size() >= Guide.SERVICES)
 	_expect(accepted, true, "lines offer %d services and they are accepted" % Guide.SERVICES)
-	_expect(Guide.current(sim), steps.size() + 1, "accepting the offers finishes their step")
+	# The first service calls soon after it is agreed, so its ship may already be worked.
+	_expect(Guide.current(sim) >= steps.size() + 1, true, "accepting the offers finishes their step")
 	_expect(_run_until(sim, func() -> bool: return not sim.ship_log.is_empty()), true, "the first ship is worked")
 	_expect(Guide.current(sim), Guide.steps(sim).size(), "the guide ends with the first ship worked")
 	var call: Dictionary = sim.ship_log[0]
