@@ -581,7 +581,9 @@ func _test_inspect_each_entity() -> void:
 	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
 	_expect(Inspect.describe(sim, {"area": 3}).slice(0, 3), ["Yard block", "Terminal 1", "Import block, reach stacker"] as Array[String], "a yard block shows its rules")
 	sim.vehicles.erase(vehicle)
-	_expect(Inspect.describe(sim, vehicle), [] as Array[String], "a vehicle that left shows nothing")
+	# Held in a typed array, as the HUD holds it: an untyped [] fails there.
+	var shown: Array[String] = Inspect.describe(sim, vehicle)
+	_expect(shown, [] as Array[String], "a vehicle that left shows nothing")
 
 
 ## Bulldozing areas in use, as in Cities: Skylines: an apron's ship sails and

@@ -29,15 +29,18 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 
 ## A title then lines of state for `thing` from `pick`, or [] once it is gone.
 static func describe(sim: PortSim, thing: Variant) -> Array[String]:
+	# A typed empty array: `x if found else []` gives an untyped [], which a
+	# caller's Array[String] refuses once the thing inspected has gone.
+	var nothing: Array[String] = []
 	if thing is Vehicle:
-		return _vehicle(sim, thing) if thing in sim.vehicles else []
+		return _vehicle(sim, thing) if thing in sim.vehicles else nothing
 	if thing is PortSim.Ship:
-		return _ship(sim, thing) if thing in sim.ships else []
+		return _ship(sim, thing) if thing in sim.ships else nothing
 	if thing is PortSim.Crane:
-		return _crane(sim, thing) if thing in sim.cranes else []
+		return _crane(sim, thing) if thing in sim.cranes else nothing
 	if thing is Dictionary:
-		return _area(sim, thing.area) if thing.area in sim.areas.list else []
-	return []
+		return _area(sim, thing.area) if thing.area in sim.areas.list else nothing
+	return nothing
 
 
 ## The water an apron ship lies in: its length of the quay edge, out to its beam.

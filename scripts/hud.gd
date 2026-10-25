@@ -80,6 +80,12 @@ var _drawer_cards_container: HBoxContainer
 var _drawer_rows_container: VBoxContainer
 var _drawer_extra_container: VBoxContainer
 var _active_drawer_group := ""
+## The bottom column (build menu and toolbar), and the left column's
+## scrolling panel bodies, fitted between the stats and the build menu.
+var _bottom: Control
+var _left_scrolls: Array[ScrollContainer] = []
+## The one confirmation dialog, reused for every question.
+var _confirm := ConfirmationDialog.new()
 
 
 func _ready() -> void:
@@ -135,14 +141,16 @@ func _ready() -> void:
 	ledger_btn.pressed.connect(func() -> void: _toggle_drawer(HudDetails.GROUP_FINANCE))
 	_gate("ledger", ledger_btn)
 
-	_gate("contracts", _toggle(menu, "Contracts", _panel_of(contracts_panel)))
+	var contracts_button := _toggle(menu, "Contracts", _panel_of(contracts_panel))
+	contracts_button.toggled.connect(func(on: bool) -> void:
+		if on:
+			_show_only(_panel_of(contracts_panel)))
+	_gate("contracts", contracts_button)
 	_action(menu, "Save", save_pressed)
-	_action(menu, "Load", load_pressed)
+	add_child(_confirm)
+	_ask(menu, "Load", "Load the saved game? The port you're playing is lost unless it is saved.", load_pressed.emit)
 	for creative: bool in [false, true]:
-		var button := Button.new()
-		button.text = "New creative" if creative else "New game"
-		button.pressed.connect(func() -> void: new_game_pressed.emit(creative))
-		menu.add_child(button)
+		_ask(menu, "New creative" if creative else "New game", "Start a new %s? The port you're playing is lost unless it is saved." % ("creative game" if creative else "game"), func() -> void: new_game_pressed.emit(creative))
 
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)
@@ -164,6 +172,7 @@ func _ready() -> void:
 
 	# Bottom centre: unified toolbar containing build menu categories and figure groups.
 	var bottom := _corner(Control.PRESET_CENTER_BOTTOM)
+	_bottom = bottom
 	var items := _panel(bottom)
 	var tools := ButtonGroup.new()
 	var rows := {}
@@ -222,6 +231,9 @@ func _ready() -> void:
 			road_type = key))
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
+		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
+		if area.kind == "depot":
+			continue
 		var detail := "%d lanes, $%d a cell" % [area.depth - 2, area.cost_per_cell] if area.kind == "gate" else "$%d per 4 m cell" % area.cost_per_cell
 		_item(_button(rows[AREA_ROWS[area.kind]], "%s\n%s" % [area.name, detail], tools, false, func() -> void:
 			tool = DRAW_AREA
@@ -316,6 +328,7 @@ func _toggle_drawer(group_name: String) -> void:
 		_close_drawer()
 		return
 	_active_drawer_group = group_name
+	_show_only(_drawer_panel)
 	if _drawer_title_label:
 		_drawer_title_label.text = "%s Details" % group_name
 	_drawer_panel.visible = true
@@ -405,7 +418,7 @@ func _set_ui_scale(factor: float, button: Button) -> void:
 ## Opens the inspect panel on whatever is at grid cell `cell`.
 func inspect(cell: Vector2i) -> void:
 	_inspected = Inspect.pick(sim, cell)
-	_panel_of(_inspect_name).visible = true
+	_show_only(_panel_of(_inspect_name))
 
 
 ## Shows a short-lived message, such as why a build was refused.
@@ -428,6 +441,7 @@ func _process(dt: float) -> void:
 
 	_events.visible = _message.text != ""
 	_show_guide()
+	_fit_left_panels()
 
 	if _inspect_name.is_visible_in_tree():
 		var lines := Inspect.describe(sim, _inspected)
@@ -500,6 +514,40 @@ func _refresh_drawer() -> void:
 
 	if _active_drawer_group == HudDetails.GROUP_FINANCE:
 		_ledger.text = HudDetails.ledger_text(sim)
+
+
+## Shows `panel`, one of the left column's titled panels, and hides the
+## others, so one detail panel is open at a time, as in Cities: Skylines.
+func _show_only(panel: PanelContainer) -> void:
+	for scroll in _left_scrolls:
+		_panel_of(scroll).visible = _panel_of(scroll) == panel
+
+
+## Gives each open left-column panel the height left above the build menu,
+## scrolling what doesn't fit.
+func _fit_left_panels() -> void:
+	var limit := _bottom.get_global_rect().position.y - 12
+	for scroll in _left_scrolls:
+		if not _panel_of(scroll).visible:
+			continue
+		var wanted := (scroll.get_child(0) as Control).get_combined_minimum_size().y
+		var room := limit - scroll.get_global_rect().position.y - 16
+		scroll.custom_minimum_size.y = clampf(room, 48.0, wanted)
+
+
+## A button in `row` that asks `question` and calls `then` if confirmed.
+func _ask(row: HBoxContainer, text: String, question: String, then: Callable) -> void:
+	var button := Button.new()
+	button.text = text
+	button.pressed.connect(func() -> void:
+		_confirm.title = text
+		_confirm.dialog_text = question
+		_confirm.ok_button_text = text
+		for c: Dictionary in _confirm.confirmed.get_connections():
+			_confirm.confirmed.disconnect(c.callable)
+		_confirm.confirmed.connect(then, CONNECT_ONE_SHOT)
+		_confirm.popup_centered())
+	row.add_child(button)
 
 
 func _gate(name: String, control: Control) -> Control:
@@ -644,7 +692,16 @@ func _panel(parent: Control, title := "") -> VBoxContainer:
 	body.theme_type_variation = "PanelBody"
 	column.add_child(body)
 	var inner := VBoxContainer.new()
-	body.add_child(inner)
+	if parent.grow_horizontal != Control.GROW_DIRECTION_END:
+		body.add_child(inner)
+		return inner
+	# Left-column panels scroll inside the room above the build menu.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(scroll)
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(inner)
+	_left_scrolls.append(scroll)
 	return inner
 
 
