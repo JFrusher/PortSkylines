@@ -499,7 +499,7 @@ func _process(dt: float) -> void:
 		if _actions_drawn != [sim, sim.areas.version, _inspected]:
 			_draw_inspect_actions()
 
-	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
+	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim)]:
 		_draw_contracts()
 
 	# Throttled refresh of the info bar and the open drawer
@@ -690,7 +690,7 @@ func _show_milestone() -> void:
 
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 func _draw_contracts() -> void:
-	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate()]
+	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim)]
 	for child in _contracts.get_children():
 		child.queue_free()
 	var contracts := sim.contracts
@@ -709,22 +709,58 @@ func _draw_contracts() -> void:
 		var new_fee: int = fee + change[2]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_storage", "free_days": free_days, "fee": new_fee}))
 		terms.add_child(button)
-	_contracts.add_child(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
-	for offer in contracts.offers:
-		var row := _row(_contracts)
-		row.add_child(_label("    " + _service_text(offer) + "   offer ends day %d" % int(offer.expires / SimClock.MINUTES_PER_DAY)))
-		var id: int = offer.id
-		var accept := Button.new()
-		accept.text = "Accept"
-		accept.pressed.connect(func() -> void: command_issued.emit({"op": "accept_offer", "id": id}))
-		row.add_child(accept)
-		var decline := Button.new()
-		decline.text = "Decline"
-		decline.pressed.connect(func() -> void: command_issued.emit({"op": "decline_offer", "id": id}))
-		row.add_child(decline)
-	_contracts.add_child(_label("Services" if not contracts.services.is_empty() else "No services yet"))
-	for service in contracts.services:
-		_contracts.add_child(_label("    " + _service_text(service)))
+	if contracts.offers.is_empty() and contracts.services.is_empty():
+		_contracts.add_child(_label("No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
+		return
+	_contracts.add_child(_week(contracts))
+	var table := GridContainer.new()
+	table.columns = 8
+	table.add_theme_constant_override("h_separation", 16)
+	_contracts.add_child(table)
+	for heading: String in ["Line", "Ship", "Calls", "Window", "Moves", "Value", "Clash", ""]:
+		var label := _label(heading)
+		label.theme_type_variation = "CategoryHeader"
+		table.add_child(label)
+	var berths := AreaFlow.offer_berths(sim)
+	for service: Dictionary in contracts.offers + contracts.services:
+		var start: int = service.start
+		var overlaps := contracts.overlaps(service)
+		var clash := "with %s" % ", ".join(overlaps.map(func(o: Dictionary) -> String: return contracts.name_of(o.line))) if overlaps.size() >= berths and not overlaps.is_empty() else "none"
+		for cell: String in [contracts.name_of(service.line), service.kind, "%s %02d:%02d" % [WEEKDAYS[start / SimClock.MINUTES_PER_DAY], start / 60 % 24, start % 60], "%d h" % roundi(service.window_hours), str(service.moves), HudDetails.dollars(contracts.call_value(service)), clash]:
+			table.add_child(_label(cell))
+		var status := HBoxContainer.new()
+		table.add_child(status)
+		if service not in contracts.offers:
+			status.add_child(_label("agreed"))
+			continue
+		var id: int = service.id
+		status.add_child(_label("ends day %d" % int(service.expires / SimClock.MINUTES_PER_DAY)))
+		_action_button(status, "Accept", {"op": "accept_offer", "id": id})
+		_action_button(status, "Decline", {"op": "decline_offer", "id": id})
+
+
+## The week, Monday to Sunday by the hour: agreed windows solid, offers outlined.
+func _week(contracts: Contracts) -> Control:
+	var week := Control.new()
+	week.custom_minimum_size = Vector2(560, 7 * 16)
+	week.draw.connect(func() -> void:
+		var hour := (week.size.x - 40) / 24.0
+		for day in 7:
+			week.draw_string(week.get_theme_default_font(), Vector2(0, day * 16 + 12), WEEKDAYS[day], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.58, 0.639, 0.722))
+			week.draw_rect(Rect2(40, day * 16 + 2, 24 * hour, 12), Color(1, 1, 1, 0.05))
+		for service: Dictionary in contracts.offers + contracts.services:
+			var offered := service in contracts.offers
+			var minute: int = service.start
+			var left := roundi(service.window_hours * 60.0)
+			while left > 0:
+				var day := minute / SimClock.MINUTES_PER_DAY % 7
+				var into := minute % SimClock.MINUTES_PER_DAY
+				var span := mini(left, SimClock.MINUTES_PER_DAY - into)
+				var bar := Rect2(40 + into / 60.0 * hour, day * 16 + 2, span / 60.0 * hour, 12)
+				week.draw_rect(bar, Color(0.369, 0.643, 1) if offered else Color(0, 0.439, 0.867), not offered, 1.5)
+				minute += span
+				left -= span)
+	return week
 
 
 ## For an inspected area: join each other terminal, or split off into a new one.
@@ -755,11 +791,6 @@ func _draw_inspect_actions() -> void:
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
 				_action_button(_inspect_actions, "Make %s" % sim.rules.gate_levels[level].name, {"op": "set_area", "id": id, "settings": {"level": level}})
-
-
-func _service_text(service: Dictionary) -> String:
-	var start: int = service.start
-	return "%s: %s every %s %02d:%02d, %d h window, %d moves" % [sim.contracts.name_of(service.line), service.kind, WEEKDAYS[start / SimClock.MINUTES_PER_DAY], start / 60 % 24, start % 60, roundi(service.window_hours), service.moves]
 
 
 func _label(text: String) -> Label:
