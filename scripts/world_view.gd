@@ -57,20 +57,27 @@ const SPOT_COLOR := Color(0.85, 0.7, 0.2)
 const EDGE_COLOR := Color(0.85, 0.7, 0.15)
 ## Mixed into an idle area's ground, so an area cut off from its road stands out.
 const IDLE_TINT := Color(0.85, 0.2, 0.15)
-const CRANE_HEIGHT := 3.2
-## How far the girder reaches behind the quay edge and out over the water, in world units.
-const CRANE_BACK := -1.0
-const CRANE_REACH := 2.6
+## STS cranes at true scale, in world units: the girder 45 m up, legs on
+## rails 30.5 m apart, and the girder 15 m back behind the land-side rail;
+## its reach out over the water comes from the crane's outreach in rows.
+const CRANE_HEIGHT := 45.0 / METRES_PER_UNIT
+const CRANE_GAUGE := 30.48 / METRES_PER_UNIT
+const CRANE_BACK := -CRANE_GAUGE / 2.0 - 15.0 / METRES_PER_UNIT
 const CRANE_COLOR := Color(0.85, 0.3, 0.2)
-## A ship's deck height, the room its bridge and bow take, and its deck stacks.
+## A ship's deck height, the room its bridge and bow take, and its deck
+## stacks at true scale: 40 ft bays with a 0.6 m gap, rows a box wide plus
+## 0.1 m, as many rows as the class is boxes across.
 const SHIP_DECK := 0.3
 const SHIP_STERN := 1.0
 const SHIP_BOW := 1.1
-const DECK_BAY := 0.48
-const DECK_ROWS := 3
+const DECK_BAY := 12.8 / METRES_PER_UNIT
+const DECK_ROW := 2.54 / METRES_PER_UNIT
 const DECK_TIERS := 4
-## A 40 ft box turned along the ship and sized to a deck bay.
-var _deck_box := Basis(Vector3.UP, PI / 2) * Basis.from_scale(Vector3((DECK_BAY - 0.04) / 0.78, 0.8, 1.27))
+## Metres of hull beside the outer rows, and of water between hull and quay edge.
+const HULL_MARGIN := 2.0
+const QUAY_GAP := 2.0
+## A 40 ft box at true size, turned along the ship.
+var _deck_box := Basis()
 ## Each info view's colours and what they mean, by HudDetails group.
 const INFO_LEGENDS := {
 	HudDetails.GROUP_TRAFFIC: [["Flowing", Color(0.2, 0.8, 0.35)], ["Half stopped", Color(0.95, 0.75, 0.15)], ["Stopped", Color(0.9, 0.2, 0.15)]],
@@ -163,6 +170,7 @@ func _ready() -> void:
 		_real_box[teu] = real / _stack_meshes[teu].get_aabb().size
 		var aabb: AABB = _stack_meshes[teu].get_aabb()
 		_plain_box[teu] = _merged([[aabb.size, aabb.get_center(), Color.WHITE]])
+	_deck_box = Basis(Vector3.UP, PI / 2) * Basis.from_scale(_real_box[2])
 
 
 ## The site in world units.
@@ -521,7 +529,7 @@ func _draw_ships() -> void:
 		var deck: MultiMesh = (model.get_node("Deck") as MultiMeshInstance3D).multimesh
 		if model.get_meta("aboard", -1) != aboard:
 			model.set_meta("aboard", aboard)
-			var slots := deck_slots(length, aboard)
+			var slots := deck_slots(length, aboard, spec.outreach)
 			deck.instance_count = maxi(deck.instance_count, slots.size())
 			deck.visible_instance_count = slots.size()
 			for i in slots.size():
@@ -529,8 +537,13 @@ func _draw_ships() -> void:
 				deck.set_instance_color(i, _livery(ship.line, i))
 
 
+## A ship's beam in world units: its rows of boxes across, plus hull each side.
+static func beam(rows: int) -> float:
+	return rows * DECK_ROW + 2.0 * HULL_MARGIN / METRES_PER_UNIT
+
+
 ## Where `ship` lies alongside in world units, and the way out to sea:
-## [middle, side]. A ship's middle is a world unit out from the quay's edge.
+## [middle, side]. Its hull lies QUAY_GAP out from the quay's edge.
 func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
 	var area: Dictionary = sim.areas.list[ship.apron]
 	var along := Vector2((area.end - area.start).sign())
@@ -538,21 +551,24 @@ func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
 	var span := AreaFlow.ship_cells(sim, ship.kind)
 	var depth := sim.areas.depth_of(area)
 	var edge := (Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * (depth - 1) + Vector2(0.5, 0.5)) * Grid.CELL
-	return [edge / METRES_PER_UNIT + side, side]
+	# `edge` is the outer row's middle, half a cell inside the quay's edge.
+	var out := (Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(sim.rules.ship_classes[ship.kind].outreach) / 2.0
+	return [edge / METRES_PER_UNIT + side * out, side]
 
 
-## Where the first `count` boxes on deck of a ship `length` world units long sit,
-## in the ship's frame (length along +Z, bow at +Z): 40 ft bays from behind
-## the bridge to short of the bow, three rows across, filled tier by tier.
-## Boxes past the top tier are not drawn.
-static func deck_slots(length: float, count: int) -> Array[Vector3]:
+## Where the first `count` boxes on deck of a ship `length` world units long
+## and `rows` boxes across sit, in the ship's frame (length along +Z, bow at
+## +Z): 40 ft bays from behind the bridge to short of the bow, filled tier
+## by tier. Boxes past the top tier are not drawn.
+static func deck_slots(length: float, count: int, rows: int) -> Array[Vector3]:
 	var bays := floori((length - SHIP_BOW - SHIP_STERN) / DECK_BAY)
-	var per_tier := bays * DECK_ROWS
+	var per_tier := bays * rows
+	var tier_height := REAL_BOX_HEIGHT / METRES_PER_UNIT
 	var slots: Array[Vector3] = []
 	for i in mini(count, per_tier * DECK_TIERS):
-		var bay := (i % per_tier) / DECK_ROWS
-		var row := i % DECK_ROWS
-		slots.append(Vector3((row - (DECK_ROWS - 1) / 2.0) * 0.42, SHIP_DECK + (i / per_tier + 0.5) * BOX_HEIGHT * 0.8, -length / 2.0 + SHIP_STERN + (bay + 0.5) * DECK_BAY))
+		var bay := (i % per_tier) / rows
+		var row := i % rows
+		slots.append(Vector3((row - (rows - 1) / 2.0) * DECK_ROW, SHIP_DECK + (i / per_tier + 0.5) * tier_height, -length / 2.0 + SHIP_STERN + (bay + 0.5) * DECK_BAY))
 	return slots
 
 
@@ -563,12 +579,14 @@ func _ship_model(ship: PortSim.Ship, length: float) -> Node3D:
 	var side := Vector2(sim.areas.list[ship.apron].out)
 	model.rotation.y = atan2(-side.y, side.x)
 	var half := length / 2.0 - 0.2
-	var outline := PackedVector2Array([Vector2(-0.7, -half), Vector2(0.7, -half), Vector2(0.7, half - 1.0), Vector2(0, half), Vector2(-0.7, half - 1.0)])
+	var side_x := beam(sim.rules.ship_classes[ship.kind].outreach) / 2.0
+	var outline := PackedVector2Array([Vector2(-side_x, -half), Vector2(side_x, -half), Vector2(side_x, half - 1.0), Vector2(0, half), Vector2(-side_x, half - 1.0)])
 	var hull := MeshInstance3D.new()
-	hull.mesh = _prism(outline, 0.6, Color.html(sim.rules.lines[ship.line].livery))
+	# Darker than the line's boxes, so a deck of its own boxes reads against it.
+	hull.mesh = _prism(outline, 0.6, Color.html(sim.rules.lines[ship.line].livery).darkened(0.55))
 	hull.position.y = SHIP_DECK - 0.3
 	model.add_child(hull)
-	var bridge := _box(Vector3(1.2, 0.9, 0.5), Color(0.92, 0.92, 0.9))
+	var bridge := _box(Vector3(side_x * 2.0, 0.9, 0.5), Color(0.92, 0.92, 0.9))
 	bridge.position = Vector3(0, SHIP_DECK + 0.45, -half + 0.35)
 	model.add_child(bridge)
 	var deck := MultiMeshInstance3D.new()
@@ -613,7 +631,7 @@ func _draw_cranes() -> void:
 		var phase := crane.timer / move_minutes if crane.tractor != 0 else 0.0
 		var pose := crane_pose(phase, ship != null and ship.boxes > 0)
 		var trolley: Node3D = model.get_node("Trolley")
-		trolley.position.z = lerpf(CRANE_BACK, CRANE_REACH, pose[0])
+		trolley.position.z = lerpf(CRANE_BACK, model.get_meta("reach"), pose[0])
 		var spreader: Node3D = trolley.get_node("Spreader")
 		spreader.position.y = -lerpf(0.2, CRANE_HEIGHT - 0.6, pose[1])
 		var cable: Node3D = trolley.get_node("Cable")
@@ -630,22 +648,27 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 	model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
 	model.rotation.y = atan2(area.out.x, area.out.y)
-	for x: float in [-0.35, 0.35]:
-		for z: float in [-0.35, 0.35]:
-			var leg := _box(Vector3(0.1, CRANE_HEIGHT, 0.1), CRANE_COLOR)
+	var spec: Dictionary = sim.rules.sts_cranes[crane.kind]
+	# Out from the water-side rail: the quay's edge, the gap and its outreach in rows, plus hull.
+	var reach: float = CRANE_GAUGE / 2.0 + (Grid.CELL * depth / 2.0 - Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(spec.outreach)
+	model.set_meta("reach", reach)
+	var legs: float = (spec.width / 2.0 - 2.0) / METRES_PER_UNIT
+	for x: float in [-legs, legs]:
+		for z: float in [-CRANE_GAUGE / 2.0, CRANE_GAUGE / 2.0]:
+			var leg := _box(Vector3(0.06, CRANE_HEIGHT, 0.06), CRANE_COLOR)
 			leg.position = Vector3(x, CRANE_HEIGHT / 2.0, z)
 			model.add_child(leg)
-	var girder := _box(Vector3(0.5, 0.18, CRANE_REACH - CRANE_BACK + 0.6), CRANE_COLOR)
-	girder.position = Vector3(0, CRANE_HEIGHT, (CRANE_REACH + CRANE_BACK) / 2.0)
+	var girder := _box(Vector3(0.24, 0.12, reach - CRANE_BACK + 0.2), CRANE_COLOR)
+	girder.position = Vector3(0, CRANE_HEIGHT, (reach + CRANE_BACK) / 2.0)
 	model.add_child(girder)
-	var trolley := _box(Vector3(0.4, 0.14, 0.3), Color(0.25, 0.25, 0.27))
+	var trolley := _box(Vector3(0.24, 0.1, 0.32), Color(0.25, 0.25, 0.27))
 	trolley.name = "Trolley"
-	trolley.position.y = CRANE_HEIGHT - 0.16
+	trolley.position.y = CRANE_HEIGHT - 0.11
 	model.add_child(trolley)
-	var cable := _box(Vector3(0.03, 1.0, 0.03), Color(0.15, 0.15, 0.15))
+	var cable := _box(Vector3(0.02, 1.0, 0.02), Color(0.15, 0.15, 0.15))
 	cable.name = "Cable"
 	trolley.add_child(cable)
-	var spreader := _box(Vector3(0.36, 0.06, 0.8), Color(0.95, 0.75, 0.1))
+	var spreader := _box(Vector3(REAL_BOX_WIDTH, 1.0, REAL_BOX_LENGTH[2]) / METRES_PER_UNIT, Color(0.95, 0.75, 0.1))
 	spreader.name = "Spreader"
 	trolley.add_child(spreader)
 	add_child(model)
