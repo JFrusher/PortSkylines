@@ -8,6 +8,7 @@
 - Done on tiles and redone in M5: step 7 (distance fields), as part of the lane graph.
 - Skipped on evidence: step 5 (ships and cranes cost 5 ms of 168 render; see `docs/perf.md`).
 - Waiting for M5's model: steps 3, 8, 9, 11–15, 17 and 18.
+- Steps 1 and 2 redone on roads and areas on 26 Oct 2026 (`bench/make_endgame.gd`, `bench/endgame_bench.gd`, `bench/profile_sim.gd`); the baseline and top hot spots are in `docs/perf.md`. The port reaches 694 lorries, not 2,000, and has no trains until step 13.
 
 **Exit criteria:**
 - The endgame benchmark save (about 2,000 lorries, 20,000 stacked boxes, 6 berths, 2 trains) holds 60 fps at 1080p on the GTX 1660-class target at 1×, and stays playable at 3×.

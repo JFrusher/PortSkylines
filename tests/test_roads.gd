@@ -1,6 +1,7 @@
 extends SceneTree
 
 const AreaPort := preload("res://tests/area_port.gd")
+const RandomPort := preload("res://tests/random_port.gd")
 ## Headless tests for roads and areas on the 4 m grid.
 ## godot --headless --script res://tests/test_roads.gd
 
@@ -36,6 +37,7 @@ func _initialize() -> void:
 	_test_two_way_gate()
 	_test_lorry_gives_up()
 	_test_following_a_box()
+	_test_lorries_come_for_the_longest_due_box()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -737,8 +739,26 @@ func _test_lorry_gives_up() -> void:
 	_expect(sim.handovers.waiting(2), {"buffer": [], "road": []}, "and it holds no place at the gate")
 
 
+## A lorry comes for the box due longest, whichever block holds it, so no
+## block's handover slots take every lorry while other blocks wait.
+func _test_lorries_come_for_the_longest_due_box() -> void:
+	var sim := AreaPort.working_terminal(0, 1)
+	sim.apply({"op": "set_area", "id": 4, "settings": {"role": "import"}})
+	var now := sim.clock.calendar_minutes()
+	var boxes := {}
+	for block: int in [3, 4]:
+		var box := sim._new_box("import", now - (10.0 if block == 3 else 60.0), "")
+		AreaFlow._stacks(sim, block).place(box, sim.boxes[box].teu)
+		boxes[block] = box
+	_expect(AreaFlow.dispatch_import_lorry(sim), true, "a lorry is sent")
+	_expect(sim.vehicles[-1].box, boxes[4], "for the box due an hour ago in the second block, not the one due 10 minutes ago in the first")
+
+
+## M5's exit chain: STS -> tractor -> RTG lane -> stack -> lorry -> gate.
 func _test_following_a_box() -> void:
-	var sim := AreaPort.working_terminal(1)
+	# RandomPort.quick unlocks every milestone, RTGs among them.
+	var sim := AreaPort.working_terminal(1, 0, RandomPort.quick())
+	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"gear": "rtg"}}), "", "the import block is worked by RTGs")
 	var box := 0
 	for i in 2000:
 		sim.tick()
@@ -765,6 +785,8 @@ func _test_following_a_box() -> void:
 			due_set = true
 	_expect(seen.has("yard_block") and seen.has("gate"), true, "it is followed through the yard block and the gate (%s)" % [seen.keys()])
 	_expect(at, Vector2.INF, "until it leaves the port")
+	var gears: Array = sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == 3).map(func(m: Dictionary) -> String: return m.gear)
+	_expect(not gears.is_empty() and gears.all(func(g: String) -> bool: return g == "rtg"), true, "RTGs did the block's work (%s)" % [gears])
 
 
 ## A lane cell at the site entry a vehicle can drive in from.
