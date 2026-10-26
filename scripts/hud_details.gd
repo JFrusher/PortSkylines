@@ -60,6 +60,11 @@ static func row(label: String, value: String) -> Dictionary:
 
 
 ## "$12,345" or "-$12,345".
+## Dollars and cents, for amounts per move.
+static func cents(amount: float) -> String:
+	return "%s$%.2f" % ["-" if amount < 0.0 else "", absf(amount)]
+
+
 static func dollars(amount: int) -> String:
 	var digits := str(absi(amount))
 	for i in range(digits.length() - 3, 0, -3):
@@ -273,7 +278,7 @@ static func finance_cards(sim: PortSim) -> Array[Dictionary]:
 
 
 static func finance_rows(sim: PortSim) -> Array[Dictionary]:
-	return [
+	var rows: Array[Dictionary] = [
 		row("Cash balance", dollars(sim.money)),
 		row("Today's net", signed(sim.ledger.today_total())),
 		row("Daily upkeep", dollars(sim.daily_upkeep()) + " / day"),
@@ -281,6 +286,61 @@ static func finance_rows(sim: PortSim) -> Array[Dictionary]:
 		row("Consecutive days negative", str(sim.finance.days_negative)),
 		row("Storage terms", "%d free days, $%d/box/day" % [sim.storage.free_days, sim.storage.fee]),
 	]
+	rows.append_array(per_move_rows(sim))
+	return rows
+
+
+## The money per crane move, the port's main lever: over the closed days,
+## each ledger line and the net, then each line's and each terminal's.
+static func per_move_rows(sim: PortSim) -> Array[Dictionary]:
+	var per := per_move(sim)
+	if per.moves == 0:
+		return [row("Per move", "no moves in the closed days yet")]
+	var rows: Array[Dictionary] = [row("Per move, last %d days" % per.days, "%d moves" % per.moves)]
+	for category: String in sim.ledger.categories:
+		if per.categories.has(category):
+			rows.append(row("    " + sim.ledger.categories[category], cents(per.categories[category])))
+	rows.append(row("    Net", cents(per.net)))
+	for line: String in per.lines:
+		rows.append(row(sim.contracts.name_of(line), "%d moves, %s a move" % [per.lines[line].moves, cents(per.lines[line].income)]))
+	for terminal: int in per.terminals:
+		var t: Dictionary = per.terminals[terminal]
+		rows.append(row(sim.areas.terminals[terminal].name if terminal in sim.areas.terminals else "Terminal %d" % terminal, "%d moves, %s in, %s upkeep a move" % [t.moves, cents(t.income), cents(t.upkeep)]))
+	return rows
+
+
+## Over the ledger's closed days: {"days", "moves", "net" and "categories"
+## (category -> amount) per move, "lines" (line -> {"moves", "income" per
+## move}), "terminals" (terminal -> {"moves", "income" and "upkeep" per
+## move, upkeep at today's rate for each day)}.
+static func per_move(sim: PortSim) -> Dictionary:
+	var days := sim.ledger.days
+	var moves := 0
+	var net := 0
+	var totals := {}
+	var tallies := {"lines": {}, "terminals": {}}
+	for day: Dictionary in days:
+		moves += day.moves.total
+		net += day.closed - day.opened
+		for category: String in day.lines:
+			totals[category] = totals.get(category, 0) + day.lines[category]
+		for group: String in tallies:
+			for key: Variant in day.moves[group]:
+				var sum: Array = tallies[group].get(key, [0, 0])
+				tallies[group][key] = [sum[0] + day.moves[group][key][0], sum[1] + day.moves[group][key][1]]
+	var per := {"days": days.size(), "moves": moves, "net": 0.0, "categories": {}, "lines": {}, "terminals": {}}
+	if moves == 0:
+		return per
+	per.net = float(net) / moves
+	for category: String in totals:
+		per.categories[category] = float(totals[category]) / moves
+	for line: String in tallies.lines:
+		per.lines[line] = {"moves": tallies.lines[line][0], "income": float(tallies.lines[line][1]) / tallies.lines[line][0]}
+	var upkeep := sim.upkeep_parts()
+	for terminal: int in tallies.terminals:
+		var counted: Array = tallies.terminals[terminal]
+		per.terminals[terminal] = {"moves": counted[0], "income": float(counted[1]) / counted[0], "upkeep": upkeep.get(terminal, 0.0) * days.size() / counted[0]}
+	return per
 
 
 ## Full ledger breakdown text.

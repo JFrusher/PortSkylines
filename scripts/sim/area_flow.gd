@@ -221,7 +221,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		sim.ledger.post("rush_fines", -sim.rules.special_boxes.rush_fine)
 	ship.boxes -= 1
 	ship.moves += 1
-	sim._moved(sim.boxes[id])
+	sim._moved(sim.boxes[id], ship.line, sim.areas.list[ship.apron].terminal)
 	tractor.box = id
 	tractor.loaded = true
 	_go_to(sim, tractor, tractor.area)
@@ -250,7 +250,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 		return
 	crane.timer = 0.0
 	crane.tractor = 0
-	sim._moved(sim.boxes[tractor.box])
+	sim._moved(sim.boxes[tractor.box], ship.line, sim.areas.list[ship.apron].terminal)
 	sim._drop_box(tractor.box)
 	ship.exports -= 1
 	ship.moves += 1

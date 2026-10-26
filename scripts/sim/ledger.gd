@@ -13,7 +13,10 @@ var cash := 0
 var opened := 0
 ## Today's totals by category.
 var today := {}
-## Closed days, newest last: {"day", "opened", "closed", "lines"}.
+## Today's crane moves: {"total", "lines": line -> [moves, income],
+## "terminals": terminal -> [moves, income]}.
+var moves := _no_moves()
+## Closed days, newest last: {"day", "opened", "closed", "lines", "moves"}.
 var days: Array[Dictionary] = []
 
 
@@ -32,12 +35,25 @@ func post(category: String, amount: int) -> void:
 	today[category] = today.get(category, 0) + amount
 
 
+## Counts a crane move for `line` in `terminal` that earned `income`.
+func count_move(line: String, terminal: int, income: int) -> void:
+	moves.total += 1
+	for key: Array in [["lines", line], ["terminals", terminal]]:
+		var tally: Array = moves[key[0]].get(key[1], [0, 0])
+		moves[key[0]][key[1]] = [tally[0] + 1, tally[1] + income]
+
+
+static func _no_moves() -> Dictionary:
+	return {"total": 0, "lines": {}, "terminals": {}}
+
+
 ## Closes the day `day` and opens the next.
 func close_day(day: int) -> void:
-	days.append({"day": day, "opened": opened, "closed": cash, "lines": today})
+	days.append({"day": day, "opened": opened, "closed": cash, "lines": today, "moves": moves})
 	if days.size() > DAYS_KEPT:
 		days.pop_front()
 	today = {}
+	moves = _no_moves()
 	opened = cash
 
 
@@ -50,12 +66,13 @@ func today_total() -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"cash": cash, "opened": opened, "today": today.duplicate(), "days": days.duplicate(true)}
+	return {"cash": cash, "opened": opened, "today": today.duplicate(), "moves": moves.duplicate(true), "days": days.duplicate(true)}
 
 
 static func from_dict(d: Dictionary, category_labels: Dictionary) -> Ledger:
 	var ledger := Ledger.new(category_labels, d.cash)
 	ledger.opened = d.opened
 	ledger.today = d.today.duplicate()
+	ledger.moves = d.moves.duplicate(true)
 	ledger.days.assign(d.days)
 	return ledger

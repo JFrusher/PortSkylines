@@ -529,14 +529,14 @@ func _test_milestones_unlock_content() -> void:
 	_expect(sim.apply({"op": "dredge", "metres": 1}).begins_with("Unlocked at milestone 3"), true, "dredging waits for milestone 3")
 	var box := {"teu": 2, "reefer": false}
 	while sim.teu_handled < terminal.teu - 2:
-		sim._moved(box)
+		sim._moved(box, "aurora", 1)
 	_expect(sim.unlocked("rtg"), false, "still locked 2 TEU short")
-	sim._moved(box)
+	sim._moved(box, "aurora", 1)
 	_expect(sim.last_event().begins_with("Milestone 2"), true, "crossing it is announced (%s)" % sim.last_event())
 	_expect([sim.apply({"op": "set_area", "id": 3, "settings": {"gear": "rtg"}}), sim.apply({"op": "take_loan", "kind": "small"})], ["", ""], "RTGs and loans are unlocked")
 	_expect(sim.unlocked("land"), false, "land waits for milestone 3")
 	while sim.teu_handled < gateway.teu:
-		sim._moved(box)
+		sim._moved(box, "aurora", 1)
 	_expect(["land", "dredging", "panamax"].all(sim.unlocked), true, "milestone 3 unlocks land, dredging and Panamax services")
 	var rules := RandomPort.quick()
 	rules.contracts.offer_chance = 1.0

@@ -812,9 +812,11 @@ func milestones() -> Array[Dictionary]:
 	return list
 
 
-## Counts a crane move of `box`: the line pays for it, and milestones may unlock.
-func _moved(box: Dictionary) -> void:
+## Counts a crane move of `box` for `line` in `terminal`: the line pays for
+## it, and milestones may unlock.
+func _moved(box: Dictionary, line: String, terminal: int) -> void:
 	ledger.post("moves", move_price(box))
+	ledger.count_move(line, terminal, move_price(box))
 	var before := milestones_reached()
 	teu_handled += box.teu
 	if milestones_reached() > before:
@@ -921,24 +923,35 @@ func tick() -> void:
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
 ## yard machines and land.
 func daily_upkeep() -> int:
-	var total := 0
-	# Roads and areas cost a fraction of a dollar a cell, so they are summed before rounding.
-	var cells := 0.0
+	# Roads and areas cost a fraction of a dollar a cell, so parts are summed before rounding.
+	var total := 0.0
+	for part: float in upkeep_parts().values():
+		total += part
+	return roundi(total)
+
+
+## A day's upkeep by terminal: each terminal's areas, the gates' lanes, yard
+## machines and the cranes on its aprons; 0 holds what the port shares,
+## roads, track, tractors and land.
+func upkeep_parts() -> Dictionary:
+	var parts := {0: 0.0}
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		cells += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		parts[0] += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
 	for segment: int in rails.segments:
-		cells += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
+		parts[0] += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
+	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
+	var add := func(terminal: int, amount: float) -> void: parts[terminal] = parts.get(terminal, 0.0) + amount
 	for id: int in areas.list:
-		cells += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
-	total += roundi(cells)
-	total += rules.upkeep.sts_crane * cranes.size() + rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
+		var area: Dictionary = areas.list[id]
+		add.call(area.terminal, areas.cells(id).size() * rules.area_types[area.type].upkeep_per_cell)
+		if areas.kind_of(area) == "gate":
+			add.call(area.terminal, rules.gate_levels[area.settings.level].upkeep_per_lane * areas.layout(id).lanes.size())
 	for machine: Dictionary in machines.list.values():
-		total += rules.yard_gear[machine.gear].upkeep_per_machine
-	for id: int in areas.list:
-		if areas.kind_of(areas.list[id]) == "gate":
-			total += rules.gate_levels[areas.list[id].settings.level].upkeep_per_lane * areas.layout(id).lanes.size()
-	return total
+		add.call(areas.list[machine.area].terminal, rules.yard_gear[machine.gear].upkeep_per_machine)
+	for crane in cranes:
+		add.call(areas.list[crane.apron].terminal, rules.upkeep.sts_crane)
+	return parts
 
 
 ## The numbers a terminal manager watches.
