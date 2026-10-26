@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 12
+const VERSION := 13
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -74,6 +74,8 @@ static func load_from(path: String) -> Dictionary:
 static func _migrate(data: Dictionary) -> Dictionary:
 	if data.version == 11:
 		data = _migrate_v11(data)
+	if data.version == 12:
+		data = _migrate_v12(data)
 	return data
 
 
@@ -86,12 +88,27 @@ static func _migrate_v11(data: Dictionary) -> Dictionary:
 	return data
 
 
+## v13 adds rail: no track or trains yet, and no box booked to rail.
+static func _migrate_v12(data: Dictionary) -> Dictionary:
+	data.sim.rails = {"nodes": {}, "segments": {}, "next_node": 1, "next_segment": 1}
+	data.sim.by_rail = 0
+	data.sim.rail_discount = 0
+	data.sim.trains = []
+	data.sim.next_train = 1
+	data.sim.until_train = {}
+	for box: Variant in data.sim.boxes.values():
+		if box is Dictionary:
+			box.rail = false
+	data.version = 13
+	return data
+
+
 ## Check the entire payload before any typed deserialiser sees it.
 # shortcut: entries inside boxes, events and ship_log are not checked,
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
-		"roads": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "rail_discount": TYPE_INT, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
 		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
@@ -119,8 +136,16 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	# Roads and areas first: ships and cranes are checked against the aprons.
-	if not (_valid_roads(data.roads) and _valid_areas(data.areas)):
+	if not (_valid_roads(data.roads, Content.base().road_types) and _valid_roads(data.rails, {"track": true}) and _valid_areas(data.areas)):
 		return false
+	for train: Variant in data.trains:
+		if not train is Dictionary or not _has_fields(train, {
+			"id": TYPE_INT, "block": TYPE_INT, "path": TYPE_ARRAY, "t": TYPE_FLOAT, "prev_t": TYPE_FLOAT,
+			"state": TYPE_STRING, "depart": TYPE_FLOAT, "wagons": TYPE_ARRAY, "busy": TYPE_ARRAY,
+		}):
+			return false
+		if train.block not in data.areas.list or train.path.is_empty() or not train.path.all(func(c: Variant) -> bool: return c is Vector2i):
+			return false
 	for ship: Variant in data.ships:
 		if not ship is Dictionary or not _has_fields(ship, {
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT,
@@ -163,6 +188,9 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, false):
 			return false
 		ids[vehicle.id] = true
+	# Trains hold level crossings under their id negated.
+	for train: Dictionary in data.trains:
+		ids[-train.id] = true
 	for id: Variant in data.lane_traffic:
 		if not (id in ids and data.lane_traffic[id] is Array and _all_cells(data.lane_traffic[id], true)):
 			return false
@@ -177,7 +205,9 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 	for machine: Variant in data.machine_jobs:
 		var job: Variant = data.machine_jobs[machine]
-		if not (machine in data.machines.list and job is Dictionary and _has_fields(job, {"vehicle": TYPE_INT, "position": TYPE_INT})):
+		if not (machine in data.machines.list and job is Dictionary and _has_fields(job, {"position": TYPE_INT})):
+			return false
+		if not (_has_fields(job, {"vehicle": TYPE_INT}) or _has_fields(job, {"train": TYPE_INT, "wagon": TYPE_INT})):
 			return false
 	for area: Variant in data.area_stacks:
 		var stacks: Variant = data.area_stacks[area]
@@ -189,12 +219,11 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 
 
 ## Roads: nodes on cells, and segments joining two known nodes with a known road type.
-static func _valid_roads(roads: Dictionary) -> bool:
+static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 	if not _has_fields(roads, {"nodes": TYPE_DICTIONARY, "segments": TYPE_DICTIONARY, "next_node": TYPE_INT, "next_segment": TYPE_INT}):
 		return false
 	if not roads.nodes.keys().all(func(id: Variant) -> bool: return id is int and roads.nodes[id] is Vector2i):
 		return false
-	var types: Dictionary = Content.base().road_types
 	return roads.segments.keys().all(func(id: Variant) -> bool:
 		var road: Variant = roads.segments[id]
 		return id is int and road is Dictionary and _has_fields(road, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING}) and road.a in roads.nodes and road.b in roads.nodes and road.type in types)

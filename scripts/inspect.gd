@@ -9,14 +9,19 @@ const STATES := {
 	"leaving": "Leaving the port", "to_crane": "Bringing an export to its crane",
 }
 const SHIP_STATES := ["Arriving", "Working", "Leaving", "At anchor"]
+const TRAIN_STATES := {"arriving": "Coming in to its siding", "working": "At its siding, being worked", "leaving": "Leaving the port"}
 
 
-## The vehicle, ship or crane at grid cell `cell`, else an area there as
+## The vehicle, train, ship or crane at grid cell `cell`, else an area there as
 ## {"area": id}, else null.
 static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for vehicle in sim.vehicles:
 		if Vector2i(vehicle.position(1.0).round()) == cell:
 			return vehicle
+	for train: Train in sim.trains:
+		var head := int(train.t)
+		if cell in train.path.slice(maxi(head - train.length(), 0), head + 1):
+			return train
 	for ship in sim.ships:
 		if ship.apron and cell in _ship_water(sim, ship):
 			return ship
@@ -34,6 +39,8 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 	var nothing: Array[String] = []
 	if thing is Vehicle:
 		return _vehicle(sim, thing) if thing in sim.vehicles else nothing
+	if thing is Train:
+		return _train(sim, thing) if thing in sim.trains else nothing
 	if thing is PortSim.Ship:
 		return _ship(sim, thing) if thing in sim.ships else nothing
 	if thing is PortSim.Crane:
@@ -41,6 +48,17 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 	if thing is Dictionary:
 		return _area(sim, thing.area) if thing.area in sim.areas.list else nothing
 	return nothing
+
+
+static func _train(sim: PortSim, train: Train) -> Array[String]:
+	var loaded := train.wagons.filter(func(box: int) -> bool: return box != 0)
+	var exports := loaded.filter(func(box: int) -> bool: return sim.boxes[box].kind == "export").size()
+	return [
+		"Train %d" % train.id,
+		TRAIN_STATES[train.state],
+		"For %s" % sim.rules.area_types[sim.areas.list[train.block].type].name.to_lower() if train.block in sim.areas.list else "",
+		"%d of %d wagons loaded: %d imports out, %d exports in" % [loaded.size(), train.wagons.size(), loaded.size() - exports, exports],
+	] as Array[String]
 
 
 ## The water an apron ship lies in: its length of the quay edge, out to its beam.
@@ -121,6 +139,9 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 	var settings: Dictionary = area.settings
 	if settings.has("role"):
 		lines.append("%s block, worked by %s" % [settings.role.capitalize(), sim.rules.yard_gear[settings.gear].name])
+		if settings.gear == "rmg":
+			var wagons := AreaFlow.siding(sim, id).size() / AreaLayout.BAY
+			lines.append("Siding for %d wagons" % wagons if wagons else "No siding: draw track along its back edge")
 		lines.append(_yard_fill(sim, id))
 	if area.type == "quay_apron":
 		lines.append_array(_apron(sim, id))

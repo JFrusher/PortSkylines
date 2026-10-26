@@ -99,3 +99,6 @@ func _tick(sim: PortSim) -> void:
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		AreaFlow._drive(sim, vehicle)
 	add("vehicles (AreaFlow._drive)", start)
+	start = Time.get_ticks_usec()
+	RailFlow.tick(sim)
+	add("trains (RailFlow.tick)", start)

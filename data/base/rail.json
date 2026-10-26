@@ -1,0 +1,19 @@
+{
+	"rail": {
+		"name": "Rail track",
+		"cost_per_cell": 6.0,
+		"upkeep_per_cell": 0.3,
+		"entry_offset": 60.0,
+		"train": {
+			"wagons": 15.0,
+			"interval_minutes": 180.0,
+			"dwell_minutes": 60.0,
+			"speed": 500.0
+		},
+		"discount": {
+			"max": 100.0,
+			"share_per_dollar": 0.004,
+			"max_share": 0.6
+		}
+	}
+}

@@ -279,6 +279,10 @@ func _ready() -> void:
 		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
 			road_type = key)).tooltip_text = _road_tip(road)
+	var rail: Dictionary = sim.rules.rail
+	_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
+		tool = DRAW_ROAD
+		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge; it crosses roads only straight across, at level crossings. $%d per 4 m, $%.1f a day upkeep." % [rail.cost_per_cell, rail.upkeep_per_cell]
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
 		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
@@ -308,7 +312,7 @@ func _ready() -> void:
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
-	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road or area to remove it. Boxes stored in an area are lost."
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track or area to remove it. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
 
@@ -537,7 +541,7 @@ func _process(dt: float) -> void:
 		if _actions_drawn != [sim, sim.areas.version, _inspected]:
 			_draw_inspect_actions()
 
-	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim)]:
+	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim), sim.rail_discount]:
 		_draw_contracts()
 
 	# Throttled refresh of the info bar and the open drawer
@@ -728,7 +732,7 @@ func _show_milestone() -> void:
 
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 func _draw_contracts() -> void:
-	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim)]
+	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim), sim.rail_discount]
 	for child in _contracts.get_children():
 		child.queue_free()
 	var contracts := sim.contracts
@@ -747,6 +751,19 @@ func _draw_contracts() -> void:
 		var new_fee: int = fee + change[2]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_storage", "free_days": free_days, "fee": new_fee}))
 		terms.add_child(button)
+	var rail := _row(_contracts)
+	var discount := sim.rail_discount
+	var locked := sim.lock_error("rmg")
+	var shares: Array = sim.rules.lines.keys().map(func(line: String) -> String: return "%s %d%%" % [contracts.name_of(line), roundi(sim.rail_share(line) * 100)])
+	rail.add_child(_label("Rail discount: $%d a box by train. By rail where a rail block can take it: %s" % [discount, ", ".join(shares)]))
+	for change: Array in [["- $10", -10], ["+ $10", 10]]:
+		var button := Button.new()
+		button.text = change[0]
+		var dollars: int = discount + change[1]
+		button.disabled = locked != ""
+		button.tooltip_text = locked if locked else "Each box carried by train costs the discount; each dollar moves %.1f%% more of every line's boxes onto rail, up to %d%%" % [sim.rules.rail.discount.share_per_dollar * 100, roundi(sim.rules.rail.discount.max_share * 100)]
+		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_rail_discount", "dollars": dollars}))
+		rail.add_child(button)
 	if contracts.offers.is_empty() and contracts.services.is_empty():
 		_contracts.add_child(_label("No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
 		return

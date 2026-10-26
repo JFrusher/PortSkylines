@@ -143,6 +143,12 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	crane.timer = 0.0
 	crane.tractor = 0
 	var id := sim._new_box("import", sim.clock.calendar_minutes() + sim.rules.import_dwell_minutes * sim._dwell_factor(), ship.line)
+	# Booked to rail by its line's share, only while a rail block has room for
+	# it, so a port without rail rolls nothing.
+	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
+	if rail and sim.rng.randf() < sim.rail_share(ship.line):
+		sim.boxes[id].rail = true
+		sim._set_area(tractor, rail)
 	ship.boxes -= 1
 	ship.moves += 1
 	sim._moved(sim.boxes[id])
@@ -256,7 +262,7 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
-		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != role or sim.areas.idle_reason(id) != "":
+		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != role or sim.areas.idle_reason(id) != "" or RailFlow.is_rail_block(sim, id):
 			continue
 		var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and v.loaded).size()
 		if _stacks(sim, id).room() > coming:
@@ -272,7 +278,7 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	var box := 0
 	var terminal := 0
 	for block: int in sim.area_stacks:
-		if block not in sim.areas.list or sim.areas.idle_reason(block) != "":
+		if block not in sim.areas.list or sim.areas.idle_reason(block) != "" or RailFlow.is_rail_block(sim, block):
 			continue
 		if not _has_gate(sim, sim.areas.list[block].terminal):
 			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[sim.areas.list[block].terminal].name)
@@ -628,6 +634,9 @@ static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
 ## heads back to the pool; a lorry has its box and heads out through the
 ## gate. The next in line gets the slot, and waiting vehicles ask again.
 static func _machine_done(sim: PortSim, machine: int) -> void:
+	if sim.machine_jobs[machine].has("train"):
+		RailFlow.job_done(sim, machine)
+		return
 	var job: Dictionary = sim.machine_jobs[machine]
 	sim.machine_jobs.erase(machine)
 	var vehicle := _vehicle(sim, job.vehicle)
@@ -666,6 +675,11 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 		vehicle.loaded = true
 		_go_out(sim, vehicle, sim.areas.list[block].terminal)
 	_promote(sim, block)
+	_retry_handling(sim, block)
+
+
+## Vehicles waiting in `block`'s slots for a machine ask again.
+static func _retry_handling(sim: PortSim, block: int) -> void:
 	for other: Vehicle in sim.vehicles:
 		if other.area == block and other.state == "handling":
 			_start_handling(sim, other)
@@ -776,10 +790,28 @@ static func remove(sim: PortSim, id: int) -> void:
 			if tractor:
 				sim._drop_vehicle(tractor)
 			sim.cranes.erase(crane)
+	lost += RailFlow.forget(sim, id)
 	sim.handovers.forget(id)
 	sim.areas.remove(id)
 	if lost:
 		sim._event("Removing the area lost %d boxes" % lost)
+
+
+## The siding of RMG block `block`: the cells of the row just behind it,
+## when track runs along all of it; [] otherwise. A wagon stands at each bay.
+static func siding(sim: PortSim, block: int) -> Array[Vector2i]:
+	var area: Dictionary = sim.areas.list[block]
+	var found: Array[Vector2i] = []
+	if area.type != "yard_block" or area.settings.gear != "rmg":
+		return found
+	var behind := sim.areas.depth_of(area)
+	var along: Vector2i = (area.end - area.start).sign()
+	for k in RoadNet.length(area.start, area.end) + 1:
+		var cell: Vector2i = area.start + along * k + area.out * behind
+		if sim.rails.segment_at(cell) == 0:
+			return [] as Array[Vector2i]
+		found.append(cell)
+	return found
 
 
 ## Area `area`'s stacks, made empty the first time it is asked for.

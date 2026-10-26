@@ -25,6 +25,11 @@ const ASPHALT := Color(0.2, 0.2, 0.22)
 ## The surface of a road lorries may not use, so tractor lanes read at a glance.
 const TRACTOR_ONLY := Color(0.36, 0.24, 0.2)
 const MARKING := Color(0.92, 0.92, 0.85)
+const BALLAST := Color(0.42, 0.38, 0.33)
+const STEEL := Color(0.62, 0.62, 0.66)
+## Half the gauge and a rail's half width, in metres.
+const RAIL_GAUGE := 0.72
+const RAIL_HALF := 0.08
 ## Area ground by kind, a little below road level.
 const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
@@ -88,6 +93,8 @@ var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
 var _ships := {}  # PortSim.Ship -> Node3D
 ## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
 var _vehicle_parts := {}
+## Trains drawn the same way: "loco", "wagon", and boxes by TEU.
+var _train_parts := {}
 ## Each vehicle's last heading by id, kept while it waits on a one-cell path.
 var _headings := {}
 ## A box on a vehicle's chassis: a container model turned along the vehicle and scaled to it.
@@ -109,7 +116,7 @@ var _machine_meshes := {}  # gear -> Mesh
 ## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
-var _roads_drawn := -1
+var _roads_drawn := []
 ## Every area's ground as one mesh, redrawn when the areas change.
 var _areas := MeshInstance3D.new()
 ## The area and road versions the areas were drawn for: idle tints follow the roads.
@@ -186,7 +193,10 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 	if not _road_preview.visible:
 		return
 	var surface := _road_tool()
-	_add_road(surface, null, from, to, sim.rules.road_types[type])
+	if type == "track":
+		_add_track(surface, null, from, to)
+	else:
+		_add_road(surface, null, from, to, sim.rules.road_types[type])
 	_road_preview.mesh = surface.commit()
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
@@ -209,7 +219,7 @@ func _process(dt: float) -> void:
 	if _info.visible and _info_left <= 0.0:
 		_info_left = INFO_SECONDS
 		_draw_info()
-	if sim.roads.version != _roads_drawn:
+	if [sim.roads.version, sim.rails.version] != _roads_drawn:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
@@ -220,12 +230,13 @@ func _process(dt: float) -> void:
 	_draw_ships()
 	_draw_cranes()
 	_draw_vehicles()
+	_draw_trains()
 	_draw_area_machines()
 	_draw_area_stacks()
 
 
 func _draw_roads() -> void:
-	_roads_drawn = sim.roads.version
+	_roads_drawn = [sim.roads.version, sim.rails.version]
 	var surface := _road_tool()
 	var marks := _road_tool()
 	# Markings stop where a junction's widest road begins.
@@ -241,7 +252,12 @@ func _draw_roads() -> void:
 		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
 	var entry := sim.site_entry()
-	_add_road(surface, marks, entry + Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0), entry, sim.rules.road_types.terminal_2_2)
+	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
+	_add_road(surface, marks, entry + off_map, entry, sim.rules.road_types.terminal_2_2)
+	# The main line the same way, to the rail entry.
+	_add_track(surface, marks, sim.site_rail_entry() + off_map, sim.site_rail_entry())
+	for id: int in sim.rails.segments:
+		_add_track(surface, marks, sim.rails.nodes[sim.rails.segments[id].a], sim.rails.nodes[sim.rails.segments[id].b])
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
 
@@ -387,6 +403,21 @@ static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vect
 			var dash_end := minf(at + DASH, length)
 			_strip(marks, start + offset + along * at, start + offset + along * dash_end, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
 			at += DASH + DASH_GAP
+
+
+## Adds rail track from cell `a` to cell `b`: a ballast bed a cell wide on
+## the cells' middle line, with two rails to `marks` unless it is null.
+static func _add_track(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i) -> void:
+	var start := (Vector2(a) + Vector2(0.5, 0.5)) * Grid.CELL
+	var end := (Vector2(b) + Vector2(0.5, 0.5)) * Grid.CELL
+	surface.set_color(BALLAST)
+	_strip(surface, start, end, Grid.CELL / 2.0, ROAD_TOP)
+	if marks == null:
+		return
+	var side := (end - start).normalized().orthogonal()
+	marks.set_color(STEEL)
+	for gauge: float in [-RAIL_GAUGE, RAIL_GAUGE]:
+		_strip(marks, start + side * gauge, end + side * gauge, RAIL_HALF, ROAD_TOP + MARK_RISE)
 
 
 ## A flat strip `half` either side of the line from `from` to `to`, in metres.
@@ -632,6 +663,43 @@ func _ship_over(crane: PortSim.Crane) -> PortSim.Ship:
 ## Every vehicle as four MultiMeshes (cabs tinted by kind, chassis, and
 ## boxes by length in their line's livery), each filled with one buffer
 ## write a frame, so draw calls stay the same however many vehicles there are.
+## Every train along its path: the locomotive at its head, then a flat
+## wagon a bay long for each wagon, with its box if it carries one.
+func _draw_trains() -> void:
+	if _train_parts.is_empty():
+		var bay := AreaLayout.BAY * Grid.CELL / METRES_PER_UNIT
+		_train_parts = {
+			"loco": _vehicle_part(_merged([[Vector3(bay * 0.95, 0.18, 0.13), Vector3(0, 0.12, 0), Color(0.55, 0.12, 0.1)]])),
+			"wagon": _vehicle_part(_merged([[Vector3(bay * 0.95, 0.04, 0.12), Vector3(0, 0.05, 0), Color(0.25, 0.25, 0.27)]])),
+			1: _vehicle_part(_stack_meshes[1]),
+			2: _vehicle_part(_stack_meshes[2]),
+		}
+	var buffers := {}
+	for part: Variant in _train_parts:
+		buffers[part] = PackedFloat32Array()
+	for train: Train in sim.trains:
+		var head := lerpf(train.prev_t, train.t, alpha)
+		for k in train.wagons.size() + 1:
+			var at := head - AreaLayout.BAY * (k + 0.5)
+			if at < 0.0:
+				break
+			var pose := path_pose(train.path, at)
+			var turned := Basis(Vector3.UP, atan2(-pose[1].y, pose[1].x))
+			var centre := (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+			var origin := Vector3(centre.x, ROAD_TOP / METRES_PER_UNIT + 0.02, centre.y)
+			_put(buffers["loco" if k == 0 else "wagon"], Transform3D(turned, origin), Color.WHITE)
+			var box: int = train.wagons[k - 1] if k > 0 else 0
+			if box != 0 and box in sim.boxes:
+				var teu: int = sim.boxes[box].teu
+				var lifted := origin + Vector3(0, 0.07 + REAL_BOX_HEIGHT / METRES_PER_UNIT / 2.0, 0)
+				_put(buffers[teu], Transform3D(turned.scaled_local(_real_box[teu]), lifted), _livery(sim.boxes[box].line, box))
+	for part: Variant in buffers:
+		var multimesh: MultiMesh = _train_parts[part].multimesh
+		multimesh.instance_count = buffers[part].size() / 16
+		if not buffers[part].is_empty():
+			multimesh.buffer = buffers[part]
+
+
 func _draw_vehicles() -> void:
 	if _vehicle_parts.is_empty():
 		_vehicle_parts = {
@@ -773,19 +841,22 @@ func _draw_area_machines() -> void:
 		var area: Dictionary = sim.areas.list[machine.area]
 		var along := Vector2((area.end - area.start).sign())
 		var out := Vector2(area.out)
-		var row: float = (2 + depth - 1) / 2.0 if machine.gear == "rtg" else 1.0
+		# An RTG spans the stack rows; an RMG spans them and the siding behind.
+		var row: float = {"rtg": (2 + depth - 1) / 2.0, "rmg": (2 + depth) / 2.0}.get(machine.gear, 1.0)
 		var k := sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
 		var at := (Vector2(area.start) + along * k + out * row + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
 		model.rotation.y = atan2(-out.normalized().y, out.normalized().x)
-		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights.rtg if machine.gear == "rtg" else 1.0
-		model.scale = Vector3(1.0, tall, 1.0)
+		var gantry: bool = machine.gear in ["rtg", "rmg"]
+		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights[machine.gear] if gantry else 1.0
+		var wide: float = (depth - 1.0) / (depth - 2.0) if machine.gear == "rmg" else 1.0
+		model.scale = Vector3(wide, tall, 1.0)
 		var job: Dictionary = machine.job
 		var box: MeshInstance3D = model.get_node("Box")
 		box.visible = not job.is_empty() and (job.phases[0].kind == "lift" or job.get("carrying", false))
 		if box.visible:
 			# Counter the machine's height scale so the box keeps its real size.
-			box.scale = _real_box[2] / Vector3(1.0, tall, 1.0)
+			box.scale = _real_box[2] / Vector3(wide, tall, 1.0)
 			box.position = Vector3(0, lerpf(0.05, _machine_heights[machine.gear] * 0.85, sim.machines.spreader(id)), 0)
 			box.rotation.y = PI / 2
 			(box.material_override as StandardMaterial3D).albedo_color = PLAIN_BOX
@@ -793,20 +864,21 @@ func _draw_area_machines() -> void:
 
 ## One mesh per kind of yard gear, standing on its origin.
 func _machine_mesh(gear: String) -> Mesh:
-	if gear != "rtg":
+	if gear not in ["rtg", "rmg"]:
 		return _merged([
 			[Vector3(0.26, 0.2, 0.4), Vector3(0, 0.12, 0), Color(0.85, 0.35, 0.15)],
 			[Vector3(0.06, 0.06, 0.4), Vector3(0, 0.36, -0.1), Color(0.2, 0.2, 0.22)],
 		])
 	# Drawn scaled to REAL_RTG_HEIGHT; this only sets its proportions.
-	var height: float = 0.3 + sim.rules.yard_gear.rtg.tiers * BOX_HEIGHT
+	var height: float = 0.3 + sim.rules.yard_gear[gear].tiers * BOX_HEIGHT
 	var parts := []
 	for x: float in [-0.56, 0.56]:
 		for z: float in [-0.3, 0.3]:
 			parts.append([Vector3(0.08, height, 0.08), Vector3(x, height / 2.0, z), Color(0.95, 0.95, 0.92)])
 		parts.append([Vector3(0.14, 0.1, 0.72), Vector3(x, 0.05, 0), Color(0.2, 0.2, 0.22)])
 	for z: float in [-0.3, 0.3]:
-		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), Color(0.95, 0.75, 0.1)])
+		# RTGs in yellow, RMGs in blue, so a rail yard reads apart from the stacks.
+		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), Color(0.95, 0.75, 0.1) if gear == "rtg" else Color(0.15, 0.45, 0.8)])
 	return _merged(parts)
 
 

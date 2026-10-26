@@ -60,7 +60,8 @@
 		"loan_payments": "Loan payments",
 		"bailout": "Bailout",
 		"land": "Land",
-		"dredging": "Dredging"
+		"dredging": "Dredging",
+		"rail": "Rail discounts"
 	},
 	"loans": {
 		"small": {
@@ -105,7 +106,8 @@
 				"dredging": "dredging the channel",
 				"panamax": "Panamax services",
 				"neopanamax": "Neopanamax berths",
-				"automated": "automated gates"
+				"automated": "automated gates",
+				"rmg": "rail track and RMG rail yards"
 			}
 		}
 	},

@@ -20,6 +20,10 @@ var money: int:
 		return ledger.cash
 ## Boxes through the highway: imports out and exports in.
 var delivered := 0
+## Of those, the ones that left by train.
+var by_rail := 0
+## Dollars off each box carried by train, to shift lines' boxes onto rail.
+var rail_discount := 0
 ## Shipping lines, their services and offers, and their reputation of the port.
 var contracts: Contracts
 ## Loans and the bailout.
@@ -57,6 +61,14 @@ var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
 var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
+## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
+var trains: Array[Train] = []
+var _next_train := 1
+## Calendar minutes until each rail block's next train.
+var _until_train := {}
+## RailFlow.rail_blocks, kept for the area, road and rail versions in _rail_blocks_for; not saved.
+var _rail_blocks := {}
+var _rail_blocks_for := Vector3i(-1, -1, -1)
 ## The area flow's state: who holds each lane cell, each area's handover
 ## slots and queues, the yard machines and what each is carrying, and the
 ## boxes stacked in each yard block (area id -> AreaStacks).
@@ -79,6 +91,9 @@ const AREA_SETTINGS := {
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer"]
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
 var roads: RoadNet
+## Rail track, a graph of its own: where it crosses a road straight across,
+## the cells are level crossings, in both.
+var rails: RoadNet
 var lanes: LaneGraph
 ## The areas dragged along those roads.
 var areas: Areas
@@ -86,7 +101,7 @@ var areas: Areas
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
 ## the line that owns it, a key of rules.lines, or "" for an export not yet
-## loaded}. A box is always in exactly one place: on a vehicle or in a yard
+## loaded, "rail": whether it is booked to leave by train}. A box is always in exactly one place: on a vehicle or in a yard
 ## stack (boxes on ships are only counted).
 var boxes := {}
 ## How many of `boxes` are exports; not saved, counted again on load.
@@ -123,7 +138,10 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	creative = creative_mode
 	roads = RoadNet.new(rules.road_types)
 	roads.anchors = [site_entry()]
+	rails = RoadNet.new(rail_types())
+	rails.anchors = [site_rail_entry()]
 	lanes = LaneGraph.new(roads)
+	lanes.rails = rails
 	areas = Areas.new(rules.area_types, roads, rules.site)
 	lanes.areas = areas
 	lane_traffic = LaneTraffic.new(lanes)
@@ -220,6 +238,7 @@ class Crane:
 func to_dict() -> Dictionary:
 	return {
 		"roads": roads.to_dict(),
+		"rails": rails.to_dict(),
 		"areas": areas.to_dict(),
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
@@ -235,6 +254,11 @@ func to_dict() -> Dictionary:
 		"crane_orders": crane_orders.duplicate(true),
 		"creative": creative,
 		"delivered": delivered,
+		"by_rail": by_rail,
+		"rail_discount": rail_discount,
+		"trains": trains.map(func(train: Train) -> Dictionary: return train.to_dict()),
+		"next_train": _next_train,
+		"until_train": _until_train.duplicate(),
 		"events": events.duplicate(true),
 		"ship_log": ship_log.duplicate(true),
 		"delivered_yesterday": delivered_yesterday,
@@ -272,7 +296,10 @@ static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
 	sim.roads.anchors = [sim.site_entry()]
+	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types())
+	sim.rails.anchors = [sim.site_rail_entry()]
 	sim.lanes = LaneGraph.new(sim.roads)
+	sim.lanes.rails = sim.rails
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
 	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
@@ -289,6 +316,12 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.crane_orders.assign(d.crane_orders)
 	sim.creative = d.creative
 	sim.delivered = d.delivered
+	sim.by_rail = d.by_rail
+	sim.rail_discount = d.rail_discount
+	for train: Dictionary in d.trains:
+		sim.trains.append(Train.from_dict(train))
+	sim._next_train = d.next_train
+	sim._until_train = d.until_train.duplicate()
 	sim.events.assign(d.events)
 	sim.ship_log.assign(d.ship_log)
 	sim.delivered_yesterday = d.delivered_yesterday
@@ -340,6 +373,8 @@ func apply(command: Dictionary) -> String:
 			return contracts.decline(command.id)
 		"set_storage":
 			return set_storage(command.free_days, command.fee)
+		"set_rail_discount":
+			return set_rail_discount(command.dollars)
 		"take_loan":
 			var locked := lock_error("loans")
 			return locked if locked else finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
@@ -349,6 +384,10 @@ func apply(command: Dictionary) -> String:
 			return dredge(command.metres)
 		"build_road":
 			return build_road(command.from, command.to, command.type)
+		"build_rail":
+			return build_rail(command.from, command.to)
+		"remove_rail":
+			return remove_rail(command.segment)
 		"remove_road":
 			return remove_road(command.segment)
 		"build_area":
@@ -384,6 +423,8 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
 				built[cell] = true
 		if roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return c in built):
 			err = "Something is already built here"
+	if err == "":
+		err = _crossing_error(RoadNet.line(from, to), roads.footprint(from, to, type), rails.segments.keys().map(func(s: int) -> Array: return rails.cells(s)))
 	if err == "" and not _afford(road_price(from, to, type)):
 		err = "Not enough money"
 	return err
@@ -401,6 +442,89 @@ func road_price(from: Vector2i, to: Vector2i, type: String) -> int:
 	return RoadNet.length(from, to) * rules.road_types[type].cost_per_cell
 
 
+## Where the highway's rail line meets the site, `entry_offset` cells south
+## of the road entry on the east edge. Track reaching it joins the main line.
+func site_rail_entry() -> Vector2i:
+	return site_entry() + Vector2i(0, rules.rail.entry_offset)
+
+
+## Rail track as RoadNet sees it: one lane, on the drawn line.
+func rail_types() -> Dictionary:
+	var track: Dictionary = rules.rail
+	return {"track": {"name": track.name, "forward": 1, "backward": 0, "lorries": false, "cost_per_cell": track.cost_per_cell, "upkeep_per_cell": track.upkeep_per_cell}}
+
+
+func build_rail_error(from: Vector2i, to: Vector2i) -> String:
+	var err := lock_error("rmg")
+	if err == "":
+		err = rails.add_error(from, to, "track")
+	if err == "" and not RoadNet.line(from, to).all(owns):
+		err = "Buy this land first"
+	if err == "":
+		var track := RoadNet.line(from, to)
+		for id: int in areas.list:
+			if areas.cells(id).any(func(c: Vector2i) -> bool: return c in track):
+				return "Something is already built here"
+		var lanes_of := []
+		for id: int in roads.segments:
+			for lane in roads.lanes(id):
+				lanes_of.append(lane.cells)
+		err = _crossing_error(track, track, lanes_of)
+	if err == "" and not _afford(RoadNet.length(from, to) * rules.rail.cost_per_cell):
+		err = "Not enough money"
+	return err
+
+
+func build_rail(from: Vector2i, to: Vector2i) -> String:
+	var err := build_rail_error(from, to)
+	if err == "":
+		ledger.post("construction", -RoadNet.length(from, to) * rules.rail.cost_per_cell)
+		rails.add(from, to, "track")
+	return err
+
+
+func set_rail_discount(dollars: int) -> String:
+	var locked := lock_error("rmg")
+	if locked:
+		return locked
+	if dollars < 0 or dollars > rules.rail.discount.max:
+		return "The rail discount runs from $0 to $%d a box" % rules.rail.discount.max
+	rail_discount = dollars
+	return ""
+
+
+## The share of `line`'s boxes booked to rail where a rail block can take
+## them: its own share, plus what the rail discount buys, capped.
+func rail_share(line: String) -> float:
+	var discount: Dictionary = rules.rail.discount
+	return minf(rules.lines[line].rail_share + rail_discount * discount.share_per_dollar, maxf(discount.max_share, rules.lines[line].rail_share))
+
+
+func remove_rail(segment: int) -> String:
+	if segment not in rails.segments:
+		return "No track there"
+	rails.remove(segment)
+	return ""
+
+
+## Why something drawn along `line`, covering `cells`, can't share cells with
+## the runs in `others` (each a straight run of cells), or "": road and rail
+## meet only at level crossings, straight across.
+static func _crossing_error(line: Array, cells: Array, others: Array) -> String:
+	var mine := {}
+	for cell: Vector2i in cells:
+		mine[cell] = true
+	var along: Vector2i = (line[-1] - line[0]).sign()
+	for other: Array in others:
+		if not other.any(func(c: Vector2i) -> bool: return c in mine):
+			continue
+		var theirs: Vector2i = (other[-1] - other[0]).sign()
+		var straight := along.x * along.y == 0 and theirs.x * theirs.y == 0
+		if not straight or along.x * theirs.x + along.y * theirs.y != 0:
+			return "Road and track cross only straight across"
+	return ""
+
+
 func remove_road(segment: int) -> String:
 	if segment not in roads.segments:
 		return "No road there"
@@ -412,6 +536,13 @@ func build_area_error(type: String, segment: int, side: int, from: int, to: int)
 	var err := areas.add_error(type, segment, side, from, to)
 	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
 		err = "Buy this land first"
+	if err == "":
+		var track := {}
+		for id: int in rails.segments:
+			for cell in rails.cells(id):
+				track[cell] = true
+		if areas.cells_of(type, segment, side, from, to).any(func(c: Vector2i) -> bool: return c in track):
+			err = "Something is already built here"
 	if err == "" and not _afford(area_price(type, segment, side, from, to)):
 		err = "Not enough money"
 	return err
@@ -741,6 +872,7 @@ func tick() -> void:
 	if _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
 	AreaFlow.tick(self)
+	RailFlow.tick(self)
 
 
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
@@ -752,6 +884,8 @@ func daily_upkeep() -> int:
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
 		cells += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+	for segment: int in rails.segments:
+		cells += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
 	for id: int in areas.list:
 		cells += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
 	total += roundi(cells)
@@ -934,7 +1068,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line, "rail": false}
 	exports += 1 if kind == "export" else 0
 	return id
 

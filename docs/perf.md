@@ -404,3 +404,13 @@ where all 20,000 were rebuilt every tick:
 
 Checked by eye at 10, 28 and 60 units: near rows show the container model,
 far rows plain boxes in the same liveries, with no visible jump.
+
+### The endgame save with rail (2026-10-26)
+
+`bench/endgame_port.gd` now has two RMG rail blocks south of the last row,
+on one siding track to the rail entry; the bench sends a train to each every
+half hour, and a train waits up to an hour at its siding. `make_endgame.gd`
+runs until 2,000 lorries and 2 trains are in the port: it saves 2,000
+lorries, 20,339 boxes, 6 ships and 2 trains at 2.8 game hours, M6's target
+counts. `profile_sim.gd -- 200` on it: 31.1 ms a tick, of which trains
+(`RailFlow.tick`) are 0.54 ms (1.7%).

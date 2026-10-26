@@ -95,14 +95,14 @@ func _process(dt: float) -> void:
 	_follow(dt)
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would snap on.
-	if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE and cell != Grid.NONE and not sim.roads.snaps(cell):
+	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "track" and _road_from == Grid.NONE and cell != Grid.NONE and not sim.roads.snaps(cell):
 		# A free start: the road's width, centred on the grid line it will centre on.
 		var road: Dictionary = sim.rules.road_types[hud.road_type]
 		var lanes: int = road.forward + road.backward
 		var at := _hovered_grid_point()
 		view.show_hover_at(at.round() if lanes % 2 == 0 else at.floor() + Vector2(0.5, 0.5), lanes, _order_error(cell) == "")
 	else:
-		view.show_hover(sim.roads.snap_start(cell) if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE else cell, _order_error(cell) == "")
+		view.show_hover(_net().snap_start(cell) if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE else cell, _order_error(cell) == "")
 	var dragged: Array[Vector2i] = []
 	if not _area_from.is_empty():
 		var area := _area_command()
@@ -131,7 +131,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_following = 0
 	# A drag builds on release only if its tool is still the one selected.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Grid.NONE:
-		if hud.tool == Hud.DRAW_ROAD:
+		if hud.tool == Hud.DRAW_ROAD and hud.road_type == "track":
+			_report(sim.apply({"op": "build_rail", "from": _road_from, "to": _road_to()}))
+		elif hud.tool == Hud.DRAW_ROAD:
 			var ends := _road_ends()
 			_report(sim.apply({"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}))
 		_road_from = Grid.NONE
@@ -154,7 +156,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_order(_hovered_grid_cell(), true)
 			return
 		if hud.tool == Hud.DRAW_ROAD:
-			_road_from = sim.roads.snap_start(_hovered_grid_cell())
+			_road_from = _net().snap_start(_hovered_grid_cell())
 			_road_at = _hovered_grid_point()
 			return
 		if hud.tool == Hud.INSPECT:
@@ -214,7 +216,9 @@ func _command(cell: Vector2i) -> Dictionary:
 	match hud.tool:
 		Hud.BULLDOZE:
 			var area := sim.areas.area_at(cell)
-			return {"op": "remove_area", "id": area} if area else {"op": "remove_road", "segment": sim.roads.segment_at(cell)}
+			if area:
+				return {"op": "remove_area", "id": area}
+			return {"op": "remove_road", "segment": sim.roads.segment_at(cell)} if sim.roads.segment_at(cell) else {"op": "remove_rail", "segment": sim.rails.segment_at(cell)}
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell)}
@@ -252,6 +256,8 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.DRAW_ROAD:
 			if _road_from == Grid.NONE:
 				return ""
+			if hud.road_type == "track":
+				return sim.build_rail_error(_road_from, _road_to())
 			var ends := _road_ends()
 			return sim.build_road_error(ends[0], ends[1], hud.road_type)
 		Hud.DRAW_AREA:
@@ -262,7 +268,7 @@ func _order_error(cell: Vector2i) -> String:
 				return sim.build_two_way_gate_error(area.type, area.segment, area.from, area.to)
 			return sim.build_area_error(area.type, area.segment, area.side, area.from, area.to)
 		Hud.BULLDOZE:
-			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) else "Nothing to bulldoze here"
+			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) else "Nothing to bulldoze here"
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell))
@@ -280,7 +286,12 @@ func _hovered_grid_cell() -> Vector2i:
 ## Where a road drag from _road_from ends: snapped onto a road near the
 ## mouse, else straight or to 45°.
 func _road_to() -> Vector2i:
-	return sim.roads.snap_end(_road_from, _hovered_grid_cell())
+	return _net().snap_end(_road_from, _hovered_grid_cell())
+
+
+## The graph the road tool draws on: rail for track, else roads.
+func _net() -> RoadNet:
+	return sim.rails if hud.road_type == "track" else sim.roads
 
 
 ## The cells a road drag builds between: where it snaps onto roads, else
