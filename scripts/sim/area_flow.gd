@@ -263,12 +263,14 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 		if not _has_gate(sim, sim.areas.list[block].terminal):
 			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[sim.areas.list[block].terminal].name)
 			continue
-		for id: int in sim.area_stacks[block].boxes():
-			if id in sim._claimed or sim.boxes[id].kind != "import" or sim.boxes[id].due > now:
+		# Imports come soonest due first, so the block's first unclaimed one is its best.
+		for id: int in sim.area_stacks[block].of_kind("import", sim.boxes):
+			if id in sim._claimed:
 				continue
-			if box == 0 or sim.boxes[id].due < sim.boxes[box].due:
+			if sim.boxes[id].due <= now and (box == 0 or sim.boxes[id].due < sim.boxes[box].due):
 				box = id
 				terminal = sim.areas.list[block].terminal
+			break
 	if box == 0:
 		return false
 	var entry := _entry_cell(sim)
