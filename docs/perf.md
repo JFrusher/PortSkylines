@@ -338,10 +338,14 @@ built in under a minute, 62 to 66 lorries at each gate.
 |---|---:|
 | Before (previous commit) | 45.4 |
 | Gate choice by grid distance, bound lorries counted | 32.9 |
+| A vehicle whose next cell is taken says so before building its list of wanted cells | 31.6 (31.0–31.5 on reruns, against 32.8–33.6) |
 
 Route searches fell from 4,002 to 1,133 in 200 ticks and machine work from
 17.0 to 3.8 ms. Moving vehicles is now the largest part: `LaneTraffic.advance`
-5.6 µs for each of 2,000 vehicles, 34% of the tick (M6 step 9).
+5.6 µs for each of 2,000 vehicles, 34% of the tick (M6 step 9). Probed:
+84% of calls are queued vehicles whose very next cell is taken (2.4 µs
+each), the rest move (13.2 µs); checking that cell first brought the call to
+4.8 µs, same state hash.
 
 Probed before the last change: every route runs one A* search (start and
 goal cells each hold one lane point), so the search itself is the cost.

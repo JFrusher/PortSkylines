@@ -76,6 +76,9 @@ func holder(cell: Vector2i) -> int:
 ## cell, including ones its route passes again later, so a route that comes
 ## back the same way never holds a cell it has left.
 func _enter(vehicle: Vehicle, i: int) -> bool:
+	# Most vehicles in a queue find the next cell taken: say so before building the list.
+	if _holders.get(vehicle.path[i], vehicle.id) != vehicle.id:
+		return false
 	var want: Array[Vector2i] = [vehicle.path[i]]
 	var j := i
 	while _lanes.is_junction(vehicle.path[j]) and j + 1 < vehicle.path.size():
