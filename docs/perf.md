@@ -466,16 +466,13 @@ a GDExtension on godot-cpp 4.5), which also runs the cell-entry loop of
 `advance`. `hash_ticks.gd` on the endgame save after 300 ticks: 163539211
 on main and native, so behaviour is unchanged.
 
-Timed without the profiler (300 ticks of the endgame save, wall clock over
-the tick loop), three runs each: **main 19.80, 19.91, 19.62 ms a tick;
-native 18.79, 18.49, 19.16 ms**, about 1 ms (5%) less, native ahead in
-every pair. A call into `LaneCells` costs 0.02 µs (`holder`) to 0.3 µs
+Timed without the profiler (300 ticks of the endgame save with the bench's
+rules, wall clock over the tick loop), three runs each: **main 23.61,
+23.43, 25.06 ms a tick; native 21.50, 22.37, 21.90 ms**, about 2 ms (9%)
+less. A call into `LaneCells` costs 0.02 µs (`holder`) to 0.3 µs
 (`advance`) in a micro-bench, so the boundary is not where the time goes.
 
-**The profiler inflates the tick by about 10 ms.** `profile_sim.gd` wraps
-every route search and vehicle move in a timed override (about 2,000 calls
-a tick), so the same save reads 29–30 ms a tick there against 19.8 ms
-untimed. Its per-call figure for `advance` (4.0 µs main, 3.4 µs native) is
-mostly its own cost. The M6 close above should read 19.8 ms, not 32.3 ms:
-396 ms of every second at 1×, and a frame that runs a tick still misses
-60 fps on this box.
+`profile_sim.gd` reads about 28 ms a tick on main for the same ticks: its
+timed route and move overrides (about 2,000 calls a tick) add about 4 ms,
+so its per-call figure for `advance` (4.0 µs main, 3.4 µs native) is partly
+its own cost. Its shares of the whole steps stand.
