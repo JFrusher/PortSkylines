@@ -45,6 +45,31 @@ static func could_work(sim: PortSim, kind: String) -> bool:
 	return ready_aprons(sim).any(func(apron: int) -> bool: return _length(sim, apron) >= ship_cells(sim, kind) and sim.cranes.any(func(c: PortSim.Crane) -> bool: return c.apron == apron and _reach(sim, c) >= rows))
 
 
+## Each agreed service, then each offer, with the berth its calls would
+## use: the first ready apron its ship fits whose planned windows it doesn't
+## overlap; with none free, the first it fits, as a clash for it and the
+## windows it overlaps there. {"service", "apron" (0 where none fits), "clash"}.
+# shortcut: plans by agreed order, not the best packing; pack once players run many services on few berths.
+static func berth_plan(sim: PortSim) -> Array[Dictionary]:
+	var plan: Array[Dictionary] = []
+	var fitting := ready_aprons(sim)
+	for service: Dictionary in sim.contracts.services + sim.contracts.offers:
+		var fits := fitting.filter(func(apron: int) -> bool: return _length(sim, apron) >= ship_cells(sim, service.kind))
+		var entry := {"service": service, "apron": 0, "clash": false}
+		for apron: int in fits:
+			if not plan.any(func(p: Dictionary) -> bool: return p.apron == apron and Contracts.windows_overlap(p.service, service)):
+				entry.apron = apron
+				break
+		if entry.apron == 0 and not fits.is_empty():
+			entry.apron = fits[0]
+			entry.clash = true
+			for p in plan:
+				if p.apron == entry.apron and Contracts.windows_overlap(p.service, service):
+					p.clash = true
+		plan.append(entry)
+	return plan
+
+
 ## Ready aprons with a crane on them: berths lines may offer services for.
 static func offer_berths(sim: PortSim) -> int:
 	return ready_aprons(sim).filter(func(apron: int) -> bool: return sim.cranes.any(func(c: PortSim.Crane) -> bool: return c.apron == apron)).size()
