@@ -114,6 +114,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	rules = game_rules
 	creative = creative_mode
 	roads = RoadNet.new(rules.road_types)
+	roads.anchors = [site_entry()]
 	lanes = LaneGraph.new(roads)
 	areas = Areas.new(rules.area_types, roads, rules.site)
 	lanes.areas = areas
@@ -262,6 +263,7 @@ func _area_stacks_dict() -> Dictionary:
 static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
+	sim.roads.anchors = [sim.site_entry()]
 	sim.lanes = LaneGraph.new(sim.roads)
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
 	sim.lanes.areas = sim.areas
