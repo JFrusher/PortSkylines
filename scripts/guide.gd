@@ -12,20 +12,18 @@ const SERVICES := 3
 ## The steps in order for `sim`: {"text", "done": Callable() -> bool}.
 static func steps(sim: PortSim) -> Array[Dictionary]:
 	var feeder := AreaFlow.ship_cells(sim, "feeder")
-	var depth: int = sim.rules.area_types.quay_apron.depth
-	var max_depth: int = sim.rules.area_types.quay_apron.max_depth
 	return [
-		{"text": "Draw a terminal road from the highway at the middle of the east edge to the coast, and a coast road %d–%d m in from the water that runs on past it both ways, so vehicles can turn round at the junction (Roads, key 1)." % [Grid.metres(depth + 1), Grid.metres(max_depth + 1)], "done": func() -> bool:
-			return sim.roads.segment_at(sim.site_entry()) != 0 and sim.roads.segments.keys().any(func(s: int) -> bool: return sim.roads.cells(s).any(func(c: Vector2i) -> bool: return c.x <= Grid.cells(sim.rules.site.sea_width) + max_depth + 2))},
-		{"text": "Drag a quay apron at least %d m long along the coast road's sea side, reaching the water (Quay, key 2)." % Grid.metres(feeder), "done": func() -> bool:
+		{"text": "Place a feeder berth: pick it under Quay (key 2) and click the coast. It brings its own road along its back.", "done": func() -> bool:
 			return _areas(sim, "quay_apron").any(func(id: int) -> bool: return RoadNet.length(sim.areas.list[id].start, sim.areas.list[id].end) + 1 >= feeder)},
+		{"text": "Draw a terminal road from the highway at the middle of the east edge to the berth's road (Roads, key 1).", "done": func() -> bool:
+			return sim.roads.segment_at(sim.site_entry()) != 0},
 		{"text": "Drag a gate along the road near the highway, beside the lane coming in, where lorries check in (Gate, key 5).", "done": func() -> bool:
 			return not _areas(sim, "gate").is_empty()},
 		{"text": "A terminal needs its gate and quay apron. Inspect the gate (key 8) and join it to the apron's terminal.", "done": func() -> bool:
 			return sim.areas.terminals.keys().any(func(t: int) -> bool: return sim.areas.terminal_error(t) == "")},
 		{"text": "Drag a yard block along the coast road's land side, behind the apron, and join it to the terminal too. It starts as an import block (Yard, key 4).", "done": func() -> bool:
 			return _areas(sim, "yard_block").any(func(id: int) -> bool: return sim.areas.terminal_error(sim.areas.list[id].terminal) == "" and sim.areas.idle_reason(id) == "")},
-		{"text": "Place an STS crane on the quay apron (Cranes, key 3).", "done": func() -> bool:
+		{"text": "Place an STS crane on one of the berth's marked crane spots (Cranes, key 3).", "done": func() -> bool:
 			return not sim.cranes.is_empty() or not sim.crane_orders.is_empty()},
 		{"text": "Buy tractors to carry boxes between crane and yard (Cranes, key 3).", "done": func() -> bool:
 			return sim.tractors > 0},

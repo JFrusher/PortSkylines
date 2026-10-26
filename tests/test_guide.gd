@@ -13,19 +13,18 @@ var _failures := 0
 func _initialize() -> void:
 	var sim := PortSim.new(1)
 	var entry := sim.site_entry()
-	# The coast road runs south along x = 85 past the east road, which meets
-	# it in a T, so both its ends are dead ends to turn at. An apron on its
-	# west side reaches the water, and the yard block sits behind it on the
-	# east side; the gate is on the east road's inbound lane near the highway.
-	# Segments: 1 the coast road north of the T, 2 south of it, 3 the east road.
+	# A feeder berth on the coast, centred on the highway's row, and the east
+	# road from the highway meets its road in a T, so both its ends are dead
+	# ends to turn at. The yard block sits behind the apron on the east side;
+	# the gate is on the east road's inbound lane near the highway.
+	# Segments: 1 the berth road north of the T, 2 south of it, 3 the east road.
 	var steps: Array[Array] = [
-		[{"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, 340), "type": "terminal_1_1"},
-			{"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"}],
-		[{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 30, "to": 89}],
+		[{"op": "build_berth", "kind": "feeder", "y": entry.y}],
+		[{"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"}],
 		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 420, "to": 434}],
 		[{"op": "set_terminal", "id": 2, "terminal": 1}],
-		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 50, "to": 79}, {"op": "set_terminal", "id": 3, "terminal": 1}],
-		[{"op": "place_sts", "apron": 1, "along": 30}],
+		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 1, "to": 22}, {"op": "set_terminal", "id": 3, "terminal": 1}],
+		[{"op": "place_sts", "apron": 1, "along": 37}],
 		[{"op": "buy_tractors", "count": 4}],
 	]
 	_expect(Guide.current(sim), 0, "a new game starts at the first step")
