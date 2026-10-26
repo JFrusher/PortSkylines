@@ -117,7 +117,8 @@
 			"unlocks": {
 				"loans": "loans",
 				"rtg": "RTG cranes for yard blocks",
-				"ocr": "OCR gate portals"
+				"ocr": "OCR gate portals",
+				"reefers": "reefer boxes and reefer blocks"
 			}
 		},
 		"gateway": {

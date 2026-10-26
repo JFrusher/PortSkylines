@@ -94,6 +94,8 @@ func _test_round_trip() -> void:
 	_run(straight, 50)
 	_run(halves, 25)
 	var copy := PortSim.from_dict(halves.to_dict())
+	# Rules are data, not saved: the copy gets the base rules, so put the test's back.
+	copy.rules = halves.rules
 	_expect(copy.state_hash(), halves.state_hash(), "to_dict -> from_dict keeps the state")
 	_run(copy, 25)
 	_expect(copy.ships.is_empty() and copy.vehicles.is_empty(), false, "the round trip happened mid-traffic")

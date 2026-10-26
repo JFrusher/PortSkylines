@@ -856,7 +856,10 @@ func _draw_inspect_actions() -> void:
 		var settings: Dictionary = sim.areas.list[id].settings
 		for role: String in ["import", "export", "reefer", "dangerous"]:
 			if role != settings.role:
-				_action_button(_inspect_actions, "Make %s block" % ("dangerous-goods" if role == "dangerous" else role), {"op": "set_area", "id": id, "settings": {"role": role}})
+				var make := _action_button(_inspect_actions, "Make %s block" % ("dangerous-goods" if role == "dangerous" else role), {"op": "set_area", "id": id, "settings": {"role": role}})
+				if role == "reefer":
+					make.disabled = sim.lock_error("reefers") != ""
+					make.tooltip_text = sim.lock_error("reefers")
 		for gear: String in sim.rules.yard_gear:
 			if gear != settings.gear:
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
