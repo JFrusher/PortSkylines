@@ -156,6 +156,11 @@ func _test_editing() -> void:
 	_expect(snapping.snap_end(Vector2i(10, 30), Vector2i(32, 49)), Vector2i(30, 50), "a 45° drag ends on the road at 45°, where plain snapping gives (31, 51)")
 	_expect(snapping.snap_end(Vector2i(40, 50), Vector2i(38, 53)), Vector2i(37, 53), "a drag from a road's end doesn't snap back onto that road")
 	_expect(snapping.snap_end(Vector2i(60, 20), Vector2i(61, 30)), Vector2i(60, 30), "away from roads the end snaps straight as before")
+	_expect(snapping.snap_end(Vector2i(10, 80), Vector2i(16, 52)), Vector2i(10, 50), "a drag released off to the side, short of a road, still joins it")
+	_expect(snapping.snap_end(Vector2i(14, 80), Vector2i(19, 48)), Vector2i(14, 50), "and one released just past it ends on it, leaving no stub")
+	snapping.anchors = [Vector2i(100, 70)] as Array[Vector2i]
+	_expect(snapping.snap_start(Vector2i(101, 72)), Vector2i(100, 70), "a drag starting near the highway starts on it")
+	_expect(snapping.snap_end(Vector2i(60, 70), Vector2i(98, 72)), Vector2i(100, 70), "and one ending near it ends on it")
 	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
 	var net := RoadNet.new(Content.base().road_types)
 	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")

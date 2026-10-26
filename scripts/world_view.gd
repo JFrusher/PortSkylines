@@ -127,8 +127,9 @@ func _ready() -> void:
 	_water.set_shader_parameter("coast_x", sea)
 	water.material_override = _water
 	add_child(water)
-	var land := _box(Vector3(site.x - sea, 1, site.y), Color(0.36, 0.42, 0.3))
-	land.position = Vector3((site.x + sea) / 2.0, -0.5, site.y / 2.0)
+	# The land runs on past the east edge, where the highway comes in from the hinterland.
+	var land := _box(Vector3(site.x - sea - SEA_START, 1, site.y), Color(0.36, 0.42, 0.3))
+	land.position = Vector3((site.x - SEA_START + sea) / 2.0, -0.5, site.y / 2.0)
 	add_child(land)
 	add_child(_hover)
 	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _areas, _area_preview]:
@@ -221,6 +222,9 @@ func _draw_roads() -> void:
 	for id: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[id]
 		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
+	# The highway, from off the map to the site entry, so the player sees where to join it.
+	var entry := sim.site_entry()
+	_add_road(surface, marks, entry + Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0), entry, sim.rules.road_types.terminal_2_2)
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
 
@@ -322,7 +326,7 @@ static func _road_tool() -> SurfaceTool:
 
 ## Adds a road from cell `a` to cell `b` of type `road` to `surface`: a strip
 ## over its lane cells with round ends, which overlap into arcs where roads
-## meet. Markings go to `marks` unless it is null: a solid line between the
+## bend; ends at a junction (a trim) are left square. Markings go to `marks` unless it is null: a solid line between the
 ## two directions, dashes between lanes going the same way, stopping `trim_a`
 ## and `trim_b` metres short of the ends.
 static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
@@ -339,8 +343,11 @@ static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vect
 	surface.set_color(ASPHALT if road.lorries else TRACTOR_ONLY)
 	var top := ROAD_TOP + (ASPHALT_RISE if road.lorries else 0.0)
 	_strip(surface, start, end, half, top)
-	for centre: Vector2 in [start, end]:
-		_disc(surface, centre, half, top)
+	# A junction's widest road covers its middle, so an end there gets no round cap to poke out past it.
+	if trim_a == 0.0:
+		_disc(surface, start, half, top)
+	if trim_b == 0.0:
+		_disc(surface, end, half, top)
 	if marks == null:
 		return
 	marks.set_color(MARKING)
