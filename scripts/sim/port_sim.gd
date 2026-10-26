@@ -49,8 +49,13 @@ var ship_log: Array[Dictionary] = []
 var delivered_yesterday := 0
 var ships: Array[Ship] = []
 var cranes: Array[Crane] = []
-## Lorries and tractors on roads and areas, moved by the area flow.
+## Lorries and tractors on roads and areas, moved by the area flow. They
+## come and go only through _add_vehicle and _drop_vehicle, which keep the
+## indexes below; those aren't saved, and a load builds them again.
 var vehicles: Array[Vehicle] = []
+var _by_id := {}  # vehicle id -> Vehicle
+var _tractors_on_road := 0
+var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
 ## The area flow's state: who holds each lane cell, each area's handover
 ## slots and queues, the yard machines and what each is carrying, and the
 ## boxes stacked in each yard block (area id -> AreaStacks).
@@ -302,7 +307,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
-		sim.vehicles.append(Vehicle.from_dict(data))
+		sim._add_vehicle(Vehicle.from_dict(data))
 	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes)
 	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
@@ -888,4 +893,35 @@ func _dwell_factor() -> float:
 
 
 func _tractors_out() -> int:
-	return vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor").size()
+	return _tractors_on_road
+
+
+## Puts `vehicle` in the port's list and indexes.
+func _add_vehicle(vehicle: Vehicle) -> void:
+	vehicles.append(vehicle)
+	_by_id[vehicle.id] = vehicle
+	_tractors_on_road += 1 if vehicle.kind == "tractor" else 0
+	if vehicle.home != Grid.NONE:
+		if vehicle.home not in _fetching:
+			_fetching[vehicle.home] = [] as Array[Vehicle]
+		_fetching[vehicle.home].append(vehicle)
+
+
+## Takes `vehicle` off the roads and out of the port.
+func _drop_vehicle(vehicle: Vehicle) -> void:
+	lane_traffic.leave(vehicle)
+	vehicles.erase(vehicle)
+	_by_id.erase(vehicle.id)
+	_tractors_on_road -= 1 if vehicle.kind == "tractor" else 0
+	if vehicle.home != Grid.NONE:
+		_fetching[vehicle.home].erase(vehicle)
+
+
+## The vehicle with id `id`, or null once it has left.
+func vehicle_by_id(id: int) -> Vehicle:
+	return _by_id.get(id)
+
+
+## The tractors fetching exports to apron slot `home`, oldest first.
+func fetching_to(home: Vector2i) -> Array[Vehicle]:
+	return _fetching.get(home, [] as Array[Vehicle])

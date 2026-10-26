@@ -321,6 +321,7 @@ a lorry is sent every tick (2,150 vehicles at the end). Same state hash after
 | Route lengths for gate choice kept until the lane graph changes | `_gate_of` routing to all 12 gates per lorry (20 of 20 route calls a tick, 1.66 ms each) | 75.3 |
 | Each terminal's working gates kept until roads or areas change | `_has_gate` scanning every area (125 µs) for each of 80 blocks per dispatch | 61.2 |
 | Routes kept until the lane graph changes (replaces the length memo above) | `LaneGraph.route`: one A* over 23,480 points, 1.2 ms, plus 0.3 ms building cells | 56.6 |
+| Vehicles come and go through one path that indexes them by id, counts tractors out and lists fetchers by apron slot | `_tractors_out` 577 µs, `_fetchers` 323 µs, `_vehicle` 155 µs, each a loop over 2,071 vehicles, run per crane | 46.0 |
 
 Probed before the last change: every route runs one A* search (start and
 goal cells each hold one lane point), so the search itself is the cost.

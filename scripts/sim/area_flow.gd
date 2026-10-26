@@ -180,18 +180,16 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	tractor.home = tractor.path[0]
 	tractor.box = box
 	sim._claimed[box] = true
-	sim.vehicles.append(tractor)
+	sim._add_vehicle(tractor)
 	_go_to(sim, tractor, _block_of(sim, box))
 
 
 ## The tractors out fetching exports for `ship`: each has its home in the
 ## apron slot under one of the ship's cranes.
 static func _fetchers(sim: PortSim, ship: PortSim.Ship) -> Array[Vehicle]:
-	var slots := cranes_for(sim, ship).map(func(c: PortSim.Crane) -> Vector2i: return _crane_slot(sim, c, ship))
 	var found: Array[Vehicle] = []
-	for vehicle in sim.vehicles:
-		if vehicle.kind == "tractor" and vehicle.home in slots:
-			found.append(vehicle)
+	for crane in cranes_for(sim, ship):
+		found.append_array(sim.fetching_to(_crane_slot(sim, crane, ship)))
 	return found
 
 
@@ -232,7 +230,7 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	sim._next_vehicle += 1
 	tractor.state = "under_crane"
 	tractor.area = block
-	sim.vehicles.append(tractor)
+	sim._add_vehicle(tractor)
 	crane.tractor = tractor.id
 	return true
 
@@ -281,7 +279,7 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	sim._next_vehicle += 1
 	lorry.box = box
 	sim._claimed[box] = true
-	sim.vehicles.append(lorry)
+	sim._add_vehicle(lorry)
 	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
 	return true
 
@@ -306,7 +304,7 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		# shortcut: an export is booked on no line until a ship loads it, as on tiles.
 		lorry.box = sim._new_box("export", 0.0, "")
 		lorry.loaded = true
-		sim.vehicles.append(lorry)
+		sim._add_vehicle(lorry)
 		_go_to(sim, lorry, gate)
 		return true
 	return false
@@ -531,8 +529,7 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 
 
 static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
-	sim.lane_traffic.leave(vehicle)
-	sim.vehicles.erase(vehicle)
+	sim._drop_vehicle(vehicle)
 
 
 ## A vehicle reached its handover slot: at a gate it is checked for the gate
@@ -737,8 +734,7 @@ static func remove(sim: PortSim, id: int) -> void:
 			if vehicle.area != id and vehicle.area in sim.areas.list:
 				sim.handovers.drop(vehicle.area, vehicle.id)
 				_promote(sim, vehicle.area)
-			sim.lane_traffic.leave(vehicle)
-			sim.vehicles.erase(vehicle)
+			sim._drop_vehicle(vehicle)
 	for machine: int in sim.machines.list.keys():
 		if sim.machines.list[machine].area == id:
 			sim.machines.list.erase(machine)
@@ -761,8 +757,7 @@ static func remove(sim: PortSim, id: int) -> void:
 		if crane.apron == id:
 			var tractor := _vehicle(sim, crane.tractor)
 			if tractor:
-				sim.lane_traffic.leave(tractor)
-				sim.vehicles.erase(tractor)
+				sim._drop_vehicle(tractor)
 			sim.cranes.erase(crane)
 	sim.handovers.forget(id)
 	sim.areas.remove(id)
@@ -779,10 +774,7 @@ static func _stacks(sim: PortSim, area: int) -> AreaStacks:
 
 
 static func _vehicle(sim: PortSim, id: int) -> Vehicle:
-	for vehicle in sim.vehicles:
-		if vehicle.id == id:
-			return vehicle
-	return null
+	return sim.vehicle_by_id(id)
 
 
 ## The box at grid cell `cell`: one on a vehicle there, else the top box of
