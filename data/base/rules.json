@@ -23,7 +23,13 @@
 	},
 	"box_mix": {
 		"forty_share": 0.6,
-		"reefer_share": 0.1
+		"reefer_share": 0.1,
+		"rush_share": 0.05,
+		"dg_share": 0.03
+	},
+	"special_boxes": {
+		"rush_fine": 150.0,
+		"dg_distance": 6.0
 	},
 	"reefers": {
 		"plug_minutes": 120.0,
@@ -73,7 +79,8 @@
 		"dredging": "Dredging",
 		"rail": "Rail discounts",
 		"power": "Reefer power",
-		"reefer_fines": "Reefer fines"
+		"reefer_fines": "Reefer fines",
+		"rush_fines": "Rush fines"
 	},
 	"loans": {
 		"small": {

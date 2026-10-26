@@ -839,9 +839,9 @@ func _draw_inspect_actions() -> void:
 		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
-		for role: String in ["import", "export"]:
+		for role: String in ["import", "export", "reefer", "dangerous"]:
 			if role != settings.role:
-				_action_button(_inspect_actions, "Make %s block" % role, {"op": "set_area", "id": id, "settings": {"role": role}})
+				_action_button(_inspect_actions, "Make %s block" % ("dangerous-goods" if role == "dangerous" else role), {"op": "set_area", "id": id, "settings": {"role": role}})
 		for gear: String in sim.rules.yard_gear:
 			if gear != settings.gear:
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})

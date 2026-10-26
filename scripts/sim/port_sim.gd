@@ -82,6 +82,10 @@ var area_stacks := {}
 ## The areas version yard machines were last fitted to; not saved, so a
 ## loaded port refits once, which adds nothing.
 var _machines_fit_for := -1
+func _dg_refusal() -> String:
+	return "A dangerous-goods block stands %d m from other yard blocks" % Grid.metres(rules.special_boxes.dg_distance)
+
+
 ## The road a berth brings along its back.
 const BERTH_ROAD := "terminal_1_1"
 ## The rules each kind of area takes, and what a new one starts with.
@@ -90,7 +94,7 @@ const AREA_SETTINGS := {
 	"quay_apron": {"lines": []},
 	"gate": {"level": "manual"},
 }
-const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer"]
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous"]
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
 var roads: RoadNet
 ## Rail track, a graph of its own: where it crosses a road straight across,
@@ -542,6 +546,8 @@ func remove_road(segment: int) -> String:
 
 func build_area_error(type: String, segment: int, side: int, from: int, to: int) -> String:
 	var err := areas.add_error(type, segment, side, from, to)
+	if err == "" and rules.area_types[type].kind == "yard_block" and AreaFlow.near_yard(self, areas.cells_of(type, segment, side, from, to), 0, "dangerous") != 0:
+		err = _dg_refusal()
 	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -677,6 +683,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 			return level_locked
 	if settings.has("role") and settings.role not in AREA_ROLES:
 		return "Unknown yard role: %s" % settings.role
+	if settings.get("role") == "dangerous" and AreaFlow.near_yard(self, areas.cells(id), id, "") != 0:
+		return _dg_refusal()
 	if settings.has("gear"):
 		if not rules.yard_gear.has(settings.gear):
 			return "Unknown yard gear: %s" % settings.gear
@@ -1107,7 +1115,10 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
 	var reefer: bool = rng.randf() < rules.box_mix.reefer_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
+	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
+	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
+	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
 	exports += 1 if kind == "export" else 0
 	return id
 

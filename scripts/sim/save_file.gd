@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 16
+const VERSION := 17
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -82,6 +82,8 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v14(data)
 	if data.version == 15:
 		data = _migrate_v15(data)
+	if data.version == 16:
+		data = _migrate_v16(data)
 	return data
 
 
@@ -132,6 +134,16 @@ static func _migrate_v15(data: Dictionary) -> Dictionary:
 		if crane is Dictionary:
 			crane.kind = "sts"
 	data.version = 16
+	return data
+
+
+## v17 marks boxes rush or dangerous goods; none in the port before it were.
+static func _migrate_v16(data: Dictionary) -> Dictionary:
+	for box: Variant in data.sim.boxes.values():
+		if box is Dictionary:
+			box.rush = false
+			box.dg = false
+	data.version = 17
 	return data
 
 

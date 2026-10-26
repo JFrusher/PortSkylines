@@ -381,7 +381,7 @@ func _test_storage_is_charged_per_day() -> void:
 ## A call of 40 ft boxes earns 1.8 x the 20 ft price per move.
 func _test_a_call_earns_its_moves() -> void:
 	var rules := RandomPort.quick()
-	rules.box_mix = {"forty_share": 1.0, "reefer_share": 0.0}
+	rules.box_mix = {"forty_share": 1.0, "reefer_share": 0.0, "rush_share": 0.0, "dg_share": 0.0}
 	var sim := AreaPort.base(rules)
 	var ship: PortSim.Ship
 	while ship == null or ship.state != PortSim.Ship.State.LEAVING:

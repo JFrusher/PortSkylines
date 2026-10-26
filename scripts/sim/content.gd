@@ -11,8 +11,12 @@ const SCHEMA := {
 	"start_money": TYPE_INT,
 	# What a line pays per crane move: by box size, plus a reefer premium.
 	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
-	# Shares of 40 ft boxes and reefers among all boxes.
-	"box_mix": {"forty_share": TYPE_FLOAT, "reefer_share": TYPE_FLOAT},
+	# Shares of 40 ft boxes, reefers, rush imports and dangerous goods among
+	# all boxes. A rush import discharged after its ship's window closed costs
+	# rush_fine; dangerous goods stack only in dangerous-goods blocks, which
+	# keep dg_distance cells clear of every other yard block.
+	"box_mix": {"forty_share": TYPE_FLOAT, "reefer_share": TYPE_FLOAT, "rush_share": TYPE_FLOAT, "dg_share": TYPE_FLOAT},
+	"special_boxes": {"rush_fine": TYPE_INT, "dg_distance": TYPE_INT},
 	# Reefers are plugged in reefer blocks. One stacked anywhere else past
 	# plug_minutes costs its line's fine. Each plugged box draws kw, hot_kw on
 	# the hot days of the year (hot_from to hot_to inclusive), billed daily per

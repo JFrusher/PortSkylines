@@ -28,7 +28,12 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `move_price.per_20ft` | int >0 | What a line pays per crane move of a 20 ft box |
 | `move_price.forty_factor` | number >0 | A 40 ft box's move price as a multiple of a 20 ft one |
 | `move_price.reefer_premium` | int | Added to a reefer's move price |
-| `box_mix.forty_share`, `.reefer_share` | number | Shares of 40 ft boxes and of reefers among new boxes |
+| `box_mix.forty_share`, `.reefer_share`, `.rush_share`, `.dg_share` | number | Shares of 40 ft boxes, reefers, rush imports and dangerous goods among new boxes |
+| `reefers.plug_minutes`, `.fine` | number, int | Minutes a reefer may stand off a plug (outside a reefer block) before the port is fined, once |
+| `reefers.kw`, `.hot_kw`, `.hot_from`, `.hot_to` | number, int | kW a plugged reefer draws, and on the hot days of the year (day numbers, inclusive) |
+| `reefers.price_per_kwh`, `.peak_charge_per_kw` | number | The midnight power bill: per kWh drawn, plus per kW of the day's peak |
+| `special_boxes.rush_fine` | int | Paid per rush import discharged after its ship's window closed |
+| `special_boxes.dg_distance` | int | Cells a dangerous-goods block keeps clear of every other yard block |
 | `storage.free_days`, `.fee` | int | Starting storage terms: free days (0–3), then the fee per box per day |
 | `storage.max_fee` | int | Highest storage fee the player may set |
 | `storage.dwell_per_dollar`, `.min_dwell_factor` | number | Import dwell is `import_dwell_minutes / (1 + fee × dwell_per_dollar)`, but not below `min_dwell_factor` of it |

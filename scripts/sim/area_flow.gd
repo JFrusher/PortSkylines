@@ -163,13 +163,25 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	# Booked to rail by its line's share, only while a rail block has room for
 	# it and its place has a rail link, so a port without rail rolls nothing.
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
-	if rail and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
+	if sim.boxes[id].dg:
+		var hazard := _block_for(sim, "dangerous", sim.areas.list[ship.apron].terminal)
+		if hazard == 0:
+			# Never stacked where it isn't allowed: it stays aboard, unpaid, and the tractor waits for the next box.
+			sim._drop_box(id)
+			crane.tractor = tractor.id
+			ship.boxes -= 1
+			sim._event("A dangerous-goods box was shut out: no dangerous-goods block with room in %s" % sim.areas.terminals[sim.areas.list[ship.apron].terminal].name, sim.areas.list[ship.apron].start)
+			return
+		sim._set_area(tractor, hazard)
+	elif rail and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
 	elif sim.boxes[id].reefer:
 		var plugs := _block_for(sim, "reefer", sim.areas.list[ship.apron].terminal)
 		if plugs:
 			sim._set_area(tractor, plugs)
+	if sim.boxes[id].rush and sim.clock.calendar_minutes() > ship.due:
+		sim.ledger.post("rush_fines", -sim.rules.special_boxes.rush_fine)
 	ship.boxes -= 1
 	ship.moves += 1
 	sim._moved(sim.boxes[id])
@@ -276,6 +288,28 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	sim._add_vehicle(tractor)
 	crane.tractor = tractor.id
 	return true
+
+
+## A yard block other than `except`, of `role` ("" for any), within
+## dg_distance cells of `cells`, or 0.
+# shortcut: compares bounding boxes, so a 45° block keeps more than the distance; compare cells if players build DG on diagonals.
+static func near_yard(sim: PortSim, cells: Array[Vector2i], except: int, role: String) -> int:
+	var reach := _bounds(cells).grow(sim.rules.special_boxes.dg_distance)
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if id != except and area.type == "yard_block" and (role == "" or area.settings.role == role) and reach.intersects(_bounds(sim.areas.cells(id))):
+			return id
+	return 0
+
+
+## The smallest rectangle of cells holding `cells`.
+static func _bounds(cells: Array[Vector2i]) -> Rect2i:
+	var low := cells[0]
+	var high := cells[0]
+	for cell in cells:
+		low = low.min(cell)
+		high = high.max(cell)
+	return Rect2i(low, high - low + Vector2i.ONE)
 
 
 ## Reefers stacked in reefer blocks, on their plugs.
@@ -644,9 +678,13 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 		vehicle.slot = -1
 		_head(sim, vehicle, _exit_cell(sim), "leaving")
 	elif vehicle.loaded:
-		var block := _block_for(sim, "reefer", sim.areas.list[gate].terminal) if sim.boxes[vehicle.box].reefer else 0
-		if block == 0:
-			block = _block_for(sim, "export", sim.areas.list[gate].terminal)
+		var box: Dictionary = sim.boxes[vehicle.box]
+		var terminal: int = sim.areas.list[gate].terminal
+		var block := _block_for(sim, "reefer", terminal) if box.reefer else 0
+		if box.dg:
+			block = _block_for(sim, "dangerous", terminal)
+		elif block == 0:
+			block = _block_for(sim, "export", terminal)
 		if block:
 			_go_to(sim, vehicle, block)
 		else:
