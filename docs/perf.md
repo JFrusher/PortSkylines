@@ -458,3 +458,11 @@ and a constant set for the driving states in `_drive`.
 Over 1,000 ticks, past the route cache's warm-up, the endgame runs at
 **27.9 ms a tick** (2,484 vehicles): `_drive` 18.8 ms, of which `advance`
 8.3 ms and routes 3.2 ms; yard machines 4.2 ms; import dispatch 2.3 ms.
+
+### The profiler's own cost (2026-10-26)
+
+`profile_sim.gd` now also times the plain copy of the save it ticks beside
+the profiled one, and prints both: 200 ticks of the endgame save, **27.10 ms
+untimed, 29.77 ms profiled**. The timed route and move overrides cost about
+3 ms a tick, so per-call figures for `advance` and `route` read high; the
+untimed figure is the tick to compare against targets.
