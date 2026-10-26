@@ -4,6 +4,7 @@ extends SceneTree
 ## godot --headless --script res://tests/test_rail.gd
 
 const AreaPort := preload("res://tests/area_port.gd")
+const RandomPort := preload("res://tests/random_port.gd")
 
 var _failures := 0
 
@@ -11,13 +12,15 @@ var _failures := 0
 func _initialize() -> void:
 	_test_track_is_its_own_graph()
 	_test_level_crossing()
+	_test_rmg_siding()
+	_test_track_is_locked()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
 
 ## A road west to east along y = 100, in a creative port that owns every tile.
 func _port() -> PortSim:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.quick(), true))
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(150, 100), "to": Vector2i(250, 100), "type": "terminal_2_2"}), "", "a road is built")
 	return sim
 
@@ -56,6 +59,33 @@ func _test_level_crossing() -> void:
 	for i in 100:
 		sim.lane_traffic.advance(lorry, 5.0)
 	_expect(lorry.at_end(), true, "once the train frees it, the lorry crosses")
+
+
+## An RMG block works wagons on the track running along all of its back edge.
+func _test_rmg_siding() -> void:
+	var sim := _port()
+	var road := sim.roads.segment_at(Vector2i(160, 100))
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": road, "side": 1, "from": 0, "to": 29}), "", "a yard block south of the road")
+	var block: int = sim.areas.list.keys().max()
+	var area: Dictionary = sim.areas.list[block]
+	var behind: int = area.start.y + sim.areas.depth_of(area) * area.out.y
+	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(area.start.x, behind), "to": Vector2i(area.start.x + 20, behind)}), "", "track along part of its back")
+	_expect(AreaFlow.siding(sim, block), [] as Array[Vector2i], "covering part of the block is no siding")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(area.start.x + 20, behind), "to": Vector2i(area.end.x + 10, behind)}), "", "track along the rest")
+	_expect(AreaFlow.siding(sim, block).size(), 30, "covering all of it is a siding, a cell per cell of the block")
+	_expect(Inspect.describe(sim, {"area": block}).has("Siding for 10 wagons"), true, "a wagon per bay, shown by Inspect")
+	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rtg"}})
+	_expect(AreaFlow.siding(sim, block), [] as Array[Vector2i], "only RMGs reach over a siding")
+	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
+	sim.tick()
+	_expect(sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == block and m.gear == "rmg").size(), 1, "10 bays get one RMG, by the data's bays per machine")
+
+
+## Track comes with RMGs, at the milestone that unlocks them.
+func _test_track_is_locked() -> void:
+	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)}).begins_with("Unlocked at milestone"), true, "track waits for its milestone")
 
 
 func _expect(got: Variant, want: Variant, what: String) -> void:

@@ -766,6 +766,23 @@ static func remove(sim: PortSim, id: int) -> void:
 		sim._event("Removing the area lost %d boxes" % lost)
 
 
+## The siding of RMG block `block`: the cells of the row just behind it,
+## when track runs along all of it; [] otherwise. A wagon stands at each bay.
+static func siding(sim: PortSim, block: int) -> Array[Vector2i]:
+	var area: Dictionary = sim.areas.list[block]
+	var found: Array[Vector2i] = []
+	if area.type != "yard_block" or area.settings.gear != "rmg":
+		return found
+	var behind := sim.areas.depth_of(area)
+	var along: Vector2i = (area.end - area.start).sign()
+	for k in RoadNet.length(area.start, area.end) + 1:
+		var cell: Vector2i = area.start + along * k + area.out * behind
+		if sim.rails.segment_at(cell) == 0:
+			return [] as Array[Vector2i]
+		found.append(cell)
+	return found
+
+
 ## Area `area`'s stacks, made empty the first time it is asked for.
 static func _stacks(sim: PortSim, area: int) -> AreaStacks:
 	if area not in sim.area_stacks:

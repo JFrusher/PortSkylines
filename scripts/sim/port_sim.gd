@@ -426,7 +426,9 @@ func rail_types() -> Dictionary:
 
 
 func build_rail_error(from: Vector2i, to: Vector2i) -> String:
-	var err := rails.add_error(from, to, "track")
+	var err := lock_error("rmg")
+	if err == "":
+		err = rails.add_error(from, to, "track")
 	if err == "" and not RoadNet.line(from, to).all(owns):
 		err = "Buy this land first"
 	if err == "":

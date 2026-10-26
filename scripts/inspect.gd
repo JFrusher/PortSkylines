@@ -121,6 +121,9 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 	var settings: Dictionary = area.settings
 	if settings.has("role"):
 		lines.append("%s block, worked by %s" % [settings.role.capitalize(), sim.rules.yard_gear[settings.gear].name])
+		if settings.gear == "rmg":
+			var wagons := AreaFlow.siding(sim, id).size() / AreaLayout.BAY
+			lines.append("Siding for %d wagons" % wagons if wagons else "No siding: draw track along its back edge")
 		lines.append(_yard_fill(sim, id))
 	if area.type == "quay_apron":
 		lines.append_array(_apron(sim, id))

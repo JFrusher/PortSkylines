@@ -30,6 +30,15 @@
 			"set_down_seconds": 25.0,
 			"bays_per_machine": 10.0,
 			"tiers": 5.0
+		},
+		"rmg": {
+			"name": "RMGs",
+			"upkeep_per_machine": 80.0,
+			"speed": 3.0,
+			"lift_seconds": 25.0,
+			"set_down_seconds": 20.0,
+			"bays_per_machine": 8.0,
+			"tiers": 5.0
 		}
 	}
 }

@@ -786,19 +786,22 @@ func _draw_area_machines() -> void:
 		var area: Dictionary = sim.areas.list[machine.area]
 		var along := Vector2((area.end - area.start).sign())
 		var out := Vector2(area.out)
-		var row: float = (2 + depth - 1) / 2.0 if machine.gear == "rtg" else 1.0
+		# An RTG spans the stack rows; an RMG spans them and the siding behind.
+		var row: float = {"rtg": (2 + depth - 1) / 2.0, "rmg": (2 + depth) / 2.0}.get(machine.gear, 1.0)
 		var k := sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
 		var at := (Vector2(area.start) + along * k + out * row + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
 		model.rotation.y = atan2(-out.normalized().y, out.normalized().x)
-		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights.rtg if machine.gear == "rtg" else 1.0
-		model.scale = Vector3(1.0, tall, 1.0)
+		var gantry: bool = machine.gear in ["rtg", "rmg"]
+		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights[machine.gear] if gantry else 1.0
+		var wide: float = (depth - 1.0) / (depth - 2.0) if machine.gear == "rmg" else 1.0
+		model.scale = Vector3(wide, tall, 1.0)
 		var job: Dictionary = machine.job
 		var box: MeshInstance3D = model.get_node("Box")
 		box.visible = not job.is_empty() and (job.phases[0].kind == "lift" or job.get("carrying", false))
 		if box.visible:
 			# Counter the machine's height scale so the box keeps its real size.
-			box.scale = _real_box[2] / Vector3(1.0, tall, 1.0)
+			box.scale = _real_box[2] / Vector3(wide, tall, 1.0)
 			box.position = Vector3(0, lerpf(0.05, _machine_heights[machine.gear] * 0.85, sim.machines.spreader(id)), 0)
 			box.rotation.y = PI / 2
 			(box.material_override as StandardMaterial3D).albedo_color = PLAIN_BOX
@@ -806,20 +809,21 @@ func _draw_area_machines() -> void:
 
 ## One mesh per kind of yard gear, standing on its origin.
 func _machine_mesh(gear: String) -> Mesh:
-	if gear != "rtg":
+	if gear not in ["rtg", "rmg"]:
 		return _merged([
 			[Vector3(0.26, 0.2, 0.4), Vector3(0, 0.12, 0), Color(0.85, 0.35, 0.15)],
 			[Vector3(0.06, 0.06, 0.4), Vector3(0, 0.36, -0.1), Color(0.2, 0.2, 0.22)],
 		])
 	# Drawn scaled to REAL_RTG_HEIGHT; this only sets its proportions.
-	var height: float = 0.3 + sim.rules.yard_gear.rtg.tiers * BOX_HEIGHT
+	var height: float = 0.3 + sim.rules.yard_gear[gear].tiers * BOX_HEIGHT
 	var parts := []
 	for x: float in [-0.56, 0.56]:
 		for z: float in [-0.3, 0.3]:
 			parts.append([Vector3(0.08, height, 0.08), Vector3(x, height / 2.0, z), Color(0.95, 0.95, 0.92)])
 		parts.append([Vector3(0.14, 0.1, 0.72), Vector3(x, 0.05, 0), Color(0.2, 0.2, 0.22)])
 	for z: float in [-0.3, 0.3]:
-		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), Color(0.95, 0.75, 0.1)])
+		# RTGs in yellow, RMGs in blue, so a rail yard reads apart from the stacks.
+		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), Color(0.95, 0.75, 0.1) if gear == "rtg" else Color(0.15, 0.45, 0.8)])
 	return _merged(parts)
 
 
