@@ -50,6 +50,18 @@ static func offer_berths(sim: PortSim) -> int:
 	return ready_aprons(sim).filter(func(apron: int) -> bool: return sim.cranes.any(func(c: PortSim.Crane) -> bool: return c.apron == apron)).size()
 
 
+## The crane whose legs stand over grid cell `cell`, or null.
+static func crane_at(sim: PortSim, cell: Vector2i) -> PortSim.Crane:
+	var apron := sim.areas.area_at(cell)
+	if apron == 0 or sim.areas.list[apron].type != "quay_apron":
+		return null
+	var along := sim.areas.along(apron, cell)
+	for crane in sim.cranes:
+		if crane.apron == apron and absi(crane.along - along) * Grid.CELL * 2 < sim.rules.sts_cranes[crane.kind].width:
+			return crane
+	return null
+
+
 ## Box rows `crane` reaches across a ship.
 static func _reach(sim: PortSim, crane: PortSim.Crane) -> int:
 	return sim.rules.sts_cranes[crane.kind].outreach

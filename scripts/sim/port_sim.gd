@@ -410,6 +410,8 @@ func apply(command: Dictionary) -> String:
 			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
 			return remove_area(command.id)
+		"remove_sts":
+			return remove_sts(command.apron, command.along)
 		"set_area":
 			return set_area(command.id, command.settings)
 		"set_terminal":
@@ -729,6 +731,24 @@ func place_sts(apron: int, along: int, kind: String) -> String:
 		crane_orders.append({"apron": apron, "along": along, "kind": kind, "due": clock.calendar_minutes() + spec.lead_days * SimClock.MINUTES_PER_DAY})
 		_deliver_cranes()
 	return err
+
+
+## Takes down the crane standing `along` cells into apron `apron`, leaving
+## the apron. Not while it works a ship, so no tractor is left serving it.
+func remove_sts(apron: int, along: int) -> String:
+	var err := remove_sts_error(apron, along)
+	if err == "":
+		cranes.erase(cranes.filter(func(c: Crane) -> bool: return c.apron == apron and c.along == along)[0])
+	return err
+
+
+func remove_sts_error(apron: int, along: int) -> String:
+	var found := cranes.filter(func(c: Crane) -> bool: return c.apron == apron and c.along == along)
+	if found.is_empty():
+		return "No crane there"
+	if ships.any(func(s: Ship) -> bool: return s.apron == apron and s.state != Ship.State.ANCHORED and found[0] in AreaFlow.cranes_for(self, s)):
+		return "Wait for the ship alongside to sail"
+	return ""
 
 
 ## Puts up the cranes whose order is due. One whose quay has gone is refunded.

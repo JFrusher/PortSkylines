@@ -317,7 +317,7 @@ func _ready() -> void:
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
-	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track or area to remove it. Boxes stored in an area are lost."
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane or area to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
 
