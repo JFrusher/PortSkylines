@@ -105,9 +105,20 @@ func holder(cell: Vector2i) -> int:
 ## back the same way never holds a cell it has left.
 func _enter(vehicle: Vehicle, i: int) -> bool:
 	# Most vehicles in a queue find the next cell taken: say so before building the list.
-	if _holders.get(vehicle.path[i], vehicle.id) != vehicle.id:
+	var cell := vehicle.path[i]
+	if _holders.get(cell, vehicle.id) != vehicle.id:
 		return false
-	var want: Array[Vector2i] = [vehicle.path[i]]
+	# Most cells are plain lane: hold just this one, as the general case below would.
+	if not _lanes.is_junction(cell):
+		var mine: Array = _held[vehicle.id]
+		for other: Vector2i in mine:
+			if other != cell:
+				_holders.erase(other)
+		mine.clear()
+		mine.append(cell)
+		_holders[cell] = vehicle.id
+		return true
+	var want: Array[Vector2i] = [cell]
 	var j := i
 	while _lanes.is_junction(vehicle.path[j]) and j + 1 < vehicle.path.size():
 		j += 1
@@ -115,13 +126,13 @@ func _enter(vehicle: Vehicle, i: int) -> bool:
 	if not _take(vehicle.id, want):
 		return false
 	var keep := {}
-	for cell in want:
-		keep[cell] = true
+	for wanted in want:
+		keep[wanted] = true
 	var held: Array = _held[vehicle.id]
-	for cell: Vector2i in held.duplicate():
-		if cell not in keep:
-			_holders.erase(cell)
-			held.erase(cell)
+	for other: Vector2i in held.duplicate():
+		if other not in keep:
+			_holders.erase(other)
+			held.erase(other)
 	return true
 
 
