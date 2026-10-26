@@ -11,8 +11,17 @@ const SCHEMA := {
 	"start_money": TYPE_INT,
 	# What a line pays per crane move: by box size, plus a reefer premium.
 	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
-	# Shares of 40 ft boxes and reefers among all boxes.
-	"box_mix": {"forty_share": TYPE_FLOAT, "reefer_share": TYPE_FLOAT},
+	# Shares of 40 ft boxes, reefers, rush imports and dangerous goods among
+	# all boxes. A rush import discharged after its ship's window closed costs
+	# rush_fine; dangerous goods stack only in dangerous-goods blocks, which
+	# keep dg_distance cells clear of every other yard block.
+	"box_mix": {"forty_share": TYPE_FLOAT, "reefer_share": TYPE_FLOAT, "rush_share": TYPE_FLOAT, "dg_share": TYPE_FLOAT},
+	"special_boxes": {"rush_fine": TYPE_INT, "dg_distance": TYPE_INT},
+	# Reefers are plugged in reefer blocks. One stacked anywhere else past
+	# plug_minutes costs its line's fine. Each plugged box draws kw, hot_kw on
+	# the hot days of the year (hot_from to hot_to inclusive), billed daily per
+	# kWh plus a charge on the day's peak kW.
+	"reefers": {"plug_minutes": TYPE_FLOAT, "fine": TYPE_INT, "kw": TYPE_FLOAT, "hot_kw": TYPE_FLOAT, "hot_from": TYPE_INT, "hot_to": TYPE_INT, "price_per_kwh": TYPE_FLOAT, "peak_charge_per_kw": TYPE_FLOAT},
 	# Starting storage terms, the fee cap, how fees shorten import dwell, and
 	# how shippers (and so lines) feel about fees above the fair rate.
 	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},
@@ -34,7 +43,9 @@ const SCHEMA := {
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.
-	"milestones": {"*": {"teu": TYPE_INT, "unlocks": {"*": TYPE_STRING}}},
+	# demand: how busy the hinterland keeps lines once the milestone is reached,
+	# scaling how often they offer services (1 before the first).
+	"milestones": {"*": {"teu": TYPE_INT, "demand": TYPE_FLOAT, "unlocks": {"*": TYPE_STRING}}},
 	# A game year, for the year-end scoreboard.
 	"year_days": TYPE_INT,
 	# After `days` midnights below zero the debt is cleared, every line's
@@ -61,7 +72,7 @@ const SCHEMA := {
 	"land": {"metres": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
 	# An STS crane: its price, moves an hour, outreach in box rows, days from
 	# order to standing, and width along the quay in metres.
-	"sts_crane": {"cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT, "max_fetchers": TYPE_INT},
+	"sts_cranes": {"*": {"name": TYPE_STRING, "cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT, "max_fetchers": TYPE_INT}},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
 	# Roads the player draws: lanes each way along the drawn direction, whether
@@ -79,6 +90,9 @@ const SCHEMA := {
 	# by train, up to `max` dollars, adds share_per_dollar to every line's
 	# rail_share, up to max_share.
 	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
+	# Off-map places boxes come from and go to: each box's share, and its
+	# distance by road and rail (0 for no rail link, so its boxes go by road).
+	"hinterland": {"places": {"*": {"name": TYPE_STRING, "share": TYPE_FLOAT, "road_km": TYPE_FLOAT, "rail_km": TYPE_FLOAT}}},
 	# Berths the player places on the coast: a quay apron `length` cells long
 	# with its road along its back, and STS crane spots evenly along it. A
 	# berth's key is also what milestones unlock it by (its ship class's name).
@@ -92,7 +106,7 @@ const SCHEMA := {
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
 
 static var _base := {}
 
@@ -154,6 +168,11 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):
 				return {"error": "lines.%s.classes: unknown ship class \"%s\"" % [line, kind]}
+	var shares := 0.0
+	for place: Dictionary in rules.hinterland.places.values():
+		shares += place.share
+	if not is_equal_approx(shares, 1.0):
+		return {"error": "hinterland.places: shares must add up to 1"}
 	return {"rules": rules}
 
 

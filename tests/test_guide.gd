@@ -24,7 +24,7 @@ func _initialize() -> void:
 		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 420, "to": 434}],
 		[{"op": "set_terminal", "id": 2, "terminal": 1}],
 		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 1, "to": 22}, {"op": "set_terminal", "id": 3, "terminal": 1}],
-		[{"op": "place_sts", "apron": 1, "along": 37}],
+		[{"op": "place_sts", "kind": "sts", "apron": 1, "along": 37}],
 		[{"op": "buy_tractors", "count": 4}],
 	]
 	_expect(Guide.current(sim), 0, "a new game starts at the first step")

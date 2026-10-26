@@ -48,6 +48,8 @@ var area_type := ""
 var two_way := false
 ## The berth BUILD_BERTH places, a key of rules.berths.
 var berth := ""
+## The crane CRANE places, a key of rules.sts_cranes.
+var crane_kind := ""
 var speed := 1
 
 var _money := Label.new()
@@ -307,8 +309,11 @@ func _ready() -> void:
 			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Cranes stand at its %d spots.\n%s with its road." % [Grid.metres(spec.length), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
 	var dredge := _gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n" + HudDetails.dollars(sim.rules.channel.cost_per_metre), {"op": "dredge", "metres": 1})))
 	dredge.tooltip_text = "Deepens the channel 1 m, so ships with a deeper draft can call.\n%s a metre, then %s a metre every %d days to keep it." % [HudDetails.dollars(sim.rules.channel.cost_per_metre), HudDetails.dollars(sim.rules.channel.maintenance_per_metre), sim.rules.channel.maintenance_days]
-	var crane: Dictionary = sim.rules.sts_crane
-	_item(_button(rows.Cranes, "STS crane\n" + HudDetails.dollars(crane.cost), tools, false, func() -> void: tool = CRANE)).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
+	for key: String in sim.rules.sts_cranes:
+		var crane: Dictionary = sim.rules.sts_cranes[key]
+		_gate(key, _item(_button(rows.Cranes, "%s\n%s" % [crane.name, HudDetails.dollars(crane.cost)], tools, false, func() -> void:
+			tool = CRANE
+			crane_kind = key))).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
@@ -834,9 +839,9 @@ func _draw_inspect_actions() -> void:
 		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
-		for role: String in ["import", "export"]:
+		for role: String in ["import", "export", "reefer", "dangerous"]:
 			if role != settings.role:
-				_action_button(_inspect_actions, "Make %s block" % role, {"op": "set_area", "id": id, "settings": {"role": role}})
+				_action_button(_inspect_actions, "Make %s block" % ("dangerous-goods" if role == "dangerous" else role), {"op": "set_area", "id": id, "settings": {"role": role}})
 		for gear: String in sim.rules.yard_gear:
 			if gear != settings.gear:
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})

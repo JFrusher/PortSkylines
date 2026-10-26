@@ -88,7 +88,11 @@ static func _vehicle(sim: PortSim, vehicle: Vehicle) -> Array[String]:
 	var lines: Array[String] = ["%s %d" % [vehicle.kind.capitalize(), vehicle.id], doing]
 	if vehicle.loaded:
 		var box: Dictionary = sim.boxes[vehicle.box]
-		lines.append("Carrying a %s %s box%s" % ["40 ft" if box.teu == 2 else "20 ft", box.kind, ", reefer" if box.reefer else ""])
+		lines.append("Carrying a %s %s box%s" % ["40 ft" if box.teu == 2 else "20 ft", box.kind, ", reefer" if box.reefer else ", dangerous goods" if box.dg else ""])
+		if box.rush:
+			lines.append("Rush: fined if its ship sails late")
+		var place: Dictionary = sim.rules.hinterland.places[box.place]
+		lines.append("%s %s, %.0f km by road%s" % ["To" if box.kind == "import" else "From", place.name, place.road_km, ", %.0f by rail" % place.rail_km if place.rail_km > 0.0 else ""])
 	else:
 		lines.append("Empty")
 	return lines
@@ -104,8 +108,9 @@ static func _ship(sim: PortSim, ship: PortSim.Ship) -> Array[String]:
 
 
 static func _crane(sim: PortSim, crane: PortSim.Crane) -> Array[String]:
-	var lines: Array[String] = ["STS crane", "Idle" if crane.tractor == 0 else "Working with tractor %d" % crane.tractor]
-	lines.append("%d moves an hour, %d rows outreach" % [sim.rules.sts_crane.rate, sim.rules.sts_crane.outreach])
+	var spec: Dictionary = sim.rules.sts_cranes[crane.kind]
+	var lines: Array[String] = [spec.name, "Idle" if crane.tractor == 0 else "Working with tractor %d" % crane.tractor]
+	lines.append("%d moves an hour, %d rows outreach" % [spec.rate, spec.outreach])
 	return lines
 
 

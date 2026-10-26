@@ -105,12 +105,14 @@ func _test_trains_take_rail_imports() -> void:
 	var block := AreaPort.add_rail_block(sim)
 	_expect(RailFlow.is_rail_block(sim, block), true, "an RMG block with its siding joined to the rail entry is a rail block")
 	var booked := {}
+	var placed := {}
 	var by_gate := 0
 	var worked_ticks := 0
 	var loaded := 0
 	for i in roundi(6 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
 		for id: int in sim.boxes:
+			placed[id] = sim.boxes[id].place
 			if sim.boxes[id].rail:
 				booked[id] = true
 		for vehicle: Vehicle in sim.vehicles:
@@ -128,16 +130,17 @@ func _test_trains_take_rail_imports() -> void:
 					_expect(Inspect.describe(sim, Inspect.pick(sim, train.path[int(train.t)]))[1], "At its siding, being worked", "Inspect picks a train and says what it is doing")
 				worked_ticks += 1
 				loaded = maxi(loaded, train.wagons.filter(func(b: int) -> bool: return b != 0).size())
-	_expect(booked.size(), 12, "every import is booked to rail")
+	_expect(booked.size() > 0 and booked.keys().all(func(b: int) -> bool: return sim.rules.hinterland.places[placed[b]].rail_km > 0.0), true, "the imports for places with a rail link are booked to rail (%d of 12)" % booked.size())
 	_expect(by_gate, 0, "no lorry ever comes for one")
-	_expect([sim.by_rail, sim.boxes.keys().filter(func(b: int) -> bool: return b in booked)], [12, []], "and all 12 left by train")
+	_expect([sim.by_rail, sim.boxes.keys().filter(func(b: int) -> bool: return b in booked)], [booked.size(), []], "and all left by train")
 	# One RMG (10 bays, 8 a machine) works the wagons one at a time: each move is
 	# at least a lift and a set-down, at most that plus two trips the block's length.
 	var gear: Dictionary = rules.yard_gear.rmg
 	var least: float = gear.lift_seconds + gear.set_down_seconds
 	var most: float = least + 2 * 30 * Grid.CELL / gear.speed
 	var seconds := worked_ticks * Machines.SECONDS_PER_TICK
-	_expect(seconds >= 12 * least and seconds <= 12 * most + 2 * Machines.SECONDS_PER_TICK * 10, true, "the train is worked in the data's time: %.0f s for 12 moves, %.0f to %.0f" % [seconds, 12 * least, 12 * most])
+	var moves := booked.size()
+	_expect(seconds >= moves * least and seconds <= moves * most + 2 * Machines.SECONDS_PER_TICK * 10, true, "the train is worked in the data's time: %.0f s for %d moves, %.0f to %.0f" % [seconds, moves, moves * least, moves * most])
 
 
 ## The rail discount buys every line a share of rail, at a cost per box.
@@ -153,10 +156,11 @@ func _test_discount() -> void:
 
 
 ## M6's exit scenario: with 30% of boxes by rail, the gate queue is shorter.
+## Half the boxes go to places with a rail link, so lines book 60% of those.
 func _test_rail_cuts_the_gate_queue() -> void:
 	var queued := []
 	var rail_share := []
-	for share: float in [0.0, 0.3]:
+	for share: float in [0.0, 0.6]:
 		var rules := RandomPort.rules()
 		rules.lorry_interval_minutes = 0.25
 		for line: String in rules.lines:

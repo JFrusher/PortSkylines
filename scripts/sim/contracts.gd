@@ -29,21 +29,27 @@ func _init(game_rules: Dictionary) -> void:
 
 ## Maybe offers one new service: from a line whose reputation is high enough,
 ## for a class `fits` says the port can berth, while there are fewer than
-## `berths` × max_services_per_berth services. Returns the offer or {}.
-func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable) -> Dictionary:
+## `berths` × max_services_per_berth services, more often as the
+## hinterland's `demand` grows. Returns the offer or {}.
+func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, demand: float) -> Dictionary:
 	var terms: Dictionary = rules.contracts
 	if offers.size() >= terms.max_offers or services.size() + offers.size() >= berths * terms.max_services_per_berth:
 		return {}
 	# A port with no lines yet gets its first offer at the first check.
-	if rng.randf() >= (1.0 if services.is_empty() and offers.is_empty() else terms.offer_chance):
+	if rng.randf() >= (1.0 if services.is_empty() and offers.is_empty() else terms.offer_chance * demand):
 		return {}
 	var willing: Array = rules.lines.keys().filter(func(line: String) -> bool: return reputation[line] >= rules.reputation.offer_above)
 	if willing.is_empty():
 		return {}
 	var line: String = willing[rng.randi_range(0, willing.size() - 1)]
-	var kind := _pick(rng, rules.lines[line].classes)
-	if not fits.call(kind):
+	# A line offers only classes the port can take, by its weights among them.
+	var classes := {}
+	for kind: String in rules.lines[line].classes:
+		if fits.call(kind):
+			classes[kind] = rules.lines[line].classes[kind]
+	if classes.is_empty():
 		return {}
+	var kind := _pick(rng, classes)
 	var spec: Dictionary = rules.ship_classes[kind]
 	var service := {
 		"id": _next_id, "line": line, "kind": kind,

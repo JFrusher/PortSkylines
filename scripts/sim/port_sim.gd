@@ -24,6 +24,8 @@ var delivered := 0
 var by_rail := 0
 ## Dollars off each box carried by train, to shift lines' boxes onto rail.
 var rail_discount := 0
+## Today's reefer power: the peak kW and the kWh drawn so far, billed at midnight.
+var power := {"peak_kw": 0.0, "kwh": 0.0}
 ## Shipping lines, their services and offers, and their reputation of the port.
 var contracts: Contracts
 ## Loans and the bailout.
@@ -80,6 +82,10 @@ var area_stacks := {}
 ## The areas version yard machines were last fitted to; not saved, so a
 ## loaded port refits once, which adds nothing.
 var _machines_fit_for := -1
+func _dg_refusal() -> String:
+	return "A dangerous-goods block stands %d m from other yard blocks" % Grid.metres(rules.special_boxes.dg_distance)
+
+
 ## The road a berth brings along its back.
 const BERTH_ROAD := "terminal_1_1"
 ## The rules each kind of area takes, and what a new one starts with.
@@ -88,7 +94,7 @@ const AREA_SETTINGS := {
 	"quay_apron": {"lines": []},
 	"gate": {"level": "manual"},
 }
-const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer"]
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous"]
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
 var roads: RoadNet
 ## Rail track, a graph of its own: where it crosses a road straight across,
@@ -101,7 +107,8 @@ var areas: Areas
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
 ## the line that owns it, a key of rules.lines, or "" for an export not yet
-## loaded, "rail": whether it is booked to leave by train}. A box is always in exactly one place: on a vehicle or in a yard
+## loaded, "rail": whether it is booked to leave by train, "place": the
+## hinterland place it goes to or comes from, a key of rules.hinterland.places}. A box is always in exactly one place: on a vehicle or in a yard
 ## stack (boxes on ships are only counted).
 var boxes := {}
 ## How many of `boxes` are exports; not saved, counted again on load.
@@ -215,20 +222,23 @@ class Crane:
 	## The quay apron it stands on, and how many cells along it.
 	var apron := 0
 	var along := 0
+	## Its kind, a key of rules.sts_cranes.
+	var kind := ""
 	## Calendar minutes into the current move.
 	var timer := 0.0
 	## The tractor sent to it (a vehicle id), or 0.
 	var tractor := 0
 
-	func _init(on: int, at: int) -> void:
+	func _init(on: int, at: int, of_kind: String) -> void:
 		apron = on
 		along = at
+		kind = of_kind
 
 	func to_dict() -> Dictionary:
-		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along}
+		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind}
 
 	static func from_dict(d: Dictionary) -> Crane:
-		var crane := Crane.new(d.apron, d.along)
+		var crane := Crane.new(d.apron, d.along, d.kind)
 		crane.timer = d.timer
 		crane.tractor = d.tractor
 		return crane
@@ -256,6 +266,7 @@ func to_dict() -> Dictionary:
 		"delivered": delivered,
 		"by_rail": by_rail,
 		"rail_discount": rail_discount,
+		"power": power.duplicate(),
 		"trains": trains.map(func(train: Train) -> Dictionary: return train.to_dict()),
 		"next_train": _next_train,
 		"until_train": _until_train.duplicate(),
@@ -318,6 +329,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.delivered = d.delivered
 	sim.by_rail = d.by_rail
 	sim.rail_discount = d.rail_discount
+	sim.power = d.power.duplicate()
 	for train: Dictionary in d.trains:
 		sim.trains.append(Train.from_dict(train))
 	sim._next_train = d.next_train
@@ -364,7 +376,7 @@ func state_hash() -> int:
 func apply(command: Dictionary) -> String:
 	match command.get("op"):
 		"place_sts":
-			return place_sts(command.apron, command.along)
+			return place_sts(command.apron, command.along, command.kind)
 		"buy_tractors":
 			return buy_tractors(command.count)
 		"accept_offer":
@@ -534,6 +546,8 @@ func remove_road(segment: int) -> String:
 
 func build_area_error(type: String, segment: int, side: int, from: int, to: int) -> String:
 	var err := areas.add_error(type, segment, side, from, to)
+	if err == "" and rules.area_types[type].kind == "yard_block" and AreaFlow.near_yard(self, areas.cells_of(type, segment, side, from, to), 0, "dangerous") != 0:
+		err = _dg_refusal()
 	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -669,6 +683,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 			return level_locked
 	if settings.has("role") and settings.role not in AREA_ROLES:
 		return "Unknown yard role: %s" % settings.role
+	if settings.get("role") == "dangerous" and AreaFlow.near_yard(self, areas.cells(id), id, "") != 0:
+		return _dg_refusal()
 	if settings.has("gear"):
 		if not rules.yard_gear.has(settings.gear):
 			return "Unknown yard gear: %s" % settings.gear
@@ -698,14 +714,19 @@ func remove_area(id: int) -> String:
 	return ""
 
 
-## Orders an STS crane for apron `apron`, `along` cells along its rails.
-func place_sts(apron: int, along: int) -> String:
-	var err := AreaFlow.sts_error(self, apron, along)
-	if err == "" and not _afford(rules.sts_crane.cost):
+## Orders an STS crane of `kind` for apron `apron`, `along` cells along its rails.
+func place_sts(apron: int, along: int, kind: String) -> String:
+	if kind not in rules.sts_cranes:
+		return "Unknown crane: %s" % kind
+	var err := lock_error(kind)
+	if err == "":
+		err = AreaFlow.sts_error(self, apron, along, kind)
+	var spec: Dictionary = rules.sts_cranes[kind]
+	if err == "" and not _afford(spec.cost):
 		err = "Not enough money"
 	if err == "":
-		ledger.post("equipment", -rules.sts_crane.cost)
-		crane_orders.append({"apron": apron, "along": along, "due": clock.calendar_minutes() + rules.sts_crane.lead_days * SimClock.MINUTES_PER_DAY})
+		ledger.post("equipment", -spec.cost)
+		crane_orders.append({"apron": apron, "along": along, "kind": kind, "due": clock.calendar_minutes() + spec.lead_days * SimClock.MINUTES_PER_DAY})
 		_deliver_cranes()
 	return err
 
@@ -718,10 +739,10 @@ func _deliver_cranes() -> void:
 			continue
 		crane_orders.erase(order)
 		if order.apron in areas.list:
-			cranes.append(Crane.new(order.apron, order.along))
-			_event("A new STS crane is up on %s" % areas.terminals[areas.list[order.apron].terminal].name, areas.list[order.apron].start)
+			cranes.append(Crane.new(order.apron, order.along, order.kind))
+			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminals[areas.list[order.apron].terminal].name], areas.list[order.apron].start)
 		else:
-			ledger.post("equipment", rules.sts_crane.cost)
+			ledger.post("equipment", rules.sts_cranes[order.kind].cost)
 			_event("A crane arrived with no quay apron to stand on; it went back, refunded")
 
 
@@ -859,6 +880,8 @@ func tick() -> void:
 		_call(service)
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
+		AreaFlow.fine_unplugged(self, clock.calendar_minutes())
+	_draw_power()
 	var berths_now := Vector2i(_departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
 		if ship.state == Ship.State.ANCHORED and berths_now == _berths_seen:
@@ -951,6 +974,10 @@ func _event(text: String, at := Grid.NONE) -> void:
 func _end_of_day() -> void:
 	var upkeep := daily_upkeep()
 	ledger.post("upkeep", -upkeep)
+	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
+	if bill > 0:
+		ledger.post("power", -bill)
+	power = {"peak_kw": AreaFlow.plugged_reefers(self) * reefer_kw(), "kwh": 0.0}
 	var dredged: float = channel_depth - rules.channel.start_depth
 	if dredged > 0.0 and clock.game_day() % rules.channel.maintenance_days == 0:
 		ledger.post("dredging", -roundi(dredged * rules.channel.maintenance_per_metre))
@@ -965,6 +992,19 @@ func _end_of_day() -> void:
 	delivered_yesterday = delivered - _delivered_at_midnight
 	_delivered_at_midnight = delivered
 	_event("Upkeep $%d, %d boxes through the gate" % [upkeep, delivered_yesterday])
+
+
+## kW a plugged reefer draws today: more on the year's hot days.
+func reefer_kw() -> float:
+	var day: int = clock.game_day() % rules.year_days
+	return rules.reefers.hot_kw if day >= rules.reefers.hot_from and day <= rules.reefers.hot_to else rules.reefers.kw
+
+
+## Adds this tick's reefer draw to today's kWh and peak.
+func _draw_power() -> void:
+	var kw := AreaFlow.plugged_reefers(self) * reefer_kw()
+	power.kwh += kw * SimClock.CALENDAR_MINUTES_PER_TICK / 60.0
+	power.peak_kw = maxf(power.peak_kw, kw)
 
 
 func _new_year() -> Dictionary:
@@ -1010,6 +1050,12 @@ func _call(service: Dictionary) -> void:
 
 
 ## Whether the channel is deep enough for `kind` and some apron long enough, busy or not.
+## Whether lines may offer a service of `kind`: unlocked, and a berth and crane
+## could work it.
+func _could_offer(kind: String) -> bool:
+	return unlocked(kind) and _could_berth(kind) and AreaFlow.could_work(self, kind)
+
+
 func _could_berth(kind: String) -> bool:
 	return channel_depth >= rules.ship_classes[kind].draft and AreaFlow.could_berth(self, kind)
 
@@ -1018,7 +1064,7 @@ func _could_berth(kind: String) -> bool:
 func _offer_service() -> void:
 	var now := clock.calendar_minutes()
 	contracts.expire(now)
-	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind))
+	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return _could_offer(kind), hinterland_demand())
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
 
@@ -1068,9 +1114,40 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line, "rail": false}
+	var reefer: bool = rng.randf() < rules.box_mix.reefer_share
+	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
+	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
+	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
 	exports += 1 if kind == "export" else 0
 	return id
+
+
+## A hinterland place, drawn by the data's shares, of those with a rail link
+## when `rail_only`: an import's destination or an export's origin.
+func _pick_place(rail_only := false) -> String:
+	var places: Array = rules.hinterland.places.keys().filter(func(p: String) -> bool: return not rail_only or rules.hinterland.places[p].rail_km > 0.0)
+	var total := 0.0
+	for place: String in places:
+		total += rules.hinterland.places[place].share
+	var roll := rng.randf() * total
+	for place: String in places:
+		roll -= rules.hinterland.places[place].share
+		if roll < 0.0:
+			return place
+	return places[-1]
+
+
+## How busy the hinterland keeps lines, by milestones reached: it scales how
+## often they offer services.
+func hinterland_demand() -> float:
+	var reached := milestones_reached()
+	return milestones()[reached - 1].demand if reached > 0 else 1.0
+
+
+## Whether box `id` can go by rail: its hinterland place has a rail link.
+func by_rail_to(id: int) -> bool:
+	return rules.hinterland.places[boxes[id].place].rail_km > 0.0
 
 
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.

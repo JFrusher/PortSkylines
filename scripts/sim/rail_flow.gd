@@ -64,10 +64,14 @@ static func _send(sim: PortSim, block: int) -> void:
 	var share := 0.0
 	for line: String in sim.rules.lines:
 		share += sim.rail_share(line) / sim.rules.lines.size()
-	var exports := mini(train.wagons.size(), ceili(maxi(AreaFlow.export_demand(sim), 0) * share))
+	var linked: bool = sim.rules.hinterland.places.values().any(func(p: Dictionary) -> bool: return p.rail_km > 0.0)
+	var exports := mini(train.wagons.size(), ceili(maxi(AreaFlow.export_demand(sim), 0) * share)) if linked else 0
 	for i in exports:
 		# shortcut: an export is booked on no line until a ship loads it, as by road.
-		train.wagons[i] = sim._new_box("export", 0.0, "")
+		var box := sim._new_box("export", 0.0, "")
+		# Rail carries only boxes from places with a rail link.
+		sim.boxes[box].place = sim._pick_place(true)
+		train.wagons[i] = box
 	_pay_discount(sim, exports)
 	sim.trains.append(train)
 	sim._event("A train is coming for %s" % sim.areas.terminals[sim.areas.list[block].terminal].name, sim.areas.list[block].start)

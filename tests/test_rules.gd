@@ -126,7 +126,7 @@ func _test_crane_timing() -> void:
 	rules.yard_gear.reach_stacker.set_down_seconds = 1.0
 	var sim := AreaPort.base(rules, "panamax")
 	sim.creative = true
-	sim.apply({"op": "place_sts", "apron": 1, "along": 60})
+	sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 60})
 	sim.apply({"op": "buy_tractors", "count": 24})
 	_run(sim, FIRST_SHIP + 1)
 	var first := sim.ships[0]
@@ -146,7 +146,7 @@ func _test_crane_timing() -> void:
 
 func _test_outreach() -> void:
 	var rules := RandomPort.quick()
-	rules.sts_crane.outreach = 8
+	rules.sts_cranes.sts.outreach = 8
 	var sim := AreaPort.base(rules, "panamax")
 	_run(sim, FIRST_SHIP + 30)
 	_expect(sim.ships.size() == 1 and sim.ships[0].boxes == rules.ship_classes.panamax.import_moves, true, "a panamax gets no moves from cranes that are too short")
@@ -323,7 +323,7 @@ func _test_services_spread_across_the_week() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
 	while contracts.services.size() < 4:
-		var offer := contracts.offer(rng, 8 * 60.0, 10, func(_kind: String) -> bool: return true)
+		var offer := contracts.offer(rng, 8 * 60.0, 10, func(_kind: String) -> bool: return true, 1.0)
 		if not offer.is_empty():
 			contracts.accept(offer.id)
 	var hours: Array = contracts.services.map(func(s: Dictionary) -> int: return s.start / 60)
@@ -356,7 +356,7 @@ func _test_reputation_cancels_and_recovers() -> void:
 	var rng := RandomNumberGenerator.new()
 	var offered := {}
 	for i in 50:
-		var offer := contracts.offer(rng, 0.0, 100, func(_kind: String) -> bool: return true)
+		var offer := contracts.offer(rng, 0.0, 100, func(_kind: String) -> bool: return true, 1.0)
 		if not offer.is_empty():
 			offered[offer.line] = true
 			contracts.offers.clear()
@@ -381,7 +381,7 @@ func _test_storage_is_charged_per_day() -> void:
 ## A call of 40 ft boxes earns 1.8 x the 20 ft price per move.
 func _test_a_call_earns_its_moves() -> void:
 	var rules := RandomPort.quick()
-	rules.box_mix = {"forty_share": 1.0, "reefer_share": 0.0}
+	rules.box_mix = {"forty_share": 1.0, "reefer_share": 0.0, "rush_share": 0.0, "dg_share": 0.0}
 	var sim := AreaPort.base(rules)
 	var ship: PortSim.Ship
 	while ship == null or ship.state != PortSim.Ship.State.LEAVING:
@@ -484,14 +484,14 @@ func _test_land_must_be_bought() -> void:
 ## An STS crane ordered now stands on its apron exactly when its lead time ends.
 func _test_cranes_arrive_after_their_lead_time() -> void:
 	var rules := Content.base().duplicate(true)
-	rules.sts_crane.lead_days = 0.5
+	rules.sts_cranes.sts.lead_days = 0.5
 	var sim := AreaPort.terminal(60, rules)
 	sim.creative = false
 	sim.ledger.cash = rules.start_money
 	var before := sim.money
-	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 20}), "", "order a crane")
-	_expect([sim.cranes.size(), before - sim.money], [0, rules.sts_crane.cost], "paid now, not there yet")
-	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 20}), "Too close to another crane", "one order per place on the rails")
+	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 20}), "", "order a crane")
+	_expect([sim.cranes.size(), before - sim.money], [0, rules.sts_cranes.sts.cost], "paid now, not there yet")
+	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 20}), "Too close to another crane", "one order per place on the rails")
 	var due := roundi(720 / SimClock.CALENDAR_MINUTES_PER_TICK)
 	for i in due - 1:
 		sim.tick()

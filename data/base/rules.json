@@ -23,7 +23,23 @@
 	},
 	"box_mix": {
 		"forty_share": 0.6,
-		"reefer_share": 0.1
+		"reefer_share": 0.1,
+		"rush_share": 0.05,
+		"dg_share": 0.03
+	},
+	"special_boxes": {
+		"rush_fine": 150.0,
+		"dg_distance": 6.0
+	},
+	"reefers": {
+		"plug_minutes": 120.0,
+		"fine": 400.0,
+		"kw": 4.0,
+		"hot_kw": 7.0,
+		"hot_from": 10.0,
+		"hot_to": 16.0,
+		"price_per_kwh": 0.15,
+		"peak_charge_per_kw": 1.5
 	},
 	"storage": {
 		"free_days": 2.0,
@@ -61,7 +77,10 @@
 		"bailout": "Bailout",
 		"land": "Land",
 		"dredging": "Dredging",
-		"rail": "Rail discounts"
+		"rail": "Rail discounts",
+		"power": "Reefer power",
+		"reefer_fines": "Reefer fines",
+		"rush_fines": "Rush fines"
 	},
 	"loans": {
 		"small": {
@@ -84,6 +103,7 @@
 	"milestones": {
 		"harbour": {
 			"teu": 0.0,
+			"demand": 1.0,
 			"unlocks": {
 				"contracts": "contracts with shipping lines",
 				"feeder": "feeder services",
@@ -93,6 +113,7 @@
 		},
 		"terminal": {
 			"teu": 200.0,
+			"demand": 1.25,
 			"unlocks": {
 				"loans": "loans",
 				"rtg": "RTG cranes for yard blocks",
@@ -101,13 +122,21 @@
 		},
 		"gateway": {
 			"teu": 600.0,
+			"demand": 1.5,
 			"unlocks": {
 				"land": "buying land",
 				"dredging": "dredging the channel",
 				"panamax": "Panamax services",
-				"neopanamax": "Neopanamax berths",
 				"automated": "automated gates",
 				"rmg": "rail track and RMG rail yards"
+			}
+		},
+		"hub": {
+			"teu": 1500.0,
+			"demand": 1.75,
+			"unlocks": {
+				"neopanamax": "Neopanamax services and berths",
+				"wide_sts": "wide STS cranes that reach across a Neopanamax"
 			}
 		}
 	},

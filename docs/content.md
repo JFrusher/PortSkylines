@@ -23,12 +23,17 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `yard_gear.<key>.lift_seconds`, `.set_down_seconds` | float | Seconds to lift a box and to set one down |
 | `yard_gear.<key>.bays_per_machine` | int | One machine per so many 12 m bays of an area |
 | `yard_gear.<key>.tiers` | int | How many boxes high the gear stacks on an area |
-| `sts_crane.width` | int | An STS crane's width along a quay apron, in metres; cranes can't stand closer |
+| `sts_cranes.<key>.width` | int | A crane's width along a quay apron, in metres; a new crane can't stand closer than its width |
 | `start_money` | int | Money at the start of a new game |
 | `move_price.per_20ft` | int >0 | What a line pays per crane move of a 20 ft box |
 | `move_price.forty_factor` | number >0 | A 40 ft box's move price as a multiple of a 20 ft one |
 | `move_price.reefer_premium` | int | Added to a reefer's move price |
-| `box_mix.forty_share`, `.reefer_share` | number | Shares of 40 ft boxes and of reefers among new boxes |
+| `box_mix.forty_share`, `.reefer_share`, `.rush_share`, `.dg_share` | number | Shares of 40 ft boxes, reefers, rush imports and dangerous goods among new boxes |
+| `reefers.plug_minutes`, `.fine` | number, int | Minutes a reefer may stand off a plug (outside a reefer block) before the port is fined, once |
+| `reefers.kw`, `.hot_kw`, `.hot_from`, `.hot_to` | number, int | kW a plugged reefer draws, and on the hot days of the year (day numbers, inclusive) |
+| `reefers.price_per_kwh`, `.peak_charge_per_kw` | number | The midnight power bill: per kWh drawn, plus per kW of the day's peak |
+| `special_boxes.rush_fine` | int | Paid per rush import discharged after its ship's window closed |
+| `special_boxes.dg_distance` | int | Cells a dangerous-goods block keeps clear of every other yard block |
 | `storage.free_days`, `.fee` | int | Starting storage terms: free days (0–3), then the fee per box per day |
 | `storage.max_fee` | int | Highest storage fee the player may set |
 | `storage.dwell_per_dollar`, `.min_dwell_factor` | number | Import dwell is `import_dwell_minutes / (1 + fee × dwell_per_dollar)`, but not below `min_dwell_factor` of it |
@@ -52,10 +57,10 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `land.metres` | int >0 | The site is split into square land tiles this many metres across; roads and areas are built only on land the port owns |
 | `land.price`, `.upkeep` | int | Price of a land tile, and its upkeep a day once owned |
 | `land.start.x`, `.y`, `.width`, `.height` | int | The block of land tiles the port owns at the start |
-| `sts_crane.cost` | int | Price of a quay crane |
-| `sts_crane.rate` | number >0 | Moves per hour |
-| `sts_crane.outreach` | int | Rows the crane reaches |
-| `sts_crane.lead_days` | number | Days from ordering a crane to it standing on the quay |
+| `sts_cranes.<key>.name`, `.cost` | text, int | A quay crane kind's name and price; its key also locks it by milestone |
+| `sts_cranes.<key>.rate` | number >0 | Moves per hour |
+| `sts_cranes.<key>.outreach` | int | Rows the crane reaches; lines offer a class only where a crane on a long enough berth reaches across it |
+| `sts_cranes.<key>.lead_days`, `.max_fetchers` | number, int | Days from ordering a crane to it standing on the quay; tractors fetching exports for it at once |
 | `crane_interference` | number >0 | Rate multiplier for cranes working side by side |
 | `tractor.cost` | int | Price of one tractor |
 | `tractor.speed` | number >0 | Metres per vehicle second (one game minute) |

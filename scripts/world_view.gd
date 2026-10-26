@@ -604,8 +604,8 @@ static func crane_pose(phase: float, discharging: bool) -> Array[float]:
 ## trolley and spreader that follow the crane's move.
 func _draw_cranes() -> void:
 	_forget_gone(_cranes, sim.cranes)
-	var move_minutes: float = 60.0 / (sim.rules.sts_crane.rate * sim.rules.crane_interference)
 	for crane: PortSim.Crane in sim.cranes:
+		var move_minutes := AreaFlow.move_minutes_of(sim, crane)
 		if crane not in _cranes:
 			_cranes[crane] = _crane_model(crane)
 		var model: Node3D = _cranes[crane]

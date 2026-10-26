@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 13
+const VERSION := 17
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -76,6 +76,14 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v11(data)
 	if data.version == 12:
 		data = _migrate_v12(data)
+	if data.version == 13:
+		data = _migrate_v13(data)
+	if data.version == 14:
+		data = _migrate_v14(data)
+	if data.version == 15:
+		data = _migrate_v15(data)
+	if data.version == 16:
+		data = _migrate_v16(data)
 	return data
 
 
@@ -103,12 +111,48 @@ static func _migrate_v12(data: Dictionary) -> Dictionary:
 	return data
 
 
+## v14 gives boxes a hinterland place; those already in the port go to the first.
+static func _migrate_v13(data: Dictionary) -> Dictionary:
+	var first: String = Content.base().hinterland.places.keys()[0]
+	for box: Variant in data.sim.boxes.values():
+		if box is Dictionary:
+			box.place = first
+	data.version = 14
+	return data
+
+
+## v15 bills reefer power: the day so far has drawn nothing.
+static func _migrate_v14(data: Dictionary) -> Dictionary:
+	data.sim.power = {"peak_kw": 0.0, "kwh": 0.0}
+	data.version = 15
+	return data
+
+
+## v16 gives cranes a kind; every crane before it was the standard STS.
+static func _migrate_v15(data: Dictionary) -> Dictionary:
+	for crane: Variant in data.sim.cranes + data.sim.crane_orders:
+		if crane is Dictionary:
+			crane.kind = "sts"
+	data.version = 16
+	return data
+
+
+## v17 marks boxes rush or dangerous goods; none in the port before it were.
+static func _migrate_v16(data: Dictionary) -> Dictionary:
+	for box: Variant in data.sim.boxes.values():
+		if box is Dictionary:
+			box.rush = false
+			box.dg = false
+	data.version = 17
+	return data
+
+
 ## Check the entire payload before any typed deserialiser sees it.
 # shortcut: entries inside boxes, events and ship_log are not checked,
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
-		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "rail_discount": TYPE_INT, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "rail_discount": TYPE_INT, "power": TYPE_DICTIONARY, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
 		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
@@ -126,6 +170,8 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	if not _has_fields(data.storage, {"free_days": TYPE_INT, "fee": TYPE_INT}):
+		return false
+	if not _has_fields(data.power, {"peak_kw": TYPE_FLOAT, "kwh": TYPE_FLOAT}):
 		return false
 	if not _has_fields(data.year, {"calls": TYPE_INT, "berth_hours": TYPE_FLOAT, "moves": TYPE_INT, "turns": TYPE_INT, "turn_minutes": TYPE_FLOAT}):
 		return false
@@ -162,12 +208,12 @@ static func _valid_sim(data: Variant) -> bool:
 		if not (tile is Vector2i and data.land[tile] is bool):
 			return false
 	for order: Variant in data.crane_orders:
-		if not order is Dictionary or not _has_fields(order, {"apron": TYPE_INT, "along": TYPE_INT, "due": TYPE_FLOAT}):
+		if not order is Dictionary or not _has_fields(order, {"apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING, "due": TYPE_FLOAT}) or order.kind not in Content.base().sts_cranes:
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {
-			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT,
-		}) or not (crane.apron in data.areas.list and data.areas.list[crane.apron].type == "quay_apron"):
+			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING,
+		}) or crane.kind not in Content.base().sts_cranes or not (crane.apron in data.areas.list and data.areas.list[crane.apron].type == "quay_apron"):
 			return false
 	if not _valid_area_flow(data):
 		return false

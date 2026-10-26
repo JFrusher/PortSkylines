@@ -1,11 +1,23 @@
 {
-	"sts_crane": {
-		"cost": 1500.0,
-		"rate": 25.0,
-		"outreach": 13.0,
-		"lead_days": 0.0,
-		"width": 28.0,
-		"max_fetchers": 4.0
+	"sts_cranes": {
+		"sts": {
+			"name": "STS crane",
+			"cost": 1500.0,
+			"rate": 25.0,
+			"outreach": 13.0,
+			"lead_days": 0.0,
+			"width": 28.0,
+			"max_fetchers": 4.0
+		},
+		"wide_sts": {
+			"name": "Wide STS crane",
+			"cost": 4000.0,
+			"rate": 28.0,
+			"outreach": 22.0,
+			"lead_days": 0.0,
+			"width": 32.0,
+			"max_fetchers": 5.0
+		}
 	},
 	"crane_interference": 0.9,
 	"tractor": {

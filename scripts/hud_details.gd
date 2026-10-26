@@ -254,6 +254,10 @@ static func power_rows(sim: PortSim) -> Array[Dictionary]:
 		row("Ships at berth", str(sim.ships.size() - anchored)),
 		row("Ships at anchor waiting", str(anchored)),
 		row("Estimated power demand", "%d kW" % (sim.cranes.size() * 450)),
+		row("Reefers plugged in", str(AreaFlow.plugged_reefers(sim))),
+		row("Reefers off a plug, fined after %d min" % sim.rules.reefers.plug_minutes, str(AreaFlow.unplugged_reefers(sim))),
+		row("Reefer power now", "%.0f kW%s" % [AreaFlow.plugged_reefers(sim) * sim.reefer_kw(), ", a hot day" if sim.reefer_kw() > sim.rules.reefers.kw else ""]),
+		row("Today's reefer peak", "%.0f kW" % sim.power.peak_kw),
 	]
 
 
