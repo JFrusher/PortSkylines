@@ -1,0 +1,11 @@
+[configuration]
+
+entry_symbol = "portsim_init"
+compatibility_minimum = "4.5"
+
+[libraries]
+
+linux.debug.x86_64 = "res://bin/libportsim.linux.template_debug.x86_64.so"
+linux.release.x86_64 = "res://bin/libportsim.linux.template_release.x86_64.so"
+windows.debug.x86_64 = "res://bin/libportsim.windows.template_debug.x86_64.dll"
+windows.release.x86_64 = "res://bin/libportsim.windows.template_release.x86_64.dll"

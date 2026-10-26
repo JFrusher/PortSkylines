@@ -1,0 +1,10 @@
+#!/usr/bin/env python
+# Builds bin/libportsim.<platform>.<target>.<arch> from src/ against godot-cpp:
+#   cd native && scons target=template_debug   (and target=template_release)
+env = SConscript("godot-cpp/SConstruct")
+env.Append(CPPPATH=["src/"])
+library = env.SharedLibrary(
+    "../bin/libportsim{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+    source=Glob("src/*.cpp"),
+)
+Default(library)
