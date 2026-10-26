@@ -12,7 +12,7 @@ const MAX_HOURS := 6
 
 func _initialize() -> void:
 	var start := Time.get_ticks_msec()
-	var sim := EndgamePort.build()
+	var sim := EndgamePort.build(EndgamePort.bench_rules())
 	print("built in %.1f s: %d areas, %d cranes, %d tractors, %d boxes" % [(Time.get_ticks_msec() - start) / 1000.0, sim.areas.list.size(), sim.cranes.size(), sim.tractors, sim.boxes.size()])
 	var until := sim.clock.calendar_minutes() + MAX_HOURS * 60.0
 	while _lorries(sim) < LORRIES and sim.clock.calendar_minutes() < until:
