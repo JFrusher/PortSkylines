@@ -19,6 +19,8 @@ var _painting := false
 var _last_cell := Grid.NONE
 ## Where a road drag started on the 4 m grid, or NONE.
 var _road_from := Grid.NONE
+## The grid point, in cells, the mouse pressed at to start that drag.
+var _road_at := Vector2.ZERO
 ## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
 var _area_from := {}
 ## The box the camera follows, or 0.
@@ -93,14 +95,24 @@ func _process(dt: float) -> void:
 	_follow(dt)
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would snap on.
-	view.show_hover(sim.roads.snap_start(cell) if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE else cell, _order_error(cell) == "")
+	if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE and cell != Grid.NONE and not sim.roads.snaps(cell):
+		# A free start: the road's width, centred on the grid line it will centre on.
+		var road: Dictionary = sim.rules.road_types[hud.road_type]
+		var lanes: int = road.forward + road.backward
+		var at := _hovered_grid_point()
+		view.show_hover_at(at.round() if lanes % 2 == 0 else at.floor() + Vector2(0.5, 0.5), lanes, _order_error(cell) == "")
+	else:
+		view.show_hover(sim.roads.snap_start(cell) if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE else cell, _order_error(cell) == "")
 	var dragged: Array[Vector2i] = []
 	if not _area_from.is_empty():
 		var area := _area_command()
 		for side: int in ([1, -1] if hud.two_way else [area.side]):
 			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
 	view.show_area_preview(dragged, _order_error(cell) == "")
-	view.show_road_preview(_road_from, _road_to() if _road_from != Grid.NONE else _road_from, hud.road_type, _order_error(cell) == "")
+	var ends: Array[Vector2i] = [Grid.NONE, Grid.NONE]
+	if _road_from != Grid.NONE:
+		ends = _road_ends()
+	view.show_road_preview(ends[0], ends[1], hud.road_type, _order_error(cell) == "")
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_painting = false
@@ -114,7 +126,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# A drag builds on release only if its tool is still the one selected.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Grid.NONE:
 		if hud.tool == Hud.DRAW_ROAD:
-			_report(sim.apply({"op": "build_road", "from": _road_from, "to": _road_to(), "type": hud.road_type}))
+			var ends := _road_ends()
+			_report(sim.apply({"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}))
 		_road_from = Grid.NONE
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
@@ -133,6 +146,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if hud.tool == Hud.DRAW_ROAD:
 			_road_from = sim.roads.snap_start(_hovered_grid_cell())
+			_road_at = _hovered_grid_point()
 			return
 		if hud.tool == Hud.INSPECT:
 			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
@@ -209,7 +223,10 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.INSPECT:
 			return ""
 		Hud.DRAW_ROAD:
-			return "" if _road_from == Grid.NONE else sim.build_road_error(_road_from, _road_to(), hud.road_type)
+			if _road_from == Grid.NONE:
+				return ""
+			var ends := _road_ends()
+			return sim.build_road_error(ends[0], ends[1], hud.road_type)
 		Hud.DRAW_AREA:
 			if _area_from.is_empty():
 				return ""
@@ -235,6 +252,21 @@ func _hovered_grid_cell() -> Vector2i:
 ## mouse, else straight or to 45°.
 func _road_to() -> Vector2i:
 	return sim.roads.snap_end(_road_from, _hovered_grid_cell())
+
+
+## The cells a road drag builds between: where it snaps onto roads, else
+## moved across so the road centres under the mouse, whichever way it was dragged.
+func _road_ends() -> Array[Vector2i]:
+	var to := _road_to()
+	if to == _road_from or sim.roads.snaps(_road_from) or sim.roads.snaps(_hovered_grid_cell(), _road_from):
+		return [_road_from, to] as Array[Vector2i]
+	return RoadNet.centred(_road_from, to, sim.rules.road_types[hud.road_type], _road_at)
+
+
+## The grid point under the mouse, in cells with their fractions.
+func _hovered_grid_point() -> Vector2:
+	var hit: Variant = _hovered_point()
+	return Vector2.ZERO if hit == null else Vector2(hit.x, hit.z) * WorldView.METRES_PER_UNIT / Grid.CELL
 
 
 ## The build_area command for the area dragged from _area_from to the mouse.

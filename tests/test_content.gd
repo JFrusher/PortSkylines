@@ -54,6 +54,9 @@ func _error_for(changes: Dictionary, file_name := "rules.json") -> String:
 		else:
 			rules[key] = changes[key]
 	DirAccess.make_dir_recursive_absolute(DIR)
+	# Files left by an earlier run, perhaps of other data, would load too.
+	for old: String in DirAccess.get_files_at(DIR):
+		DirAccess.remove_absolute(DIR.path_join(old))
 	for name: String in DirAccess.get_files_at(Content.BASE_DIR):
 		if name.ends_with(".json") and name != file_name:
 			var copy := FileAccess.open(DIR.path_join(name), FileAccess.WRITE)
