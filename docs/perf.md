@@ -320,6 +320,14 @@ a lorry is sent every tick (2,150 vehicles at the end). Same state hash after
 | Baseline at 2,000 lorries | | 86.8 |
 | Route lengths for gate choice kept until the lane graph changes | `_gate_of` routing to all 12 gates per lorry (20 of 20 route calls a tick, 1.66 ms each) | 75.3 |
 | Each terminal's working gates kept until roads or areas change | `_has_gate` scanning every area (125 µs) for each of 80 blocks per dispatch | 61.2 |
+| Routes kept until the lane graph changes (replaces the length memo above) | `LaneGraph.route`: one A* over 23,480 points, 1.2 ms, plus 0.3 ms building cells | 56.6 |
+
+Probed before the last change: every route runs one A* search (start and
+goal cells each hold one lane point), so the search itself is the cost.
+Over six endgame minutes 43% of routes asked a (from, to) asked before,
+rising to 69% in the last 200 ticks, with none empty: vehicles drive
+between the same slots, buffers and gates. A 200-tick profile starts with
+the memo empty, so it undersells the gain.
 
 What is left, from the same profile: vehicles 22.6 ms, machines 18.1 ms and
 ships 16.6 ms, inclusive of 11.6 route searches a tick at 1.65 ms each
