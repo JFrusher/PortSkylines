@@ -1,0 +1,8 @@
+{
+	"rail": {
+		"name": "Rail track",
+		"cost_per_cell": 6.0,
+		"upkeep_per_cell": 0.3,
+		"entry_offset": 60.0
+	}
+}

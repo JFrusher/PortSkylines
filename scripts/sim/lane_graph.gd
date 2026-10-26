@@ -9,6 +9,9 @@ extends RefCounted
 var _net: RoadNet
 ## The areas whose driveways join the graph; set once the sim has them.
 var areas: Areas
+## Rail track, which joins nothing: its level crossings are junction cells,
+## so no vehicle ever stops on one.
+var rails: RoadNet
 var _version := []
 var _all := AStar2D.new()
 var _lorries := AStar2D.new()
@@ -27,6 +30,19 @@ func _init(net: RoadNet) -> void:
 func is_junction(cell: Vector2i) -> bool:
 	_refresh()
 	return cell in _junction
+
+
+## Lane cells where rail track crosses: level crossings.
+func crossings() -> Array[Vector2i]:
+	_refresh()
+	var found: Array[Vector2i] = []
+	if rails == null:
+		return found
+	for id: int in rails.segments:
+		for cell in rails.cells(id):
+			if cell in _at:
+				found.append(cell)
+	return found
 
 
 ## The steps traffic may take out of `cell`, one per lane leading on.
@@ -88,7 +104,7 @@ func _search(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
 
 
 func _refresh() -> void:
-	var now := [_net.version, areas.version if areas else -1]
+	var now := [_net.version, areas.version if areas else -1, rails.version if rails else -1]
 	if now != _version:
 		_version = now
 		_rebuild()
@@ -154,6 +170,8 @@ func _rebuild() -> void:
 			for m in range(k + 1, meeting.size()):
 				if _meet_at_junction(meeting[k], meeting[m]):
 					_junction[cell] = true
+	for cell in crossings():
+		_junction[cell] = true
 	if areas:
 		for id: int in areas.list:
 			next_id = _add_area(id, next_id)

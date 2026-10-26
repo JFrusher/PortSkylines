@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 12
+const VERSION := 13
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -74,6 +74,8 @@ static func load_from(path: String) -> Dictionary:
 static func _migrate(data: Dictionary) -> Dictionary:
 	if data.version == 11:
 		data = _migrate_v11(data)
+	if data.version == 12:
+		data = _migrate_v12(data)
 	return data
 
 
@@ -86,12 +88,19 @@ static func _migrate_v11(data: Dictionary) -> Dictionary:
 	return data
 
 
+## v13 adds rail: no track yet.
+static func _migrate_v12(data: Dictionary) -> Dictionary:
+	data.sim.rails = {"nodes": {}, "segments": {}, "next_node": 1, "next_segment": 1}
+	data.version = 13
+	return data
+
+
 ## Check the entire payload before any typed deserialiser sees it.
 # shortcut: entries inside boxes, events and ship_log are not checked,
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
-		"roads": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
 		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
@@ -119,7 +128,7 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	# Roads and areas first: ships and cranes are checked against the aprons.
-	if not (_valid_roads(data.roads) and _valid_areas(data.areas)):
+	if not (_valid_roads(data.roads, Content.base().road_types) and _valid_roads(data.rails, {"track": true}) and _valid_areas(data.areas)):
 		return false
 	for ship: Variant in data.ships:
 		if not ship is Dictionary or not _has_fields(ship, {
@@ -189,12 +198,11 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 
 
 ## Roads: nodes on cells, and segments joining two known nodes with a known road type.
-static func _valid_roads(roads: Dictionary) -> bool:
+static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 	if not _has_fields(roads, {"nodes": TYPE_DICTIONARY, "segments": TYPE_DICTIONARY, "next_node": TYPE_INT, "next_segment": TYPE_INT}):
 		return false
 	if not roads.nodes.keys().all(func(id: Variant) -> bool: return id is int and roads.nodes[id] is Vector2i):
 		return false
-	var types: Dictionary = Content.base().road_types
 	return roads.segments.keys().all(func(id: Variant) -> bool:
 		var road: Variant = roads.segments[id]
 		return id is int and road is Dictionary and _has_fields(road, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING}) and road.a in roads.nodes and road.b in roads.nodes and road.type in types)

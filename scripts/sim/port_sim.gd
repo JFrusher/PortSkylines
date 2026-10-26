@@ -77,6 +77,9 @@ const AREA_SETTINGS := {
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer"]
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
 var roads: RoadNet
+## Rail track, a graph of its own: where it crosses a road straight across,
+## the cells are level crossings, in both.
+var rails: RoadNet
 var lanes: LaneGraph
 ## The areas dragged along those roads.
 var areas: Areas
@@ -121,7 +124,10 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	creative = creative_mode
 	roads = RoadNet.new(rules.road_types)
 	roads.anchors = [site_entry()]
+	rails = RoadNet.new(rail_types())
+	rails.anchors = [site_rail_entry()]
 	lanes = LaneGraph.new(roads)
+	lanes.rails = rails
 	areas = Areas.new(rules.area_types, roads, rules.site)
 	lanes.areas = areas
 	lane_traffic = LaneTraffic.new(lanes)
@@ -218,6 +224,7 @@ class Crane:
 func to_dict() -> Dictionary:
 	return {
 		"roads": roads.to_dict(),
+		"rails": rails.to_dict(),
 		"areas": areas.to_dict(),
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
@@ -270,7 +277,10 @@ static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
 	sim.roads.anchors = [sim.site_entry()]
+	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types())
+	sim.rails.anchors = [sim.site_rail_entry()]
 	sim.lanes = LaneGraph.new(sim.roads)
+	sim.lanes.rails = sim.rails
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
 	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
@@ -347,6 +357,10 @@ func apply(command: Dictionary) -> String:
 			return dredge(command.metres)
 		"build_road":
 			return build_road(command.from, command.to, command.type)
+		"build_rail":
+			return build_rail(command.from, command.to)
+		"remove_rail":
+			return remove_rail(command.segment)
 		"remove_road":
 			return remove_road(command.segment)
 		"build_area":
@@ -380,6 +394,8 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
 				built[cell] = true
 		if roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return c in built):
 			err = "Something is already built here"
+	if err == "":
+		err = _crossing_error(RoadNet.line(from, to), roads.footprint(from, to, type), rails.segments.keys().map(func(s: int) -> Array: return rails.cells(s)))
 	if err == "" and not _afford(road_price(from, to, type)):
 		err = "Not enough money"
 	return err
@@ -397,6 +413,70 @@ func road_price(from: Vector2i, to: Vector2i, type: String) -> int:
 	return RoadNet.length(from, to) * rules.road_types[type].cost_per_cell
 
 
+## Where the highway's rail line meets the site, `entry_offset` cells south
+## of the road entry on the east edge. Track reaching it joins the main line.
+func site_rail_entry() -> Vector2i:
+	return site_entry() + Vector2i(0, rules.rail.entry_offset)
+
+
+## Rail track as RoadNet sees it: one lane, on the drawn line.
+func rail_types() -> Dictionary:
+	var track: Dictionary = rules.rail
+	return {"track": {"name": track.name, "forward": 1, "backward": 0, "lorries": false, "cost_per_cell": track.cost_per_cell, "upkeep_per_cell": track.upkeep_per_cell}}
+
+
+func build_rail_error(from: Vector2i, to: Vector2i) -> String:
+	var err := rails.add_error(from, to, "track")
+	if err == "" and not RoadNet.line(from, to).all(owns):
+		err = "Buy this land first"
+	if err == "":
+		var track := RoadNet.line(from, to)
+		for id: int in areas.list:
+			if areas.cells(id).any(func(c: Vector2i) -> bool: return c in track):
+				return "Something is already built here"
+		var lanes_of := []
+		for id: int in roads.segments:
+			for lane in roads.lanes(id):
+				lanes_of.append(lane.cells)
+		err = _crossing_error(track, track, lanes_of)
+	if err == "" and not _afford(RoadNet.length(from, to) * rules.rail.cost_per_cell):
+		err = "Not enough money"
+	return err
+
+
+func build_rail(from: Vector2i, to: Vector2i) -> String:
+	var err := build_rail_error(from, to)
+	if err == "":
+		ledger.post("construction", -RoadNet.length(from, to) * rules.rail.cost_per_cell)
+		rails.add(from, to, "track")
+	return err
+
+
+func remove_rail(segment: int) -> String:
+	if segment not in rails.segments:
+		return "No track there"
+	rails.remove(segment)
+	return ""
+
+
+## Why something drawn along `line`, covering `cells`, can't share cells with
+## the runs in `others` (each a straight run of cells), or "": road and rail
+## meet only at level crossings, straight across.
+static func _crossing_error(line: Array, cells: Array, others: Array) -> String:
+	var mine := {}
+	for cell: Vector2i in cells:
+		mine[cell] = true
+	var along: Vector2i = (line[-1] - line[0]).sign()
+	for other: Array in others:
+		if not other.any(func(c: Vector2i) -> bool: return c in mine):
+			continue
+		var theirs: Vector2i = (other[-1] - other[0]).sign()
+		var straight := along.x * along.y == 0 and theirs.x * theirs.y == 0
+		if not straight or along.x * theirs.x + along.y * theirs.y != 0:
+			return "Road and track cross only straight across"
+	return ""
+
+
 func remove_road(segment: int) -> String:
 	if segment not in roads.segments:
 		return "No road there"
@@ -408,6 +488,13 @@ func build_area_error(type: String, segment: int, side: int, from: int, to: int)
 	var err := areas.add_error(type, segment, side, from, to)
 	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
 		err = "Buy this land first"
+	if err == "":
+		var track := {}
+		for id: int in rails.segments:
+			for cell in rails.cells(id):
+				track[cell] = true
+		if areas.cells_of(type, segment, side, from, to).any(func(c: Vector2i) -> bool: return c in track):
+			err = "Something is already built here"
 	if err == "" and not _afford(area_price(type, segment, side, from, to)):
 		err = "Not enough money"
 	return err
@@ -682,6 +769,8 @@ func daily_upkeep() -> int:
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
 		cells += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+	for segment: int in rails.segments:
+		cells += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
 	for id: int in areas.list:
 		cells += areas.cells(id).size() * rules.area_types[areas.list[id].type].upkeep_per_cell
 	total += roundi(cells)

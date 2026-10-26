@@ -275,6 +275,10 @@ func _ready() -> void:
 		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
 			road_type = key)).tooltip_text = _road_tip(road)
+	var rail: Dictionary = sim.rules.rail
+	_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
+		tool = DRAW_ROAD
+		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge; it crosses roads only straight across, at level crossings. $%d per 4 m, $%.1f a day upkeep." % [rail.cost_per_cell, rail.upkeep_per_cell]
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
 		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
@@ -297,7 +301,7 @@ func _ready() -> void:
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
-	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road or area to remove it. Boxes stored in an area are lost."
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track or area to remove it. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
 

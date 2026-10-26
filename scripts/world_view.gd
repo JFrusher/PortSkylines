@@ -25,6 +25,11 @@ const ASPHALT := Color(0.2, 0.2, 0.22)
 ## The surface of a road lorries may not use, so tractor lanes read at a glance.
 const TRACTOR_ONLY := Color(0.36, 0.24, 0.2)
 const MARKING := Color(0.92, 0.92, 0.85)
+const BALLAST := Color(0.42, 0.38, 0.33)
+const STEEL := Color(0.62, 0.62, 0.66)
+## Half the gauge and a rail's half width, in metres.
+const RAIL_GAUGE := 0.72
+const RAIL_HALF := 0.08
 ## Area ground by kind, a little below road level.
 const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
@@ -107,7 +112,7 @@ var _machine_meshes := {}  # gear -> Mesh
 ## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
-var _roads_drawn := -1
+var _roads_drawn := []
 ## Every area's ground as one mesh, redrawn when the areas change.
 var _areas := MeshInstance3D.new()
 ## The area and road versions the areas were drawn for: idle tints follow the roads.
@@ -175,7 +180,10 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 	if not _road_preview.visible:
 		return
 	var surface := _road_tool()
-	_add_road(surface, null, from, to, sim.rules.road_types[type])
+	if type == "track":
+		_add_track(surface, null, from, to)
+	else:
+		_add_road(surface, null, from, to, sim.rules.road_types[type])
 	_road_preview.mesh = surface.commit()
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
@@ -198,7 +206,7 @@ func _process(dt: float) -> void:
 	if _info.visible and _info_left <= 0.0:
 		_info_left = INFO_SECONDS
 		_draw_info()
-	if sim.roads.version != _roads_drawn:
+	if [sim.roads.version, sim.rails.version] != _roads_drawn:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
@@ -214,7 +222,7 @@ func _process(dt: float) -> void:
 
 
 func _draw_roads() -> void:
-	_roads_drawn = sim.roads.version
+	_roads_drawn = [sim.roads.version, sim.rails.version]
 	var surface := _road_tool()
 	var marks := _road_tool()
 	# Markings stop where a junction's widest road begins.
@@ -230,7 +238,12 @@ func _draw_roads() -> void:
 		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
 	var entry := sim.site_entry()
-	_add_road(surface, marks, entry + Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0), entry, sim.rules.road_types.terminal_2_2)
+	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
+	_add_road(surface, marks, entry + off_map, entry, sim.rules.road_types.terminal_2_2)
+	# The main line the same way, to the rail entry.
+	_add_track(surface, marks, sim.site_rail_entry() + off_map, sim.site_rail_entry())
+	for id: int in sim.rails.segments:
+		_add_track(surface, marks, sim.rails.nodes[sim.rails.segments[id].a], sim.rails.nodes[sim.rails.segments[id].b])
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
 
@@ -372,6 +385,21 @@ static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vect
 			var dash_end := minf(at + DASH, length)
 			_strip(marks, start + offset + along * at, start + offset + along * dash_end, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
 			at += DASH + DASH_GAP
+
+
+## Adds rail track from cell `a` to cell `b`: a ballast bed a cell wide on
+## the cells' middle line, with two rails to `marks` unless it is null.
+static func _add_track(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i) -> void:
+	var start := (Vector2(a) + Vector2(0.5, 0.5)) * Grid.CELL
+	var end := (Vector2(b) + Vector2(0.5, 0.5)) * Grid.CELL
+	surface.set_color(BALLAST)
+	_strip(surface, start, end, Grid.CELL / 2.0, ROAD_TOP)
+	if marks == null:
+		return
+	var side := (end - start).normalized().orthogonal()
+	marks.set_color(STEEL)
+	for gauge: float in [-RAIL_GAUGE, RAIL_GAUGE]:
+		_strip(marks, start + side * gauge, end + side * gauge, RAIL_HALF, ROAD_TOP + MARK_RISE)
 
 
 ## A flat strip `half` either side of the line from `from` to `to`, in metres.

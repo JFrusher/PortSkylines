@@ -44,9 +44,20 @@ func advance(vehicle: Vehicle, speed: float) -> bool:
 
 ## Lets go of every cell `vehicle` holds.
 func leave(vehicle: Vehicle) -> void:
-	for cell: Vector2i in _held.get(vehicle.id, []):
+	release(vehicle.id)
+
+
+## Books all of `cells` for `id` if each is free or already theirs, else
+## none: a train takes a level crossing this way.
+func book(id: int, cells: Array[Vector2i]) -> bool:
+	return _take(id, cells)
+
+
+## Lets go of every cell `id` holds.
+func release(id: int) -> void:
+	for cell: Vector2i in _held.get(id, []):
 		_holders.erase(cell)
-	_held.erase(vehicle.id)
+	_held.erase(id)
 
 
 func to_dict() -> Dictionary:
