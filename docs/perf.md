@@ -248,3 +248,12 @@ ships wait to load about 50 exports each and no export is in the yard:
 The top five are box scans, not vehicles: kinematics is under 1%. The next
 M6 steps name the scan they remove; keeping export and due-box indexes as
 boxes come and go would take the first three and the fifth off the tick.
+
+**Render.** `bench/endgame_bench.gd -- 1 90` (software GL under xvfb at
+1920x1080, the farthest zoom, so ratios only): 705 vehicles, frame 2,748 ms
+(p95 2,956), sim 693 ms of it (routes 10 ms), render CPU 1,977 ms, 658 draw
+calls, 161,622 primitives. The tile model's endgame drew in 164 to 264 ms
+of render CPU on this box with more primitives (430,013 to 578,321), so the
+roads-and-areas view costs far more per primitive. Why is not known yet:
+profile it per group, as for steps 5 and 6 on tiles, before M6's render
+steps change anything.
