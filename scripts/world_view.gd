@@ -31,6 +31,8 @@ const AREA_COLOR := {
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
 }
 const AREA_TOP := 0.2
+## Camera distance, in world units, past which yard boxes are drawn plain.
+const STACK_DETAIL_RANGE := 30.0
 ## A container's real size in metres, by TEU, for things drawn on areas.
 const REAL_BOX_LENGTH := {1: 6.06, 2: 12.19}
 const REAL_BOX_HEIGHT := 2.59
@@ -94,8 +96,11 @@ var _area_machines := {}
 var _machine_heights := {}
 ## Boxes stacked in yard areas, a MultiMesh per box length, redrawn when the
 ## sim has ticked or the areas changed.
-var _area_stacks := {}
-var _area_stacks_drawn := []
+var _area_stacks := {}  # yard area -> {"drawn": [its stacks' version, areas version], "parts": {Vector2i(teu, far) -> MultiMeshInstance3D}}
+## The container drawn as a plain 12-triangle box, by TEU: past STACK_DETAIL_RANGE
+## a block's boxes use it, since 20,000 container models at full detail cost
+## 94% of the endgame port's render time (docs/perf.md).
+var _plain_box := {}
 ## Each box model scaled to real size, by TEU, for boxes on areas and vehicles.
 var _real_box := {}
 var _machine_meshes := {}  # gear -> Mesh
@@ -147,7 +152,8 @@ func _ready() -> void:
 		_stack_meshes[teu] = _container_mesh(teu)
 		var real := Vector3(REAL_BOX_LENGTH[teu], REAL_BOX_HEIGHT, REAL_BOX_WIDTH) / METRES_PER_UNIT
 		_real_box[teu] = real / _stack_meshes[teu].get_aabb().size
-		_area_stacks[teu] = _vehicle_part(_stack_meshes[teu])
+		var aabb: AABB = _stack_meshes[teu].get_aabb()
+		_plain_box[teu] = _merged([[aabb.size, aabb.get_center(), Color.WHITE]])
 
 
 ## The site in world units.
@@ -670,38 +676,58 @@ func _vehicle_part(mesh: Mesh) -> MultiMeshInstance3D:
 ## 12 m bay of one row, tiers from the ground up, a pair of 20 ft boxes end
 ## to end in a tier, each in its line's livery.
 func _draw_area_stacks() -> void:
-	if _area_stacks_drawn == [sim.clock.ticks, sim.areas.version]:
-		return
-	_area_stacks_drawn = [sim.clock.ticks, sim.areas.version]
-	var buffers := {1: PackedFloat32Array(), 2: PackedFloat32Array()}
+	for area: int in _area_stacks.keys():
+		if area not in sim.area_stacks or area not in sim.areas.list:
+			for part: Node in _area_stacks[area].parts.values():
+				part.queue_free()
+			_area_stacks.erase(area)
 	for area: int in sim.area_stacks:
 		if area not in sim.areas.list:
 			continue
-		var geometry: Dictionary = sim.areas.list[area]
-		var along := Vector2((geometry.end - geometry.start).sign())
-		var turned := Basis(Vector3.UP, atan2(-along.normalized().y, along.normalized().x))
-		var layout := sim.areas.layout(area)
 		var stacks: AreaStacks = sim.area_stacks[area]
-		for position in stacks.stacks.size():
-			var middle: Vector2i = layout.stacks[position].cells[1]
-			var centre := (Vector2(middle) + Vector2(0.5, 0.5)) * Grid.CELL
-			for tier: int in stacks.stacks[position].size():
-				var ids: Array = stacks.stacks[position][tier]
-				for i in ids.size():
-					var teu: int = sim.boxes[ids[i]].teu
-					var shift := 0.0 if teu == 2 else (-0.5 if i == 0 else 0.5) * (REAL_BOX_LENGTH[1] + 0.05)
-					var at := centre + along.normalized() * shift
-					var origin := Vector3(at.x, AREA_TOP + (tier + 0.5) * REAL_BOX_HEIGHT, at.y) / METRES_PER_UNIT
-					_put(buffers[teu], Transform3D(turned.scaled_local(_real_box[teu]), origin), _livery(sim.boxes[ids[i]].line, ids[i]))
-	for teu: int in buffers:
-		var multimesh: MultiMesh = _area_stacks[teu].multimesh
-		var buffer: PackedFloat32Array = buffers[teu]
-		var count := buffer.size() / 16
-		if multimesh.instance_count < count:
-			multimesh.instance_count = nearest_po2(count)
-		buffer.resize(multimesh.instance_count * 16)
-		multimesh.buffer = buffer
-		multimesh.visible_instance_count = count
+		if area not in _area_stacks:
+			var parts := {}
+			for teu: int in BOX_LENGTH:
+				for far: int in [0, 1]:
+					var part := _vehicle_part(_plain_box[teu] if far else _stack_meshes[teu])
+					if far:
+						part.visibility_range_begin = STACK_DETAIL_RANGE
+					else:
+						part.visibility_range_end = STACK_DETAIL_RANGE
+					parts[Vector2i(teu, far)] = part
+			_area_stacks[area] = {"drawn": [], "parts": parts}
+		var drawn: Dictionary = _area_stacks[area]
+		if drawn.drawn == [stacks.version, sim.areas.version]:
+			continue
+		drawn.drawn = [stacks.version, sim.areas.version]
+		var buffers := _stack_buffers(area, stacks)
+		for key: Vector2i in drawn.parts:
+			var multimesh: MultiMesh = drawn.parts[key].multimesh
+			var buffer: PackedFloat32Array = buffers[key.x]
+			multimesh.instance_count = buffer.size() / 16
+			if not buffer.is_empty():
+				multimesh.buffer = buffer
+
+
+## The instance buffers, by TEU, of yard area `area`'s stacked boxes.
+func _stack_buffers(area: int, stacks: AreaStacks) -> Dictionary:
+	var buffers := {1: PackedFloat32Array(), 2: PackedFloat32Array()}
+	var geometry: Dictionary = sim.areas.list[area]
+	var along := Vector2((geometry.end - geometry.start).sign())
+	var turned := Basis(Vector3.UP, atan2(-along.normalized().y, along.normalized().x))
+	var layout := sim.areas.layout(area)
+	for position in stacks.stacks.size():
+		var middle: Vector2i = layout.stacks[position].cells[1]
+		var centre := (Vector2(middle) + Vector2(0.5, 0.5)) * Grid.CELL
+		for tier: int in stacks.stacks[position].size():
+			var ids: Array = stacks.stacks[position][tier]
+			for i in ids.size():
+				var teu: int = sim.boxes[ids[i]].teu
+				var shift := 0.0 if teu == 2 else (-0.5 if i == 0 else 0.5) * (REAL_BOX_LENGTH[1] + 0.05)
+				var at := centre + along.normalized() * shift
+				var origin := Vector3(at.x, AREA_TOP + (tier + 0.5) * REAL_BOX_HEIGHT, at.y) / METRES_PER_UNIT
+				_put(buffers[teu], Transform3D(turned.scaled_local(_real_box[teu]), origin), _livery(sim.boxes[ids[i]].line, ids[i]))
+	return buffers
 
 
 ## Every yard machine on an area as its own node, with the box on its spreader

@@ -15,6 +15,7 @@ var _lorries := AStar2D.new()
 var _at := {}  # cell -> point ids of lane cells there
 var _junction := {}  # cells where routes from different roads meet or cross
 var _flows := {}  # area id -> 1 or -1, the way traffic runs along it
+var _routes := [{}, {}]  # [for all vehicles, for lorries]: Vector4i(from, to) -> route; cleared with the graph
 
 
 func _init(net: RoadNet) -> void:
@@ -46,9 +47,23 @@ func flow_of(id: int) -> int:
 
 
 ## The cells from `from` to `to` along lanes, both ends included, or [] when
-## no lane route exists. Junctions are crossed one cell at a time.
+## no lane route exists. Junctions are crossed one cell at a time. Kept until
+## the graph changes, since vehicles mostly drive between the same slots,
+## gates and buffers (43% of an endgame hour's routes were asked before); a
+## kept route is read-only, as vehicles share it.
+# shortcut: kept routes grow with the distinct pairs asked until the graph changes (about 4,000 an endgame hour, ~18 MB); bound them if memory shows.
 func route(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
 	_refresh()
+	var kept: Dictionary = _routes[int(lorry)]
+	var key := Vector4i(from.x, from.y, to.x, to.y)
+	if key not in kept:
+		var found := _search(from, to, lorry)
+		found.make_read_only()
+		kept[key] = found
+	return kept[key]
+
+
+func _search(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
 	var graph := _lorries if lorry else _all
 	var best := PackedVector2Array()
 	var best_length := INF
@@ -85,6 +100,8 @@ func _rebuild() -> void:
 	_at.clear()
 	_junction.clear()
 	_flows.clear()
+	for kept: Dictionary in _routes:
+		kept.clear()
 	var ends := {}  # node -> [segment, first point, cells] of lanes arriving there
 	var starts := {}  # node -> [segment, first point, cells] of lanes leaving there
 	var covers := {}  # cell -> {segment: true} for each segment with a lane there

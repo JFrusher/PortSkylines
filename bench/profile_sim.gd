@@ -9,6 +9,7 @@ extends SceneTree
 
 const PATH := "res://bench/endgame.bin"
 const TimedLanes := preload("res://bench/timed_lanes.gd")
+const EndgamePort := preload("res://bench/endgame_port.gd")
 
 var spent := {}  # part -> microseconds
 var calls := {}  # part -> count
@@ -51,6 +52,8 @@ func _load() -> PortSim:
 		push_error(loaded.error + " (run bench/make_endgame.gd first)")
 		quit(1)
 		return null
+	# Rules are data, not saved: put the bench's back.
+	loaded.sim.rules = EndgamePort.bench_rules()
 	return loaded.sim
 
 

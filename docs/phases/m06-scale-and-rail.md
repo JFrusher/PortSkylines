@@ -8,7 +8,14 @@
 - Done on tiles and redone in M5: step 7 (distance fields), as part of the lane graph.
 - Skipped on evidence: step 5 (ships and cranes cost 5 ms of 168 render; see `docs/perf.md`).
 - Waiting for M5's model: steps 3, 8, 9, 11–15, 17 and 18.
-- Steps 1 and 2 redone on roads and areas on 26 Oct 2026 (`bench/make_endgame.gd`, `bench/endgame_bench.gd`, `bench/profile_sim.gd`); the baseline and top hot spots are in `docs/perf.md`. The port reaches 694 lorries, not 2,000, and has no trains until step 13.
+- Steps 1 and 2 redone on roads and areas on 26 Oct 2026 (`bench/make_endgame.gd`, `bench/endgame_bench.gd`, `bench/profile_sim.gd`); the baseline and top hot spots are in `docs/perf.md`. The port reached 694 lorries, not 2,000, and has no trains until step 13.
+- 26 Oct 2026, on evidence (all in `docs/perf.md`):
+  - The box scans are off the tick, and lorries spread over gates by queue. The endgame save reaches 2,000 lorries. At that load the tick fell from 86.8 to about 31 ms.
+  - Step 3 is done as indexes, not packed arrays: vehicles by id, tractors counted, fetchers by slot, lorries bound per area.
+  - Step 6 is done on roads and areas: yard boxes are drawn per block, plain past 30 units. Render CPU fell from 3,037 to 226 ms.
+  - Step 7 is done as kept routes, not flow fields: same paths, so the same state hash.
+  - Steps 8 and 9 are skipped on evidence. Routes are 13% of the tick, and most were asked before. Moving vehicles costs cell booking, which stays single-threaded and in a fixed order.
+  - Step 10 is waiting on the developer. The vehicle loop (`AreaFlow._drive` with `LaneTraffic.advance`) is about 21 ms of 31.
 
 **Exit criteria:**
 - The endgame benchmark save (about 2,000 lorries, 20,000 stacked boxes, 6 berths, 2 trains) holds 60 fps at 1080p on the GTX 1660-class target at 1×, and stays playable at 3×.

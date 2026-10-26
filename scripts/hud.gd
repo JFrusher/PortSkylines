@@ -11,6 +11,8 @@ signal load_pressed
 signal command_issued(command: Dictionary)
 ## shortcut: two buttons stand in for the new-game screen until M12 builds it.
 signal new_game_pressed(creative: bool)
+## Debug builds only: start the big test port with every feature in use.
+signal mega_port_pressed
 ## A recent event was clicked: the camera goes to grid cell `cell`.
 signal event_picked(cell: Vector2i)
 
@@ -183,6 +185,10 @@ func _ready() -> void:
 		_ask(menu, "New creative game" if creative else "New game", "Start a new %s? The port you're playing is lost unless it is saved." % ("creative game" if creative else "game"), func() -> void:
 			_menu.visible = false
 			new_game_pressed.emit(creative))
+	if OS.is_debug_build():
+		_ask(menu, "Mega port (debug)", "Start the big test port: 6 berths, 18 STS cranes, 80 RTG blocks holding 20,000 boxes, 12 gates and ships in. The port you're playing is lost unless it is saved.", func() -> void:
+			_menu.visible = false
+			mega_port_pressed.emit())
 
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)

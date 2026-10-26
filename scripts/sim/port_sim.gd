@@ -49,8 +49,14 @@ var ship_log: Array[Dictionary] = []
 var delivered_yesterday := 0
 var ships: Array[Ship] = []
 var cranes: Array[Crane] = []
-## Lorries and tractors on roads and areas, moved by the area flow.
+## Lorries and tractors on roads and areas, moved by the area flow. They
+## come and go only through _add_vehicle and _drop_vehicle, which keep the
+## indexes below; those aren't saved, and a load builds them again.
 var vehicles: Array[Vehicle] = []
+var _by_id := {}  # vehicle id -> Vehicle
+var _tractors_on_road := 0
+var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
+var _lorries_bound := {}  # area id -> lorries whose area it is
 ## The area flow's state: who holds each lane cell, each area's handover
 ## slots and queues, the yard machines and what each is carrying, and the
 ## boxes stacked in each yard block (area id -> AreaStacks).
@@ -81,6 +87,8 @@ var areas: Areas
 ## loaded}. A box is always in exactly one place: on a vehicle or in a yard
 ## stack (boxes on ships are only counted).
 var boxes := {}
+## How many of `boxes` are exports; not saved, counted again on load.
+var exports := 0
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
@@ -288,6 +296,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	for crane: Dictionary in d.cranes:
 		sim.cranes.append(Crane.from_dict(crane))
 	sim.boxes = d.boxes.duplicate(true)
+	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
 	sim.turn_times.assign(d.turn_times)
@@ -299,7 +308,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
-		sim.vehicles.append(Vehicle.from_dict(data))
+		sim._add_vehicle(Vehicle.from_dict(data))
 	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes)
 	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
@@ -856,7 +865,14 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
 	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line}
+	exports += 1 if kind == "export" else 0
 	return id
+
+
+## Takes box `id` out of the port: delivered, loaded aboard, or lost.
+func _drop_box(id: int) -> void:
+	exports -= 1 if boxes[id].kind == "export" else 0
+	boxes.erase(id)
 
 
 ## Boxes in the yard past their free days.
@@ -878,4 +894,54 @@ func _dwell_factor() -> float:
 
 
 func _tractors_out() -> int:
-	return vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor").size()
+	return _tractors_on_road
+
+
+## Puts `vehicle` in the port's list and indexes.
+func _add_vehicle(vehicle: Vehicle) -> void:
+	vehicles.append(vehicle)
+	_by_id[vehicle.id] = vehicle
+	_tractors_on_road += 1 if vehicle.kind == "tractor" else 0
+	_count_bound(vehicle, 1)
+	if vehicle.home != Grid.NONE:
+		if vehicle.home not in _fetching:
+			_fetching[vehicle.home] = [] as Array[Vehicle]
+		_fetching[vehicle.home].append(vehicle)
+
+
+## Takes `vehicle` off the roads and out of the port.
+func _drop_vehicle(vehicle: Vehicle) -> void:
+	lane_traffic.leave(vehicle)
+	vehicles.erase(vehicle)
+	_by_id.erase(vehicle.id)
+	_tractors_on_road -= 1 if vehicle.kind == "tractor" else 0
+	_count_bound(vehicle, -1)
+	if vehicle.home != Grid.NONE:
+		_fetching[vehicle.home].erase(vehicle)
+
+
+## Sends `vehicle` to area `area` (0 for none); the one way its area changes.
+func _set_area(vehicle: Vehicle, area: int) -> void:
+	_count_bound(vehicle, -1)
+	vehicle.area = area
+	_count_bound(vehicle, 1)
+
+
+## How many lorries have area `area` as theirs.
+func lorries_bound_for(area: int) -> int:
+	return _lorries_bound.get(area, 0)
+
+
+func _count_bound(vehicle: Vehicle, by: int) -> void:
+	if vehicle.kind == "lorry" and vehicle.area != 0:
+		_lorries_bound[vehicle.area] = _lorries_bound.get(vehicle.area, 0) + by
+
+
+## The vehicle with id `id`, or null once it has left.
+func vehicle_by_id(id: int) -> Vehicle:
+	return _by_id.get(id)
+
+
+## The tractors fetching exports to apron slot `home`, oldest first.
+func fetching_to(home: Vector2i) -> Array[Vehicle]:
+	return _fetching.get(home, [] as Array[Vehicle])

@@ -257,3 +257,150 @@ of render CPU on this box with more primitives (430,013 to 578,321), so the
 roads-and-areas view costs far more per primitive. Why is not known yet:
 profile it per group, as for steps 5 and 6 on tiles, before M6's render
 steps change anything.
+
+### Box scans off the tick (2026-10-26)
+
+Same save (`bench/endgame.bin` from `make_endgame.gd`, 694 lorries) and
+command, `profile_sim.gd -- 200`, run once per commit one after another.
+The container ran slower than for the baseline above (509 ms against 288 ms
+for the same code), so compare within this table only. `bench/hash_ticks.gd`
+gives the same state hash after 300 ticks before and after (1889779304).
+
+| Change | Hot spot removed | ms a tick |
+|---|---|---:|
+| Baseline | | 508.8 |
+| A block's exports listed by kind, soonest due first, sorted again only when its stacks change | `AreaFlow._export_box` (18.4 ms a call) | 86.0 |
+| A count of exports kept as boxes come and go | `AreaFlow.export_demand` (2.7 ms) | 46.6 |
+| Lorries take each block's first unclaimed import from the same sorted list | `dispatch_import_lorry` (4.6 to 2.7 ms a tick) | 43.8 |
+
+| Each area's idle reason kept until roads or areas change, not rebuilt from its cells per call | `Areas.idle_reason` (10.5 µs a call, 80 a crane lookup) | 29.8 |
+
+Ship work was still 29 ms of the 43.8. Timed one call at a time on the
+saved port (six ships loading, no export in the yard), `AreaFlow.work` cost
+4.3 ms a ship: `_export_box` 662 µs with nothing to find, because it asked
+each of 80 blocks `idle_reason`, which built the block's line of cells
+every call; `_export_room` 972 µs and `_has_gate` 141 µs did the same over
+every area. With the reason kept, `AreaFlow.work` is 2.1 ms a ship.
+
+`AreaFlow._block_of` still lists every block's boxes to find one (298 µs a
+call; 25.5 µs asking each block's index instead), but a tick calls it about
+0.15 times: the change measured 30.7 ms a tick against 29.8, within noise,
+so it was not kept. The box scans left run once a day (storage) or for the
+view, not every tick.
+
+### The endgame save at 2,000 lorries (2026-10-26)
+
+Why the save stopped near 700 lorries, probed on it (`make_endgame.gd`'s
+rules put back after loading): of 630 lorries driving in, 519 were bound
+for one gate, the one nearest the site entry, since `_gate_of` ranked gates
+by route length alone. Its queue reached back to the entry, which was busy
+510 ticks in 600, and a lorry comes in only through a free entry cell.
+
+Lorries now take the gate they get through soonest: minutes of driving plus
+the lorries already bound there times the booth minutes over its lanes
+(`test_roads` checks a 20-lorry queue sends the next lorry on to the other
+gate). `make_endgame.gd` then reaches its 2,000 lorries at 2.8 game hours,
+in under 3 minutes of building where it took 29; the 12 gates hold 42 to 58
+lorries each. Deliveries stay low (144 by then), since a lorry every tick
+outruns the yard's RTGs, which is the point of the bench.
+
+Note on the benches: rules are data and are not saved, so a loaded
+`endgame.bin` plays on the base rules (a lorry a minute, an RTG per 10
+bays), not the bench's. `profile_sim.gd`'s figures above, and the 288 ms
+baseline, were taken that way.
+
+### At 2,000 lorries (2026-10-26)
+
+`profile_sim.gd -- 200` on the 2,000-lorry save with the bench's rules, so
+a lorry is sent every tick (2,150 vehicles at the end). Same state hash after
+300 ticks before and after each change.
+
+| Change | Hot spot removed | ms a tick |
+|---|---|---:|
+| Baseline at 2,000 lorries | | 86.8 |
+| Route lengths for gate choice kept until the lane graph changes | `_gate_of` routing to all 12 gates per lorry (20 of 20 route calls a tick, 1.66 ms each) | 75.3 |
+| Each terminal's working gates kept until roads or areas change | `_has_gate` scanning every area (125 µs) for each of 80 blocks per dispatch | 61.2 |
+| Routes kept until the lane graph changes (replaces the length memo above) | `LaneGraph.route`: one A* over 23,480 points, 1.2 ms, plus 0.3 ms building cells | 56.6 |
+| Vehicles come and go through one path that indexes them by id, counts tractors out and lists fetchers by apron slot | `_tractors_out` 577 µs, `_fetchers` 323 µs, `_vehicle` 155 µs, each a loop over 2,071 vehicles, run per crane | 46.0 |
+
+A lorry taking its import then cost 21 ms (139 in 200 ticks): leaving, it
+chose a gate by routing from its block's slot to all 12 gates, 24.8 ms
+from a slot not routed from before and 2.4 ms after, most of that counting
+the lorries bound for each gate over every vehicle. Gate choice now
+estimates drive minutes by grid distance (the queue term, about 16 minutes
+at these loads, outweighs drive differences of up to 5), routes only to the
+gate it picks, which the lorry needs anyway, and reads a count of lorries
+bound per area kept as vehicles change area. That changes which gate some
+lorries take, so the save was rebuilt: 2,000 lorries at 2.9 game hours,
+built in under a minute, 62 to 66 lorries at each gate.
+
+| On the rebuilt save | ms a tick |
+|---|---:|
+| Before (previous commit) | 45.4 |
+| Gate choice by grid distance, bound lorries counted | 32.9 |
+| A vehicle whose next cell is taken says so before building its list of wanted cells | 31.6 (31.0–31.5 on reruns, against 32.8–33.6) |
+
+Route searches fell from 4,002 to 1,133 in 200 ticks and machine work from
+17.0 to 3.8 ms. Moving vehicles is now the largest part: `LaneTraffic.advance`
+5.6 µs for each of 2,000 vehicles, 34% of the tick (M6 step 9). Probed:
+84% of calls are queued vehicles whose very next cell is taken (2.4 µs
+each), the rest move (13.2 µs); checking that cell first brought the call to
+4.8 µs, same state hash.
+
+Probed before the last change: every route runs one A* search (start and
+goal cells each hold one lane point), so the search itself is the cost.
+Over six endgame minutes 43% of routes asked a (from, to) asked before,
+rising to 69% in the last 200 ticks, with none empty: vehicles drive
+between the same slots, buffers and gates. A 200-tick profile starts with
+the memo empty, so it undersells the gain.
+
+What is left, from the same profile: vehicles 22.6 ms, machines 18.1 ms and
+ships 16.6 ms, inclusive of 11.6 route searches a tick at 1.65 ms each
+(31% of the tick) and of loops over every vehicle (`_machine_done`,
+`_promote`, `_vehicle`, `_tractors_out`, `_fetchers`, `_export_room`). Those
+are M6 steps 3 (vehicles as packed arrays, found by index) and 7 to 9 (paths).
+
+### What the roads-and-areas render spends its time on (2026-10-26)
+
+`bench/endgame_bench.gd` on the 2,000-lorry save, software GL under xvfb at
+1920x1080, farthest zoom (90), 20 frames after 5 of warm-up: ratios only.
+
+The sim running was not the cause: render CPU was 3,037 ms a frame paused
+and 3,124 ms at 1×. One group hidden at a time, paused:
+
+| Hidden | Render CPU ms | Primitives reported |
+|---|---:|---:|
+| Nothing | 3,037 | 197,630 |
+| Ground | 3,030 | 197,606 |
+| Roads | 2,920 | 195,114 |
+| Areas | 2,910 | 107,006 |
+| **Stacked boxes** | **200** | 196,058 |
+| Yard machines | 2,966 | 150,974 |
+| Vehicles | 2,866 | 146,354 |
+| Ships | 3,122 | 194,408 |
+| STS cranes | 2,906 | 195,902 |
+
+The stacks were 94% of it, yet hiding them took only 1,572 primitives off
+the count: the counter reports a MultiMesh's mesh once, not once per
+instance. The container models have 552 (20 ft) and 1,020 (40 ft)
+triangles, and all 20,000 boxes drew them in one MultiMesh, about 15
+million triangles a frame, with no culling or detail by distance since one
+box covered the whole port. Drawn as plain 12-triangle boxes they cost
+371 ms. So this is why the tile model, with fewer real triangles, drew
+faster than its larger primitive count suggested.
+
+Each yard block now draws its boxes in its own MultiMeshes, the container
+model up to 30 units from the camera and a plain box in its livery beyond
+(visibility ranges, M6 step 6), and redraws only when its stacks change,
+where all 20,000 were rebuilt every tick:
+
+| | Render CPU ms | Frame ms | Draw calls |
+|---|---:|---:|---:|
+| Before, paused | 3,037 | 3,208 | 700 |
+| After, paused | 226 | 263 | 860 |
+| Before, 1× | 3,124 | 3,521 | 713 |
+| After, 1× | 226 | 391 | 873 |
+| After, paused, zoomed in to 20 | 469 | 509 | 386 |
+
+Checked by eye at 10, 28 and 60 units: near rows show the container model,
+far rows plain boxes in the same liveries, with no visible jump.
