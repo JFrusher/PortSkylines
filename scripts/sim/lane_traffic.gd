@@ -62,6 +62,11 @@ static func from_dict(d: Dictionary, lanes: LaneGraph) -> LaneTraffic:
 	return traffic
 
 
+## The cells vehicle `id` holds.
+func held_by(id: int) -> Array:
+	return _held.get(id, [])
+
+
 func holder(cell: Vector2i) -> int:
 	return _holders.get(cell, 0)
 

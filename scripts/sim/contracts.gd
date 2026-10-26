@@ -118,6 +118,24 @@ func due(tick_of_week: int) -> Array[Dictionary]:
 	return found
 
 
+## What one call of `service` earns on average, from move prices and the box mix.
+func call_value(service: Dictionary) -> int:
+	var price: Dictionary = rules.move_price
+	var per_move: float = price.per_20ft * lerpf(1.0, price.forty_factor, rules.box_mix.forty_share) + price.reefer_premium * rules.box_mix.reefer_share
+	return roundi(service.moves * per_move)
+
+
+## The agreed services, other than `service`, whose weekly window overlaps its own.
+func overlaps(service: Dictionary) -> Array[Dictionary]:
+	var found: Array[Dictionary] = []
+	for other in services:
+		var ahead := fposmod(other.start - service.start, MINUTES_PER_WEEK)
+		var behind := fposmod(service.start - other.start, MINUTES_PER_WEEK)
+		if other.id != service.id and (ahead < service.window_hours * 60.0 or behind < other.window_hours * 60.0):
+			found.append(other)
+	return found
+
+
 ## Scores a finished call for its line, plus `other` (such as shippers'
 ## view of storage fees). Returns an event to show, or "".
 func called(line: String, late_hours: float, moves_per_hour: float, turn_minutes: float, other := 0.0) -> String:

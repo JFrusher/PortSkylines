@@ -51,12 +51,6 @@ static func rows_for(group: String, sim: PortSim) -> Array[Dictionary]:
 	return []
 
 
-## The headline figure a group's tab shows in the toolbar.
-static func headline(group: String, sim: PortSim) -> String:
-	var cards := cards_for(group, sim)
-	return cards[0].value if not cards.is_empty() else ""
-
-
 static func card(label: String, value: String, state := "") -> Dictionary:
 	return {"label": label, "value": value, "state": state}
 

@@ -34,6 +34,7 @@ func _initialize() -> void:
 	_test_reputation_cancels_and_recovers()
 	_test_storage_is_charged_per_day()
 	_test_a_call_earns_its_moves()
+	_test_service_windows_overlap_across_the_week()
 	_test_loans_are_paid_back_with_interest()
 	_test_bailout_fires_once()
 	_test_saved_reputation_meets_a_new_line()
@@ -150,6 +151,7 @@ func _test_outreach() -> void:
 	_run(sim, FIRST_SHIP + 30)
 	_expect(sim.ships.size() == 1 and sim.ships[0].boxes == rules.ship_classes.panamax.import_moves, true, "a panamax gets no moves from cranes that are too short")
 	_expect(sim.last_event().contains("reaches 13 rows"), true, "the status says why (%s)" % sim.last_event())
+	_expect(sim.events[-1].get("at"), sim.areas.list[1].start, "and links to the ship's apron")
 
 
 ## One machine per bay against one per two bays, with lifts slow enough that
@@ -247,7 +249,7 @@ func _test_upkeep_at_midnight() -> void:
 	var before := sim.money
 	sim.tick()
 	_expect([before - sim.money, -sim.ledger.days[-1].lines.upkeep], [upkeep, upkeep], "upkeep is charged exactly at midnight")
-	_expect(sim.last_event().begins_with("Day 1: upkeep"), true, "and reported (%s)" % sim.last_event())
+	_expect(sim.last_event().begins_with("Upkeep"), true, "and reported (%s)" % sim.last_event())
 
 
 func _test_events_do_not_repeat() -> void:
@@ -387,6 +389,19 @@ func _test_a_call_earns_its_moves() -> void:
 		if ship == null and not sim.ships.is_empty():
 			ship = sim.ships[0]
 	_expect(sim.ledger.today.moves, ship.moves * roundi(rules.move_price.per_20ft * 1.8), "%d moves at $180" % ship.moves)
+	var service: Dictionary = sim.contracts.services[0]
+	_expect(sim.contracts.call_value(service), service.moves * 180, "a call is worth its moves at $180")
+
+
+## A Sunday 22:00 call with a 12 h window runs to Monday 10:00.
+func _test_service_windows_overlap_across_the_week() -> void:
+	var contracts := Contracts.new(RandomPort.quick())
+	var sunday := {"id": 1, "start": 6 * 1440 + 22 * 60, "window_hours": 12.0}
+	contracts.services.assign([sunday])
+	_expect(contracts.overlaps({"id": 2, "start": 8 * 60, "window_hours": 4.0}), [sunday], "Monday 08:00 overlaps it")
+	_expect(contracts.overlaps({"id": 3, "start": 10 * 60, "window_hours": 4.0}), [], "Monday 10:00 does not")
+	_expect(contracts.overlaps({"id": 4, "start": 6 * 1440 + 20 * 60, "window_hours": 3.0}), [sunday], "Sunday 20:00 for 3 h runs into it")
+	_expect(contracts.overlaps(sunday), [], "a service does not overlap itself")
 
 
 func _test_loans_are_paid_back_with_interest() -> void:
@@ -579,9 +594,11 @@ func _test_inspect_each_entity() -> void:
 	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
 	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
 	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
-	_expect(Inspect.describe(sim, {"area": 3}).slice(0, 3), ["Yard block", "Terminal 1", "Import block, reach stacker"] as Array[String], "a yard block shows its rules")
+	_expect(Inspect.describe(sim, {"area": 3}).slice(0, 3), ["Yard block", "Terminal 1", "Import block, worked by reach stackers"] as Array[String], "a yard block shows its rules")
 	sim.vehicles.erase(vehicle)
-	_expect(Inspect.describe(sim, vehicle), [] as Array[String], "a vehicle that left shows nothing")
+	# Held in a typed array, as the HUD holds it: an untyped [] fails there.
+	var shown: Array[String] = Inspect.describe(sim, vehicle)
+	_expect(shown, [] as Array[String], "a vehicle that left shows nothing")
 
 
 ## Bulldozing areas in use, as in Cities: Skylines: an apron's ship sails and

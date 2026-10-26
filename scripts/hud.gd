@@ -11,12 +11,11 @@ signal load_pressed
 signal command_issued(command: Dictionary)
 ## shortcut: two buttons stand in for the new-game screen until M12 builds it.
 signal new_game_pressed(creative: bool)
+## A recent event was clicked: the camera goes to grid cell `cell`.
+signal event_picked(cell: Vector2i)
 
 const BULLDOZE := -1
 const CRANE := -2
-const EXPORT_YARD := -3
-const IMPORT_YARD := -4
-const RTG := -5
 const BUY_LAND := -6
 const INSPECT := -7
 ## Draws a road of road_type on the 4 m grid by dragging.
@@ -50,8 +49,12 @@ var _milestone := Label.new()
 var _milestone_bar := ProgressBar.new()
 var _kpi_cards: Array[Dictionary] = []
 var _clock := Label.new()
-var _message := Label.new()
+## The latest event, or a flash; pressing it lists the recent ones.
+var _message := Button.new()
 var _events: PanelContainer
+var _event_list := VBoxContainer.new()
+## The sim, last event and count the event list was last built for.
+var _events_drawn := []
 var _ledger := Label.new()
 var _borrow := HBoxContainer.new()
 ## Controls shown only once a milestone unlocks them: name -> controls.
@@ -68,7 +71,7 @@ var _inspected: Variant
 var _inspect_name := Label.new()
 var _inspect_lines := Label.new()
 ## Buttons for the inspected area's terminal, and what they were last built for.
-var _inspect_actions := HBoxContainer.new()
+var _inspect_actions := HFlowContainer.new()
 var _actions_drawn := []
 var _guide_step := Label.new()
 var _guide_text := Label.new()
@@ -80,6 +83,18 @@ var _drawer_cards_container: HBoxContainer
 var _drawer_rows_container: VBoxContainer
 var _drawer_extra_container: VBoxContainer
 var _active_drawer_group := ""
+## The open drawer's map colours, from WorldView.INFO_LEGENDS.
+var _legend := HBoxContainer.new()
+## The bottom column (build menu and toolbar), and the left column's
+## scrolling panel bodies, fitted between the stats and the build menu.
+var _bottom: Control
+var _left_scrolls: Array[ScrollContainer] = []
+## The one confirmation dialog, reused for every question.
+var _confirm := ConfirmationDialog.new()
+## The pause menu (Esc), the speed buttons, and the speed to go back to.
+var _menu: PanelContainer
+var _speed_buttons: Array[Button] = []
+var _speed_before_menu := 1
 
 
 func _ready() -> void:
@@ -103,7 +118,15 @@ func _ready() -> void:
 	stats.add_child(kpi_row)
 	_build_kpi_cards(kpi_row)
 
-	_panel(left).add_child(_message)
+	var ticker := _panel(left)
+	_message.theme_type_variation = "EventLink"
+	_message.toggle_mode = true
+	_message.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_message.tooltip_text = "Show or hide recent events"
+	_message.toggled.connect(func(on: bool) -> void: _event_list.visible = on)
+	ticker.add_child(_message)
+	_event_list.visible = false
+	ticker.add_child(_event_list)
 	_events = _panel_of(_message)
 
 	# The Details Drawer: shows detailed metrics for whichever figure group is open.
@@ -127,22 +150,39 @@ func _ready() -> void:
 	speeds_row.add_child(_clock)
 	var speeds := ButtonGroup.new()
 	for s: int in SPEEDS:
-		_button(speeds_row, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s)
+		_speed_buttons.append(_button(speeds_row, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s))
+	var menu_button := Button.new()
+	menu_button.text = "Menu"
+	menu_button.tooltip_text = "Save, load, new game and settings (Esc)"
+	menu_button.pressed.connect(_toggle_menu)
+	speeds_row.add_child(menu_button)
 
-	var menu := _row(time)
-	var ledger_btn := _action_button(menu, "Ledger", {})
-	ledger_btn.pressed.disconnect(ledger_btn.pressed.get_connections()[0].callable)
-	ledger_btn.pressed.connect(func() -> void: _toggle_drawer(HudDetails.GROUP_FINANCE))
-	_gate("ledger", ledger_btn)
-
-	_gate("contracts", _toggle(menu, "Contracts", _panel_of(contracts_panel)))
-	_action(menu, "Save", save_pressed)
-	_action(menu, "Load", load_pressed)
+	# The pause menu: the game's file and settings actions, as CS's Esc menu.
+	var middle := _corner(Control.PRESET_CENTER)
+	var menu := _panel(middle, "Menu")
+	_menu = _panel_of(menu)
+	_menu.visible = false
+	_menu.visibility_changed.connect(func() -> void:
+		if not _menu.visible:
+			_set_speed(_speed_before_menu))
+	var resume := Button.new()
+	resume.text = "Resume"
+	resume.pressed.connect(func() -> void: _menu.visible = false)
+	menu.add_child(resume)
+	var save := Button.new()
+	save.text = "Save"
+	save.pressed.connect(func() -> void:
+		save_pressed.emit()
+		_menu.visible = false)
+	menu.add_child(save)
+	add_child(_confirm)
+	_ask(menu, "Load", "Load the saved game? The port you're playing is lost unless it is saved.", func() -> void:
+		_menu.visible = false
+		load_pressed.emit())
 	for creative: bool in [false, true]:
-		var button := Button.new()
-		button.text = "New creative" if creative else "New game"
-		button.pressed.connect(func() -> void: new_game_pressed.emit(creative))
-		menu.add_child(button)
+		_ask(menu, "New creative game" if creative else "New game", "Start a new %s? The port you're playing is lost unless it is saved." % ("creative game" if creative else "game"), func() -> void:
+			_menu.visible = false
+			new_game_pressed.emit(creative))
 
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)
@@ -164,6 +204,7 @@ func _ready() -> void:
 
 	# Bottom centre: unified toolbar containing build menu categories and figure groups.
 	var bottom := _corner(Control.PRESET_CENTER_BOTTOM)
+	_bottom = bottom
 	var items := _panel(bottom)
 	var tools := ButtonGroup.new()
 	var rows := {}
@@ -193,7 +234,7 @@ func _ready() -> void:
 			if first:
 				first.button_pressed = true)
 		open.theme_type_variation = "CategoryButton"
-		open.custom_minimum_size = Vector2(80, 48)
+		open.custom_minimum_size = Vector2(72, 48)
 		_category_buttons.append(open)
 
 	# Group 2: Figure / Info-Views Group
@@ -204,44 +245,54 @@ func _ready() -> void:
 	fig_row.add_theme_constant_override("separation", 4)
 	figures_group.add_child(fig_row)
 
+	# Names only: the numbers live in the info bar and in each panel.
 	for group_name: String in HudDetails.GROUPS:
 		var fig_btn := Button.new()
 		fig_btn.theme_type_variation = "CategoryButton"
-		fig_btn.custom_minimum_size = Vector2(88, 48)
+		fig_btn.custom_minimum_size = Vector2(72, 48)
 		fig_btn.toggle_mode = true
-		fig_btn.text = "%s\n..." % group_name
+		fig_btn.text = group_name
 		fig_btn.pressed.connect(func() -> void: _toggle_drawer(group_name))
 		fig_row.add_child(fig_btn)
 		_figure_buttons[group_name] = fig_btn
+	var contracts_button := _toggle(fig_row, "Contracts", _panel_of(contracts_panel))
+	contracts_button.theme_type_variation = "CategoryButton"
+	contracts_button.custom_minimum_size = Vector2(72, 48)
+	contracts_button.toggled.connect(func(on: bool) -> void:
+		if on:
+			_show_only(_panel_of(contracts_panel)))
+	_gate("contracts", contracts_button)
 
 	# Build tool item buttons
 	for key: String in sim.rules.road_types:
 		var road: Dictionary = sim.rules.road_types[key]
 		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
-			road_type = key))
+			road_type = key)).tooltip_text = _road_tip(road)
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
+		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
+		if area.kind == "depot":
+			continue
 		var detail := "%d lanes, $%d a cell" % [area.depth - 2, area.cost_per_cell] if area.kind == "gate" else "$%d per 4 m cell" % area.cost_per_cell
 		_item(_button(rows[AREA_ROWS[area.kind]], "%s\n%s" % [area.name, detail], tools, false, func() -> void:
 			tool = DRAW_AREA
 			area_type = key
-			two_way = false))
+			two_way = false)).tooltip_text = _area_tip(area, false)
 		if area.kind == "gate":
 			_item(_button(rows.Gate, "Two-way %s\n%d lanes each way" % [area.name.to_lower(), area.depth - 2], tools, false, func() -> void:
 				tool = DRAW_AREA
 				area_type = key
-				two_way = true))
-	_gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n$%d" % sim.rules.channel.cost_per_metre, {"op": "dredge", "metres": 1})))
-	_item(_button(rows.Cranes, "STS crane\n" + HudDetails.dollars(sim.rules.sts_crane.cost), tools, false, func() -> void: tool = CRANE))
-	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2}))
-	_item(_button(rows.Yard, "Import\nblock", tools, false, func() -> void: tool = IMPORT_YARD))
-	_item(_button(rows.Yard, "Export\nblock", tools, false, func() -> void: tool = EXPORT_YARD))
-	_gate("rtg", _item(_button(rows.Yard, "RTG\nfor a block", tools, false, func() -> void: tool = RTG)))
+				two_way = true)).tooltip_text = _area_tip(area, true)
+	var dredge := _gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n" + HudDetails.dollars(sim.rules.channel.cost_per_metre), {"op": "dredge", "metres": 1})))
+	dredge.tooltip_text = "Deepens the channel 1 m, so ships with a deeper draft can call.\n%s a metre, then %s a metre every %d days to keep it." % [HudDetails.dollars(sim.rules.channel.cost_per_metre), HudDetails.dollars(sim.rules.channel.maintenance_per_metre), sim.rules.channel.maintenance_days]
+	var crane: Dictionary = sim.rules.sts_crane
+	_item(_button(rows.Cranes, "STS crane\n" + HudDetails.dollars(crane.cost), tools, false, func() -> void: tool = CRANE)).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day, arrives %d day after ordering." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane, crane.lead_days]
+	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
-	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND))
-	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE))
-	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT))
+	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road or area to remove it. Boxes stored in an area are lost."
+	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
 
 
@@ -286,6 +337,8 @@ func _build_drawer(left: Control) -> void:
 			for g: String in _figure_buttons:
 				(_figure_buttons[g] as Button).set_pressed_no_signal(false))
 
+	_legend.add_theme_constant_override("separation", 6)
+	drawer.add_child(_legend)
 	_drawer_cards_container = HBoxContainer.new()
 	_drawer_cards_container.add_theme_constant_override("separation", 6)
 	drawer.add_child(_drawer_cards_container)
@@ -316,12 +369,18 @@ func _toggle_drawer(group_name: String) -> void:
 		_close_drawer()
 		return
 	_active_drawer_group = group_name
+	_show_only(_drawer_panel)
 	if _drawer_title_label:
 		_drawer_title_label.text = "%s Details" % group_name
 	_drawer_panel.visible = true
 	for g: String in _figure_buttons:
 		(_figure_buttons[g] as Button).set_pressed_no_signal(g == group_name)
 	_fill_drawer(group_name)
+
+
+## The info view the map should draw: the open drawer's group, or "".
+func info_view() -> String:
+	return _active_drawer_group if _drawer_panel.visible else ""
 
 
 func _close_drawer() -> void:
@@ -332,6 +391,18 @@ func _close_drawer() -> void:
 
 
 func _fill_drawer(group_name: String) -> void:
+	for child in _legend.get_children():
+		child.queue_free()
+	_legend.visible = group_name in WorldView.INFO_LEGENDS
+	for entry: Array in WorldView.INFO_LEGENDS.get(group_name, []):
+		var swatch := ColorRect.new()
+		swatch.color = entry[1]
+		swatch.custom_minimum_size = Vector2(12, 12)
+		swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		_legend.add_child(swatch)
+		var label := _label(entry[0] + "  ")
+		label.theme_type_variation = "MutedLabel"
+		_legend.add_child(label)
 	# Populate cards
 	for child in _drawer_cards_container.get_children():
 		child.queue_free()
@@ -392,8 +463,11 @@ func _card_style(state: String) -> String:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
+	if key.pressed and not key.echo and key.keycode == KEY_ESCAPE:
+		_toggle_menu()
+		return
 	var i := key.keycode - KEY_1
-	if key.pressed and not key.echo and i >= 0 and i < _category_buttons.size() and _category_buttons[i].visible:
+	if key.pressed and not key.echo and i >= 0 and i < _category_buttons.size() and not _category_buttons[i].disabled:
 		_category_buttons[i].button_pressed = true
 
 
@@ -405,7 +479,7 @@ func _set_ui_scale(factor: float, button: Button) -> void:
 ## Opens the inspect panel on whatever is at grid cell `cell`.
 func inspect(cell: Vector2i) -> void:
 	_inspected = Inspect.pick(sim, cell)
-	_panel_of(_inspect_name).visible = true
+	_show_only(_panel_of(_inspect_name))
 
 
 ## Shows a short-lived message, such as why a build was refused.
@@ -421,13 +495,20 @@ func _process(dt: float) -> void:
 	var minute := sim.clock.calendar_minutes()
 	_clock.text = "%s  Day %d  %02d:%02d" % [WEEKDAYS[sim.clock.game_day() % 7], sim.clock.game_day(), sim.clock.game_hour(), int(minute) % 60]
 
+	# Locked controls show greyed, their tooltip naming the milestone.
 	for name: String in _gated:
+		var locked := sim.lock_error(name)
 		for control: Control in _gated[name]:
-			if is_instance_valid(control):
-				control.visible = sim.unlocked(name)
+			if not is_instance_valid(control):
+				continue
+			if not control.has_meta("tip"):
+				control.set_meta("tip", control.tooltip_text)
+			(control as BaseButton).disabled = locked != ""
+			control.tooltip_text = locked if locked else control.get_meta("tip")
 
 	_events.visible = _message.text != ""
 	_show_guide()
+	_fit_left_panels()
 
 	if _inspect_name.is_visible_in_tree():
 		var lines := Inspect.describe(sim, _inspected)
@@ -439,21 +520,48 @@ func _process(dt: float) -> void:
 		if _actions_drawn != [sim, sim.areas.version, _inspected]:
 			_draw_inspect_actions()
 
-	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage]:
+	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim)]:
 		_draw_contracts()
 
-	# Throttled refresh of figure headlines and open drawer contents
+	# Throttled refresh of the info bar and the open drawer
 	_refresh_left -= dt
 	if _refresh_left <= 0.0:
 		_refresh_left = REFRESH_SECONDS
 		_update_kpis()
-		_update_figure_buttons()
 		if _drawer_panel.visible and _active_drawer_group != "":
 			_refresh_drawer()
 
 	_flash_left -= dt
 	if _flash_left <= 0.0:
-		_message.text = "\n".join(sim.events.slice(-5).map(func(e: Dictionary) -> String: return "Day %d %02d:%02d  %s" % [int(e.minute / 1440), int(e.minute / 60) % 24, int(e.minute) % 60, e.text]))
+		_message.text = "Recent events" if _event_list.visible else _stamp(sim.events[-1]) if not sim.events.is_empty() else ""
+	if _event_list.visible and _events_drawn != [sim, sim.last_event(), sim.events.size()]:
+		_draw_events()
+
+
+## "Day 2 20:04  text" for a sim event.
+static func _stamp(event: Dictionary) -> String:
+	return "Day %d %02d:%02d  %s" % [int(event.minute / 1440), int(event.minute / 60) % 24, int(event.minute) % 60, event.text]
+
+
+## The last ten events, newest first; one that happened somewhere is a link there.
+func _draw_events() -> void:
+	_events_drawn = [sim, sim.last_event(), sim.events.size()]
+	for child in _event_list.get_children():
+		child.queue_free()
+	for event: Dictionary in sim.events.slice(-10):
+		if event.has("at"):
+			var link := Button.new()
+			link.text = _stamp(event) + "  ›"
+			link.theme_type_variation = "EventLink"
+			link.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			link.tooltip_text = "Go there"
+			link.pressed.connect(func() -> void:
+				_message.button_pressed = false
+				event_picked.emit(event.at))
+			_event_list.add_child(link)
+		else:
+			_event_list.add_child(_label(_stamp(event)))
+		_event_list.move_child(_event_list.get_child(-1), 0)
 
 
 func _update_kpis() -> void:
@@ -466,13 +574,6 @@ func _update_kpis() -> void:
 		if item.state != state:
 			item.state = state
 			(item.panel as PanelContainer).theme_type_variation = _card_style(state)
-
-
-func _update_figure_buttons() -> void:
-	for group_name: String in _figure_buttons:
-		var btn: Button = _figure_buttons[group_name]
-		var hl := HudDetails.headline(group_name, sim)
-		btn.text = "%s\n%s" % [group_name, hl]
 
 
 func _refresh_drawer() -> void:
@@ -500,6 +601,82 @@ func _refresh_drawer() -> void:
 
 	if _active_drawer_group == HudDetails.GROUP_FINANCE:
 		_ledger.text = HudDetails.ledger_text(sim)
+
+
+## Opens the pause menu, pausing the game, or closes it and resumes.
+func _toggle_menu() -> void:
+	if _menu.visible:
+		_menu.visible = false
+		return
+	_speed_before_menu = speed
+	_set_speed(0)
+	_menu.visible = true
+
+
+func _set_speed(value: int) -> void:
+	_speed_buttons[SPEEDS.find(value)].button_pressed = true
+
+
+## Shows `panel`, one of the left column's titled panels, and hides the
+## others, so one detail panel is open at a time, as in Cities: Skylines.
+func _show_only(panel: PanelContainer) -> void:
+	for scroll in _left_scrolls:
+		_panel_of(scroll).visible = _panel_of(scroll) == panel
+
+
+## Gives each open left-column panel the height left above the build menu,
+## scrolling what doesn't fit.
+func _fit_left_panels() -> void:
+	for scroll in _left_scrolls:
+		var panel := _panel_of(scroll)
+		if not panel.visible:
+			continue
+		# Down to the first bottom panel beside it, so a narrow build-item row
+		# to its right doesn't cut it short.
+		var limit := get_viewport().get_visible_rect().size.y
+		var across := panel.get_global_rect()
+		for below: Control in _bottom.get_children():
+			var rect := below.get_global_rect()
+			if below.visible and rect.position.x < across.end.x and rect.end.x > across.position.x:
+				limit = minf(limit, rect.position.y)
+		var wanted := (scroll.get_child(0) as Control).get_combined_minimum_size().y
+		var room := limit - 12 - scroll.get_global_rect().position.y - 16
+		scroll.custom_minimum_size.y = clampf(room, 48.0, wanted)
+
+
+## A button in `row` that asks `question` and calls `then` if confirmed.
+func _ask(row: Container, text: String, question: String, then: Callable) -> void:
+	var button := Button.new()
+	button.text = text
+	button.pressed.connect(func() -> void:
+		_confirm.title = text
+		_confirm.dialog_text = question
+		_confirm.ok_button_text = text
+		for c: Dictionary in _confirm.confirmed.get_connections():
+			_confirm.confirmed.disconnect(c.callable)
+		_confirm.confirmed.connect(then, CONNECT_ONE_SHOT)
+		_confirm.popup_centered())
+	row.add_child(button)
+
+
+## A road type's tooltip: lanes, who may use it, cost and upkeep.
+func _road_tip(road: Dictionary) -> String:
+	var lanes := "%d lanes one way" % road.forward if road.backward == 0 else "%d lane%s each way" % [road.forward, "" if road.forward == 1 else "s"]
+	var who := "Lorries and tractors" if road.lorries else "Tractors only, no lorries"
+	return "%s. %s.\n$%d per 4 m, upkeep $%.2f per 4 m a day." % [lanes, who, road.cost_per_cell, road.upkeep_per_cell]
+
+
+## An area type's tooltip: what it does, its size, cost and upkeep.
+func _area_tip(area: Dictionary, both_sides: bool) -> String:
+	var what: String = {
+		"yard_block": "Stores boxes in stacks behind a truck lane where vehicles hand them over",
+		"quay_apron": "Where ships berth and STS cranes work. Reaches the water from a road %d–%d m in" % [Grid.metres(area.depth + 1), Grid.metres(area.max_depth + 1)],
+		"gate": "Checks lorries in and out: %d lanes, each a booth" % (area.depth - 2),
+	}[area.kind]
+	if both_sides:
+		what += ", built on both sides of the road so lorries check in and out without turning round"
+	var deep := "%d m deep" % Grid.metres(area.depth) if area.max_depth == area.depth else "%d–%d m deep" % [Grid.metres(area.depth), Grid.metres(area.max_depth)]
+	return "%s.\n%s, at least %d m long. $%d per 4 m cell, upkeep $%.2f per cell a day." % [what, deep, Grid.metres(area.min_length), area.cost_per_cell, area.upkeep_per_cell]
 
 
 func _gate(name: String, control: Control) -> Control:
@@ -534,7 +711,7 @@ func _show_milestone() -> void:
 
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 func _draw_contracts() -> void:
-	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate()]
+	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim)]
 	for child in _contracts.get_children():
 		child.queue_free()
 	var contracts := sim.contracts
@@ -553,22 +730,58 @@ func _draw_contracts() -> void:
 		var new_fee: int = fee + change[2]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_storage", "free_days": free_days, "fee": new_fee}))
 		terms.add_child(button)
-	_contracts.add_child(_label("Offers" if not contracts.offers.is_empty() else "No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
-	for offer in contracts.offers:
-		var row := _row(_contracts)
-		row.add_child(_label("    " + _service_text(offer) + "   offer ends day %d" % int(offer.expires / SimClock.MINUTES_PER_DAY)))
-		var id: int = offer.id
-		var accept := Button.new()
-		accept.text = "Accept"
-		accept.pressed.connect(func() -> void: command_issued.emit({"op": "accept_offer", "id": id}))
-		row.add_child(accept)
-		var decline := Button.new()
-		decline.text = "Decline"
-		decline.pressed.connect(func() -> void: command_issued.emit({"op": "decline_offer", "id": id}))
-		row.add_child(decline)
-	_contracts.add_child(_label("Services" if not contracts.services.is_empty() else "No services yet"))
-	for service in contracts.services:
-		_contracts.add_child(_label("    " + _service_text(service)))
+	if contracts.offers.is_empty() and contracts.services.is_empty():
+		_contracts.add_child(_label("No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
+		return
+	_contracts.add_child(_week(contracts))
+	var table := GridContainer.new()
+	table.columns = 8
+	table.add_theme_constant_override("h_separation", 16)
+	_contracts.add_child(table)
+	for heading: String in ["Line", "Ship", "Calls", "Window", "Moves", "Value", "Clash", ""]:
+		var label := _label(heading)
+		label.theme_type_variation = "CategoryHeader"
+		table.add_child(label)
+	var berths := AreaFlow.offer_berths(sim)
+	for service: Dictionary in contracts.offers + contracts.services:
+		var start: int = service.start
+		var overlaps := contracts.overlaps(service)
+		var clash := "with %s" % ", ".join(overlaps.map(func(o: Dictionary) -> String: return contracts.name_of(o.line))) if overlaps.size() >= berths and not overlaps.is_empty() else "none"
+		for cell: String in [contracts.name_of(service.line), service.kind, "%s %02d:%02d" % [WEEKDAYS[start / SimClock.MINUTES_PER_DAY], start / 60 % 24, start % 60], "%d h" % roundi(service.window_hours), str(service.moves), HudDetails.dollars(contracts.call_value(service)), clash]:
+			table.add_child(_label(cell))
+		var status := HBoxContainer.new()
+		table.add_child(status)
+		if service not in contracts.offers:
+			status.add_child(_label("agreed"))
+			continue
+		var id: int = service.id
+		status.add_child(_label("ends day %d" % int(service.expires / SimClock.MINUTES_PER_DAY)))
+		_action_button(status, "Accept", {"op": "accept_offer", "id": id})
+		_action_button(status, "Decline", {"op": "decline_offer", "id": id})
+
+
+## The week, Monday to Sunday by the hour: agreed windows solid, offers outlined.
+func _week(contracts: Contracts) -> Control:
+	var week := Control.new()
+	week.custom_minimum_size = Vector2(560, 7 * 16)
+	week.draw.connect(func() -> void:
+		var hour := (week.size.x - 40) / 24.0
+		for day in 7:
+			week.draw_string(week.get_theme_default_font(), Vector2(0, day * 16 + 12), WEEKDAYS[day], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.58, 0.639, 0.722))
+			week.draw_rect(Rect2(40, day * 16 + 2, 24 * hour, 12), Color(1, 1, 1, 0.05))
+		for service: Dictionary in contracts.offers + contracts.services:
+			var offered := service in contracts.offers
+			var minute: int = service.start
+			var left := roundi(service.window_hours * 60.0)
+			while left > 0:
+				var day := minute / SimClock.MINUTES_PER_DAY % 7
+				var into := minute % SimClock.MINUTES_PER_DAY
+				var span := mini(left, SimClock.MINUTES_PER_DAY - into)
+				var bar := Rect2(40 + into / 60.0 * hour, day * 16 + 2, span / 60.0 * hour, 12)
+				week.draw_rect(bar, Color(0.369, 0.643, 1) if offered else Color(0, 0.439, 0.867), not offered, 1.5 if offered else -1.0)
+				minute += span
+				left -= span)
+	return week
 
 
 ## For an inspected area: join each other terminal, or split off into a new one.
@@ -585,15 +798,20 @@ func _draw_inspect_actions() -> void:
 			_action_button(_inspect_actions, "Join %s" % sim.areas.terminals[terminal].name, {"op": "set_terminal", "id": id, "terminal": terminal})
 	if sim.areas.list.values().filter(func(a: Dictionary) -> bool: return a.terminal == own).size() > 1:
 		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
+	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
+		var settings: Dictionary = sim.areas.list[id].settings
+		for role: String in ["import", "export"]:
+			if role != settings.role:
+				_action_button(_inspect_actions, "Make %s block" % role, {"op": "set_area", "id": id, "settings": {"role": role}})
+		for gear: String in sim.rules.yard_gear:
+			if gear != settings.gear:
+				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
+				button.disabled = sim.lock_error(gear) != ""
+				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
 				_action_button(_inspect_actions, "Make %s" % sim.rules.gate_levels[level].name, {"op": "set_area", "id": id, "settings": {"level": level}})
-
-
-func _service_text(service: Dictionary) -> String:
-	var start: int = service.start
-	return "%s: %s every %s %02d:%02d, %d h window, %d moves" % [sim.contracts.name_of(service.line), service.kind, WEEKDAYS[start / SimClock.MINUTES_PER_DAY], start / 60 % 24, start % 60, roundi(service.window_hours), service.moves]
 
 
 func _label(text: String) -> Label:
@@ -608,8 +826,8 @@ func _corner(preset: Control.LayoutPreset) -> VBoxContainer:
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(column)
 	column.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, 12)
-	column.grow_horizontal = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BOTH}[preset]
-	column.grow_vertical = Control.GROW_DIRECTION_BEGIN if preset == Control.PRESET_CENTER_BOTTOM else Control.GROW_DIRECTION_END
+	column.grow_horizontal = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH}[preset]
+	column.grow_vertical = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_END, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH}[preset]
 	return column
 
 
@@ -644,7 +862,16 @@ func _panel(parent: Control, title := "") -> VBoxContainer:
 	body.theme_type_variation = "PanelBody"
 	column.add_child(body)
 	var inner := VBoxContainer.new()
-	body.add_child(inner)
+	if parent.grow_horizontal != Control.GROW_DIRECTION_END:
+		body.add_child(inner)
+		return inner
+	# Left-column panels scroll inside the room above the build menu.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(scroll)
+	inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(inner)
+	_left_scrolls.append(scroll)
 	return inner
 
 
@@ -696,7 +923,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 
 
 ## A plain button that issues `command` on each press.
-func _action_button(row: HBoxContainer, text: String, command: Dictionary) -> Button:
+func _action_button(row: Container, text: String, command: Dictionary) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.pressed.connect(func() -> void: command_issued.emit(command))

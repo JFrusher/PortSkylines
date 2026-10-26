@@ -40,6 +40,7 @@ func _ready() -> void:
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
 	hud.new_game_pressed.connect(func(creative: bool) -> void: _use(PortSim.new(randi(), Content.base(), creative)))
+	hud.event_picked.connect(_go_to)
 	add_child(hud)
 
 
@@ -86,6 +87,7 @@ func _process(dt: float) -> void:
 		print_debug("Dropped %.2f s of sim time after a slow frame" % left)
 	_accumulated = minf(left, SimClock.TICK_SECONDS)
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
+	view.info_view = hud.info_view()
 	_follow(dt)
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would snap on.
@@ -151,8 +153,20 @@ func _follow(dt: float) -> void:
 		_following = 0
 		hud.flash("The box has left the port")
 		return
+	rig.position = rig.position.lerp(_over(at), minf(1.0, dt * 4.0))
+
+
+## Moves the camera over grid cell `cell` and inspects what is there.
+func _go_to(cell: Vector2i) -> void:
+	_following = 0
+	rig.position = _over(cell)
+	hud.inspect(cell)
+
+
+## The camera rig position over the middle of grid cell `at`.
+func _over(at: Vector2) -> Vector3:
 	var world := (at + Vector2(0.5, 0.5)) * Grid.CELL / WorldView.METRES_PER_UNIT
-	rig.position = rig.position.lerp(Vector3(world.x, 0, world.y), minf(1.0, dt * 4.0))
+	return Vector3(world.x, 0, world.y)
 
 
 ## Gives the selected tool's order for grid cell `cell`. Refusals are only
@@ -179,24 +193,13 @@ func _command(cell: Vector2i) -> Dictionary:
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return {"op": "place_sts", "apron": apron, "along": sim.areas.along(apron, cell) if apron else 0}
-		Hud.BUY_LAND:
-			return {"op": "buy_land", "tile": sim.land_tile(cell)}
-	return {"op": "set_area", "id": sim.areas.area_at(cell), "settings": _yard_settings()}
+	return {"op": "buy_land", "tile": sim.land_tile(cell)}
 
 
 ## The quay apron covering grid cell `cell`, or 0.
 func _apron_at(cell: Vector2i) -> int:
 	var area := sim.areas.area_at(cell)
 	return area if area and sim.areas.list[area].type == "quay_apron" else 0
-
-
-func _yard_settings() -> Dictionary:
-	match hud.tool:
-		Hud.IMPORT_YARD:
-			return {"role": "import"}
-		Hud.EXPORT_YARD:
-			return {"role": "export"}
-	return {"gear": "rtg"}
 
 
 func _order_error(cell: Vector2i) -> String:
@@ -217,9 +220,7 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, sim.areas.along(apron, cell) if apron else 0)
-		Hud.BUY_LAND:
-			return sim.buy_land_error(sim.land_tile(cell))
-	return sim.set_area_error(sim.areas.area_at(cell), _yard_settings())
+	return sim.buy_land_error(sim.land_tile(cell))
 
 
 ## The 4 m grid cell under the mouse, or NONE.
