@@ -2,3 +2,4 @@
 build/
 bench/endgame.bin
 docs/**/*.png.import
+*.uid
