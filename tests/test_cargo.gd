@@ -52,6 +52,8 @@ func _test_demand_grows_with_milestones() -> void:
 	var offers := []
 	for demand: float in [1.0, 2.0]:
 		var contracts := Contracts.new(sim.rules)
+		# One service agreed, so offers come at the ordinary pace, not the first offer's.
+		contracts.services.append({"start": 0})
 		var rng := RandomNumberGenerator.new()
 		rng.seed = 7
 		var made := 0

@@ -60,11 +60,27 @@ static func sts_error(sim: PortSim, apron: int, along: int) -> String:
 	# A crane works over a handover slot, and slots cover whole bays only.
 	if along < 0 or along >= _length(sim, apron) / AreaLayout.BAY * AreaLayout.BAY:
 		return "STS cranes stand on a quay apron's rails"
+	var spots := crane_spots(sim, apron)
+	if not spots.is_empty() and along not in spots:
+		return "Cranes stand at the berth's crane spots"
 	var room := ceili(sim.rules.sts_crane.width / float(Grid.CELL))
 	var near := func(a: int, k: int) -> bool: return a == apron and absi(k - along) < room
 	if sim.cranes.any(func(c: PortSim.Crane) -> bool: return near.call(c.apron, c.along)) or sim.crane_orders.any(func(o: Dictionary) -> bool: return o.has("apron") and near.call(o.apron, o.along)):
 		return "Too close to another crane"
 	return ""
+
+
+## Where cranes stand on apron `apron`, in cells along it: evenly along a
+## berth, by its data; [] for an apron of no berth's length, where they stand anywhere.
+static func crane_spots(sim: PortSim, apron: int) -> Array[int]:
+	var length := _length(sim, apron)
+	var found: Array[int] = []
+	for kind: String in sim.rules.berths:
+		var berth: Dictionary = sim.rules.berths[kind]
+		if berth.length == length:
+			for k: int in berth.crane_spots:
+				found.append(floori((k + 0.5) * length / berth.crane_spots))
+	return found
 
 
 static func _length(sim: PortSim, apron: int) -> int:

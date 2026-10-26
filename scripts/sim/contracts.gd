@@ -35,7 +35,8 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, 
 	var terms: Dictionary = rules.contracts
 	if offers.size() >= terms.max_offers or services.size() + offers.size() >= berths * terms.max_services_per_berth:
 		return {}
-	if rng.randf() >= terms.offer_chance * demand:
+	# A port with no lines yet gets its first offer at the first check.
+	if rng.randf() >= (1.0 if services.is_empty() and offers.is_empty() else terms.offer_chance * demand):
 		return {}
 	var willing: Array = rules.lines.keys().filter(func(line: String) -> bool: return reputation[line] >= rules.reputation.offer_above)
 	if willing.is_empty():

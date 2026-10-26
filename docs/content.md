@@ -16,6 +16,9 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `area_types.<key>.depth` | int | How many 4 m cells the area reaches back from its road edge |
 | `area_types.<key>.min_length` | int | The shortest area, in cells along the road |
 | `area_types.<key>.cost_per_cell`, `.upkeep_per_cell` | int, number | Build cost and daily upkeep per cell of area; upkeep may be a fraction of a dollar |
+| `berths.<key>.name` | text | The berth's name in the Quay menu; its key also locks it by milestone |
+| `berths.<key>.length` | int | The berth's quay apron length in 4 m cells; it reaches from the water to its own road |
+| `berths.<key>.crane_spots` | int | How many STS crane spots sit evenly along it; cranes stand only there |
 | `yard_gear.<key>.speed` | float | A yard machine's travel speed on an area, in m/s |
 | `yard_gear.<key>.lift_seconds`, `.set_down_seconds` | float | Seconds to lift a box and to set one down |
 | `yard_gear.<key>.bays_per_machine` | int | One machine per so many 12 m bays of an area |
