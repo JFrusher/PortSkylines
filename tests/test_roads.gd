@@ -586,12 +586,12 @@ func _test_driveways() -> void:
 
 func _test_apron_berths() -> void:
 	var sim := AreaPort.terminal(60)
-	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane off the apron's rails is refused")
+	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane off the apron's rails is refused")
 	var short := AreaPort.terminal(61)
-	_expect(short.apply({"op": "place_sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane past the last whole bay, with no slot under it, is refused")
-	_expect(sim.apply({"op": "place_sts", "apron": 2, "along": 3}), "STS cranes stand on a quay apron's rails", "a crane on a gate is refused")
-	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 20}), "", "a crane is ordered on the apron")
-	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 24}), "Too close to another crane", "cranes keep their width apart")
+	_expect(short.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 60}), "STS cranes stand on a quay apron's rails", "a crane past the last whole bay, with no slot under it, is refused")
+	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 2, "along": 3}), "STS cranes stand on a quay apron's rails", "a crane on a gate is refused")
+	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 20}), "", "a crane is ordered on the apron")
+	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 24}), "Too close to another crane", "cranes keep their width apart")
 	_expect(sim.cranes.size() == 1 and sim.cranes[0].apron == 1 and sim.cranes[0].along == 20, true, "and stands on the apron's rails at once")
 	_expect(AreaFlow.offer_berths(sim), 1, "an apron with a crane in a ready terminal is a berth lines may offer for")
 	var feeder := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 1, 0)
@@ -610,7 +610,7 @@ func _test_apron_berths() -> void:
 func _test_discharge() -> void:
 	var sim := AreaPort.working_terminal(3)
 	var ship := sim.ships[0]
-	var crane_ticks := ceili(60.0 / (sim.rules.sts_crane.rate * sim.rules.crane_interference) / SimClock.CALENDAR_MINUTES_PER_TICK)
+	var crane_ticks := ceili(60.0 / (sim.rules.sts_cranes.sts.rate * sim.rules.crane_interference) / SimClock.CALENDAR_MINUTES_PER_TICK)
 	var gear: Dictionary = sim.rules.yard_gear.reach_stacker
 	var machine_ticks := ceili((gear.lift_seconds + gear.set_down_seconds) / Machines.SECONDS_PER_TICK)
 	var first := -1

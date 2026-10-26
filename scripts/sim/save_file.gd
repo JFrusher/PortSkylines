@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 15
+const VERSION := 16
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -80,6 +80,8 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v13(data)
 	if data.version == 14:
 		data = _migrate_v14(data)
+	if data.version == 15:
+		data = _migrate_v15(data)
 	return data
 
 
@@ -121,6 +123,15 @@ static func _migrate_v13(data: Dictionary) -> Dictionary:
 static func _migrate_v14(data: Dictionary) -> Dictionary:
 	data.sim.power = {"peak_kw": 0.0, "kwh": 0.0}
 	data.version = 15
+	return data
+
+
+## v16 gives cranes a kind; every crane before it was the standard STS.
+static func _migrate_v15(data: Dictionary) -> Dictionary:
+	for crane: Variant in data.sim.cranes + data.sim.crane_orders:
+		if crane is Dictionary:
+			crane.kind = "sts"
+	data.version = 16
 	return data
 
 
@@ -185,12 +196,12 @@ static func _valid_sim(data: Variant) -> bool:
 		if not (tile is Vector2i and data.land[tile] is bool):
 			return false
 	for order: Variant in data.crane_orders:
-		if not order is Dictionary or not _has_fields(order, {"apron": TYPE_INT, "along": TYPE_INT, "due": TYPE_FLOAT}):
+		if not order is Dictionary or not _has_fields(order, {"apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING, "due": TYPE_FLOAT}) or order.kind not in Content.base().sts_cranes:
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {
-			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT,
-		}) or not (crane.apron in data.areas.list and data.areas.list[crane.apron].type == "quay_apron"):
+			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING,
+		}) or crane.kind not in Content.base().sts_cranes or not (crane.apron in data.areas.list and data.areas.list[crane.apron].type == "quay_apron"):
 			return false
 	if not _valid_area_flow(data):
 		return false

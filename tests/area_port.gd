@@ -36,8 +36,8 @@ static func working_terminal(imports: int, exports := 0, rules := Content.base()
 		_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "the terminal's export block is built")
 		sim.apply({"op": "set_area", "id": 4, "settings": {"role": "export"}})
 		sim.apply({"op": "set_terminal", "id": 4, "terminal": 1})
-	sim.apply({"op": "place_sts", "apron": 1, "along": 20})
-	for i in roundi(sim.rules.sts_crane.lead_days * SimClock.TICKS_PER_DAY):
+	sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 20})
+	for i in roundi(sim.rules.sts_cranes.sts.lead_days * SimClock.TICKS_PER_DAY):
 		sim.tick()
 	sim.apply({"op": "buy_tractors", "count": 4})
 	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], sim.clock.calendar_minutes() + 600.0, imports, exports)
@@ -60,7 +60,7 @@ static func base(rules := RandomPort.quick(), calls := "feeder") -> PortSim:
 	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the import block is built")
 	_built(sim.apply({"op": "set_terminal", "id": 3, "terminal": 1}), "the block joins the terminal")
 	for along: int in [20, 40]:
-		_built(sim.apply({"op": "place_sts", "apron": 1, "along": along}), "a crane is ordered")
+		_built(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": along}), "a crane is ordered")
 	_built(sim.apply({"op": "buy_tractors", "count": 6}), "tractors are bought")
 	sim.creative = false
 	sim.ledger.cash = rules.start_money
@@ -114,7 +114,7 @@ static func chain(seed_value: int) -> PortSim:
 	for id: int in [3, 4]:
 		_built(sim.apply({"op": "set_terminal", "id": id, "terminal": 1}), "the blocks join the terminal")
 	for along: int in [12, 30, 48]:
-		_built(sim.apply({"op": "place_sts", "apron": 1, "along": along}), "a crane is ordered")
+		_built(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": along}), "a crane is ordered")
 	_built(sim.apply({"op": "buy_tractors", "count": 6}), "tractors are bought")
 	return sim
 

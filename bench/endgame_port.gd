@@ -83,7 +83,7 @@ static func build(rules: Dictionary) -> PortSim:
 		_do(sim, {"op": "set_terminal", "id": id, "terminal": sim.areas.list[aprons[0]].terminal})
 	for apron in aprons:
 		for along: int in [10, 35, 60]:
-			_do(sim, {"op": "place_sts", "apron": apron, "along": along})
+			_do(sim, {"op": "place_sts", "kind": "sts", "apron": apron, "along": along})
 	while not sim.crane_orders.is_empty():
 		sim.tick()
 	_do(sim, {"op": "buy_tractors", "count": 4 * sim.cranes.size()})

@@ -6,11 +6,12 @@ extends RefCounted
 
 
 ## A copy of `game_rules` for a port that works at once: cranes stand the
-## moment they are ordered, the channel is M2's 14 m, deep enough for every
-## class, and every milestone is already reached.
+## moment they are ordered, the channel is M2's 14 m, deep enough for
+## feeders and Panamaxes, and every milestone is already reached.
 static func quick(game_rules := Content.base()) -> Dictionary:
 	var copy := game_rules.duplicate(true)
-	copy.sts_crane.lead_days = 0.0
+	for crane: Dictionary in copy.sts_cranes.values():
+		crane.lead_days = 0.0
 	copy.channel.start_depth = 14.0
 	for milestone: Dictionary in copy.milestones.values():
 		milestone.teu = 0
@@ -57,7 +58,7 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	for id: int in [2, 3, 4]:
 		port.append({"op": "set_terminal", "id": id, "terminal": 1})
 	for along: int in [12, 30, 48]:
-		port.append({"op": "place_sts", "apron": 1, "along": along})
+		port.append({"op": "place_sts", "kind": "sts", "apron": 1, "along": along})
 	port.append({"op": "buy_tractors", "count": 6})
 	var log: Array[Dictionary] = []
 	for command in port:
@@ -86,7 +87,7 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 		elif roll < 0.6:
 			command = {"op": "set_terminal", "id": rng.randi_range(5, 12), "terminal": rng.randi_range(0, 3)}
 		elif roll < 0.75:
-			command = {"op": "place_sts", "apron": rng.randi_range(1, 6), "along": rng.randi_range(0, 80)}
+			command = {"op": "place_sts", "kind": "sts", "apron": rng.randi_range(1, 6), "along": rng.randi_range(0, 80)}
 		elif roll < 0.88:
 			command = {"op": "buy_tractors", "count": rng.randi_range(1, 2)}
 		# The economy: offers are numbered from 1, so some answers find one and

@@ -218,20 +218,23 @@ class Crane:
 	## The quay apron it stands on, and how many cells along it.
 	var apron := 0
 	var along := 0
+	## Its kind, a key of rules.sts_cranes.
+	var kind := ""
 	## Calendar minutes into the current move.
 	var timer := 0.0
 	## The tractor sent to it (a vehicle id), or 0.
 	var tractor := 0
 
-	func _init(on: int, at: int) -> void:
+	func _init(on: int, at: int, of_kind: String) -> void:
 		apron = on
 		along = at
+		kind = of_kind
 
 	func to_dict() -> Dictionary:
-		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along}
+		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind}
 
 	static func from_dict(d: Dictionary) -> Crane:
-		var crane := Crane.new(d.apron, d.along)
+		var crane := Crane.new(d.apron, d.along, d.kind)
 		crane.timer = d.timer
 		crane.tractor = d.tractor
 		return crane
@@ -369,7 +372,7 @@ func state_hash() -> int:
 func apply(command: Dictionary) -> String:
 	match command.get("op"):
 		"place_sts":
-			return place_sts(command.apron, command.along)
+			return place_sts(command.apron, command.along, command.kind)
 		"buy_tractors":
 			return buy_tractors(command.count)
 		"accept_offer":
@@ -703,14 +706,19 @@ func remove_area(id: int) -> String:
 	return ""
 
 
-## Orders an STS crane for apron `apron`, `along` cells along its rails.
-func place_sts(apron: int, along: int) -> String:
-	var err := AreaFlow.sts_error(self, apron, along)
-	if err == "" and not _afford(rules.sts_crane.cost):
+## Orders an STS crane of `kind` for apron `apron`, `along` cells along its rails.
+func place_sts(apron: int, along: int, kind: String) -> String:
+	if kind not in rules.sts_cranes:
+		return "Unknown crane: %s" % kind
+	var err := lock_error(kind)
+	if err == "":
+		err = AreaFlow.sts_error(self, apron, along, kind)
+	var spec: Dictionary = rules.sts_cranes[kind]
+	if err == "" and not _afford(spec.cost):
 		err = "Not enough money"
 	if err == "":
-		ledger.post("equipment", -rules.sts_crane.cost)
-		crane_orders.append({"apron": apron, "along": along, "due": clock.calendar_minutes() + rules.sts_crane.lead_days * SimClock.MINUTES_PER_DAY})
+		ledger.post("equipment", -spec.cost)
+		crane_orders.append({"apron": apron, "along": along, "kind": kind, "due": clock.calendar_minutes() + spec.lead_days * SimClock.MINUTES_PER_DAY})
 		_deliver_cranes()
 	return err
 
@@ -723,10 +731,10 @@ func _deliver_cranes() -> void:
 			continue
 		crane_orders.erase(order)
 		if order.apron in areas.list:
-			cranes.append(Crane.new(order.apron, order.along))
-			_event("A new STS crane is up on %s" % areas.terminals[areas.list[order.apron].terminal].name, areas.list[order.apron].start)
+			cranes.append(Crane.new(order.apron, order.along, order.kind))
+			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminals[areas.list[order.apron].terminal].name], areas.list[order.apron].start)
 		else:
-			ledger.post("equipment", rules.sts_crane.cost)
+			ledger.post("equipment", rules.sts_cranes[order.kind].cost)
 			_event("A crane arrived with no quay apron to stand on; it went back, refunded")
 
 
@@ -1034,6 +1042,12 @@ func _call(service: Dictionary) -> void:
 
 
 ## Whether the channel is deep enough for `kind` and some apron long enough, busy or not.
+## Whether lines may offer a service of `kind`: unlocked, and a berth and crane
+## could work it.
+func _could_offer(kind: String) -> bool:
+	return unlocked(kind) and _could_berth(kind) and AreaFlow.could_work(self, kind)
+
+
 func _could_berth(kind: String) -> bool:
 	return channel_depth >= rules.ship_classes[kind].draft and AreaFlow.could_berth(self, kind)
 
@@ -1042,7 +1056,7 @@ func _could_berth(kind: String) -> bool:
 func _offer_service() -> void:
 	var now := clock.calendar_minutes()
 	contracts.expire(now)
-	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind), hinterland_demand())
+	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return _could_offer(kind), hinterland_demand())
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
 

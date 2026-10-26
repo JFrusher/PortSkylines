@@ -42,9 +42,14 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, 
 	if willing.is_empty():
 		return {}
 	var line: String = willing[rng.randi_range(0, willing.size() - 1)]
-	var kind := _pick(rng, rules.lines[line].classes)
-	if not fits.call(kind):
+	# A line offers only classes the port can take, by its weights among them.
+	var classes := {}
+	for kind: String in rules.lines[line].classes:
+		if fits.call(kind):
+			classes[kind] = rules.lines[line].classes[kind]
+	if classes.is_empty():
 		return {}
+	var kind := _pick(rng, classes)
 	var spec: Dictionary = rules.ship_classes[kind]
 	var service := {
 		"id": _next_id, "line": line, "kind": kind,

@@ -120,9 +120,16 @@
 				"land": "buying land",
 				"dredging": "dredging the channel",
 				"panamax": "Panamax services",
-				"neopanamax": "Neopanamax berths",
 				"automated": "automated gates",
 				"rmg": "rail track and RMG rail yards"
+			}
+		},
+		"hub": {
+			"teu": 1500.0,
+			"demand": 1.75,
+			"unlocks": {
+				"neopanamax": "Neopanamax services and berths",
+				"wide_sts": "wide STS cranes that reach across a Neopanamax"
 			}
 		}
 	},

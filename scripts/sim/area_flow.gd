@@ -38,23 +38,41 @@ static func could_berth(sim: PortSim, kind: String) -> bool:
 	return ready_aprons(sim).any(func(apron: int) -> bool: return _length(sim, apron) >= ship_cells(sim, kind))
 
 
+## Whether a ship of `kind` could be worked: a ready apron long enough with a
+## crane on it that reaches across the ship. Lines offer only such services.
+static func could_work(sim: PortSim, kind: String) -> bool:
+	var rows: int = sim.rules.ship_classes[kind].outreach
+	return ready_aprons(sim).any(func(apron: int) -> bool: return _length(sim, apron) >= ship_cells(sim, kind) and sim.cranes.any(func(c: PortSim.Crane) -> bool: return c.apron == apron and _reach(sim, c) >= rows))
+
+
 ## Ready aprons with a crane on them: berths lines may offer services for.
 static func offer_berths(sim: PortSim) -> int:
 	return ready_aprons(sim).filter(func(apron: int) -> bool: return sim.cranes.any(func(c: PortSim.Crane) -> bool: return c.apron == apron)).size()
 
 
-## The cranes on `ship`'s apron within its length.
+## Box rows `crane` reaches across a ship.
+static func _reach(sim: PortSim, crane: PortSim.Crane) -> int:
+	return sim.rules.sts_cranes[crane.kind].outreach
+
+
+## Calendar minutes one move of `crane` takes.
+static func move_minutes_of(sim: PortSim, crane: PortSim.Crane) -> float:
+	return 60.0 / (sim.rules.sts_cranes[crane.kind].rate * sim.rules.crane_interference)
+
+
+## The cranes on `ship`'s apron within its length that reach across it.
 static func cranes_for(sim: PortSim, ship: PortSim.Ship) -> Array[PortSim.Crane]:
 	var span := ship_cells(sim, ship.kind)
+	var rows: int = sim.rules.ship_classes[ship.kind].outreach
 	var found: Array[PortSim.Crane] = []
 	for crane in sim.cranes:
-		if crane.apron == ship.apron and crane.along >= ship.from and crane.along < ship.from + span:
+		if crane.apron == ship.apron and crane.along >= ship.from and crane.along < ship.from + span and _reach(sim, crane) >= rows:
 			found.append(crane)
 	return found
 
 
-## Why an STS crane can't stand `along` cells into apron `apron`, or "".
-static func sts_error(sim: PortSim, apron: int, along: int) -> String:
+## Why an STS crane of `kind` can't stand `along` cells into apron `apron`, or "".
+static func sts_error(sim: PortSim, apron: int, along: int, kind: String) -> String:
 	if apron not in sim.areas.list or sim.areas.list[apron].type != "quay_apron":
 		return "STS cranes stand on a quay apron's rails"
 	# A crane works over a handover slot, and slots cover whole bays only.
@@ -63,7 +81,7 @@ static func sts_error(sim: PortSim, apron: int, along: int) -> String:
 	var spots := crane_spots(sim, apron)
 	if not spots.is_empty() and along not in spots:
 		return "Cranes stand at the berth's crane spots"
-	var room := ceili(sim.rules.sts_crane.width / float(Grid.CELL))
+	var room := ceili(sim.rules.sts_cranes[kind].width / float(Grid.CELL))
 	var near := func(a: int, k: int) -> bool: return a == apron and absi(k - along) < room
 	if sim.cranes.any(func(c: PortSim.Crane) -> bool: return near.call(c.apron, c.along)) or sim.crane_orders.any(func(o: Dictionary) -> bool: return o.has("apron") and near.call(o.apron, o.along)):
 		return "Too close to another crane"
@@ -107,12 +125,11 @@ static func tick(sim: PortSim) -> void:
 ## once the holds are empty and the cranes idle it sails.
 static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 	var working := cranes_for(sim, ship)
-	var rows: int = sim.rules.ship_classes[ship.kind].outreach
-	if working.is_empty() or sim.rules.sts_crane.outreach < rows:
-		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, rows], sim.areas.list[ship.apron].start)
+	if working.is_empty():
+		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, sim.rules.ship_classes[ship.kind].outreach], sim.areas.list[ship.apron].start)
 		return
-	var move_minutes: float = 60.0 / (sim.rules.sts_crane.rate * sim.rules.crane_interference)
 	for crane in working:
+		var move_minutes := move_minutes_of(sim, crane)
 		if ship.boxes > 0:
 			_discharge(sim, crane, ship, move_minutes)
 			continue
@@ -169,7 +186,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	var fetchers := _fetchers(sim, ship)
 	var slot := _crane_slot(sim, crane, ship)
 	var mine := fetchers.filter(func(v: Vehicle) -> bool: return v.home == slot)
-	if ship.exports > fetchers.size() and mine.size() < sim.rules.sts_crane.max_fetchers:
+	if ship.exports > fetchers.size() and mine.size() < sim.rules.sts_cranes[crane.kind].max_fetchers:
 		_send_fetcher(sim, crane, ship)
 	if crane.tractor == 0:
 		var back := mine.filter(func(v: Vehicle) -> bool: return v.state == "under_crane")

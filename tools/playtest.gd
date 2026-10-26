@@ -78,7 +78,7 @@ func _build(mode: String) -> void:
 	_do({"op": "set_area", "id": exports, "settings": {"role": "export"}})
 	for id: int in [imports, exports]:
 		_do({"op": "set_terminal", "id": id, "terminal": _sim.areas.list[apron].terminal})
-	_do({"op": "place_sts", "apron": apron, "along": 30})
+	_do({"op": "place_sts", "kind": "sts", "apron": apron, "along": 30})
 	_do({"op": "buy_tractors", "count": 4})
 
 

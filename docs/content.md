@@ -23,7 +23,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `yard_gear.<key>.lift_seconds`, `.set_down_seconds` | float | Seconds to lift a box and to set one down |
 | `yard_gear.<key>.bays_per_machine` | int | One machine per so many 12 m bays of an area |
 | `yard_gear.<key>.tiers` | int | How many boxes high the gear stacks on an area |
-| `sts_crane.width` | int | An STS crane's width along a quay apron, in metres; cranes can't stand closer |
+| `sts_cranes.<key>.width` | int | A crane's width along a quay apron, in metres; a new crane can't stand closer than its width |
 | `start_money` | int | Money at the start of a new game |
 | `move_price.per_20ft` | int >0 | What a line pays per crane move of a 20 ft box |
 | `move_price.forty_factor` | number >0 | A 40 ft box's move price as a multiple of a 20 ft one |
@@ -52,10 +52,10 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `land.metres` | int >0 | The site is split into square land tiles this many metres across; roads and areas are built only on land the port owns |
 | `land.price`, `.upkeep` | int | Price of a land tile, and its upkeep a day once owned |
 | `land.start.x`, `.y`, `.width`, `.height` | int | The block of land tiles the port owns at the start |
-| `sts_crane.cost` | int | Price of a quay crane |
-| `sts_crane.rate` | number >0 | Moves per hour |
-| `sts_crane.outreach` | int | Rows the crane reaches |
-| `sts_crane.lead_days` | number | Days from ordering a crane to it standing on the quay |
+| `sts_cranes.<key>.name`, `.cost` | text, int | A quay crane kind's name and price; its key also locks it by milestone |
+| `sts_cranes.<key>.rate` | number >0 | Moves per hour |
+| `sts_cranes.<key>.outreach` | int | Rows the crane reaches; lines offer a class only where a crane on a long enough berth reaches across it |
+| `sts_cranes.<key>.lead_days`, `.max_fetchers` | number, int | Days from ordering a crane to it standing on the quay; tractors fetching exports for it at once |
 | `crane_interference` | number >0 | Rate multiplier for cranes working side by side |
 | `tractor.cost` | int | Price of one tractor |
 | `tractor.speed` | number >0 | Metres per vehicle second (one game minute) |

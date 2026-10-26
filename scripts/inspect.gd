@@ -106,8 +106,9 @@ static func _ship(sim: PortSim, ship: PortSim.Ship) -> Array[String]:
 
 
 static func _crane(sim: PortSim, crane: PortSim.Crane) -> Array[String]:
-	var lines: Array[String] = ["STS crane", "Idle" if crane.tractor == 0 else "Working with tractor %d" % crane.tractor]
-	lines.append("%d moves an hour, %d rows outreach" % [sim.rules.sts_crane.rate, sim.rules.sts_crane.outreach])
+	var spec: Dictionary = sim.rules.sts_cranes[crane.kind]
+	var lines: Array[String] = [spec.name, "Idle" if crane.tractor == 0 else "Working with tractor %d" % crane.tractor]
+	lines.append("%d moves an hour, %d rows outreach" % [spec.rate, spec.outreach])
 	return lines
 
 

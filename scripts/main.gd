@@ -221,7 +221,7 @@ func _command(cell: Vector2i) -> Dictionary:
 			return {"op": "remove_road", "segment": sim.roads.segment_at(cell)} if sim.roads.segment_at(cell) else {"op": "remove_rail", "segment": sim.rails.segment_at(cell)}
 		Hud.CRANE:
 			var apron := _apron_at(cell)
-			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell)}
+			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell), "kind": hud.crane_kind}
 		Hud.BUILD_BERTH:
 			return {"op": "build_berth", "kind": hud.berth, "y": cell.y}
 	return {"op": "buy_land", "tile": sim.land_tile(cell)}
@@ -271,7 +271,7 @@ func _order_error(cell: Vector2i) -> String:
 			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) else "Nothing to bulldoze here"
 		Hud.CRANE:
 			var apron := _apron_at(cell)
-			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell))
+			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
 		Hud.BUILD_BERTH:
 			return sim.build_berth_error(hud.berth, cell.y)
 	return sim.buy_land_error(sim.land_tile(cell))
