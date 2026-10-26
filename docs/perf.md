@@ -421,3 +421,22 @@ counts. `profile_sim.gd -- 200` on it: 31.1 ms a tick, of which trains
 block's stacks. `profile_sim.gd -- 200` on the endgame save: 0.25 ms of a
 35.7 ms tick (0.7%). `sim_bench`: 0.70–0.73 ms a tick before, 0.65–0.70
 after, two runs each, so within noise.
+
+## M6 close: the endgame bench (2026-10-26)
+
+`profile_sim.gd -- 200` on `bench/endgame.bin` (2,072 vehicles, 20,339
+boxes, 6 ships, 2 trains), current main plus the M6 notes: **32.3 ms a
+tick** on this box (4-core Xeon at 2.1 GHz, cloud container). The view on
+llvmpipe (software GL) renders the endgame in 226 ms of CPU a frame; that
+says nothing about a GPU.
+
+**The exit criterion is not met here, and the target PC has not been
+measured.** At 1× the sim runs 20 ticks a real second: 32.3 ms × 20 = 646 ms
+of every second, and each tick lands in one frame, so a frame that runs a
+tick takes 32 ms and misses 60 fps. At 3× the sim alone needs 1.9 s a
+second. A desktop CPU about twice this one's speed would put a tick near
+16 ms: 1× would still drop the frame each tick lands in, and 3× would fall
+behind. Two ways out, both waiting on a decision: step 10 (port the hottest
+loop, vehicle moves, to a GDExtension, only on profiler evidence) or run
+the tick on a worker thread so frames don't wait on it. Run
+`bench/endgame_bench.gd -- 1` on the target PC to record its numbers here.

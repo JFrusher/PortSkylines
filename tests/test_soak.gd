@@ -1,5 +1,6 @@
 extends SceneTree
-## Two game days of a seeded random port on roads and areas, with the sim's
+## Two game days of a seeded random port on roads and areas, with an RMG
+## rail block whose track crosses the east road to the rail entry, and the sim's
 ## invariants checked as it runs: after every tick, cash moves only through the ledger
 ## and every closed day adds up to its change in cash (loans, land and
 ## dredging included); every vehicle second, stacks stay within their tiers, every box is in
@@ -20,6 +21,7 @@ var _failures := 0
 func _initialize() -> void:
 	var calm := _soak(RandomPort.rules())
 	_expect(calm.delivered > 0, true, "the calm port delivers boxes (%d)" % calm.delivered)
+	_expect(calm.by_rail > 0, true, "and sends boxes off by train (%d)" % calm.by_rail)
 	# A lorry every 10 game hours: yards fill up and ships wait, which the calm
 	# port never pushes hard enough to test.
 	var congested_rules := RandomPort.rules()
@@ -41,10 +43,28 @@ func _soak(rules: Dictionary) -> PortSim:
 			next += 1
 		# The port is built for free, then plays for money.
 		if sim.clock.ticks == 0:
+			_add_rail(sim)
 			sim.creative = false
 		sim.tick()
 		_check(sim)
 	return sim
+
+
+## An RMG block north of the east road, its siding track running east and
+## crossing the road south to the rail entry.
+func _add_rail(sim: PortSim) -> void:
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": -1, "from": 92, "to": 121}), "", "the rail block is built")
+	var block: int = sim.areas.list.keys().max()
+	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
+	sim.apply({"op": "set_terminal", "id": block, "terminal": 1})
+	var area: Dictionary = sim.areas.list[block]
+	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var entry := sim.site_rail_entry()
+	var bend := Vector2i(entry.x - 5, behind.y)
+	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
+		_expect(sim.apply({"op": "build_rail", "from": leg[0], "to": leg[1]}), "", "track to the rail entry")
+	_expect(RailFlow.is_rail_block(sim, block), true, "the block is a rail block")
 
 
 func _expect(actual: Variant, expected: Variant, what: String) -> void:
@@ -78,7 +98,8 @@ func _check(sim: PortSim) -> void:
 	# A machine fetching a vehicle's box has lifted it off its stack.
 	var lifting := {}
 	for job: Dictionary in sim.machine_jobs.values():
-		if job.position < 0:
+		# A train's job carries its box itself, counted below.
+		if job.has("vehicle") and job.position < 0:
 			lifting[job.vehicle] = true
 	var cells := {}
 	var ids := {}
@@ -117,5 +138,7 @@ func _check(sim: PortSim) -> void:
 	for area: int in sim.handovers.slots():
 		for holder: int in sim.handovers.slots()[area]:
 			_expect(holder == 0 or holder in ids, true, "area %d's slots hold vehicles that are there %s" % [area, at])
+	var trains := sim.trains.map(func(t: Train) -> int: return t.id)
 	for machine: int in sim.machine_jobs:
-		_expect(sim.machine_jobs[machine].vehicle in ids, true, "machine %d works for a vehicle that is there %s" % [machine, at])
+		var job: Dictionary = sim.machine_jobs[machine]
+		_expect(job.train in trains if job.has("train") else job.vehicle in ids, true, "machine %d works for a vehicle or train that is there %s" % [machine, at])

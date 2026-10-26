@@ -16,6 +16,12 @@
   - Step 7 is done as kept routes, not flow fields: same paths, so the same state hash.
   - Steps 8 and 9 are skipped on evidence. Routes are 13% of the tick, and most were asked before. Moving vehicles costs cell booking, which stays single-threaded and in a fixed order.
   - Step 10 is waiting on the developer. The vehicle loop (`AreaFlow._drive` with `LaneTraffic.advance`) is about 21 ms of 31.
+- Steps 11–18 and the notes list are done (PRs #18, #21, #22): rail, modal split and crossings; hinterland, reefers, Neopanamax with wide cranes, rush and dangerous-goods boxes; berths with crane spots; one crane removed; the week by berth; money per move; ships and cranes at true scale. Saves are at v18, each version with a fixture.
+- Close, 26 Oct 2026:
+  - Step 19: the endgame tick is 32.3 ms on the cloud box, which fails 60 fps on the CPU at 1× and can't keep up at 3× (`docs/perf.md`, M6 close). The target PC is unmeasured; step 10, or a sim thread, is the developer's call.
+  - Step 20: the v18 fixture is in, and the soak test builds an RMG rail block and track and sends boxes by train.
+  - Step 21: scripted playtest notes are in `docs/playtests/m6.md`; a public build needs a person to play it.
+  - Step 22: not tagged. The first exit criterion isn't met.
 
 **Exit criteria:**
 - The endgame benchmark save (about 2,000 lorries, 20,000 stacked boxes, 6 berths, 2 trains) holds 60 fps at 1080p on the GTX 1660-class target at 1×, and stays playable at 3×.
