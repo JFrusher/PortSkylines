@@ -281,3 +281,9 @@ saved port (six ships loading, no export in the yard), `AreaFlow.work` cost
 each of 80 blocks `idle_reason`, which built the block's line of cells
 every call; `_export_room` 972 µs and `_has_gate` 141 µs did the same over
 every area. With the reason kept, `AreaFlow.work` is 2.1 ms a ship.
+
+`AreaFlow._block_of` still lists every block's boxes to find one (298 µs a
+call; 25.5 µs asking each block's index instead), but a tick calls it about
+0.15 times: the change measured 30.7 ms a tick against 29.8, within noise,
+so it was not kept. The box scans left run once a day (storage) or for the
+view, not every tick.
