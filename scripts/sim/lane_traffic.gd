@@ -53,6 +53,23 @@ func book(id: int, cells: Array[Vector2i]) -> bool:
 	return _take(id, cells)
 
 
+## Books exactly `cells` for `id`, letting go of the rest it holds, if each
+## is free or already theirs; else changes nothing and returns false. A
+## moving train keeps the level crossings under and ahead of it this way.
+func rebook(id: int, cells: Array[Vector2i]) -> bool:
+	if not _take(id, cells):
+		return false
+	var keep := {}
+	for cell in cells:
+		keep[cell] = true
+	var held: Array = _held[id]
+	for cell: Vector2i in held.duplicate():
+		if cell not in keep:
+			_holders.erase(cell)
+			held.erase(cell)
+	return true
+
+
 ## Lets go of every cell `id` holds.
 func release(id: int) -> void:
 	for cell: Vector2i in _held.get(id, []):

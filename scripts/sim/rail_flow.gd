@@ -81,15 +81,32 @@ static func _run(sim: PortSim, train: Train) -> void:
 	train.prev_t = train.t
 	match train.state:
 		"arriving":
-			train.t = minf(train.t + _step(sim), train.path.size() - 1)
-			if train.t == train.path.size() - 1:
+			if _move(sim, train, minf(train.t + _step(sim), train.path.size() - 1)) and train.t == train.path.size() - 1:
 				train.state = "working"
 		"working":
 			_work(sim, train)
 		"leaving":
-			train.t -= _step(sim)
-			if train.t <= 0.0:
+			if _move(sim, train, train.t - _step(sim)) and train.t <= 0.0:
 				_gone(sim, train)
+
+
+## Moves the train's head to `to` cells along its path, booking every level
+## crossing its body will cover, and those just ahead, through LaneTraffic as
+## the one way onto a crossing; with a vehicle on one, it waits where it is.
+# shortcut: trains book only level crossings, not track, so two trains could share a cell; book track blocks when lines get busy.
+static func _move(sim: PortSim, train: Train, to: float) -> bool:
+	var ahead := ceili(_step(sim)) + 2
+	var from := maxi(floori(minf(train.t, to)) - train.length() - ahead, 0)
+	var past := mini(ceili(maxf(train.t, to)) + ahead, train.path.size() - 1)
+	var crossings := sim.lanes.crossings()
+	var wanted: Array[Vector2i] = []
+	for i in range(from, past + 1):
+		if train.path[i] in crossings:
+			wanted.append(train.path[i])
+	if not sim.lane_traffic.rebook(-train.id, wanted):
+		return false
+	train.t = to
+	return true
 
 
 ## Gives each idle RMG of the train's block a wagon to work, unloading first,
@@ -204,6 +221,7 @@ static func _gone(sim: PortSim, train: Train) -> void:
 			sim.delivered += 1
 			sim.by_rail += 1
 	_pay_discount(sim, train.wagons.filter(func(box: int) -> bool: return box != 0).size())
+	sim.lane_traffic.release(-train.id)
 	sim.trains.erase(train)
 
 
@@ -223,6 +241,7 @@ static func forget(sim: PortSim, id: int) -> int:
 			if box != 0:
 				sim._drop_box(box)
 				lost += 1
+		sim.lane_traffic.release(-train.id)
 		sim.trains.erase(train)
 	sim._until_train.erase(id)
 	return lost

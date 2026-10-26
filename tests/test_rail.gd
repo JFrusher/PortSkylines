@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_trains_take_rail_imports()
 	_test_discount()
 	_test_rail_cuts_the_gate_queue()
+	_test_trains_book_crossings()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -168,6 +169,47 @@ func _test_rail_cuts_the_gate_queue() -> void:
 	print("  a day of calls: %.1f lorries at the gate on average with no rail, %.1f with %.0f%% of imports booked to rail" % [queued[0], queued[1], rail_share[1] * 100])
 	_expect(rail_share[1] > 0.2 and rail_share[1] < 0.4, true, "about 30%% of imports go by rail (%.2f)" % rail_share[1])
 	_expect(queued[1] < queued[0] * 0.85, true, "and the gate queue is measurably shorter (%.1f against %.1f)" % [queued[1], queued[0]])
+
+
+## A train's track crosses the road every lorry takes: while the train has
+## the crossing booked, no lorry is on it, and both still get through.
+func _test_trains_book_crossings() -> void:
+	var rules := RandomPort.rules()
+	rules.lorry_interval_minutes = 0.25
+	for line: String in rules.lines:
+		rules.lines[line].rail_share = 0.5
+	rules.rail.train.interval_minutes = 30.0
+	var sim := AreaPort.working_terminal(40, 0, rules)
+	sim.creative = true
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	# North of the east road, its siding behind it; the track turns south across the road.
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": -1, "from": 92, "to": 121}), "", "a rail block north of the road")
+	var block: int = sim.areas.list.keys().max()
+	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
+	sim.apply({"op": "set_terminal", "id": block, "terminal": 1})
+	var area: Dictionary = sim.areas.list[block]
+	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var entry := sim.site_rail_entry()
+	var bend := Vector2i(entry.x - 5, behind.y)
+	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
+		_expect(sim.apply({"op": "build_rail", "from": leg[0], "to": leg[1]}), "", "track across the road to the rail entry")
+	var crossing := sim.lanes.crossings()
+	_expect(crossing.size() > 0 and RailFlow.is_rail_block(sim, block), true, "the track crosses the road on its way to the rail block")
+	var booked_ticks := 0
+	var on_while_booked := 0
+	var lorries_across := 0
+	for i in roundi(4 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		var train_has := crossing.filter(func(c: Vector2i) -> bool: return sim.lane_traffic.holder(c) < 0)
+		for vehicle: Vehicle in sim.vehicles:
+			if vehicle.kind == "lorry" and vehicle.path[int(vehicle.t)] in crossing:
+				lorries_across += 1
+				on_while_booked += 1 if not train_has.is_empty() else 0
+		booked_ticks += 1 if not train_has.is_empty() else 0
+	_expect(booked_ticks > 0, true, "trains booked the crossing (%d ticks)" % booked_ticks)
+	_expect(lorries_across > 0, true, "lorries crossed it too (%d lorry ticks)" % lorries_across)
+	_expect(on_while_booked, 0, "but never while a train had it")
+	_expect(sim.by_rail > 0, true, "and boxes still left by train (%d)" % sim.by_rail)
 
 
 func _expect(got: Variant, want: Variant, what: String) -> void:
