@@ -401,19 +401,27 @@ static func _has_gate(sim: PortSim, terminal: int) -> bool:
 	return not _gates(sim, terminal).is_empty()
 
 
-## The working gate of `terminal` a lorry at `from` reaches by the shortest
-## route, so lorries check in and out at the gate on their side of the road;
-## 0 when the terminal has none.
-# shortcut: ranks by route length alone, not queues; weigh each gate's queue when one gate of several jams.
+## The working gate of `terminal` a lorry at `from` gets through soonest:
+## minutes to drive there, plus the lorries already bound for it times the
+## minutes each takes at a booth over its lanes. Lorries check in and out on
+## their side of the road, and spread over the gates as one jams; 0 when the
+## terminal has none.
 static func _gate_of(sim: PortSim, terminal: int, from: Vector2i) -> int:
+	var gates := _gates(sim, terminal)
+	var bound := {}
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.kind == "lorry" and vehicle.area in gates:
+			bound[vehicle.area] = bound.get(vehicle.area, 0) + 1
 	var best := 0
-	var shortest := INF
-	for gate in _gates(sim, terminal):
+	var soonest := INF
+	for gate in gates:
 		var route := sim.lanes.route(from, _buffer_start(sim, gate), true)
-		var length: float = route.size() if not route.is_empty() else INF
-		if best == 0 or length < shortest:
+		# A vehicle second is a calendar minute, so driving and queueing add up.
+		var drive: float = route.size() / (sim.rules.lorry_speed / Grid.CELL) if not route.is_empty() else INF
+		var minutes: float = drive + bound.get(gate, 0) * gate_minutes(sim, gate) / sim.areas.layout(gate).lanes.size()
+		if best == 0 or minutes < soonest:
 			best = gate
-			shortest = length
+			soonest = minutes
 	return best
 
 

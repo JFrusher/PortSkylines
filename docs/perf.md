@@ -287,3 +287,24 @@ call; 25.5 µs asking each block's index instead), but a tick calls it about
 0.15 times: the change measured 30.7 ms a tick against 29.8, within noise,
 so it was not kept. The box scans left run once a day (storage) or for the
 view, not every tick.
+
+### The endgame save at 2,000 lorries (2026-10-26)
+
+Why the save stopped near 700 lorries, probed on it (`make_endgame.gd`'s
+rules put back after loading): of 630 lorries driving in, 519 were bound
+for one gate, the one nearest the site entry, since `_gate_of` ranked gates
+by route length alone. Its queue reached back to the entry, which was busy
+510 ticks in 600, and a lorry comes in only through a free entry cell.
+
+Lorries now take the gate they get through soonest: minutes of driving plus
+the lorries already bound there times the booth minutes over its lanes
+(`test_roads` checks a 20-lorry queue sends the next lorry on to the other
+gate). `make_endgame.gd` then reaches its 2,000 lorries at 2.8 game hours,
+in under 3 minutes of building where it took 29; the 12 gates hold 42 to 58
+lorries each. Deliveries stay low (144 by then), since a lorry every tick
+outruns the yard's RTGs, which is the point of the bench.
+
+Note on the benches: rules are data and are not saved, so a loaded
+`endgame.bin` plays on the base rules (a lorry a minute, an RTG per 10
+bays), not the bench's. `profile_sim.gd`'s figures above, and the 288 ms
+baseline, were taken that way.

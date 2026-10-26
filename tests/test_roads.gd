@@ -727,6 +727,18 @@ func _test_two_way_gate() -> void:
 	_expect(sim.apply({"op": "build_two_way_gate", "type": "yard_block", "segment": 1, "from": 30, "to": 50}), "Only gates are built on both sides of a road", "only gates are two-way")
 	_expect(sim.apply({"op": "build_two_way_gate", "type": "gate", "segment": 1, "from": 20, "to": 34}), "Something is already built here", "neither side may overlap")
 	_expect(sim.areas.list.size(), 2, "a refused two-way gate builds neither side")
+	# Lorries take the gate they get through soonest: drive plus queue.
+	var port := AreaPort.terminal(60)
+	var east := port.roads.segment_at(Vector2i(200, port.site_entry().y))
+	_expect(port.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 200, "to": 214}), "", "a second gate further in")
+	var second: int = port.areas.list.keys().max()
+	port.apply({"op": "set_terminal", "id": second, "terminal": 1})
+	_expect(AreaFlow._gate_of(port, 1, port.site_entry()), 2, "with no queues a lorry takes the nearest gate")
+	for i in 20:
+		var waiting := Vehicle.new(900 + i, "lorry", [Vector2i.ZERO] as Array[Vector2i])
+		waiting.area = 2
+		port.vehicles.append(waiting)
+	_expect(AreaFlow._gate_of(port, 1, port.site_entry()), second, "with 20 lorries bound for it, the next drives on to the other gate")
 
 
 func _test_lorry_gives_up() -> void:
