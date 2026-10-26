@@ -27,6 +27,8 @@ var _next_terminal := 1
 ## rebuilt when the areas change. Both are asked for many times a tick.
 var _lane_cells := {}
 var _lanes_for := -1
+var _idle := {}  # area id -> its idle reason, for the road and area versions in _idle_for
+var _idle_for := Vector2i(-1, -1)
 var _layouts := {}
 var _layouts_for := -1
 
@@ -113,6 +115,16 @@ func cells(id: int) -> Array[Vector2i]:
 ## since vehicles reach it from there. The box flow sends nothing to an area
 ## with a reason.
 func idle_reason(id: int) -> String:
+	var now := Vector2i(_roads.version, version)
+	if _idle_for != now:
+		_idle_for = now
+		_idle.clear()
+	if id not in _idle:
+		_idle[id] = _idle_reason(id)
+	return _idle[id]
+
+
+func _idle_reason(id: int) -> String:
 	var area: Dictionary = list[id]
 	if _lanes_for != _roads.version:
 		_lanes_for = _roads.version

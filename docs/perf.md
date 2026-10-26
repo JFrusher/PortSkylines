@@ -273,4 +273,11 @@ gives the same state hash after 300 ticks before and after (1889779304).
 | A count of exports kept as boxes come and go | `AreaFlow.export_demand` (2.7 ms) | 46.6 |
 | Lorries take each block's first unclaimed import from the same sorted list | `dispatch_import_lorry` (4.6 to 2.7 ms a tick) | 43.8 |
 
-Ship work is still 29 ms of the 43.8; the next steps profile inside it.
+| Each area's idle reason kept until roads or areas change, not rebuilt from its cells per call | `Areas.idle_reason` (10.5 µs a call, 80 a crane lookup) | 29.8 |
+
+Ship work was still 29 ms of the 43.8. Timed one call at a time on the
+saved port (six ships loading, no export in the yard), `AreaFlow.work` cost
+4.3 ms a ship: `_export_box` 662 µs with nothing to find, because it asked
+each of 80 blocks `idle_reason`, which built the block's line of cells
+every call; `_export_room` 972 µs and `_has_gate` 141 µs did the same over
+every area. With the reason kept, `AreaFlow.work` is 2.1 ms a ship.
