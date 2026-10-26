@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 17
+const VERSION := 18
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -84,6 +84,8 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v15(data)
 	if data.version == 16:
 		data = _migrate_v16(data)
+	if data.version == 17:
+		data = _migrate_v17(data)
 	return data
 
 
@@ -147,6 +149,16 @@ static func _migrate_v16(data: Dictionary) -> Dictionary:
 	return data
 
 
+## v18 counts moves by line and terminal in the ledger; days before it counted none.
+static func _migrate_v17(data: Dictionary) -> Dictionary:
+	data.sim.ledger.moves = {"total": 0, "lines": {}, "terminals": {}}
+	for day: Variant in data.sim.ledger.days:
+		if day is Dictionary:
+			day.moves = {"total": 0, "lines": {}, "terminals": {}}
+	data.version = 18
+	return data
+
+
 ## Check the entire payload before any typed deserialiser sees it.
 # shortcut: entries inside boxes, events and ship_log are not checked,
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
@@ -166,7 +178,7 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	if not _has_fields(data.ledger, {
-		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "days": TYPE_ARRAY,
+		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "moves": TYPE_DICTIONARY, "days": TYPE_ARRAY,
 	}):
 		return false
 	if not _has_fields(data.storage, {"free_days": TYPE_INT, "fee": TYPE_INT}):

@@ -136,11 +136,14 @@ func call_value(service: Dictionary) -> int:
 func overlaps(service: Dictionary) -> Array[Dictionary]:
 	var found: Array[Dictionary] = []
 	for other in services:
-		var ahead := fposmod(other.start - service.start, MINUTES_PER_WEEK)
-		var behind := fposmod(service.start - other.start, MINUTES_PER_WEEK)
-		if other.id != service.id and (ahead < service.window_hours * 60.0 or behind < other.window_hours * 60.0):
+		if other.id != service.id and windows_overlap(service, other):
 			found.append(other)
 	return found
+
+
+## Whether two services' weekly windows overlap, around the week's end too.
+static func windows_overlap(a: Dictionary, b: Dictionary) -> bool:
+	return fposmod(b.start - a.start, MINUTES_PER_WEEK) < a.window_hours * 60.0 or fposmod(a.start - b.start, MINUTES_PER_WEEK) < b.window_hours * 60.0
 
 
 ## Scores a finished call for its line, plus `other` (such as shippers'

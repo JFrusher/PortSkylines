@@ -317,7 +317,7 @@ func _ready() -> void:
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
 	_gate("land", _category_buttons[CATEGORIES.find("Land")])
 	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
-	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track or area to remove it. Boxes stored in an area are lost."
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane or area to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
 
@@ -546,7 +546,7 @@ func _process(dt: float) -> void:
 		if _actions_drawn != [sim, sim.areas.version, _inspected]:
 			_draw_inspect_actions()
 
-	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim), sim.rail_discount]:
+	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim), sim.rail_discount, sim.areas.version]:
 		_draw_contracts()
 
 	# Throttled refresh of the info bar and the open drawer
@@ -737,7 +737,7 @@ func _show_milestone() -> void:
 
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 func _draw_contracts() -> void:
-	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim), sim.rail_discount]
+	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim), sim.rail_discount, sim.areas.version]
 	for child in _contracts.get_children():
 		child.queue_free()
 	var contracts := sim.contracts
@@ -772,7 +772,8 @@ func _draw_contracts() -> void:
 	if contracts.offers.is_empty() and contracts.services.is_empty():
 		_contracts.add_child(_label("No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
 		return
-	_contracts.add_child(_week(contracts))
+	var plan := AreaFlow.berth_plan(sim)
+	_contracts.add_child(_week(plan))
 	var table := GridContainer.new()
 	table.columns = 8
 	table.add_theme_constant_override("h_separation", 16)
@@ -781,11 +782,10 @@ func _draw_contracts() -> void:
 		var label := _label(heading)
 		label.theme_type_variation = "CategoryHeader"
 		table.add_child(label)
-	var berths := AreaFlow.offer_berths(sim)
-	for service: Dictionary in contracts.offers + contracts.services:
+	for p: Dictionary in plan:
+		var service: Dictionary = p.service
 		var start: int = service.start
-		var overlaps := contracts.overlaps(service)
-		var clash := "with %s" % ", ".join(overlaps.map(func(o: Dictionary) -> String: return contracts.name_of(o.line))) if overlaps.size() >= berths and not overlaps.is_empty() else "none"
+		var clash := "no berth fits" if p.apron == 0 else "on its berth" if p.clash else "none"
 		for cell: String in [contracts.name_of(service.line), service.kind, "%s %02d:%02d" % [WEEKDAYS[start / SimClock.MINUTES_PER_DAY], start / 60 % 24, start % 60], "%d h" % roundi(service.window_hours), str(service.moves), HudDetails.dollars(contracts.call_value(service)), clash]:
 			table.add_child(_label(cell))
 		var status := HBoxContainer.new()
@@ -799,27 +799,42 @@ func _draw_contracts() -> void:
 		_action_button(status, "Decline", {"op": "decline_offer", "id": id})
 
 
-## The week, Monday to Sunday by the hour: agreed windows solid, offers outlined.
-func _week(contracts: Contracts) -> Control:
+## The week, Monday to Sunday, one row per berth, each service's window on
+## the berth it would use: agreed solid, offers outlined, clashes red.
+func _week(plan: Array[Dictionary]) -> Control:
+	var aprons := AreaFlow.ready_aprons(sim)
+	var rows: Array[int] = aprons.duplicate()
+	if plan.any(func(p: Dictionary) -> bool: return p.apron == 0):
+		rows.append(0)
 	var week := Control.new()
-	week.custom_minimum_size = Vector2(560, 7 * 16)
+	week.custom_minimum_size = Vector2(640, 16 + rows.size() * 18)
 	week.draw.connect(func() -> void:
-		var hour := (week.size.x - 40) / 24.0
+		var font := week.get_theme_default_font()
+		var muted := Color(0.58, 0.639, 0.722)
+		var left := 110.0
+		var hour := (week.size.x - left) / (7 * 24.0)
 		for day in 7:
-			week.draw_string(week.get_theme_default_font(), Vector2(0, day * 16 + 12), WEEKDAYS[day], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.58, 0.639, 0.722))
-			week.draw_rect(Rect2(40, day * 16 + 2, 24 * hour, 12), Color(1, 1, 1, 0.05))
-		for service: Dictionary in contracts.offers + contracts.services:
-			var offered := service in contracts.offers
-			var minute: int = service.start
-			var left := roundi(service.window_hours * 60.0)
-			while left > 0:
-				var day := minute / SimClock.MINUTES_PER_DAY % 7
-				var into := minute % SimClock.MINUTES_PER_DAY
-				var span := mini(left, SimClock.MINUTES_PER_DAY - into)
-				var bar := Rect2(40 + into / 60.0 * hour, day * 16 + 2, span / 60.0 * hour, 12)
-				week.draw_rect(bar, Color(0.369, 0.643, 1) if offered else Color(0, 0.439, 0.867), not offered, 1.5 if offered else -1.0)
-				minute += span
-				left -= span)
+			week.draw_string(font, Vector2(left + day * 24 * hour + 2, 11), WEEKDAYS[day], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, muted)
+		for r in rows.size():
+			var y := 16.0 + r * 18
+			var name := "Berth %d, %d m" % [r + 1, Grid.metres(AreaFlow._length(sim, rows[r]))] if rows[r] else "No berth fits"
+			week.draw_string(font, Vector2(0, y + 12), name, HORIZONTAL_ALIGNMENT_LEFT, left - 6, 12, muted)
+			week.draw_rect(Rect2(left, y + 2, 7 * 24 * hour, 12), Color(1, 1, 1, 0.05))
+			for day in range(1, 7):
+				week.draw_line(Vector2(left + day * 24 * hour, y + 2), Vector2(left + day * 24 * hour, y + 14), Color(1, 1, 1, 0.12))
+		for p: Dictionary in plan:
+			var offered: bool = p.service in sim.contracts.offers
+			var color := Color(0.9, 0.25, 0.25) if p.clash or p.apron == 0 else Color(0.369, 0.643, 1) if offered else Color(0, 0.439, 0.867)
+			var y := 16.0 + rows.find(p.apron) * 18
+			var minute: int = p.service.start
+			var remaining := roundi(p.service.window_hours * 60.0)
+			# Wraps past Sunday back to Monday.
+			while remaining > 0:
+				var span := mini(remaining, Contracts.MINUTES_PER_WEEK - minute)
+				# A pixel short, so back-to-back calls read as two.
+				week.draw_rect(Rect2(left + minute / 60.0 * hour, y + 2, span / 60.0 * hour - 1.0, 12), color, not offered, 1.5 if offered else -1.0)
+				minute = (minute + span) % Contracts.MINUTES_PER_WEEK
+				remaining -= span)
 	return week
 
 

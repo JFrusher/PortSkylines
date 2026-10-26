@@ -215,6 +215,9 @@ func _report(err: String) -> void:
 func _command(cell: Vector2i) -> Dictionary:
 	match hud.tool:
 		Hud.BULLDOZE:
+			var crane := AreaFlow.crane_at(sim, cell)
+			if crane:
+				return {"op": "remove_sts", "apron": crane.apron, "along": crane.along}
 			var area := sim.areas.area_at(cell)
 			if area:
 				return {"op": "remove_area", "id": area}
@@ -268,6 +271,9 @@ func _order_error(cell: Vector2i) -> String:
 				return sim.build_two_way_gate_error(area.type, area.segment, area.from, area.to)
 			return sim.build_area_error(area.type, area.segment, area.side, area.from, area.to)
 		Hud.BULLDOZE:
+			var crane := AreaFlow.crane_at(sim, cell)
+			if crane:
+				return sim.remove_sts_error(crane.apron, crane.along)
 			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) else "Nothing to bulldoze here"
 		Hud.CRANE:
 			var apron := _apron_at(cell)

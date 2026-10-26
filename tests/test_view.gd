@@ -33,9 +33,10 @@ func _initialize() -> void:
 			var now := WorldView.crane_pose(step / 100.0, discharging)
 			_expect(absf(now[0] - before[0]) < 0.05 and absf(now[1] - before[1]) < 0.1, true, "the trolley moves smoothly at %.2f" % (step / 100.0))
 			before = now
-	var feeder := WorldView.deck_slots(8, 999)
-	_expect(feeder.size(), floori((8 - WorldView.SHIP_BOW - WorldView.SHIP_STERN) / WorldView.DECK_BAY) * WorldView.DECK_ROWS * WorldView.DECK_TIERS, "a full deck stops at the top tier")
-	_expect(WorldView.deck_slots(8, 5).size(), 5, "each box aboard gets a slot")
+	var feeder := WorldView.deck_slots(8, 999, 8)
+	_expect(feeder.size(), floori((8 - WorldView.SHIP_BOW - WorldView.SHIP_STERN) / WorldView.DECK_BAY) * 8 * WorldView.DECK_TIERS, "a full deck stops at the top tier")
+	_expect(WorldView.deck_slots(8, 5, 8).size(), 5, "each box aboard gets a slot")
+	_expect(is_equal_approx(feeder[1].x - feeder[0].x, 2.54 / WorldView.METRES_PER_UNIT), true, "rows sit a box's width apart, at true scale")
 	_expect(feeder.all(func(p: Vector3) -> bool: return absf(p.z) < 4.0 - 0.2 and absf(p.x) < 0.7), true, "deck boxes stay over the hull")
 	var unique := {}
 	for p: Vector3 in feeder:
