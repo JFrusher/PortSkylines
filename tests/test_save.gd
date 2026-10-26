@@ -186,7 +186,7 @@ func _write_payload(path: String, data: Variant) -> void:
 ## A port mid-discharge on roads and areas saves and loads to the same state,
 ## then plays on the same as one never saved.
 func _test_area_flow_round_trips() -> void:
-	var sim: PortSim = AreaPort.working_terminal(3)
+	var sim: PortSim = AreaPort.working_terminal(3, 2)
 	for i in 2000:
 		sim.tick()
 		if not (sim.vehicles.is_empty() or sim.machine_jobs.is_empty()):
@@ -195,6 +195,7 @@ func _test_area_flow_round_trips() -> void:
 	_expect(SaveFile.save("user://area_flow.bin", sim), "", "a port mid-discharge saves")
 	var loaded: PortSim = SaveFile.load_from("user://area_flow.bin").sim
 	_expect(loaded.to_dict(), sim.to_dict(), "and loads to the same state")
+	_expect([loaded.exports, sim.exports], [2, 2], "with its exports counted again")
 	for i in 300:
 		sim.tick()
 		loaded.tick()

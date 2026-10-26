@@ -81,6 +81,8 @@ var areas: Areas
 ## loaded}. A box is always in exactly one place: on a vehicle or in a yard
 ## stack (boxes on ships are only counted).
 var boxes := {}
+## How many of `boxes` are exports; not saved, counted again on load.
+var exports := 0
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
@@ -286,6 +288,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	for crane: Dictionary in d.cranes:
 		sim.cranes.append(Crane.from_dict(crane))
 	sim.boxes = d.boxes.duplicate(true)
+	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
 	sim.turn_times.assign(d.turn_times)
@@ -854,7 +857,14 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
 	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line}
+	exports += 1 if kind == "export" else 0
 	return id
+
+
+## Takes box `id` out of the port: delivered, loaded aboard, or lost.
+func _drop_box(id: int) -> void:
+	exports -= 1 if boxes[id].kind == "export" else 0
+	boxes.erase(id)
 
 
 ## Boxes in the yard past their free days.

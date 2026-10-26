@@ -81,7 +81,7 @@ static func _fill(sim: PortSim, blocks: Array[int]) -> void:
 			var stacks := AreaFlow._stacks(sim, block)
 			var box := sim._new_box("import", now + placed % (DUE_HOURS * 60), sim.rules.lines.keys()[0])
 			if stacks.place(box, sim.boxes[box].teu) < 0:
-				sim.boxes.erase(box)
+				sim._drop_box(box)
 				continue
 			sim.boxes[box].in = now
 			placed += 1

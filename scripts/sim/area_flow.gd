@@ -159,7 +159,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	crane.timer = 0.0
 	crane.tractor = 0
 	sim._moved(sim.boxes[tractor.box])
-	sim.boxes.erase(tractor.box)
+	sim._drop_box(tractor.box)
 	ship.exports -= 1
 	ship.moves += 1
 	_gone(sim, tractor)
@@ -324,10 +324,7 @@ static func export_demand(sim: PortSim) -> int:
 		var until := fposmod(service.start - week_now, Contracts.MINUTES_PER_WEEK)
 		if until > 0.0 and until <= sim.rules.export_lead_hours * 60.0:
 			wanted += sim.rules.ship_classes[service.kind].export_moves
-	for box: Dictionary in sim.boxes.values():
-		if box.kind == "export":
-			wanted -= 1
-	return wanted
+	return wanted - sim.exports
 
 
 ## Whether exports are on their way into `terminal`, or can still be sent:
@@ -505,7 +502,7 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		"leaving":
 			if vehicle.loaded:
 				sim.delivered += 1 if sim.boxes[vehicle.box].kind == "import" else 0
-				sim.boxes.erase(vehicle.box)
+				sim._drop_box(vehicle.box)
 			_gone(sim, vehicle)
 
 
@@ -519,7 +516,7 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 		sim.handovers.drop(vehicle.area, vehicle.id)
 		_promote(sim, vehicle.area)
 	if vehicle.loaded:
-		sim.boxes.erase(vehicle.box)
+		sim._drop_box(vehicle.box)
 	elif vehicle.box != 0:
 		sim._claimed.erase(vehicle.box)
 	var at := Vector2i(vehicle.position(1.0).round())
@@ -720,7 +717,7 @@ static func remove(sim: PortSim, id: int) -> void:
 	var lost := 0
 	if id in sim.area_stacks:
 		for box: int in sim.area_stacks[id].boxes():
-			sim.boxes.erase(box)
+			sim._drop_box(box)
 			lost += 1
 		sim.area_stacks.erase(id)
 	var cells := sim.areas.cells(id)
@@ -728,7 +725,7 @@ static func remove(sim: PortSim, id: int) -> void:
 		# Bound for the area, or fetching an export for a crane on it.
 		if vehicle.area == id or vehicle.home in cells:
 			if vehicle.loaded:
-				sim.boxes.erase(vehicle.box)
+				sim._drop_box(vehicle.box)
 				lost += 1
 			elif vehicle.box != 0:
 				sim._claimed.erase(vehicle.box)
