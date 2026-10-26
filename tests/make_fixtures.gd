@@ -7,13 +7,15 @@ const AreaPort := preload("res://tests/area_port.gd")
 
 
 func _initialize() -> void:
-	# AreaPort.base's port with an export block too, so a ship is worked both ways.
+	# AreaPort.base's port with an export block and a rail block too, so a ship
+	# is worked both ways and a train is on the track.
 	var sim := AreaPort.base()
 	AreaPort.add_export_block(sim)
+	AreaPort.add_rail_block(sim)
 	# 30 game minutes: a ship alongside, boxes stacked and vehicles on the roads.
 	for i in roundi(30 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
 	var path := "res://tests/fixtures/save_v%d.bin" % SaveFile.VERSION
 	var err := SaveFile.save(path, sim)
-	print(err if err else "wrote %s (ships %d, vehicles %d)" % [path, sim.ships.size(), sim.vehicles.size()])
+	print(err if err else "wrote %s (ships %d, vehicles %d, trains %d, track %d)" % [path, sim.ships.size(), sim.vehicles.size(), sim.trains.size(), sim.rails.segments.size()])
 	quit(1 if err else 0)
