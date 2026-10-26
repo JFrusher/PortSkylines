@@ -16,6 +16,9 @@ var _next_node := 1
 var _next_segment := 1
 ## How near, in cells, a drawn road's ends must come to a road to snap onto it.
 const SNAP_CELLS := 3
+## Cells a drag snaps onto as onto a road's end, though no road is there yet:
+## where the highway meets the site.
+var anchors: Array[Vector2i] = []
 
 
 func _init(road_types: Dictionary) -> void:
@@ -95,11 +98,13 @@ func snap_start(cell: Vector2i) -> Vector2i:
 
 
 ## Where a drag from `from` towards `to` ends: on the nearest road within
-## SNAP_CELLS of `to` that a straight or 45° road from `from` reaches, a
-## junction or road end first; otherwise `to` snapped straight or to 45°.
-## Roads `from` is on don't count, so a drag never snaps back along its own road.
+## SNAP_CELLS of `to` snapped straight or to 45° that a road from `from`
+## reaches, a junction or road end first; otherwise `to` snapped. Measured
+## from the snapped end, not the mouse, so a release off to the side of the
+## line still joins the road the line meets. Roads `from` is on don't count,
+## so a drag never snaps back along its own road.
 func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
-	return _snap_onto(to, from, snap(from, to))
+	return _snap_onto(snap(from, to), from, snap(from, to))
 
 
 ## The road cell nearest `near` within SNAP_CELLS, nodes first, reachable
@@ -121,6 +126,14 @@ func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i
 			if score < best_score:
 				best = cell
 				best_score = score
+	for cell in anchors:
+		var d := maxi(absi(cell.x - near.x), absi(cell.y - near.y))
+		if cell == from or d > SNAP_CELLS or (from != Grid.NONE and snap(from, cell) != cell):
+			continue
+		var score := Vector2(cell - near).length() - SNAP_CELLS * 2
+		if score < best_score:
+			best = cell
+			best_score = score
 	return best
 
 
