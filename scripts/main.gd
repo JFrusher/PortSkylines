@@ -106,11 +106,17 @@ func _process(dt: float) -> void:
 		var area := _area_command()
 		for side: int in ([1, -1] if hud.two_way else [area.side]):
 			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
+	if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
+		dragged = sim.berth_cells(hud.berth, cell.y)
 	view.show_area_preview(dragged, _order_error(cell) == "")
 	var ends: Array[Vector2i] = [Grid.NONE, Grid.NONE]
+	var road_type := hud.road_type
 	if _road_from != Grid.NONE:
 		ends = _road_ends()
-	view.show_road_preview(ends[0], ends[1], hud.road_type, _order_error(cell) == "")
+	elif hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
+		ends = sim.berth_line(hud.berth, cell.y)
+		road_type = PortSim.BERTH_ROAD
+	view.show_road_preview(ends[0], ends[1], road_type, _order_error(cell) == "")
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_painting = false
@@ -141,6 +147,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			_area_from = sim.areas.attach(_hovered_grid_cell(), hud.area_type)
 			if _area_from.is_empty():
 				hud.flash("Drag areas out along a road's edge")
+			return
+		if hud.tool == Hud.BUILD_BERTH:
+			_order(_hovered_grid_cell(), true)
 			return
 		if hud.tool == Hud.DRAW_ROAD:
 			_road_from = sim.roads.snap_start(_hovered_grid_cell())
@@ -206,7 +215,9 @@ func _command(cell: Vector2i) -> Dictionary:
 			return {"op": "remove_area", "id": area} if area else {"op": "remove_road", "segment": sim.roads.segment_at(cell)}
 		Hud.CRANE:
 			var apron := _apron_at(cell)
-			return {"op": "place_sts", "apron": apron, "along": sim.areas.along(apron, cell) if apron else 0}
+			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell)}
+		Hud.BUILD_BERTH:
+			return {"op": "build_berth", "kind": hud.berth, "y": cell.y}
 	return {"op": "buy_land", "tile": sim.land_tile(cell)}
 
 
@@ -214,6 +225,22 @@ func _command(cell: Vector2i) -> Dictionary:
 func _apron_at(cell: Vector2i) -> int:
 	var area := sim.areas.area_at(cell)
 	return area if area and sim.areas.list[area].type == "quay_apron" else 0
+
+
+## Where along apron `apron` a crane placed at `cell` stands: the nearest
+## crane spot on a berth, else under the mouse.
+func _crane_along(apron: int, cell: Vector2i) -> int:
+	if not apron:
+		return 0
+	var along := sim.areas.along(apron, cell)
+	var spots := AreaFlow.crane_spots(sim, apron)
+	if spots.is_empty():
+		return along
+	var best := spots[0]
+	for spot in spots:
+		if absi(spot - along) < absi(best - along):
+			best = spot
+	return best
 
 
 func _order_error(cell: Vector2i) -> String:
@@ -236,7 +263,9 @@ func _order_error(cell: Vector2i) -> String:
 			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) else "Nothing to bulldoze here"
 		Hud.CRANE:
 			var apron := _apron_at(cell)
-			return AreaFlow.sts_error(sim, apron, sim.areas.along(apron, cell) if apron else 0)
+			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell))
+		Hud.BUILD_BERTH:
+			return sim.build_berth_error(hud.berth, cell.y)
 	return sim.buy_land_error(sim.land_tile(cell))
 
 

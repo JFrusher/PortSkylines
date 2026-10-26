@@ -62,6 +62,8 @@ var area_stacks := {}
 ## The areas version yard machines were last fitted to; not saved, so a
 ## loaded port refits once, which adds nothing.
 var _machines_fit_for := -1
+## The road a berth brings along its back.
+const BERTH_ROAD := "terminal_1_1"
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
@@ -130,7 +132,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 			land[Vector2i(x, y)] = true
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
-	_event("Draw a road from the highway to the coast, then drag out a quay apron, a gate and a yard block along it")
+	_event("Place a berth on the coast, then draw a road from the highway to it and add a gate and a yard block along it")
 
 
 class Ship:
@@ -342,6 +344,8 @@ func apply(command: Dictionary) -> String:
 			return remove_road(command.segment)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
+		"build_berth":
+			return build_berth(command.kind, command.y)
 		"build_two_way_gate":
 			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
@@ -423,6 +427,72 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 			return err
 	if not _afford(area_price(type, segment, 1, from, to) + area_price(type, segment, -1, from, to)):
 		return "Not enough money"
+	return ""
+
+
+## The road line, top to bottom, of a berth of `kind` centred on row `y`: at
+## the column where its apron reaches the water exactly, and a cell longer
+## each way, so a berth placed end to end with another joins its road.
+func berth_line(kind: String, y: int) -> Array[Vector2i]:
+	var length: int = rules.berths[kind].length
+	var x: int = Grid.cells(rules.site.sea_width) + rules.area_types.quay_apron.depth
+	var top := y - length / 2
+	return [Vector2i(x, top - 1), Vector2i(x, top + length)] as Array[Vector2i]
+
+
+## The cells a berth of `kind` centred on row `y` would cover: its apron,
+## from the water to its road.
+func berth_cells(kind: String, y: int) -> Array[Vector2i]:
+	var line := berth_line(kind, y)
+	var found: Array[Vector2i] = []
+	for row in range(line[0].y + 1, line[1].y):
+		for x in range(Grid.cells(rules.site.sea_width), line[0].x):
+			found.append(Vector2i(x, row))
+	return found
+
+
+func build_berth_error(kind: String, y: int) -> String:
+	if kind not in rules.berths:
+		return "Unknown berth: %s" % kind
+	var locked := lock_error(kind)
+	if locked:
+		return locked
+	var line := berth_line(kind, y)
+	var cells := berth_cells(kind, y)
+	if not cells.all(owns):
+		return "Buy this land first"
+	var built := {}
+	for id: int in areas.list:
+		for cell in areas.cells(id):
+			built[cell] = true
+	for segment: int in roads.segments:
+		var road: Dictionary = roads.segments[segment]
+		for cell in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
+			built[cell] = true
+	if cells.any(func(c: Vector2i) -> bool: return c in built):
+		return "Something is already built here"
+	# A road meeting the berth's road part-way would split it under the apron.
+	if RoadNet.line(line[0] + Vector2i(0, 1), line[1] - Vector2i(0, 1)).any(func(c: Vector2i) -> bool: return c in built):
+		return "A road already runs here: place the berth clear of it, it brings its own"
+	var err := build_road_error(line[0], line[1], BERTH_ROAD)
+	if err:
+		return err
+	if not _afford(road_price(line[0], line[1], BERTH_ROAD) + cells.size() * rules.area_types.quay_apron.cost_per_cell):
+		return "Not enough money"
+	return ""
+
+
+## Places a berth of `kind` on the coast centred on row `y`: its road, then
+## its apron along the road's sea side.
+func build_berth(kind: String, y: int) -> String:
+	var err := build_berth_error(kind, y)
+	if err:
+		return err
+	var line := berth_line(kind, y)
+	build_road(line[0], line[1], BERTH_ROAD)
+	# The road runs south from line[0], so its right, side 1, faces the sea.
+	err = build_area("quay_apron", roads.segment_at(Vector2i(line[0].x, y)), 1, 1, rules.berths[kind].length)
+	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
 	return ""
 
 

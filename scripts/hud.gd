@@ -22,6 +22,8 @@ const INSPECT := -7
 const DRAW_ROAD := -8
 ## Drags an area of area_type out along a road's edge.
 const DRAW_AREA := -9
+## Places a berth of berth on the coast by clicking.
+const BUILD_BERTH := -10
 ## The build menu row each area type sits in.
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
@@ -42,6 +44,8 @@ var road_type := ""
 ## gate whether it is built on both sides of the road.
 var area_type := ""
 var two_way := false
+## The berth BUILD_BERTH places, a key of rules.berths.
+var berth := ""
 var speed := 1
 
 var _money := Label.new()
@@ -272,7 +276,8 @@ func _ready() -> void:
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
 		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
-		if area.kind == "depot":
+		# Quay aprons come as berths, below.
+		if area.kind in ["depot", "quay_apron"]:
 			continue
 		var detail := "%d lanes, $%d a cell" % [area.depth - 2, area.cost_per_cell] if area.kind == "gate" else "$%d per 4 m cell" % area.cost_per_cell
 		_item(_button(rows[AREA_ROWS[area.kind]], "%s\n%s" % [area.name, detail], tools, false, func() -> void:
@@ -284,6 +289,12 @@ func _ready() -> void:
 				tool = DRAW_AREA
 				area_type = key
 				two_way = true)).tooltip_text = _area_tip(area, true)
+	for key: String in sim.rules.berths:
+		var spec: Dictionary = sim.rules.berths[key]
+		var apron: Dictionary = sim.rules.area_types.quay_apron
+		_gate(key, _item(_button(rows.Quay, "%s\n%d m, %d crane spots" % [spec.name, Grid.metres(spec.length), spec.crane_spots], tools, false, func() -> void:
+			tool = BUILD_BERTH
+			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Cranes stand at its %d spots.\n%s with its road." % [Grid.metres(spec.length), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
 	var dredge := _gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n" + HudDetails.dollars(sim.rules.channel.cost_per_metre), {"op": "dredge", "metres": 1})))
 	dredge.tooltip_text = "Deepens the channel 1 m, so ships with a deeper draft can call.\n%s a metre, then %s a metre every %d days to keep it." % [HudDetails.dollars(sim.rules.channel.cost_per_metre), HudDetails.dollars(sim.rules.channel.maintenance_per_metre), sim.rules.channel.maintenance_days]
 	var crane: Dictionary = sim.rules.sts_crane
