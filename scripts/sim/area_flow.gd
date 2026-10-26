@@ -159,7 +159,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	crane.timer = 0.0
 	crane.tractor = 0
 	sim._moved(sim.boxes[tractor.box])
-	sim.boxes.erase(tractor.box)
+	sim._drop_box(tractor.box)
 	ship.exports -= 1
 	ship.moves += 1
 	_gone(sim, tractor)
@@ -204,8 +204,8 @@ static func _export_box(sim: PortSim, terminal: int) -> int:
 		if block not in sim.areas.list or sim.areas.list[block].terminal != terminal or sim.areas.idle_reason(block) != "":
 			continue
 		var stacks: AreaStacks = sim.area_stacks[block]
-		for box: int in stacks.boxes():
-			if box not in sim._claimed and sim.boxes[box].kind == "export" and (best == 0 or stacks.above(box) < fewest):
+		for box: int in stacks.of_kind("export", sim.boxes):
+			if box not in sim._claimed and (best == 0 or stacks.above(box) < fewest):
 				best = box
 				fewest = stacks.above(box)
 	return best
@@ -263,12 +263,14 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 		if not _has_gate(sim, sim.areas.list[block].terminal):
 			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[sim.areas.list[block].terminal].name)
 			continue
-		for id: int in sim.area_stacks[block].boxes():
-			if id in sim._claimed or sim.boxes[id].kind != "import" or sim.boxes[id].due > now:
+		# Imports come soonest due first, so the block's first unclaimed one is its best.
+		for id: int in sim.area_stacks[block].of_kind("import", sim.boxes):
+			if id in sim._claimed:
 				continue
-			if box == 0 or sim.boxes[id].due < sim.boxes[box].due:
+			if sim.boxes[id].due <= now and (box == 0 or sim.boxes[id].due < sim.boxes[box].due):
 				box = id
 				terminal = sim.areas.list[block].terminal
+			break
 	if box == 0:
 		return false
 	var entry := _entry_cell(sim)
@@ -324,10 +326,7 @@ static func export_demand(sim: PortSim) -> int:
 		var until := fposmod(service.start - week_now, Contracts.MINUTES_PER_WEEK)
 		if until > 0.0 and until <= sim.rules.export_lead_hours * 60.0:
 			wanted += sim.rules.ship_classes[service.kind].export_moves
-	for box: Dictionary in sim.boxes.values():
-		if box.kind == "export":
-			wanted -= 1
-	return wanted
+	return wanted - sim.exports
 
 
 ## Whether exports are on their way into `terminal`, or can still be sent:
@@ -505,7 +504,7 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		"leaving":
 			if vehicle.loaded:
 				sim.delivered += 1 if sim.boxes[vehicle.box].kind == "import" else 0
-				sim.boxes.erase(vehicle.box)
+				sim._drop_box(vehicle.box)
 			_gone(sim, vehicle)
 
 
@@ -519,7 +518,7 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 		sim.handovers.drop(vehicle.area, vehicle.id)
 		_promote(sim, vehicle.area)
 	if vehicle.loaded:
-		sim.boxes.erase(vehicle.box)
+		sim._drop_box(vehicle.box)
 	elif vehicle.box != 0:
 		sim._claimed.erase(vehicle.box)
 	var at := Vector2i(vehicle.position(1.0).round())
@@ -720,7 +719,7 @@ static func remove(sim: PortSim, id: int) -> void:
 	var lost := 0
 	if id in sim.area_stacks:
 		for box: int in sim.area_stacks[id].boxes():
-			sim.boxes.erase(box)
+			sim._drop_box(box)
 			lost += 1
 		sim.area_stacks.erase(id)
 	var cells := sim.areas.cells(id)
@@ -728,7 +727,7 @@ static func remove(sim: PortSim, id: int) -> void:
 		# Bound for the area, or fetching an export for a crane on it.
 		if vehicle.area == id or vehicle.home in cells:
 			if vehicle.loaded:
-				sim.boxes.erase(vehicle.box)
+				sim._drop_box(vehicle.box)
 				lost += 1
 			elif vehicle.box != 0:
 				sim._claimed.erase(vehicle.box)

@@ -3,8 +3,10 @@ extends SceneTree
 ## at a given speed, and prints the time per frame spent on the sim, on route
 ## searches within it, and on rendering, plus draw calls. Needs a renderer (a
 ## display, or xvfb-run). The camera looks at the middle of the port from
-## `distance` (8 to 90 in game).
-## godot --script res://bench/endgame_bench.gd -- <speed> [distance]
+## `distance` (8 to 90 in game). With `hide`, one group of the view is not
+## drawn, to see what each costs: ground, roads, areas, stacks, machines,
+## vehicles, ships or cranes.
+## godot --script res://bench/endgame_bench.gd -- <speed> [distance] [hide]
 
 const PATH := "res://bench/endgame.bin"
 const TimedLanes := preload("res://bench/timed_lanes.gd")
@@ -15,6 +17,7 @@ var _sim: PortSim
 var _view: WorldView
 var _speed := 1
 var _distance := 90.0
+var _hide := ""
 var _accumulated := 0.0
 var _frame := 0
 var _last := 0
@@ -31,6 +34,7 @@ func _initialize() -> void:
 	var args := OS.get_cmdline_user_args()
 	_speed = int(args[0]) if args.size() > 0 else 1
 	_distance = float(args[1]) if args.size() > 1 else 90.0
+	_hide = args[2] if args.size() > 2 else ""
 	var loaded := SaveFile.load_from(PATH)
 	if loaded.has("error"):
 		push_error(loaded.error + " (run bench/make_endgame.gd first)")
@@ -75,6 +79,8 @@ func _process(dt: float) -> bool:
 	var sim_us := Time.get_ticks_usec() - start
 	_accumulated = minf(_accumulated - ticks * SimClock.TICK_SECONDS, SimClock.TICK_SECONDS)
 	_view.alpha = _accumulated / SimClock.TICK_SECONDS
+	for node: Node3D in _group(_hide):
+		node.visible = false
 	if _frame > WARMUP:
 		_frames.append((now - _last) / 1000.0)
 		_sim_ms.append(sim_us / 1000.0)
@@ -85,9 +91,34 @@ func _process(dt: float) -> bool:
 	_last = now
 	if _frame < WARMUP + FRAMES:
 		return false
+	print("hidden: %s" % (_hide if _hide else "nothing"))
 	print("speed %dx, distance %d, %d vehicles: frame avg %.1f ms (p95 %.1f), sim %.2f ms (routes %.2f), render cpu %.1f ms, %d draw calls, %d primitives" % [
 		_speed, _distance, _sim.vehicles.size(), _average(_frames), _p95(_frames), _average(_sim_ms), _average(_route_ms), _average(_render_ms), _draw_calls, _primitives])
 	return true
+
+
+## The view's nodes in group `name`; none for "".
+func _group(name: String) -> Array:
+	match name:
+		"ground":
+			# The water and the land are the view's first two children.
+			return [_view.get_child(0), _view.get_child(1)] + _view._unowned.values()
+		"roads":
+			return [_view._roads, _view._road_marks]
+		"areas":
+			return [_view._areas]
+		"stacks":
+			return _view._area_stacks.values()
+		"machines":
+			return _view._area_machines.values()
+		"vehicles":
+			return _view._vehicle_parts.values()
+		"ships":
+			return _view._ships.values()
+		"cranes":
+			return _view._cranes.values()
+	assert(name == "", "unknown group: " + name)
+	return []
 
 
 func _average(values: Array[float]) -> float:

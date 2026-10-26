@@ -15,15 +15,29 @@ const BOXES := 20000
 const DUE_HOURS := 2
 
 
-## Builds the port into a new sim, fills its import blocks with BOXES boxes
-## due from now on, and berths a Panamax at each apron. Rules unlock every
-## milestone, send a lorry every tick, and give blocks enough RTGs to keep up.
-static func build() -> PortSim:
+## The bench's rules: every milestone unlocked, a lorry sent every tick, and
+## blocks given enough RTGs to keep up.
+static func bench_rules() -> Dictionary:
 	var rules := RandomPort.quick()
 	rules.lorry_interval_minutes = SimClock.CALENDAR_MINUTES_PER_TICK
 	# An RTG per 3 bays, not 10: one per block handles about 20 lorries an
 	# hour, and the port's queues would then measure the yard, not the sim.
 	rules.yard_gear.rtg.bays_per_machine = 3.0
+	return rules
+
+
+## The port to play for testing, from the pause menu in debug builds: the
+## same port in creative mode on the game's rules with every milestone
+## unlocked, and a Panamax service on each day of the week so ships keep coming.
+static func debug_port() -> PortSim:
+	var sim := build(RandomPort.quick())
+	RandomPort.calls(sim, "panamax", 600, Contracts.MINUTES_PER_WEEK / 7, 7)
+	return sim
+
+
+## Builds the port into a new creative sim on `rules`, fills its import
+## blocks with BOXES boxes due from now on, and berths a Panamax at each apron.
+static func build(rules: Dictionary) -> PortSim:
 	var sim := PortSim.new(3, rules, true)
 	for x in 3:
 		for y in 3:
@@ -81,7 +95,7 @@ static func _fill(sim: PortSim, blocks: Array[int]) -> void:
 			var stacks := AreaFlow._stacks(sim, block)
 			var box := sim._new_box("import", now + placed % (DUE_HOURS * 60), sim.rules.lines.keys()[0])
 			if stacks.place(box, sim.boxes[box].teu) < 0:
-				sim.boxes.erase(box)
+				sim._drop_box(box)
 				continue
 			sim.boxes[box].in = now
 			placed += 1

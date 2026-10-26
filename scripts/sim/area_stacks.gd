@@ -12,6 +12,10 @@ var stacks: Array = []
 var _tiers: int
 var _teu := {}  # box id -> 1 or 2
 var _where := {}  # box id -> stack position
+## Bumped by every change to the stacks, so of_kind knows when to sort again.
+var _version := 0
+var _sorted_for := -1
+var _by_kind := {}  # box kind -> box ids, soonest due first
 
 
 ## `positions` stack positions, `tiers` high.
@@ -59,6 +63,7 @@ func place_at(position: int, id: int, teu: int) -> void:
 	assert(fits(position, teu), "box %d doesn't fit on stack %d" % [id, position])
 	_teu[id] = teu
 	_where[id] = position
+	_version += 1
 	var tiers: Array = stacks[position]
 	if teu == 1 and not tiers.is_empty() and tiers[-1].size() == 1 and _teu[tiers[-1][0]] == 1:
 		tiers[-1].append(id)
@@ -102,6 +107,7 @@ func take(id: int) -> int:
 		tiers.pop_back()
 	_teu.erase(id)
 	_where.erase(id)
+	_version += 1
 	return moved
 
 
@@ -155,6 +161,32 @@ func boxes() -> Array:
 	return _where.keys()
 
 
+## The area's boxes of `kind`, soonest due first, ties in the order they
+## were stacked. `boxes` is the sim's box table; a box's kind and due never
+## change once it exists, so the order is sorted again only when the stacks change.
+func of_kind(kind: String, boxes: Dictionary) -> Array:
+	if _sorted_for != _version:
+		_sorted_for = _version
+		var keyed := {}  # kind -> [due, stacking order, id]
+		var order := 0
+		for id: int in _where:
+			var box: Dictionary = boxes[id]
+			if box.kind not in keyed:
+				keyed[box.kind] = []
+			keyed[box.kind].append([box.due, order, id])
+			order += 1
+		_by_kind.clear()
+		for k: String in keyed:
+			keyed[k].sort()
+			_by_kind[k] = keyed[k].map(func(entry: Array) -> int: return entry[2])
+	return _by_kind.get(kind, [])
+
+
+## Whether box `id` is in the area.
+func has(id: int) -> bool:
+	return _where.has(id)
+
+
 func _boxes(position: int) -> Array:
 	var found := []
 	for tier: Array in stacks[position]:
@@ -173,5 +205,6 @@ func _remove_top(position: int) -> void:
 	var tiers: Array = stacks[position]
 	var top: int = tiers[-1].pop_back()
 	_where.erase(top)
+	_version += 1
 	if tiers[-1].is_empty():
 		tiers.pop_back()
