@@ -204,8 +204,8 @@ static func _export_box(sim: PortSim, terminal: int) -> int:
 		if block not in sim.areas.list or sim.areas.list[block].terminal != terminal or sim.areas.idle_reason(block) != "":
 			continue
 		var stacks: AreaStacks = sim.area_stacks[block]
-		for box: int in stacks.boxes():
-			if box not in sim._claimed and sim.boxes[box].kind == "export" and (best == 0 or stacks.above(box) < fewest):
+		for box: int in stacks.of_kind("export", sim.boxes):
+			if box not in sim._claimed and (best == 0 or stacks.above(box) < fewest):
 				best = box
 				fewest = stacks.above(box)
 	return best

@@ -517,6 +517,14 @@ func _test_area_stacks() -> void:
 	_expect(kept.housekeep(due), true, "in a quiet period a box burying one due out sooner is moved")
 	_expect(kept.above(20), 0, "so the box due first is on top")
 	_expect(kept.housekeep(due), false, "and then there is nothing to do")
+	var sorted := AreaStacks.new(3, 4)
+	var table := {1: {"kind": "import", "due": 30.0}, 2: {"kind": "export", "due": 0.0}, 3: {"kind": "import", "due": 10.0}, 4: {"kind": "import", "due": 30.0}, 5: {"kind": "export", "due": 0.0}}
+	for id: int in [1, 2, 3, 4, 5]:
+		sorted.place_at(0 if id < 4 else 1, id, 2)
+	_expect([sorted.of_kind("import", table), sorted.of_kind("export", table)], [[3, 1, 4], [2, 5]], "boxes of a kind come soonest due first, ties in stacking order")
+	sorted.take(1)
+	_expect(sorted.of_kind("import", table), [3, 4], "and the order follows the stacks as they change")
+	_expect(sorted.of_kind("reefer", table), [], "a kind with no boxes has none")
 
 
 func _test_driveways() -> void:
