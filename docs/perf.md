@@ -440,3 +440,21 @@ behind. Two ways out, both waiting on a decision: step 10 (port the hottest
 loop, vehicle moves, to a GDExtension, only on profiler evidence) or run
 the tick on a worker thread so frames don't wait on it. Run
 `bench/endgame_bench.gd -- 1` on the target PC to record its numbers here.
+
+### Speed, step 1: cell entry without copies (2026-10-26)
+
+`LaneTraffic._enter` built a wanted-cells list, a keep dictionary and a copy
+of the vehicle's held cells for every cell entered. A plain lane cell (not a
+junction) now just holds that one cell and lets go of the rest, which is
+what the general case worked out to. `profile_sim.gd -- 200` on the
+endgame save, `LaneTraffic.advance` per call: **5.4, 5.0, 5.3 µs before;
+4.1, 4.2, 4.0, 4.4 µs after**, about 2 ms a tick. `hash_ticks.gd` on the
+endgame save after 300 ticks: 163539211 before and after.
+
+Tried and reverted, no change outside run-to-run noise (about ±10% on this
+box): comparing the lane graph's versions without building an array a call,
+and a constant set for the driving states in `_drive`.
+
+Over 1,000 ticks, past the route cache's warm-up, the endgame runs at
+**27.9 ms a tick** (2,484 vehicles): `_drive` 18.8 ms, of which `advance`
+8.3 ms and routes 3.2 ms; yard machines 4.2 ms; import dispatch 2.3 ms.
