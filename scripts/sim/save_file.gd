@@ -141,7 +141,7 @@ static func _valid_sim(data: Variant) -> bool:
 	for train: Variant in data.trains:
 		if not train is Dictionary or not _has_fields(train, {
 			"id": TYPE_INT, "block": TYPE_INT, "path": TYPE_ARRAY, "t": TYPE_FLOAT, "prev_t": TYPE_FLOAT,
-			"state": TYPE_STRING, "wagons": TYPE_ARRAY, "busy": TYPE_ARRAY,
+			"state": TYPE_STRING, "depart": TYPE_FLOAT, "wagons": TYPE_ARRAY, "busy": TYPE_ARRAY,
 		}):
 			return false
 		if train.block not in data.areas.list or train.path.is_empty() or not train.path.all(func(c: Variant) -> bool: return c is Vector2i):
@@ -188,6 +188,9 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, false):
 			return false
 		ids[vehicle.id] = true
+	# Trains hold level crossings under their id negated.
+	for train: Dictionary in data.trains:
+		ids[-train.id] = true
 	for id: Variant in data.lane_traffic:
 		if not (id in ids and data.lane_traffic[id] is Array and _all_cells(data.lane_traffic[id], true)):
 			return false
@@ -202,7 +205,9 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 	for machine: Variant in data.machine_jobs:
 		var job: Variant = data.machine_jobs[machine]
-		if not (machine in data.machines.list and job is Dictionary and _has_fields(job, {"vehicle": TYPE_INT, "position": TYPE_INT})):
+		if not (machine in data.machines.list and job is Dictionary and _has_fields(job, {"position": TYPE_INT})):
+			return false
+		if not (_has_fields(job, {"vehicle": TYPE_INT}) or _has_fields(job, {"train": TYPE_INT, "wagon": TYPE_INT})):
 			return false
 	for area: Variant in data.area_stacks:
 		var stacks: Variant = data.area_stacks[area]

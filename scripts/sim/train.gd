@@ -15,6 +15,8 @@ var path: Array[Vector2i]
 var t := 0.0
 var prev_t := 0.0
 var state := "arriving"
+## The calendar minute it may leave its siding, set as it arrives there.
+var depart := 0.0
 ## The box on each wagon, 0 for none; wagon 0 stands at the siding's first bay.
 var wagons: Array[int] = []
 ## Wagons an RMG is working now, so no two jobs take one.
@@ -35,7 +37,7 @@ func length() -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"id": id, "block": block, "path": path.duplicate(), "t": t, "prev_t": prev_t, "state": state, "wagons": wagons.duplicate(), "busy": busy.duplicate()}
+	return {"id": id, "block": block, "path": path.duplicate(), "t": t, "prev_t": prev_t, "state": state, "depart": depart, "wagons": wagons.duplicate(), "busy": busy.duplicate()}
 
 
 static func from_dict(d: Dictionary) -> Train:
@@ -45,6 +47,7 @@ static func from_dict(d: Dictionary) -> Train:
 	train.t = d.t
 	train.prev_t = d.prev_t
 	train.state = d.state
+	train.depart = d.depart
 	train.wagons.assign(d.wagons)
 	train.busy.assign(d.busy)
 	return train

@@ -4,7 +4,8 @@ extends RefCounted
 ## back to the rail entry. Each rail block gets a train every
 ## rail.train.interval_minutes while none is at it. A train comes in from off
 ## the map, stands along the siding, and the block's RMGs lift the imports
-## booked to rail onto its wagons; once nothing due is left for it, it leaves.
+## booked to rail onto its wagons as they fall due; at its departure time,
+## or once its wagons are full, with nothing left for it, it leaves.
 ## Its functions take the sim, whose state they work on, as AreaFlow's do.
 
 
@@ -83,6 +84,7 @@ static func _run(sim: PortSim, train: Train) -> void:
 		"arriving":
 			if _move(sim, train, minf(train.t + _step(sim), train.path.size() - 1)) and train.t == train.path.size() - 1:
 				train.state = "working"
+				train.depart = sim.clock.calendar_minutes() + sim.rules.rail.train.dwell_minutes
 		"working":
 			_work(sim, train)
 		"leaving":
@@ -118,7 +120,9 @@ static func _work(sim: PortSim, train: Train) -> void:
 			continue
 		if not _give(sim, train, machine):
 			break
-	if train.busy.is_empty() and not _has_work(sim, train):
+	# It keeps its schedule, leaving early only with every wagon full.
+	var due := sim.clock.calendar_minutes() >= train.depart or _empty_wagon(train) < 0
+	if train.busy.is_empty() and due and not _has_work(sim, train):
 		train.state = "leaving"
 
 

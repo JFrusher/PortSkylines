@@ -23,6 +23,8 @@ static func bench_rules() -> Dictionary:
 	# An RTG per 3 bays, not 10: one per block handles about 20 lorries an
 	# hour, and the port's queues would then measure the yard, not the sim.
 	rules.yard_gear.rtg.bays_per_machine = 3.0
+	# A train every half hour to each rail block, for M6's 2 trains in the port.
+	rules.rail.train.interval_minutes = 30.0
 	return rules
 
 
@@ -65,7 +67,19 @@ static func build(rules: Dictionary) -> PortSim:
 				var block := _area(sim, {"op": "build_area", "type": "yard_block", "segment": row, "side": side, "from": from, "to": from + BLOCK - 1})
 				_do(sim, {"op": "set_area", "id": block, "settings": {"gear": "rtg", "role": "export" if blocks.size() % 6 == 5 else "import"}})
 				blocks.append(block)
-	for id: int in aprons.slice(1) + blocks:
+	# Two rail blocks south of the last row, sharing the siding track behind them.
+	var last := sim.roads.segment_at(Vector2i(COAST_X + 200, ROWS[-1]))
+	var rail: Array[int] = []
+	for from: int in [20, 20 + BLOCK + 2]:
+		rail.append(_area(sim, {"op": "build_area", "type": "yard_block", "segment": last, "side": 1, "from": from, "to": from + BLOCK - 1}))
+		_do(sim, {"op": "set_area", "id": rail[-1], "settings": {"gear": "rmg"}})
+	var area: Dictionary = sim.areas.list[rail[0]]
+	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var entry := sim.site_rail_entry()
+	var bend := Vector2i(entry.x - 9, behind.y)
+	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
+		_do(sim, {"op": "build_rail", "from": leg[0], "to": leg[1]})
+	for id: int in aprons.slice(1) + blocks + rail:
 		_do(sim, {"op": "set_terminal", "id": id, "terminal": sim.areas.list[aprons[0]].terminal})
 	for apron in aprons:
 		for along: int in [10, 35, 60]:

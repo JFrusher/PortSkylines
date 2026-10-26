@@ -74,10 +74,11 @@ const SCHEMA := {
 	# daily upkeep per 4 m cell, and how many cells south of the highway the
 	# main line meets the site's east edge.
 	# Trains: wagons, one box each; minutes between trains to each rail block;
-	# metres a vehicle second. The rail discount the player may offer per box
+	# minutes one waits at its siding for imports falling due unless its wagons
+	# fill first; metres a vehicle second. The rail discount the player may offer per box
 	# by train, up to `max` dollars, adds share_per_dollar to every line's
 	# rail_share, up to max_share.
-	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
+	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
 	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},

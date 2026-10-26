@@ -220,6 +220,7 @@ static func container_rows(sim: PortSim) -> Array[Dictionary]:
 		row("40 ft containers", str(count_40)),
 		row("Total TEU handled", str(sim.teu_handled)),
 		row("Total boxes delivered", str(sim.delivered)),
+		row("Of those, by rail", str(sim.by_rail)),
 	]
 
 

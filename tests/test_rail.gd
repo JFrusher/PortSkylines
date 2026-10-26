@@ -99,6 +99,8 @@ func _test_trains_take_rail_imports() -> void:
 	for line: String in rules.lines:
 		rules.lines[line].rail_share = 1.0
 	rules.rail.train.interval_minutes = 60.0
+	# Leaving once nothing is due, so the time worked is the RMG's alone.
+	rules.rail.train.dwell_minutes = 0.0
 	var sim := AreaPort.working_terminal(12, 0, rules)
 	var block := AreaPort.add_rail_block(sim)
 	_expect(RailFlow.is_rail_block(sim, block), true, "an RMG block with its siding joined to the rail entry is a rail block")
@@ -116,6 +118,14 @@ func _test_trains_take_rail_imports() -> void:
 				by_gate += 1
 		for train: Train in sim.trains:
 			if train.state == "working":
+				if worked_ticks == 30:
+					_expect(SaveFile.save("user://rail.bin", sim), "", "a port with a train being worked saves")
+					var reloaded: Dictionary = SaveFile.load_from("user://rail.bin")
+					_expect(reloaded.get("error", ""), "", "and loads")
+					if reloaded.has("sim"):
+						_expect(reloaded.sim.to_dict(), sim.to_dict(), "to the same state")
+				if worked_ticks == 0:
+					_expect(Inspect.describe(sim, Inspect.pick(sim, train.path[int(train.t)]))[1], "At its siding, being worked", "Inspect picks a train and says what it is doing")
 				worked_ticks += 1
 				loaded = maxi(loaded, train.wagons.filter(func(b: int) -> bool: return b != 0).size())
 	_expect(booked.size(), 12, "every import is booked to rail")
