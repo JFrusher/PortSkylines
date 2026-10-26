@@ -685,6 +685,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 			return level_locked
 	if settings.has("role") and settings.role not in AREA_ROLES:
 		return "Unknown yard role: %s" % settings.role
+	if settings.get("role") == "reefer" and lock_error("reefers"):
+		return lock_error("reefers")
 	if settings.get("role") == "dangerous" and AreaFlow.near_yard(self, areas.cells(id), id, "") != 0:
 		return _dg_refusal()
 	if settings.has("gear"):
@@ -1147,7 +1149,8 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
-	var reefer: bool = rng.randf() < rules.box_mix.reefer_share
+	# No reefers before their milestone, so a new port isn't fined for plugs it can't have yet.
+	var reefer: bool = rng.randf() < rules.box_mix.reefer_share and unlocked("reefers")
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share

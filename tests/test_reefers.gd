@@ -4,6 +4,7 @@ extends SceneTree
 ## godot --headless --script res://tests/test_reefers.gd
 
 const AreaPort := preload("res://tests/area_port.gd")
+const RandomPort := preload("res://tests/random_port.gd")
 
 var _failures := 0
 
@@ -13,6 +14,7 @@ func _initialize() -> void:
 	_test_unplugged_reefers_are_fined()
 	_test_reefer_exports_plug_in()
 	_test_hot_days_draw_more()
+	_test_reefers_wait_for_their_milestone()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -58,6 +60,19 @@ func _test_reefer_exports_plug_in() -> void:
 	_expect(AreaFlow.unplugged_reefers(sim), 0, "and none in the export block")
 
 
+## A new port gets no reefers before the terminal milestone, so it is never
+## fined for plugs it can't build yet; past it, reefers come.
+func _test_reefers_wait_for_their_milestone() -> void:
+	var rules := Content.base()
+	rules.box_mix.reefer_share = 1.0
+	var sim := PortSim.new(1, rules)
+	var before := sim._new_box("import", 0.0, rules.lines.keys()[0])
+	_expect(sim.boxes[before].reefer, false, "no reefer before the terminal milestone")
+	sim.teu_handled = int(rules.milestones.terminal.teu)
+	var after := sim._new_box("import", 0.0, rules.lines.keys()[0])
+	_expect(sim.boxes[after].reefer, true, "reefers once it is reached")
+
+
 func _test_hot_days_draw_more() -> void:
 	var sim := PortSim.new(1)
 	_expect(sim.reefer_kw(), sim.rules.reefers.kw, "an ordinary day draws kw a plug")
@@ -70,7 +85,8 @@ func _test_hot_days_draw_more() -> void:
 ## A working terminal whose feeder brings `imports` reefers and wants
 ## `exports`, with a reefer block when `plugs`.
 func _reefer_port(plugs: bool, imports := 40, exports := 0) -> PortSim:
-	var rules := Content.base()
+	# Every milestone reached, so reefers are unlocked.
+	var rules := RandomPort.quick()
 	rules.box_mix.reefer_share = 1.0
 	var sim := AreaPort.working_terminal(imports, exports, rules)
 	if plugs:
