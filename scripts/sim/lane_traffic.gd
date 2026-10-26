@@ -5,10 +5,11 @@ extends RefCounted
 ## holds it, and no two vehicles are ever in one cell. Junction cells are
 ## shared by crossing traffic, so a vehicle books every junction cell ahead
 ## and the first cell past them before it enters: it never stops in a junction.
+## The cells and the moves are kept natively, in LaneCells
+## (native/src/lane_cells.cpp): this loop runs for every moving vehicle a tick.
 
 var _lanes: LaneGraph
-var _holders := {}  # cell -> vehicle id
-var _held := {}  # vehicle id -> cells it holds
+var cells := LaneCells.new()
 
 
 func _init(lanes: LaneGraph) -> void:
@@ -17,29 +18,23 @@ func _init(lanes: LaneGraph) -> void:
 
 ## Puts `vehicle` at the start of its route, if that cell is free.
 func place(vehicle: Vehicle) -> bool:
-	return _take(vehicle.id, [vehicle.path[0]])
+	return cells.take(vehicle.id, [vehicle.path[0]])
 
 
 ## Moves `vehicle` up to `speed` cells a second for one tick, entering each
 ## cell on the way in turn and stopping short of the first it can't take.
-## True once it is at the end of its route.
+## Entering a cell takes it, and if it is a junction cell every junction cell
+## after it and the first cell past them too, then lets go of every other cell,
+## including ones its route passes again later, so a route that comes back the
+## same way never holds a cell it has left. True once it is at the end of its route.
 func advance(vehicle: Vehicle, speed: float) -> bool:
 	vehicle.prev_t = vehicle.t
 	if vehicle.at_end():
 		return true
-	var target := minf(vehicle.t + speed * SimClock.TICK_SECONDS, vehicle.path.size() - 1)
-	var start := int(vehicle.t)
-	while int(target) > int(vehicle.t):
-		var i := int(vehicle.t)
-		if not _enter(vehicle, i + 1):
-			vehicle.t = maxf(vehicle.t, i + 0.95)
-			# Waiting counts only ticks it entered no cell at all.
-			vehicle.waited = vehicle.waited + 1 if i == start else 0
-			return false
-		vehicle.t = i + 1
-	vehicle.waited = 0
-	vehicle.t = target
-	return vehicle.at_end()
+	var moved := cells.advance(vehicle.id, vehicle.path, vehicle.t, speed * SimClock.TICK_SECONDS, vehicle.waited, _lanes.junctions())
+	vehicle.t = moved[0]
+	vehicle.waited = int(moved[1])
+	return moved[2] > 0.0
 
 
 ## Lets go of every cell `vehicle` holds.
@@ -47,104 +42,38 @@ func leave(vehicle: Vehicle) -> void:
 	release(vehicle.id)
 
 
-## Books all of `cells` for `id` if each is free or already theirs, else
+## Books all of `wanted` for `id` if each is free or already theirs, else
 ## none: a train takes a level crossing this way.
-func book(id: int, cells: Array[Vector2i]) -> bool:
-	return _take(id, cells)
+func book(id: int, wanted: Array[Vector2i]) -> bool:
+	return cells.take(id, wanted)
 
 
-## Books exactly `cells` for `id`, letting go of the rest it holds, if each
+## Books exactly `wanted` for `id`, letting go of the rest it holds, if each
 ## is free or already theirs; else changes nothing and returns false. A
 ## moving train keeps the level crossings under and ahead of it this way.
-func rebook(id: int, cells: Array[Vector2i]) -> bool:
-	if not _take(id, cells):
-		return false
-	var keep := {}
-	for cell in cells:
-		keep[cell] = true
-	var held: Array = _held[id]
-	for cell: Vector2i in held.duplicate():
-		if cell not in keep:
-			_holders.erase(cell)
-			held.erase(cell)
-	return true
+func rebook(id: int, wanted: Array[Vector2i]) -> bool:
+	return cells.rebook(id, wanted)
 
 
 ## Lets go of every cell `id` holds.
 func release(id: int) -> void:
-	for cell: Vector2i in _held.get(id, []):
-		_holders.erase(cell)
-	_held.erase(id)
+	cells.release(id)
 
 
 func to_dict() -> Dictionary:
-	return _held.duplicate(true)
+	return cells.to_dict()
 
 
 static func from_dict(d: Dictionary, lanes: LaneGraph) -> LaneTraffic:
 	var traffic := LaneTraffic.new(lanes)
-	for id: int in d:
-		traffic._held[id] = d[id].duplicate()
-		for cell: Vector2i in d[id]:
-			traffic._holders[cell] = id
+	traffic.cells.load(d)
 	return traffic
 
 
 ## The cells vehicle `id` holds.
 func held_by(id: int) -> Array:
-	return _held.get(id, [])
+	return cells.held_by(id)
 
 
 func holder(cell: Vector2i) -> int:
-	return _holders.get(cell, 0)
-
-
-## Takes path[i] for `vehicle`, and if it is a junction cell, every junction
-## cell after it and the first cell past them too; then lets go of every other
-## cell, including ones its route passes again later, so a route that comes
-## back the same way never holds a cell it has left.
-func _enter(vehicle: Vehicle, i: int) -> bool:
-	# Most vehicles in a queue find the next cell taken: say so before building the list.
-	var cell := vehicle.path[i]
-	if _holders.get(cell, vehicle.id) != vehicle.id:
-		return false
-	# Most cells are plain lane: hold just this one, as the general case below would.
-	if not _lanes.is_junction(cell):
-		var mine: Array = _held[vehicle.id]
-		for other: Vector2i in mine:
-			if other != cell:
-				_holders.erase(other)
-		mine.clear()
-		mine.append(cell)
-		_holders[cell] = vehicle.id
-		return true
-	var want: Array[Vector2i] = [cell]
-	var j := i
-	while _lanes.is_junction(vehicle.path[j]) and j + 1 < vehicle.path.size():
-		j += 1
-		want.append(vehicle.path[j])
-	if not _take(vehicle.id, want):
-		return false
-	var keep := {}
-	for wanted in want:
-		keep[wanted] = true
-	var held: Array = _held[vehicle.id]
-	for other: Vector2i in held.duplicate():
-		if other not in keep:
-			_holders.erase(other)
-			held.erase(other)
-	return true
-
-
-## Takes all of `cells` for `id` if each is free or already theirs, else none.
-func _take(id: int, cells: Array[Vector2i]) -> bool:
-	for cell in cells:
-		if _holders.get(cell, id) != id:
-			return false
-	var held: Array = _held.get(id, [])
-	for cell in cells:
-		if cell not in held:
-			held.append(cell)
-		_holders[cell] = id
-	_held[id] = held
-	return true
+	return cells.holder(cell)

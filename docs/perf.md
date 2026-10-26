@@ -458,3 +458,24 @@ and a constant set for the driving states in `_drive`.
 Over 1,000 ticks, past the route cache's warm-up, the endgame runs at
 **27.9 ms a tick** (2,484 vehicles): `_drive` 18.8 ms, of which `advance`
 8.3 ms and routes 3.2 ms; yard machines 4.2 ms; import dispatch 2.3 ms.
+
+### Speed, step 2: cell booking in C++ (2026-10-26)
+
+`LaneTraffic` keeps its cells in `LaneCells` (`native/src/lane_cells.cpp`,
+a GDExtension on godot-cpp 4.5), which also runs the cell-entry loop of
+`advance`. `hash_ticks.gd` on the endgame save after 300 ticks: 163539211
+on main and native, so behaviour is unchanged.
+
+Timed without the profiler (300 ticks of the endgame save, wall clock over
+the tick loop), three runs each: **main 19.80, 19.91, 19.62 ms a tick;
+native 18.79, 18.49, 19.16 ms**, about 1 ms (5%) less, native ahead in
+every pair. A call into `LaneCells` costs 0.02 µs (`holder`) to 0.3 µs
+(`advance`) in a micro-bench, so the boundary is not where the time goes.
+
+**The profiler inflates the tick by about 10 ms.** `profile_sim.gd` wraps
+every route search and vehicle move in a timed override (about 2,000 calls
+a tick), so the same save reads 29–30 ms a tick there against 19.8 ms
+untimed. Its per-call figure for `advance` (4.0 µs main, 3.4 µs native) is
+mostly its own cost. The M6 close above should read 19.8 ms, not 32.3 ms:
+396 ms of every second at 1×, and a frame that runs a tick still misses
+60 fps on this box.

@@ -27,6 +27,12 @@ func _init(net: RoadNet) -> void:
 
 ## Whether `cell` is in a junction: crossing traffic shares it, so a vehicle
 ## books through it to the cell beyond before entering.
+## Every junction cell, as a set (cell -> true), for LaneTraffic's moves.
+func junctions() -> Dictionary:
+	_refresh()
+	return _junction
+
+
 func is_junction(cell: Vector2i) -> bool:
 	_refresh()
 	return cell in _junction

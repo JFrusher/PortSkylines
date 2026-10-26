@@ -30,7 +30,6 @@ static func install(sim: PortSim, profile: Object) -> void:
 	lanes.profile = profile
 	var traffic := Traffic.new(lanes)
 	traffic.profile = profile
-	traffic._holders = sim.lane_traffic._holders
-	traffic._held = sim.lane_traffic._held
+	traffic.cells = sim.lane_traffic.cells
 	sim.lanes = lanes
 	sim.lane_traffic = traffic
