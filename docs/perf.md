@@ -319,3 +319,10 @@ a lorry is sent every tick (2,150 vehicles at the end). Same state hash after
 |---|---|---:|
 | Baseline at 2,000 lorries | | 86.8 |
 | Route lengths for gate choice kept until the lane graph changes | `_gate_of` routing to all 12 gates per lorry (20 of 20 route calls a tick, 1.66 ms each) | 75.3 |
+| Each terminal's working gates kept until roads or areas change | `_has_gate` scanning every area (125 µs) for each of 80 blocks per dispatch | 61.2 |
+
+What is left, from the same profile: vehicles 22.6 ms, machines 18.1 ms and
+ships 16.6 ms, inclusive of 11.6 route searches a tick at 1.65 ms each
+(31% of the tick) and of loops over every vehicle (`_machine_done`,
+`_promote`, `_vehicle`, `_tractors_out`, `_fetchers`, `_export_room`). Those
+are M6 steps 3 (vehicles as packed arrays, found by index) and 7 to 9 (paths).

@@ -28,6 +28,7 @@ var _next_terminal := 1
 var _lane_cells := {}
 var _lanes_for := -1
 var _idle := {}  # area id -> its idle reason, for the road and area versions in _idle_for
+var _gates := {}  # terminal -> its working gates, for the same versions
 var _idle_for := Vector2i(-1, -1)
 var _layouts := {}
 var _layouts_for := -1
@@ -116,12 +117,30 @@ func cells(id: int) -> Array[Vector2i]:
 ## with a reason.
 func idle_reason(id: int) -> String:
 	var now := Vector2i(_roads.version, version)
-	if _idle_for != now:
-		_idle_for = now
-		_idle.clear()
+	_keep_for(now)
 	if id not in _idle:
 		_idle[id] = _idle_reason(id)
 	return _idle[id]
+
+
+## The gates of `terminal` that work: those with a road along their front.
+func working_gates(terminal: int) -> Array[int]:
+	_keep_for(Vector2i(_roads.version, version))
+	if terminal not in _gates:
+		var found: Array[int] = []
+		for id: int in list:
+			if kind_of(list[id]) == "gate" and list[id].terminal == terminal and idle_reason(id) == "":
+				found.append(id)
+		_gates[terminal] = found
+	return _gates[terminal]
+
+
+## Forgets idle reasons and working gates kept for other road and area versions.
+func _keep_for(now: Vector2i) -> void:
+	if _idle_for != now:
+		_idle_for = now
+		_idle.clear()
+		_gates.clear()
 
 
 func _idle_reason(id: int) -> String:

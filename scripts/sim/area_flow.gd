@@ -389,12 +389,7 @@ static func gate_throughput(sim: PortSim, gate: int) -> float:
 
 ## The working gates of `terminal`.
 static func _gates(sim: PortSim, terminal: int) -> Array[int]:
-	var found: Array[int] = []
-	for id: int in sim.areas.list:
-		var area: Dictionary = sim.areas.list[id]
-		if sim.areas.kind_of(area) == "gate" and area.terminal == terminal and sim.areas.idle_reason(id) == "":
-			found.append(id)
-	return found
+	return sim.areas.working_gates(terminal)
 
 
 static func _has_gate(sim: PortSim, terminal: int) -> bool:
