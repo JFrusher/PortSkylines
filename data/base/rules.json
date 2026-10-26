@@ -25,6 +25,16 @@
 		"forty_share": 0.6,
 		"reefer_share": 0.1
 	},
+	"reefers": {
+		"plug_minutes": 120.0,
+		"fine": 400.0,
+		"kw": 4.0,
+		"hot_kw": 7.0,
+		"hot_from": 10.0,
+		"hot_to": 16.0,
+		"price_per_kwh": 0.15,
+		"peak_charge_per_kw": 1.5
+	},
 	"storage": {
 		"free_days": 2.0,
 		"fee": 20.0,
@@ -61,7 +71,9 @@
 		"bailout": "Bailout",
 		"land": "Land",
 		"dredging": "Dredging",
-		"rail": "Rail discounts"
+		"rail": "Rail discounts",
+		"power": "Reefer power",
+		"reefer_fines": "Reefer fines"
 	},
 	"loans": {
 		"small": {

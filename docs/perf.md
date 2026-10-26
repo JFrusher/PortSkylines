@@ -414,3 +414,10 @@ runs until 2,000 lorries and 2 trains are in the port: it saves 2,000
 lorries, 20,339 boxes, 6 ships and 2 trains at 2.8 game hours, M6's target
 counts. `profile_sim.gd -- 200` on it: 31.1 ms a tick, of which trains
 (`RailFlow.tick`) are 0.54 ms (1.7%).
+
+### Reefer power, step 17 (2026-10-26)
+
+`PortSim._draw_power` counts plugged reefers every tick, over every reefer
+block's stacks. `profile_sim.gd -- 200` on the endgame save: 0.25 ms of a
+35.7 ms tick (0.7%). `sim_bench`: 0.70–0.73 ms a tick before, 0.65–0.70
+after, two runs each, so within noise.

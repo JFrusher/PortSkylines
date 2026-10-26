@@ -65,7 +65,7 @@ static func build(rules: Dictionary) -> PortSim:
 		for side: int in ([1] if y == ROWS[0] else [-1] if y == ROWS[-1] else [1, -1]):
 			for from in range(20, 400, BLOCK + 2):
 				var block := _area(sim, {"op": "build_area", "type": "yard_block", "segment": row, "side": side, "from": from, "to": from + BLOCK - 1})
-				_do(sim, {"op": "set_area", "id": block, "settings": {"gear": "rtg", "role": "export" if blocks.size() % 6 == 5 else "import"}})
+				_do(sim, {"op": "set_area", "id": block, "settings": {"gear": "rtg", "role": ["import", "import", "reefer", "import", "import", "export"][blocks.size() % 6]}})
 				blocks.append(block)
 	# Two rail blocks south of the last row, sharing the siding track behind them.
 	var last := sim.roads.segment_at(Vector2i(COAST_X + 200, ROWS[-1]))
@@ -97,18 +97,21 @@ static func build(rules: Dictionary) -> PortSim:
 	return sim
 
 
-## Stacks BOXES imports across the import blocks, due over the next DUE_HOURS.
+## Stacks BOXES imports across the import and reefer blocks, due over the
+## next DUE_HOURS, reefers on the reefer blocks.
 static func _fill(sim: PortSim, blocks: Array[int]) -> void:
 	var now := sim.clock.calendar_minutes()
 	var placed := 0
 	while placed < BOXES:
 		var before := placed
 		for block in blocks:
-			if sim.areas.list[block].settings.role != "import" or placed == BOXES:
+			var role: String = sim.areas.list[block].settings.role
+			if role == "export" or placed == BOXES:
 				continue
 			var stacks := AreaFlow._stacks(sim, block)
 			var box := sim._new_box("import", now + placed % (DUE_HOURS * 60), sim.rules.lines.keys()[0])
-			if stacks.place(box, sim.boxes[box].teu) < 0:
+			# Reefers go on the reefer blocks' plugs, everything else beside them.
+			if sim.boxes[box].reefer != (role == "reefer") or stacks.place(box, sim.boxes[box].teu) < 0:
 				sim._drop_box(box)
 				continue
 			sim.boxes[box].in = now

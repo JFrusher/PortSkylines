@@ -24,6 +24,8 @@ var delivered := 0
 var by_rail := 0
 ## Dollars off each box carried by train, to shift lines' boxes onto rail.
 var rail_discount := 0
+## Today's reefer power: the peak kW and the kWh drawn so far, billed at midnight.
+var power := {"peak_kw": 0.0, "kwh": 0.0}
 ## Shipping lines, their services and offers, and their reputation of the port.
 var contracts: Contracts
 ## Loans and the bailout.
@@ -255,6 +257,7 @@ func to_dict() -> Dictionary:
 		"delivered": delivered,
 		"by_rail": by_rail,
 		"rail_discount": rail_discount,
+		"power": power.duplicate(),
 		"trains": trains.map(func(train: Train) -> Dictionary: return train.to_dict()),
 		"next_train": _next_train,
 		"until_train": _until_train.duplicate(),
@@ -317,6 +320,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.delivered = d.delivered
 	sim.by_rail = d.by_rail
 	sim.rail_discount = d.rail_discount
+	sim.power = d.power.duplicate()
 	for train: Dictionary in d.trains:
 		sim.trains.append(Train.from_dict(train))
 	sim._next_train = d.next_train
@@ -790,6 +794,8 @@ func tick() -> void:
 		_call(service)
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
+		AreaFlow.fine_unplugged(self, clock.calendar_minutes())
+	_draw_power()
 	var berths_now := Vector2i(_departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
 		if ship.state == Ship.State.ANCHORED and berths_now == _berths_seen:
@@ -882,6 +888,10 @@ func _event(text: String, at := Grid.NONE) -> void:
 func _end_of_day() -> void:
 	var upkeep := daily_upkeep()
 	ledger.post("upkeep", -upkeep)
+	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
+	if bill > 0:
+		ledger.post("power", -bill)
+	power = {"peak_kw": AreaFlow.plugged_reefers(self) * reefer_kw(), "kwh": 0.0}
 	var dredged: float = channel_depth - rules.channel.start_depth
 	if dredged > 0.0 and clock.game_day() % rules.channel.maintenance_days == 0:
 		ledger.post("dredging", -roundi(dredged * rules.channel.maintenance_per_metre))
@@ -896,6 +906,19 @@ func _end_of_day() -> void:
 	delivered_yesterday = delivered - _delivered_at_midnight
 	_delivered_at_midnight = delivered
 	_event("Upkeep $%d, %d boxes through the gate" % [upkeep, delivered_yesterday])
+
+
+## kW a plugged reefer draws today: more on the year's hot days.
+func reefer_kw() -> float:
+	var day: int = clock.game_day() % rules.year_days
+	return rules.reefers.hot_kw if day >= rules.reefers.hot_from and day <= rules.reefers.hot_to else rules.reefers.kw
+
+
+## Adds this tick's reefer draw to today's kWh and peak.
+func _draw_power() -> void:
+	var kw := AreaFlow.plugged_reefers(self) * reefer_kw()
+	power.kwh += kw * SimClock.CALENDAR_MINUTES_PER_TICK / 60.0
+	power.peak_kw = maxf(power.peak_kw, kw)
 
 
 func _new_year() -> Dictionary:

@@ -156,6 +156,11 @@ func room() -> int:
 	return free - _tiers
 
 
+## How many boxes the area holds.
+func count() -> int:
+	return _where.size()
+
+
 ## Every box in the area.
 func boxes() -> Array:
 	return _where.keys()

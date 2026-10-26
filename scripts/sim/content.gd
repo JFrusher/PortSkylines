@@ -13,6 +13,11 @@ const SCHEMA := {
 	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
 	# Shares of 40 ft boxes and reefers among all boxes.
 	"box_mix": {"forty_share": TYPE_FLOAT, "reefer_share": TYPE_FLOAT},
+	# Reefers are plugged in reefer blocks. One stacked anywhere else past
+	# plug_minutes costs its line's fine. Each plugged box draws kw, hot_kw on
+	# the hot days of the year (hot_from to hot_to inclusive), billed daily per
+	# kWh plus a charge on the day's peak kW.
+	"reefers": {"plug_minutes": TYPE_FLOAT, "fine": TYPE_INT, "kw": TYPE_FLOAT, "hot_kw": TYPE_FLOAT, "hot_from": TYPE_INT, "hot_to": TYPE_INT, "price_per_kwh": TYPE_FLOAT, "peak_charge_per_kw": TYPE_FLOAT},
 	# Starting storage terms, the fee cap, how fees shorten import dwell, and
 	# how shippers (and so lines) feel about fees above the fair rate.
 	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},

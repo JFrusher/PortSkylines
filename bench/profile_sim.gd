@@ -69,7 +69,11 @@ func _tick(sim: PortSim) -> void:
 		sim._call(service)
 	if sim.clock.ticks % roundi(sim.rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		sim._offer_service()
+		AreaFlow.fine_unplugged(sim, sim.clock.calendar_minutes())
 	add("calendar (days, calls, offers)", start)
+	start = Time.get_ticks_usec()
+	sim._draw_power()
+	add("reefer power (PortSim._draw_power)", start)
 	start = Time.get_ticks_usec()
 	var berths_now := Vector2i(sim._departures, sim.areas.version + sim.roads.version)
 	for ship: PortSim.Ship in sim.ships.duplicate():

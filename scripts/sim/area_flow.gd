@@ -133,6 +133,10 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	if rail and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
+	elif sim.boxes[id].reefer:
+		var plugs := _block_for(sim, "reefer", sim.areas.list[ship.apron].terminal)
+		if plugs:
+			sim._set_area(tractor, plugs)
 	ship.boxes -= 1
 	ship.moves += 1
 	sim._moved(sim.boxes[id])
@@ -239,6 +243,40 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	sim._add_vehicle(tractor)
 	crane.tractor = tractor.id
 	return true
+
+
+## Reefers stacked in reefer blocks, on their plugs.
+static func plugged_reefers(sim: PortSim) -> int:
+	var found := 0
+	for id: int in sim.area_stacks:
+		if id in sim.areas.list and sim.areas.list[id].settings.get("role") == "reefer":
+			found += sim.area_stacks[id].count()
+	return found
+
+
+## Reefers stacked anywhere but a reefer block, off a plug.
+static func unplugged_reefers(sim: PortSim) -> int:
+	return _unplugged(sim).size()
+
+
+## The reefer boxes stacked off a plug.
+static func _unplugged(sim: PortSim) -> Array[int]:
+	var found: Array[int] = []
+	for id: int in sim.area_stacks:
+		if id in sim.areas.list and sim.areas.list[id].settings.get("role") != "reefer":
+			for box: int in sim.area_stacks[id].boxes():
+				if sim.boxes[box].reefer:
+					found.append(box)
+	return found
+
+
+## Fines the port for each reefer whose plug_minutes off a plug ran out in
+## the hour to `now`, so each is fined once by an hourly check.
+static func fine_unplugged(sim: PortSim, now: float) -> void:
+	var late: float = now - sim.rules.reefers.plug_minutes
+	for box in _unplugged(sim):
+		if sim.boxes[box].in > late - 60.0 and sim.boxes[box].in <= late:
+			sim.ledger.post("reefer_fines", -sim.rules.reefers.fine)
 
 
 ## The first yard block of `role` in `terminal` that works and has room for
@@ -573,7 +611,9 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 		vehicle.slot = -1
 		_head(sim, vehicle, _exit_cell(sim), "leaving")
 	elif vehicle.loaded:
-		var block := _block_for(sim, "export", sim.areas.list[gate].terminal)
+		var block := _block_for(sim, "reefer", sim.areas.list[gate].terminal) if sim.boxes[vehicle.box].reefer else 0
+		if block == 0:
+			block = _block_for(sim, "export", sim.areas.list[gate].terminal)
 		if block:
 			_go_to(sim, vehicle, block)
 		else:
