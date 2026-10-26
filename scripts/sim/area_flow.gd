@@ -229,7 +229,7 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 		return false
 	sim._next_vehicle += 1
 	tractor.state = "under_crane"
-	tractor.area = block
+	sim._set_area(tractor, block)
 	sim._add_vehicle(tractor)
 	crane.tractor = tractor.id
 	return true
@@ -394,28 +394,29 @@ static func _has_gate(sim: PortSim, terminal: int) -> bool:
 	return not _gates(sim, terminal).is_empty()
 
 
-## The working gate of `terminal` a lorry at `from` gets through soonest:
-## minutes to drive there, plus the lorries already bound for it times the
-## minutes each takes at a booth over its lanes. Lorries check in and out on
-## their side of the road, and spread over the gates as one jams; 0 when the
-## terminal has none.
+## The working gate of `terminal` a lorry at `from` gets through soonest,
+## of those it has a route to: minutes to drive there, by grid distance,
+## plus the lorries already bound for it times the minutes each takes at a
+## booth over its lanes. Lorries check in and out on their side of the road,
+## and spread over the gates as one jams. The first gate when none can be
+## reached, as the lorry then waits for a road; 0 when the terminal has none.
+# shortcut: drive minutes by grid distance, not route length, which cost 12 route searches a lorry; use route lengths if detours mislead the choice.
 static func _gate_of(sim: PortSim, terminal: int, from: Vector2i) -> int:
-	var gates := _gates(sim, terminal)
-	var bound := {}
-	for vehicle: Vehicle in sim.vehicles:
-		if vehicle.kind == "lorry" and vehicle.area in gates:
-			bound[vehicle.area] = bound.get(vehicle.area, 0) + 1
-	var best := 0
-	var soonest := INF
-	for gate in gates:
-		var cells := sim.lanes.lorry_route_cells(from, _buffer_start(sim, gate))
-		# A vehicle second is a calendar minute, so driving and queueing add up.
-		var drive: float = cells / (sim.rules.lorry_speed / Grid.CELL) if cells > 0 else INF
-		var minutes: float = drive + bound.get(gate, 0) * gate_minutes(sim, gate) / sim.areas.layout(gate).lanes.size()
-		if best == 0 or minutes < soonest:
-			best = gate
-			soonest = minutes
-	return best
+	var gates := _gates(sim, terminal).duplicate()
+	while not gates.is_empty():
+		var best := 0
+		var soonest := INF
+		for gate: int in gates:
+			# A vehicle second is a calendar minute, so driving and queueing add up.
+			var drive: float = RoadNet.length(from, _buffer_start(sim, gate)) / (sim.rules.lorry_speed / Grid.CELL)
+			var minutes: float = drive + sim.lorries_bound_for(gate) * gate_minutes(sim, gate) / sim.areas.layout(gate).lanes.size()
+			if best == 0 or minutes < soonest:
+				best = gate
+				soonest = minutes
+		if not sim.lanes.route(from, _buffer_start(sim, best), true).is_empty():
+			return best
+		gates.erase(best)
+	return _gates(sim, terminal)[0] if _has_gate(sim, terminal) else 0
 
 
 ## The yard block holding `box`, or 0.
@@ -432,7 +433,7 @@ static func _block_of(sim: PortSim, box: int) -> int:
 ## queue behind it on the road. Vehicles leave slots back into the strip
 ## ahead of it, so waiting never blocks the way out.
 static func _go_to(sim: PortSim, vehicle: Vehicle, area: int) -> void:
-	vehicle.area = area
+	sim._set_area(vehicle, area)
 	vehicle.slot = -1
 	_head(sim, vehicle, _buffer_start(sim, area), "arriving")
 
@@ -562,7 +563,7 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 	sim.handovers.leave(gate, vehicle.id)
 	_promote(sim, gate)
 	if vehicle.gate_in < 0.0:
-		vehicle.area = 0
+		sim._set_area(vehicle, 0)
 		vehicle.slot = -1
 		_head(sim, vehicle, _exit_cell(sim), "leaving")
 	elif vehicle.loaded:
@@ -631,14 +632,14 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 			sim.delivered += 1
 			_go_out(sim, vehicle, sim.areas.list[block].terminal)
 		else:
-			vehicle.area = 0
+			sim._set_area(vehicle, 0)
 			vehicle.slot = -1
 			_head(sim, vehicle, _buffer_end(sim, block), "returning")
 	elif vehicle.kind == "tractor":
 		# An export fetched for a crane: back to the slot under it.
 		sim._claimed.erase(vehicle.box)
 		vehicle.loaded = true
-		vehicle.area = 0
+		sim._set_area(vehicle, 0)
 		vehicle.slot = -1
 		_head(sim, vehicle, vehicle.home, "to_crane")
 	else:
@@ -661,7 +662,7 @@ static func _go_out(sim: PortSim, vehicle: Vehicle, terminal: int) -> void:
 	if gate:
 		_go_to(sim, vehicle, gate)
 		return
-	vehicle.area = 0
+	sim._set_area(vehicle, 0)
 	vehicle.slot = -1
 	_head(sim, vehicle, _exit_cell(sim), "leaving")
 

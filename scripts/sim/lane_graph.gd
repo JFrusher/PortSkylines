@@ -46,11 +46,6 @@ func flow_of(id: int) -> int:
 	return _flows.get(id, 0)
 
 
-## How many cells route(from, to, true) has, 0 when there is none.
-func lorry_route_cells(from: Vector2i, to: Vector2i) -> int:
-	return route(from, to, true).size()
-
-
 ## The cells from `from` to `to` along lanes, both ends included, or [] when
 ## no lane route exists. Junctions are crossed one cell at a time. Kept until
 ## the graph changes, since vehicles mostly drive between the same slots,

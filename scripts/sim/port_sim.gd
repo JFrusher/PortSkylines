@@ -56,6 +56,7 @@ var vehicles: Array[Vehicle] = []
 var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
 var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
+var _lorries_bound := {}  # area id -> lorries whose area it is
 ## The area flow's state: who holds each lane cell, each area's handover
 ## slots and queues, the yard machines and what each is carrying, and the
 ## boxes stacked in each yard block (area id -> AreaStacks).
@@ -901,6 +902,7 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 	vehicles.append(vehicle)
 	_by_id[vehicle.id] = vehicle
 	_tractors_on_road += 1 if vehicle.kind == "tractor" else 0
+	_count_bound(vehicle, 1)
 	if vehicle.home != Grid.NONE:
 		if vehicle.home not in _fetching:
 			_fetching[vehicle.home] = [] as Array[Vehicle]
@@ -913,8 +915,26 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
 	_tractors_on_road -= 1 if vehicle.kind == "tractor" else 0
+	_count_bound(vehicle, -1)
 	if vehicle.home != Grid.NONE:
 		_fetching[vehicle.home].erase(vehicle)
+
+
+## Sends `vehicle` to area `area` (0 for none); the one way its area changes.
+func _set_area(vehicle: Vehicle, area: int) -> void:
+	_count_bound(vehicle, -1)
+	vehicle.area = area
+	_count_bound(vehicle, 1)
+
+
+## How many lorries have area `area` as theirs.
+func lorries_bound_for(area: int) -> int:
+	return _lorries_bound.get(area, 0)
+
+
+func _count_bound(vehicle: Vehicle, by: int) -> void:
+	if vehicle.kind == "lorry" and vehicle.area != 0:
+		_lorries_bound[vehicle.area] = _lorries_bound.get(vehicle.area, 0) + by
 
 
 ## The vehicle with id `id`, or null once it has left.

@@ -98,6 +98,12 @@ func _check(sim: PortSim) -> void:
 		cells[cell] = vehicle.id
 	_expect(seen.size(), sim.boxes.size(), "every box in the port is somewhere %s" % at)
 	_expect(sim._by_id.size(), sim.vehicles.size(), "every vehicle is indexed by id %s" % at)
+	var bound := {}
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.kind == "lorry" and vehicle.area != 0:
+			bound[vehicle.area] = bound.get(vehicle.area, 0) + 1
+	for area: int in sim._lorries_bound:
+		_expect(sim._lorries_bound[area], bound.get(area, 0), "area %d's bound lorries are counted %s" % [area, at])
 	_expect(sim._tractors_out(), sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor").size(), "the tractor count matches the vehicles %s" % at)
 	_expect(sim.exports, sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size(), "the export count matches the boxes %s" % at)
 	for area: int in sim.handovers.slots():

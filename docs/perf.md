@@ -323,6 +323,26 @@ a lorry is sent every tick (2,150 vehicles at the end). Same state hash after
 | Routes kept until the lane graph changes (replaces the length memo above) | `LaneGraph.route`: one A* over 23,480 points, 1.2 ms, plus 0.3 ms building cells | 56.6 |
 | Vehicles come and go through one path that indexes them by id, counts tractors out and lists fetchers by apron slot | `_tractors_out` 577 µs, `_fetchers` 323 µs, `_vehicle` 155 µs, each a loop over 2,071 vehicles, run per crane | 46.0 |
 
+A lorry taking its import then cost 21 ms (139 in 200 ticks): leaving, it
+chose a gate by routing from its block's slot to all 12 gates, 24.8 ms
+from a slot not routed from before and 2.4 ms after, most of that counting
+the lorries bound for each gate over every vehicle. Gate choice now
+estimates drive minutes by grid distance (the queue term, about 16 minutes
+at these loads, outweighs drive differences of up to 5), routes only to the
+gate it picks, which the lorry needs anyway, and reads a count of lorries
+bound per area kept as vehicles change area. That changes which gate some
+lorries take, so the save was rebuilt: 2,000 lorries at 2.9 game hours,
+built in under a minute, 62 to 66 lorries at each gate.
+
+| On the rebuilt save | ms a tick |
+|---|---:|
+| Before (previous commit) | 45.4 |
+| Gate choice by grid distance, bound lorries counted | 32.9 |
+
+Route searches fell from 4,002 to 1,133 in 200 ticks and machine work from
+17.0 to 3.8 ms. Moving vehicles is now the largest part: `LaneTraffic.advance`
+5.6 µs for each of 2,000 vehicles, 34% of the tick (M6 step 9).
+
 Probed before the last change: every route runs one A* search (start and
 goal cells each hold one lane point), so the search itself is the cost.
 Over six endgame minutes 43% of routes asked a (from, to) asked before,

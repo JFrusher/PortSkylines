@@ -737,7 +737,7 @@ func _test_two_way_gate() -> void:
 	for i in 20:
 		var waiting := Vehicle.new(900 + i, "lorry", [Vector2i.ZERO] as Array[Vector2i])
 		waiting.area = 2
-		port.vehicles.append(waiting)
+		port._add_vehicle(waiting)
 	_expect(AreaFlow._gate_of(port, 1, port.site_entry()), second, "with 20 lorries bound for it, the next drives on to the other gate")
 
 
