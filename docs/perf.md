@@ -201,3 +201,50 @@ machines are not drawn. Chunks out of view are culled whole, as before.
 | Fidelity by distance | 164 | 282 | 430,013 |
 
 Ground tiles are now the largest cost and are drawn as before.
+
+## M6 baseline on roads and areas (2026-10-26)
+
+M6 steps 1 and 2, redone on roads and areas. `bench/make_endgame.gd` builds
+`bench/endgame_port.gd` by commands (6 Panamax aprons of 3 STS cranes, 18
+cranes, 72 tractors, 7 rows of RTG blocks with 20,000 imports, 12 two-way
+gates) and runs it for six game hours with a lorry sent every tick.
+`bench/profile_sim.gd` times each step of a tick and checks the state hash
+against a plain run. Same container as earlier entries.
+**Commands:** `godot --headless --script res://bench/make_endgame.gd`, then
+`godot --headless --script res://bench/profile_sim.gd -- 200`.
+
+**Counts reached.** 694 lorries, 20,019 boxes and 6 ships after six hours,
+short of the 2,000 lorries M6 names. Lorries arrive faster than the yard
+hands boxes over (398 delivered in six hours), so the count still grows; at
+one lorry a tick through one site entry, 2,000 at once needs either that
+backlog or a second entry (M8's whole port).
+
+Building it found a dispatch bug: lorries took the first due box in block
+order, so every lorry went to 5 of 80 blocks and the port jammed (35 boxes
+delivered in six hours). They now take the box due longest.
+
+**288 ms a tick** with 694 vehicles, against the 1 ms budget:
+
+| Step of the tick | Share | Per tick |
+|---|---:|---:|
+| Ships (`PortSim._work`) | 95.8% | 276 ms |
+| Vehicles (`AreaFlow._drive`) | 1.7% | 4.9 ms |
+| Routes (`LaneGraph.route`, inside the others) | 1.7% | 4.8 ms (4 a tick, 1.1 ms each) |
+| Machines | 1.2% | 3.4 ms |
+| `dispatch_import_lorry` | 1.1% | 3.1 ms |
+| Vehicle moves (`LaneTraffic.advance`, inside vehicles) | 0.8% | 3.7 µs each |
+
+Inside ship work, timed one call at a time on the saved port, where all six
+ships wait to load about 50 exports each and no export is in the yard:
+
+| Hot spot | Per call | Why |
+|---|---:|---|
+| `AreaFlow._export_box` | 18.4 ms | walks every box of every block in the terminal (20,000 imports) for an export, once per crane each tick, and finds none |
+| `AreaFlow._exports_coming` | 4.3 ms | calls `export_demand` and scans every vehicle |
+| `AreaFlow.export_demand` | 2.7 ms | counts exports across all 20,000 boxes |
+| `LaneGraph.route` | 1.1 ms | A* over the whole lane graph |
+| `dispatch_import_lorry` | 3.1 ms a tick | walks every box for the one due longest |
+
+The top five are box scans, not vehicles: kinematics is under 1%. The next
+M6 steps name the scan they remove; keeping export and due-box indexes as
+boxes come and go would take the first three and the fifth off the tick.
