@@ -34,7 +34,9 @@ const SCHEMA := {
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.
-	"milestones": {"*": {"teu": TYPE_INT, "unlocks": {"*": TYPE_STRING}}},
+	# demand: how busy the hinterland keeps lines once the milestone is reached,
+	# scaling how often they offer services (1 before the first).
+	"milestones": {"*": {"teu": TYPE_INT, "demand": TYPE_FLOAT, "unlocks": {"*": TYPE_STRING}}},
 	# A game year, for the year-end scoreboard.
 	"year_days": TYPE_INT,
 	# After `days` midnights below zero the debt is cleared, every line's
@@ -79,6 +81,9 @@ const SCHEMA := {
 	# by train, up to `max` dollars, adds share_per_dollar to every line's
 	# rail_share, up to max_share.
 	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
+	# Off-map places boxes come from and go to: each box's share, and its
+	# distance by road and rail (0 for no rail link, so its boxes go by road).
+	"hinterland": {"places": {"*": {"name": TYPE_STRING, "share": TYPE_FLOAT, "road_km": TYPE_FLOAT, "rail_km": TYPE_FLOAT}}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
 	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
@@ -88,7 +93,7 @@ const SCHEMA := {
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
 
 static var _base := {}
 
@@ -150,6 +155,11 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):
 				return {"error": "lines.%s.classes: unknown ship class \"%s\"" % [line, kind]}
+	var shares := 0.0
+	for place: Dictionary in rules.hinterland.places.values():
+		shares += place.share
+	if not is_equal_approx(shares, 1.0):
+		return {"error": "hinterland.places: shares must add up to 1"}
 	return {"rules": rules}
 
 

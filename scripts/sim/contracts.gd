@@ -29,12 +29,13 @@ func _init(game_rules: Dictionary) -> void:
 
 ## Maybe offers one new service: from a line whose reputation is high enough,
 ## for a class `fits` says the port can berth, while there are fewer than
-## `berths` × max_services_per_berth services. Returns the offer or {}.
-func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable) -> Dictionary:
+## `berths` × max_services_per_berth services, more often as the
+## hinterland's `demand` grows. Returns the offer or {}.
+func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, demand: float) -> Dictionary:
 	var terms: Dictionary = rules.contracts
 	if offers.size() >= terms.max_offers or services.size() + offers.size() >= berths * terms.max_services_per_berth:
 		return {}
-	if rng.randf() >= terms.offer_chance:
+	if rng.randf() >= terms.offer_chance * demand:
 		return {}
 	var willing: Array = rules.lines.keys().filter(func(line: String) -> bool: return reputation[line] >= rules.reputation.offer_above)
 	if willing.is_empty():

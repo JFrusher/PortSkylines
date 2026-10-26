@@ -1,0 +1,9 @@
+{
+	"hinterland": {
+		"places": {
+			"rivermouth": {"name": "Rivermouth", "share": 0.5, "road_km": 40.0, "rail_km": 0.0},
+			"highfield": {"name": "Highfield", "share": 0.3, "road_km": 180.0, "rail_km": 170.0},
+			"eastmere": {"name": "Eastmere", "share": 0.2, "road_km": 420.0, "rail_km": 380.0}
+		}
+	}
+}

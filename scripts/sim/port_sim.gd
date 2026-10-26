@@ -99,7 +99,8 @@ var areas: Areas
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
 ## the line that owns it, a key of rules.lines, or "" for an export not yet
-## loaded, "rail": whether it is booked to leave by train}. A box is always in exactly one place: on a vehicle or in a yard
+## loaded, "rail": whether it is booked to leave by train, "place": the
+## hinterland place it goes to or comes from, a key of rules.hinterland.places}. A box is always in exactly one place: on a vehicle or in a yard
 ## stack (boxes on ships are only counted).
 var boxes := {}
 ## How many of `boxes` are exports; not saved, counted again on load.
@@ -948,7 +949,7 @@ func _could_berth(kind: String) -> bool:
 func _offer_service() -> void:
 	var now := clock.calendar_minutes()
 	contracts.expire(now)
-	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind))
+	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return unlocked(kind) and _could_berth(kind), hinterland_demand())
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
 
@@ -998,9 +999,37 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line, "rail": false}
+	var reefer: bool = rng.randf() < rules.box_mix.reefer_share
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
 	exports += 1 if kind == "export" else 0
 	return id
+
+
+## A hinterland place, drawn by the data's shares, of those with a rail link
+## when `rail_only`: an import's destination or an export's origin.
+func _pick_place(rail_only := false) -> String:
+	var places: Array = rules.hinterland.places.keys().filter(func(p: String) -> bool: return not rail_only or rules.hinterland.places[p].rail_km > 0.0)
+	var total := 0.0
+	for place: String in places:
+		total += rules.hinterland.places[place].share
+	var roll := rng.randf() * total
+	for place: String in places:
+		roll -= rules.hinterland.places[place].share
+		if roll < 0.0:
+			return place
+	return places[-1]
+
+
+## How busy the hinterland keeps lines, by milestones reached: it scales how
+## often they offer services.
+func hinterland_demand() -> float:
+	var reached := milestones_reached()
+	return milestones()[reached - 1].demand if reached > 0 else 1.0
+
+
+## Whether box `id` can go by rail: its hinterland place has a rail link.
+func by_rail_to(id: int) -> bool:
+	return rules.hinterland.places[boxes[id].place].rail_km > 0.0
 
 
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.

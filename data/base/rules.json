@@ -84,6 +84,7 @@
 	"milestones": {
 		"harbour": {
 			"teu": 0.0,
+			"demand": 1.0,
 			"unlocks": {
 				"contracts": "contracts with shipping lines",
 				"feeder": "feeder services",
@@ -93,6 +94,7 @@
 		},
 		"terminal": {
 			"teu": 200.0,
+			"demand": 1.25,
 			"unlocks": {
 				"loans": "loans",
 				"rtg": "RTG cranes for yard blocks",
@@ -101,6 +103,7 @@
 		},
 		"gateway": {
 			"teu": 600.0,
+			"demand": 1.5,
 			"unlocks": {
 				"land": "buying land",
 				"dredging": "dredging the channel",

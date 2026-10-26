@@ -128,9 +128,9 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	crane.tractor = 0
 	var id := sim._new_box("import", sim.clock.calendar_minutes() + sim.rules.import_dwell_minutes * sim._dwell_factor(), ship.line)
 	# Booked to rail by its line's share, only while a rail block has room for
-	# it, so a port without rail rolls nothing.
+	# it and its place has a rail link, so a port without rail rolls nothing.
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
-	if rail and sim.rng.randf() < sim.rail_share(ship.line):
+	if rail and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
 	ship.boxes -= 1

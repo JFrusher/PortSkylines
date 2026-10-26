@@ -323,7 +323,7 @@ func _test_services_spread_across_the_week() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
 	while contracts.services.size() < 4:
-		var offer := contracts.offer(rng, 8 * 60.0, 10, func(_kind: String) -> bool: return true)
+		var offer := contracts.offer(rng, 8 * 60.0, 10, func(_kind: String) -> bool: return true, 1.0)
 		if not offer.is_empty():
 			contracts.accept(offer.id)
 	var hours: Array = contracts.services.map(func(s: Dictionary) -> int: return s.start / 60)
@@ -356,7 +356,7 @@ func _test_reputation_cancels_and_recovers() -> void:
 	var rng := RandomNumberGenerator.new()
 	var offered := {}
 	for i in 50:
-		var offer := contracts.offer(rng, 0.0, 100, func(_kind: String) -> bool: return true)
+		var offer := contracts.offer(rng, 0.0, 100, func(_kind: String) -> bool: return true, 1.0)
 		if not offer.is_empty():
 			offered[offer.line] = true
 			contracts.offers.clear()

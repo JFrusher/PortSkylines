@@ -89,6 +89,8 @@ static func _vehicle(sim: PortSim, vehicle: Vehicle) -> Array[String]:
 	if vehicle.loaded:
 		var box: Dictionary = sim.boxes[vehicle.box]
 		lines.append("Carrying a %s %s box%s" % ["40 ft" if box.teu == 2 else "20 ft", box.kind, ", reefer" if box.reefer else ""])
+		var place: Dictionary = sim.rules.hinterland.places[box.place]
+		lines.append("%s %s, %.0f km by road%s" % ["To" if box.kind == "import" else "From", place.name, place.road_km, ", %.0f by rail" % place.rail_km if place.rail_km > 0.0 else ""])
 	else:
 		lines.append("Empty")
 	return lines

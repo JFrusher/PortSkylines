@@ -18,6 +18,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | `test_roads.gd` | Roads and areas on the 4 m grid: segments, angles, shared nodes |
 | `test_lane_traffic.gd` | Traffic on the lane graph: head-on, queues, a full ring, junction booking, a 45° merge |
 | `test_rail.gd` | M6's on-dock rail: track as its own graph, level crossings shared with roads and booked by trains |
+| `test_cargo.gd` | M6's cargo: hinterland places for boxes over ten game days, and demand growing with milestones |
 | `test_first_slice.gd` | M5's first slice: a port built by commands works its first ship end to end on roads and areas |
 | `test_clock.gd` | Calendar time and frame-to-tick conversion |
 | `test_guide.gd` | The guided start, played by commands on the base rules, ends with the first ship worked |
