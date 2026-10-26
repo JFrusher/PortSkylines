@@ -107,6 +107,25 @@ func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
 	return _snap_onto(snap(from, to), from, snap(from, to))
 
 
+## The drawn line of a drag from `from` to `to` moved straight across so
+## the lanes of a road of type `road` centre on `at`, the grid point (in cells,
+## fractional) the mouse pressed at. Lanes lie on the drawn line and to its
+## left of travel, so a road is never centred on its line, and which side it
+## falls on turns with the drag; this keeps it under the mouse either way.
+static func centred(from: Vector2i, to: Vector2i, road: Dictionary, at: Vector2) -> Array[Vector2i]:
+	var across := right_of(to - from)
+	# The lanes' middle, across, sits half a cell in from the line's cell edge
+	# plus the mean of their offsets, -backward to forward - 1.
+	var want: float = at.x * across.x + at.y * across.y - 0.5 * (across.x + across.y) - (road.forward - 1 - road.backward) / 2.0
+	var shift := roundi(want) - (from.x * across.x + from.y * across.y)
+	return [from + across * shift, to + across * shift] as Array[Vector2i]
+
+
+## Whether a drag from `from` (NONE for a start) at `cell` would snap onto a road.
+func snaps(cell: Vector2i, from := Grid.NONE) -> bool:
+	return _snap_onto(cell if from == Grid.NONE else snap(from, cell), from, Grid.NONE) != Grid.NONE
+
+
 ## The road cell nearest `near` within SNAP_CELLS, nodes first, reachable
 ## from `from` unless that is NONE; else `otherwise`.
 ## shortcut: scans every road cell each call, fine for hundreds of segments; index cells by chunk if drawing slows on big ports.

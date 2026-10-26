@@ -25,7 +25,7 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 			return sim.areas.terminals.keys().any(func(t: int) -> bool: return sim.areas.terminal_error(t) == "")},
 		{"text": "Drag a yard block along the coast road's land side, behind the apron, and join it to the terminal too. It starts as an import block (Yard, key 4).", "done": func() -> bool:
 			return _areas(sim, "yard_block").any(func(id: int) -> bool: return sim.areas.terminal_error(sim.areas.list[id].terminal) == "" and sim.areas.idle_reason(id) == "")},
-		{"text": "Place an STS crane on the quay apron. It arrives the next day (Cranes, key 3).", "done": func() -> bool:
+		{"text": "Place an STS crane on the quay apron (Cranes, key 3).", "done": func() -> bool:
 			return not sim.cranes.is_empty() or not sim.crane_orders.is_empty()},
 		{"text": "Buy tractors to carry boxes between crane and yard (Cranes, key 3).", "done": func() -> bool:
 			return sim.tractors > 0},

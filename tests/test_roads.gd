@@ -163,6 +163,24 @@ func _test_editing() -> void:
 	snapping.anchors = [Vector2i(100, 70)] as Array[Vector2i]
 	_expect(snapping.snap_start(Vector2i(101, 72)), Vector2i(100, 70), "a drag starting near the highway starts on it")
 	_expect(snapping.snap_end(Vector2i(60, 70), Vector2i(98, 72)), Vector2i(100, 70), "and one ending near it ends on it")
+	# A free drag's road centres under the mouse whichever way it is dragged.
+	var road: Dictionary = Content.base().road_types.terminal_1_1
+	for ends: Array in [[Vector2i(10, 70), Vector2i(30, 70)], [Vector2i(30, 70), Vector2i(10, 70)], [Vector2i(20, 60), Vector2i(20, 80)], [Vector2i(20, 80), Vector2i(20, 60)]]:
+		var line := RoadNet.centred(ends[0], ends[1], road, Vector2(20.0, 70.0))
+		var cells := RoadNet._lanes(line[0], line[1], road).map(func(lane: Dictionary) -> Array: return lane.cells)
+		var middle := Vector2.ZERO
+		for lane: Array in cells:
+			for cell: Vector2i in lane:
+				middle += Vector2(cell) + Vector2(0.5, 0.5)
+		middle /= cells.size() * cells[0].size()
+		var across := Vector2(RoadNet.right_of(ends[1] - ends[0])).abs()
+		_expect(is_equal_approx(middle.dot(across), 70.0 * across.y + 20.0 * across.x), true, "dragged %s to %s, the road's lanes centre on the mouse (%s)" % [ends[0], ends[1], middle])
+	var wide: Dictionary = Content.base().road_types.terminal_2_2
+	var both := [RoadNet.centred(Vector2i(10, 70), Vector2i(30, 70), wide, Vector2(20.0, 70.0)), RoadNet.centred(Vector2i(30, 70), Vector2i(10, 70), wide, Vector2(20.0, 70.0))]
+	var rows := both.map(func(line: Array) -> Array: return RoadNet._lanes(line[0], line[1], wide).map(func(l: Dictionary) -> int: return l.cells[0].y))
+	rows[0].sort()
+	rows[1].sort()
+	_expect(rows[0], rows[1], "a 2+2 road covers the same rows dragged either way")
 	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
 	var net := RoadNet.new(Content.base().road_types)
 	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
@@ -566,10 +584,7 @@ func _test_apron_berths() -> void:
 	_expect(sim.apply({"op": "place_sts", "apron": 2, "along": 3}), "STS cranes stand on a quay apron's rails", "a crane on a gate is refused")
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 20}), "", "a crane is ordered on the apron")
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 24}), "Too close to another crane", "cranes keep their width apart")
-	_expect(sim.cranes.size(), 0, "a crane takes its lead time to arrive")
-	for i in roundi(sim.rules.sts_crane.lead_days * SimClock.TICKS_PER_DAY):
-		sim.tick()
-	_expect(sim.cranes.size() == 1 and sim.cranes[0].apron == 1 and sim.cranes[0].along == 20, true, "then stands on the apron's rails")
+	_expect(sim.cranes.size() == 1 and sim.cranes[0].apron == 1 and sim.cranes[0].along == 20, true, "and stands on the apron's rails at once")
 	_expect(AreaFlow.offer_berths(sim), 1, "an apron with a crane in a ready terminal is a berth lines may offer for")
 	var feeder := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 1, 0)
 	_expect(AreaFlow.ship_cells(sim, "feeder"), 50, "a feeder needs 200 m of quay, 50 cells")

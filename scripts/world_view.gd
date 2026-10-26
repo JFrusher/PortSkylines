@@ -157,8 +157,17 @@ static func site_size(port: PortSim) -> Vector2:
 
 ## Marks grid cell `cell` under the mouse, green if the tool can act there, else red.
 func show_hover(cell: Vector2i, ok: bool) -> void:
-	_hover.visible = cell != Grid.NONE
-	_hover.position = _world((Vector2(cell) + Vector2(0.5, 0.5)) * Grid.CELL, 1.0)
+	show_hover_at(Vector2(cell) + Vector2(0.5, 0.5) if cell != Grid.NONE else Vector2.INF, 1, ok)
+
+
+## Marks a square `cells` cells across centred on grid point `centre` (in
+## cells): a road's width where a drag would start it. Hidden at INF.
+func show_hover_at(centre: Vector2, cells: int, ok: bool) -> void:
+	_hover.visible = centre != Vector2.INF
+	if not _hover.visible:
+		return
+	_hover.position = _world(centre * Grid.CELL, 1.0)
+	_hover.scale = Vector3(cells, 1, cells)
 	(_hover.mesh.material as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
