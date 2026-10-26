@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_level_crossing()
 	_test_rmg_siding()
 	_test_track_is_locked()
+	_test_trains_take_rail_imports()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -86,6 +87,44 @@ func _test_rmg_siding() -> void:
 func _test_track_is_locked() -> void:
 	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)}).begins_with("Unlocked at milestone"), true, "track waits for its milestone")
+
+
+## Imports booked to rail go to the rail block and leave by train, never by
+## the gate; the RMG works each wagon in the data's time.
+func _test_trains_take_rail_imports() -> void:
+	var rules := RandomPort.rules()
+	for line: String in rules.lines:
+		rules.lines[line].rail_share = 1.0
+	rules.rail.train.interval_minutes = 60.0
+	var sim := AreaPort.working_terminal(12, 0, rules)
+	var block := AreaPort.add_rail_block(sim)
+	_expect(RailFlow.is_rail_block(sim, block), true, "an RMG block with its siding joined to the rail entry is a rail block")
+	var booked := {}
+	var by_gate := 0
+	var worked_ticks := 0
+	var loaded := 0
+	for i in roundi(6 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		for id: int in sim.boxes:
+			if sim.boxes[id].rail:
+				booked[id] = true
+		for vehicle: Vehicle in sim.vehicles:
+			if vehicle.kind == "lorry" and vehicle.box in booked:
+				by_gate += 1
+		for train: Train in sim.trains:
+			if train.state == "working":
+				worked_ticks += 1
+				loaded = maxi(loaded, train.wagons.filter(func(b: int) -> bool: return b != 0).size())
+	_expect(booked.size(), 12, "every import is booked to rail")
+	_expect(by_gate, 0, "no lorry ever comes for one")
+	_expect([sim.by_rail, sim.boxes.keys().filter(func(b: int) -> bool: return b in booked)], [12, []], "and all 12 left by train")
+	# One RMG (10 bays, 8 a machine) works the wagons one at a time: each move is
+	# at least a lift and a set-down, at most that plus two trips the block's length.
+	var gear: Dictionary = rules.yard_gear.rmg
+	var least: float = gear.lift_seconds + gear.set_down_seconds
+	var most: float = least + 2 * 30 * Grid.CELL / gear.speed
+	var seconds := worked_ticks * Machines.SECONDS_PER_TICK
+	_expect(seconds >= 12 * least and seconds <= 12 * most + 2 * Machines.SECONDS_PER_TICK * 10, true, "the train is worked in the data's time: %.0f s for 12 moves, %.0f to %.0f" % [seconds, 12 * least, 12 * most])
 
 
 func _expect(got: Variant, want: Variant, what: String) -> void:

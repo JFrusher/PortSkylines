@@ -19,6 +19,8 @@ const SNAP_CELLS := 3
 ## Cells a drag snaps onto as onto a road's end, though no road is there yet:
 ## where the highway meets the site.
 var anchors: Array[Vector2i] = []
+var _next_cells := {}  # cell -> cells a step on along a segment, for path()
+var _next_for := -1
 
 
 func _init(road_types: Dictionary) -> void:
@@ -135,6 +137,38 @@ func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i
 			best = cell
 			best_score = score
 	return best
+
+
+## The cells from `from` to `to` along the segments, both ends included,
+## fewest cells first; [] when no segments join them.
+func path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	if _next_for != version:
+		_next_for = version
+		_next_cells.clear()
+		for id: int in segments:
+			var run := cells(id)
+			for i in run.size() - 1:
+				_next_cells[run[i]] = _next_cells.get(run[i], []) + [run[i + 1]]
+				_next_cells[run[i + 1]] = _next_cells.get(run[i + 1], []) + [run[i]]
+	var came := {from: from}
+	var queue: Array[Vector2i] = [from]
+	var head := 0
+	while head < queue.size() and to not in came:
+		var cell := queue[head]
+		head += 1
+		for next: Vector2i in _next_cells.get(cell, []):
+			if next not in came:
+				came[next] = cell
+				queue.append(next)
+	var found: Array[Vector2i] = []
+	if to not in came or from not in _next_cells:
+		return found
+	var at := to
+	while at != from:
+		found.push_front(at)
+		at = came[at]
+	found.push_front(from)
+	return found
 
 
 func to_dict() -> Dictionary:

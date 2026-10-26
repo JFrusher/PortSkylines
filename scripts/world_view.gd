@@ -91,6 +91,8 @@ var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
 var _ships := {}  # PortSim.Ship -> Node3D
 ## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
 var _vehicle_parts := {}
+## Trains drawn the same way: "loco", "wagon", and boxes by TEU.
+var _train_parts := {}
 ## Each vehicle's last heading by id, kept while it waits on a one-cell path.
 var _headings := {}
 ## A box on a vehicle's chassis: a container model turned along the vehicle and scaled to it.
@@ -217,6 +219,7 @@ func _process(dt: float) -> void:
 	_draw_ships()
 	_draw_cranes()
 	_draw_vehicles()
+	_draw_trains()
 	_draw_area_machines()
 	_draw_area_stacks()
 
@@ -645,6 +648,43 @@ func _ship_over(crane: PortSim.Crane) -> PortSim.Ship:
 ## Every vehicle as four MultiMeshes (cabs tinted by kind, chassis, and
 ## boxes by length in their line's livery), each filled with one buffer
 ## write a frame, so draw calls stay the same however many vehicles there are.
+## Every train along its path: the locomotive at its head, then a flat
+## wagon a bay long for each wagon, with its box if it carries one.
+func _draw_trains() -> void:
+	if _train_parts.is_empty():
+		var bay := AreaLayout.BAY * Grid.CELL / METRES_PER_UNIT
+		_train_parts = {
+			"loco": _vehicle_part(_merged([[Vector3(bay * 0.95, 0.18, 0.13), Vector3(0, 0.12, 0), Color(0.55, 0.12, 0.1)]])),
+			"wagon": _vehicle_part(_merged([[Vector3(bay * 0.95, 0.04, 0.12), Vector3(0, 0.05, 0), Color(0.25, 0.25, 0.27)]])),
+			1: _vehicle_part(_stack_meshes[1]),
+			2: _vehicle_part(_stack_meshes[2]),
+		}
+	var buffers := {}
+	for part: Variant in _train_parts:
+		buffers[part] = PackedFloat32Array()
+	for train: Train in sim.trains:
+		var head := lerpf(train.prev_t, train.t, alpha)
+		for k in train.wagons.size() + 1:
+			var at := head - AreaLayout.BAY * (k + 0.5)
+			if at < 0.0:
+				break
+			var pose := path_pose(train.path, at)
+			var turned := Basis(Vector3.UP, atan2(-pose[1].y, pose[1].x))
+			var centre := (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+			var origin := Vector3(centre.x, ROAD_TOP / METRES_PER_UNIT + 0.02, centre.y)
+			_put(buffers["loco" if k == 0 else "wagon"], Transform3D(turned, origin), Color.WHITE)
+			var box: int = train.wagons[k - 1] if k > 0 else 0
+			if box != 0 and box in sim.boxes:
+				var teu: int = sim.boxes[box].teu
+				var lifted := origin + Vector3(0, 0.07 + REAL_BOX_HEIGHT / METRES_PER_UNIT / 2.0, 0)
+				_put(buffers[teu], Transform3D(turned.scaled_local(_real_box[teu]), lifted), _livery(sim.boxes[box].line, box))
+	for part: Variant in buffers:
+		var multimesh: MultiMesh = _train_parts[part].multimesh
+		multimesh.instance_count = buffers[part].size() / 16
+		if not buffers[part].is_empty():
+			multimesh.buffer = buffers[part]
+
+
 func _draw_vehicles() -> void:
 	if _vehicle_parts.is_empty():
 		_vehicle_parts = {

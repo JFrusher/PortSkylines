@@ -20,6 +20,8 @@ var money: int:
 		return ledger.cash
 ## Boxes through the highway: imports out and exports in.
 var delivered := 0
+## Of those, the ones that left by train.
+var by_rail := 0
 ## Shipping lines, their services and offers, and their reputation of the port.
 var contracts: Contracts
 ## Loans and the bailout.
@@ -57,6 +59,14 @@ var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
 var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
+## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
+var trains: Array[Train] = []
+var _next_train := 1
+## Calendar minutes until each rail block's next train.
+var _until_train := {}
+## RailFlow.rail_blocks, kept for the area, road and rail versions in _rail_blocks_for; not saved.
+var _rail_blocks := {}
+var _rail_blocks_for := Vector3i(-1, -1, -1)
 ## The area flow's state: who holds each lane cell, each area's handover
 ## slots and queues, the yard machines and what each is carrying, and the
 ## boxes stacked in each yard block (area id -> AreaStacks).
@@ -87,7 +97,7 @@ var areas: Areas
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
 ## the line that owns it, a key of rules.lines, or "" for an export not yet
-## loaded}. A box is always in exactly one place: on a vehicle or in a yard
+## loaded, "rail": whether it is booked to leave by train}. A box is always in exactly one place: on a vehicle or in a yard
 ## stack (boxes on ships are only counted).
 var boxes := {}
 ## How many of `boxes` are exports; not saved, counted again on load.
@@ -240,6 +250,10 @@ func to_dict() -> Dictionary:
 		"crane_orders": crane_orders.duplicate(true),
 		"creative": creative,
 		"delivered": delivered,
+		"by_rail": by_rail,
+		"trains": trains.map(func(train: Train) -> Dictionary: return train.to_dict()),
+		"next_train": _next_train,
+		"until_train": _until_train.duplicate(),
 		"events": events.duplicate(true),
 		"ship_log": ship_log.duplicate(true),
 		"delivered_yesterday": delivered_yesterday,
@@ -297,6 +311,11 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.crane_orders.assign(d.crane_orders)
 	sim.creative = d.creative
 	sim.delivered = d.delivered
+	sim.by_rail = d.by_rail
+	for train: Dictionary in d.trains:
+		sim.trains.append(Train.from_dict(train))
+	sim._next_train = d.next_train
+	sim._until_train = d.until_train.duplicate()
 	sim.events.assign(d.events)
 	sim.ship_log.assign(d.ship_log)
 	sim.delivered_yesterday = d.delivered_yesterday
@@ -760,6 +779,7 @@ func tick() -> void:
 	if _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
 	AreaFlow.tick(self)
+	RailFlow.tick(self)
 
 
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
@@ -955,7 +975,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": rng.randf() < rules.box_mix.reefer_share, "in": -1.0, "line": line, "rail": false}
 	exports += 1 if kind == "export" else 0
 	return id
 

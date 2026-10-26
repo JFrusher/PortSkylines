@@ -96,6 +96,14 @@ func _check(sim: PortSim) -> void:
 		_expect(sim.lane_traffic.holder(cell), vehicle.id, "%s %d holds the cell it is on %s" % [vehicle.kind, vehicle.id, at])
 		_expect(cells.has(cell), false, "vehicles %d and %d share cell %s %s" % [vehicle.id, cells.get(cell, 0), cell, at])
 		cells[cell] = vehicle.id
+	for train: Train in sim.trains:
+		for box: int in train.wagons:
+			if box != 0:
+				_expect(seen.has(box), false, "box %d on train %d is in one place only %s" % [box, train.id, at])
+				seen[box] = train.id
+	for job: Dictionary in sim.machine_jobs.values():
+		if job.has("box"):
+			seen[job.box] = "an RMG"
 	_expect(seen.size(), sim.boxes.size(), "every box in the port is somewhere %s" % at)
 	_expect(sim._by_id.size(), sim.vehicles.size(), "every vehicle is indexed by id %s" % at)
 	var bound := {}

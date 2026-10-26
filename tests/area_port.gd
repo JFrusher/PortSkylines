@@ -81,6 +81,26 @@ static func add_export_block(sim: PortSim) -> int:
 	return id
 
 
+## An RMG rail block on `sim`'s east road, east of its other blocks, in
+## terminal 1, with its siding running on east and south to the rail entry.
+static func add_rail_block(sim: PortSim) -> int:
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	var creative := sim.creative
+	sim.creative = true
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 92, "to": 121}), "the rail block is built")
+	var id: int = sim.areas.list.keys()[-1]
+	_built(sim.apply({"op": "set_area", "id": id, "settings": {"gear": "rmg"}}), "it gets RMGs")
+	_built(sim.apply({"op": "set_terminal", "id": id, "terminal": 1}), "it joins the terminal")
+	var area: Dictionary = sim.areas.list[id]
+	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var entry := sim.site_rail_entry()
+	var bend := Vector2i(entry.x - 5, behind.y)
+	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
+		_built(sim.apply({"op": "build_rail", "from": leg[0], "to": leg[1]}), "track to the rail entry")
+	sim.creative = creative
+	return id
+
+
 ## The first slice's chain, built with commands only on `terminal`: an import
 ## and an export block, an STS crane on the apron and tractors. Ships come
 ## from contracts; nothing is placed by hand.

@@ -7,7 +7,8 @@
 				"feeder": 3.0,
 				"panamax": 1.0
 			},
-			"sensitivity": 1.0
+			"sensitivity": 1.0,
+			"rail_share": 0.1
 		},
 		"kestrel": {
 			"name": "Kestrel Shipping",
@@ -15,7 +16,8 @@
 			"classes": {
 				"feeder": 1.0
 			},
-			"sensitivity": 1.5
+			"sensitivity": 1.5,
+			"rail_share": 0.05
 		},
 		"meridian": {
 			"name": "Meridian Box",
@@ -24,7 +26,8 @@
 				"panamax": 2.0,
 				"feeder": 1.0
 			},
-			"sensitivity": 0.7
+			"sensitivity": 0.7,
+			"rail_share": 0.15
 		}
 	},
 	"contracts": {

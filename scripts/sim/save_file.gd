@@ -88,9 +88,16 @@ static func _migrate_v11(data: Dictionary) -> Dictionary:
 	return data
 
 
-## v13 adds rail: no track yet.
+## v13 adds rail: no track or trains yet, and no box booked to rail.
 static func _migrate_v12(data: Dictionary) -> Dictionary:
 	data.sim.rails = {"nodes": {}, "segments": {}, "next_node": 1, "next_segment": 1}
+	data.sim.by_rail = 0
+	data.sim.trains = []
+	data.sim.next_train = 1
+	data.sim.until_train = {}
+	for box: Variant in data.sim.boxes.values():
+		if box is Dictionary:
+			box.rail = false
 	data.version = 13
 	return data
 
@@ -100,7 +107,7 @@ static func _migrate_v12(data: Dictionary) -> Dictionary:
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
-		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
 		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
@@ -130,6 +137,14 @@ static func _valid_sim(data: Variant) -> bool:
 	# Roads and areas first: ships and cranes are checked against the aprons.
 	if not (_valid_roads(data.roads, Content.base().road_types) and _valid_roads(data.rails, {"track": true}) and _valid_areas(data.areas)):
 		return false
+	for train: Variant in data.trains:
+		if not train is Dictionary or not _has_fields(train, {
+			"id": TYPE_INT, "block": TYPE_INT, "path": TYPE_ARRAY, "t": TYPE_FLOAT, "prev_t": TYPE_FLOAT,
+			"state": TYPE_STRING, "wagons": TYPE_ARRAY, "busy": TYPE_ARRAY,
+		}):
+			return false
+		if train.block not in data.areas.list or train.path.is_empty() or not train.path.all(func(c: Variant) -> bool: return c is Vector2i):
+			return false
 	for ship: Variant in data.ships:
 		if not ship is Dictionary or not _has_fields(ship, {
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT,
