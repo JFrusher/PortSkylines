@@ -1,0 +1,100 @@
+extends RefCounted
+## The endgame port on roads and areas, built by the commands the toolbar
+## sends: a coast road with six Panamax quay aprons of three STS cranes each,
+## seven rows of RTG yard blocks between it and a spine road, two-way gates on
+## the spine, and the highway entry. M6's target counts are about 2,000
+## lorries, 20,000 stacked boxes, 6 berths and 2 trains.
+# shortcut: no trains until M6's rail steps add them.
+
+const RandomPort := preload("res://tests/random_port.gd")
+const COAST_X := 88
+const SPINE_X := 560
+const ROWS: Array[int] = [12, 108, 204, 300, 396, 492, 588]
+const BLOCK := 50
+const BOXES := 20000
+const DUE_HOURS := 2
+
+
+## Builds the port into a new sim, fills its import blocks with BOXES boxes
+## due from now on, and berths a Panamax at each apron. Rules unlock every
+## milestone, send a lorry every tick, and give blocks enough RTGs to keep up.
+static func build() -> PortSim:
+	var rules := RandomPort.quick()
+	rules.lorry_interval_minutes = SimClock.CALENDAR_MINUTES_PER_TICK
+	# An RTG per 3 bays, not 10: one per block handles about 20 lorries an
+	# hour, and the port's queues would then measure the yard, not the sim.
+	rules.yard_gear.rtg.bays_per_machine = 3.0
+	var sim := PortSim.new(3, rules, true)
+	for x in 3:
+		for y in 3:
+			if not sim.land.has(Vector2i(x, y)):
+				_do(sim, {"op": "buy_land", "tile": Vector2i(x, y)})
+	_do(sim, {"op": "build_road", "from": Vector2i(COAST_X, ROWS[0]), "to": Vector2i(COAST_X, ROWS[-1]), "type": "terminal_2_2"})
+	_do(sim, {"op": "build_road", "from": Vector2i(SPINE_X, ROWS[0]), "to": Vector2i(SPINE_X, ROWS[-1]), "type": "terminal_2_2"})
+	for y in ROWS:
+		_do(sim, {"op": "build_road", "from": Vector2i(COAST_X, y), "to": Vector2i(SPINE_X, y), "type": "terminal_1_1"})
+	_do(sim, {"op": "build_road", "from": Vector2i(SPINE_X, 300), "to": sim.site_entry(), "type": "terminal_2_2"})
+	var aprons: Array[int] = []
+	for i in ROWS.size() - 1:
+		var coast := sim.roads.segment_at(Vector2i(COAST_X, ROWS[i] + 48))
+		aprons.append(_area(sim, {"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 85}))
+		var spine := sim.roads.segment_at(Vector2i(SPINE_X, ROWS[i] + 48))
+		var before := sim.areas.list.keys()
+		_do(sim, {"op": "build_two_way_gate", "type": "gate_large", "segment": spine, "from": 30, "to": 44})
+		for gate: int in sim.areas.list.keys().filter(func(id: int) -> bool: return id not in before):
+			_do(sim, {"op": "set_terminal", "id": gate, "terminal": sim.areas.list[aprons[0]].terminal})
+	var blocks: Array[int] = []
+	for y in ROWS:
+		var row := sim.roads.segment_at(Vector2i(COAST_X + 200, y))
+		for side: int in ([1] if y == ROWS[0] else [-1] if y == ROWS[-1] else [1, -1]):
+			for from in range(20, 400, BLOCK + 2):
+				var block := _area(sim, {"op": "build_area", "type": "yard_block", "segment": row, "side": side, "from": from, "to": from + BLOCK - 1})
+				_do(sim, {"op": "set_area", "id": block, "settings": {"gear": "rtg", "role": "export" if blocks.size() % 6 == 5 else "import"}})
+				blocks.append(block)
+	for id: int in aprons.slice(1) + blocks:
+		_do(sim, {"op": "set_terminal", "id": id, "terminal": sim.areas.list[aprons[0]].terminal})
+	for apron in aprons:
+		for along: int in [10, 35, 60]:
+			_do(sim, {"op": "place_sts", "apron": apron, "along": along})
+	while not sim.crane_orders.is_empty():
+		sim.tick()
+	_do(sim, {"op": "buy_tractors", "count": 4 * sim.cranes.size()})
+	_fill(sim, blocks)
+	for apron in aprons:
+		var spec: Dictionary = rules.ship_classes.panamax
+		var ship := PortSim.Ship.new("panamax", rules.lines.keys()[0], sim.clock.calendar_minutes() + 60.0 * spec.window_hours, spec.import_moves, spec.export_moves)
+		sim.ships.append(ship)
+		var berthed := AreaFlow.berth(sim, ship)
+		assert(berthed, "a Panamax berths at apron %d" % apron)
+	return sim
+
+
+## Stacks BOXES imports across the import blocks, due over the next DUE_HOURS.
+static func _fill(sim: PortSim, blocks: Array[int]) -> void:
+	var now := sim.clock.calendar_minutes()
+	var placed := 0
+	while placed < BOXES:
+		var before := placed
+		for block in blocks:
+			if sim.areas.list[block].settings.role != "import" or placed == BOXES:
+				continue
+			var stacks := AreaFlow._stacks(sim, block)
+			var box := sim._new_box("import", now + placed % (DUE_HOURS * 60), sim.rules.lines.keys()[0])
+			if stacks.place(box, sim.boxes[box].teu) < 0:
+				sim.boxes.erase(box)
+				continue
+			sim.boxes[box].in = now
+			placed += 1
+		assert(placed > before, "the import blocks hold %d boxes, short of %d" % [placed, BOXES])
+
+
+static func _do(sim: PortSim, command: Dictionary) -> void:
+	var err := sim.apply(command)
+	if err:
+		push_error("%s refused: %s" % [command, err])
+		Engine.get_main_loop().quit(1)
+
+
+static func _area(sim: PortSim, command: Dictionary) -> int:
+	_do(sim, command)
+	return sim.areas.list.keys().max()
