@@ -415,9 +415,9 @@ static func _gate_of(sim: PortSim, terminal: int, from: Vector2i) -> int:
 	var best := 0
 	var soonest := INF
 	for gate in gates:
-		var route := sim.lanes.route(from, _buffer_start(sim, gate), true)
+		var cells := sim.lanes.lorry_route_cells(from, _buffer_start(sim, gate))
 		# A vehicle second is a calendar minute, so driving and queueing add up.
-		var drive: float = route.size() / (sim.rules.lorry_speed / Grid.CELL) if not route.is_empty() else INF
+		var drive: float = cells / (sim.rules.lorry_speed / Grid.CELL) if cells > 0 else INF
 		var minutes: float = drive + bound.get(gate, 0) * gate_minutes(sim, gate) / sim.areas.layout(gate).lanes.size()
 		if best == 0 or minutes < soonest:
 			best = gate

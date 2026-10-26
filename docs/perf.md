@@ -308,3 +308,14 @@ Note on the benches: rules are data and are not saved, so a loaded
 `endgame.bin` plays on the base rules (a lorry a minute, an RTG per 10
 bays), not the bench's. `profile_sim.gd`'s figures above, and the 288 ms
 baseline, were taken that way.
+
+### At 2,000 lorries (2026-10-26)
+
+`profile_sim.gd -- 200` on the 2,000-lorry save with the bench's rules, so
+a lorry is sent every tick (2,150 vehicles at the end). Same state hash after
+300 ticks before and after each change.
+
+| Change | Hot spot removed | ms a tick |
+|---|---|---:|
+| Baseline at 2,000 lorries | | 86.8 |
+| Route lengths for gate choice kept until the lane graph changes | `_gate_of` routing to all 12 gates per lorry (20 of 20 route calls a tick, 1.66 ms each) | 75.3 |
