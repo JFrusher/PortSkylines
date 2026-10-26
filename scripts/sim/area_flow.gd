@@ -250,33 +250,38 @@ static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
 	return 0
 
 
-## Sends a lorry in from the site entry for an import box due out, to its
-## terminal's gate first; false when no box is due or the way in is busy.
+## Sends a lorry in from the site entry for the import box due out longest,
+## whichever block holds it, to its terminal's gate first; false when no box
+## is due or the way in is busy.
 static func dispatch_import_lorry(sim: PortSim) -> bool:
 	var now := sim.clock.calendar_minutes()
+	var box := 0
+	var terminal := 0
 	for block: int in sim.area_stacks:
 		if block not in sim.areas.list or sim.areas.idle_reason(block) != "":
 			continue
-		var terminal: int = sim.areas.list[block].terminal
-		if not _has_gate(sim, terminal):
-			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[terminal].name)
+		if not _has_gate(sim, sim.areas.list[block].terminal):
+			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[sim.areas.list[block].terminal].name)
 			continue
-		for box: int in sim.area_stacks[block].boxes():
-			if box in sim._claimed or sim.boxes[box].kind != "import" or sim.boxes[box].due > now:
+		for id: int in sim.area_stacks[block].boxes():
+			if id in sim._claimed or sim.boxes[id].kind != "import" or sim.boxes[id].due > now:
 				continue
-			var entry := _entry_cell(sim)
-			if entry == Grid.NONE:
-				return false
-			var gate := _gate_of(sim, terminal, entry)
-			var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
-			sim.lane_traffic.place(lorry)
-			sim._next_vehicle += 1
-			lorry.box = box
-			sim._claimed[box] = true
-			sim.vehicles.append(lorry)
-			_go_to(sim, lorry, gate)
-			return true
-	return false
+			if box == 0 or sim.boxes[id].due < sim.boxes[box].due:
+				box = id
+				terminal = sim.areas.list[block].terminal
+	if box == 0:
+		return false
+	var entry := _entry_cell(sim)
+	if entry == Grid.NONE:
+		return false
+	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
+	sim.lane_traffic.place(lorry)
+	sim._next_vehicle += 1
+	lorry.box = box
+	sim._claimed[box] = true
+	sim.vehicles.append(lorry)
+	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
+	return true
 
 
 ## Sends a lorry in from the site entry with an export box, while calls want
