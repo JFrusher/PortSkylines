@@ -743,7 +743,7 @@ func _draw_contracts() -> void:
 	var rail := _row(_contracts)
 	var discount := sim.rail_discount
 	var locked := sim.lock_error("rmg")
-	var shares := sim.rules.lines.keys().map(func(line: String) -> String: return "%s %d%%" % [contracts.name_of(line), roundi(sim.rail_share(line) * 100)])
+	var shares: Array = sim.rules.lines.keys().map(func(line: String) -> String: return "%s %d%%" % [contracts.name_of(line), roundi(sim.rail_share(line) * 100)])
 	rail.add_child(_label("Rail discount: $%d a box by train. By rail where a rail block can take it: %s" % [discount, ", ".join(shares)]))
 	for change: Array in [["- $10", -10], ["+ $10", 10]]:
 		var button := Button.new()
