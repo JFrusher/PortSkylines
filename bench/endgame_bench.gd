@@ -111,7 +111,10 @@ func _group(name: String) -> Array:
 		"areas":
 			return [_view._areas]
 		"stacks":
-			return _view._area_stacks.values()
+			var parts := []
+			for drawn: Dictionary in _view._area_stacks.values():
+				parts.append_array(drawn.parts.values())
+			return parts
 		"machines":
 			return _view._area_machines.values()
 		"vehicles":

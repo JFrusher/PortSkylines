@@ -326,3 +326,48 @@ ships 16.6 ms, inclusive of 11.6 route searches a tick at 1.65 ms each
 (31% of the tick) and of loops over every vehicle (`_machine_done`,
 `_promote`, `_vehicle`, `_tractors_out`, `_fetchers`, `_export_room`). Those
 are M6 steps 3 (vehicles as packed arrays, found by index) and 7 to 9 (paths).
+
+### What the roads-and-areas render spends its time on (2026-10-26)
+
+`bench/endgame_bench.gd` on the 2,000-lorry save, software GL under xvfb at
+1920x1080, farthest zoom (90), 20 frames after 5 of warm-up: ratios only.
+
+The sim running was not the cause: render CPU was 3,037 ms a frame paused
+and 3,124 ms at 1×. One group hidden at a time, paused:
+
+| Hidden | Render CPU ms | Primitives reported |
+|---|---:|---:|
+| Nothing | 3,037 | 197,630 |
+| Ground | 3,030 | 197,606 |
+| Roads | 2,920 | 195,114 |
+| Areas | 2,910 | 107,006 |
+| **Stacked boxes** | **200** | 196,058 |
+| Yard machines | 2,966 | 150,974 |
+| Vehicles | 2,866 | 146,354 |
+| Ships | 3,122 | 194,408 |
+| STS cranes | 2,906 | 195,902 |
+
+The stacks were 94% of it, yet hiding them took only 1,572 primitives off
+the count: the counter reports a MultiMesh's mesh once, not once per
+instance. The container models have 552 (20 ft) and 1,020 (40 ft)
+triangles, and all 20,000 boxes drew them in one MultiMesh, about 15
+million triangles a frame, with no culling or detail by distance since one
+box covered the whole port. Drawn as plain 12-triangle boxes they cost
+371 ms. So this is why the tile model, with fewer real triangles, drew
+faster than its larger primitive count suggested.
+
+Each yard block now draws its boxes in its own MultiMeshes, the container
+model up to 30 units from the camera and a plain box in its livery beyond
+(visibility ranges, M6 step 6), and redraws only when its stacks change,
+where all 20,000 were rebuilt every tick:
+
+| | Render CPU ms | Frame ms | Draw calls |
+|---|---:|---:|---:|
+| Before, paused | 3,037 | 3,208 | 700 |
+| After, paused | 226 | 263 | 860 |
+| Before, 1× | 3,124 | 3,521 | 713 |
+| After, 1× | 226 | 391 | 873 |
+| After, paused, zoomed in to 20 | 469 | 509 | 386 |
+
+Checked by eye at 10, 28 and 60 units: near rows show the container model,
+far rows plain boxes in the same liveries, with no visible jump.
