@@ -10,6 +10,12 @@
 - The replay hash test passes on the new model at 1, 3 and 6 ticks per frame.
 - Tile-format saves are refused with a clear message; the new format has a fixture.
 
+**Exit check, 26 Oct 2026: all four pass.**
+- The chain: `test_roads.gd` `_test_following_a_box` switches the import block to RTGs, follows a box from under the STS crane through the yard block and the gate until it leaves, and checks RTGs did the block's work. A render of the real scene shows the RTG's lift, travel and set-down, and the STS crane over the tractor lane.
+- The follow camera: the same test, through `AreaFlow.box_cell`, which `main.gd` follows.
+- Replay hash: `test_replay.gd`, 10,000 ticks at 1, 3 and 6 ticks per frame.
+- Saves: `test_save.gd` refuses every fixture before v11 with "saved before roads and areas", and v11 and v12 load and play on.
+
 ## Steps
 
 The new model is built beside the tile model, in its own sim classes with headless tests, so every step leaves the tile game playable. Step 19 moves the box flow onto it, and steps 22 and 23 remove the tile model.

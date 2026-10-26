@@ -26,8 +26,8 @@ static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
 ## `terminal` with an import yard block, a crane, tractors, and a feeder
 ## alongside carrying `imports` boxes with room for `exports`; with exports
 ## there is an export block too, filled by export lorries while the crane comes.
-static func working_terminal(imports: int, exports := 0) -> PortSim:
-	var sim := terminal(60)
+static func working_terminal(imports: int, exports := 0, rules := Content.base()) -> PortSim:
+	var sim := terminal(60, rules)
 	# South of the east road, fed by the eastbound lane tractors come off the coast road on.
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the terminal's yard block is built")
