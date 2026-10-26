@@ -10,6 +10,7 @@ extends SceneTree
 
 const PATH := "res://bench/endgame.bin"
 const TimedLanes := preload("res://bench/timed_lanes.gd")
+const EndgamePort := preload("res://bench/endgame_port.gd")
 const FRAMES := 300
 const WARMUP := 30
 
@@ -41,6 +42,8 @@ func _initialize() -> void:
 		quit(1)
 		return
 	_sim = loaded.sim
+	# Rules are data, not saved: put the bench's back.
+	_sim.rules = EndgamePort.bench_rules()
 	TimedLanes.install(_sim, self)
 	_view = WorldView.new()
 	_view.sim = _sim
