@@ -257,3 +257,20 @@ of render CPU on this box with more primitives (430,013 to 578,321), so the
 roads-and-areas view costs far more per primitive. Why is not known yet:
 profile it per group, as for steps 5 and 6 on tiles, before M6's render
 steps change anything.
+
+### Box scans off the tick (2026-10-26)
+
+Same save (`bench/endgame.bin` from `make_endgame.gd`, 694 lorries) and
+command, `profile_sim.gd -- 200`, run once per commit one after another.
+The container ran slower than for the baseline above (509 ms against 288 ms
+for the same code), so compare within this table only. `bench/hash_ticks.gd`
+gives the same state hash after 300 ticks before and after (1889779304).
+
+| Change | Hot spot removed | ms a tick |
+|---|---|---:|
+| Baseline | | 508.8 |
+| A block's exports listed by kind, soonest due first, sorted again only when its stacks change | `AreaFlow._export_box` (18.4 ms a call) | 86.0 |
+| A count of exports kept as boxes come and go | `AreaFlow.export_demand` (2.7 ms) | 46.6 |
+| Lorries take each block's first unclaimed import from the same sorted list | `dispatch_import_lorry` (4.6 to 2.7 ms a tick) | 43.8 |
+
+Ship work is still 29 ms of the 43.8; the next steps profile inside it.
