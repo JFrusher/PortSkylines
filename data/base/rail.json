@@ -8,6 +8,11 @@
 			"wagons": 15.0,
 			"interval_minutes": 180.0,
 			"speed": 500.0
+		},
+		"discount": {
+			"max": 100.0,
+			"share_per_dollar": 0.004,
+			"max_share": 0.6
 		}
 	}
 }

@@ -130,7 +130,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	# Booked to rail by its line's share, only while a rail block has room for
 	# it, so a port without rail rolls nothing.
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
-	if rail and sim.rng.randf() < sim.rules.lines[ship.line].rail_share:
+	if rail and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
 	ship.boxes -= 1

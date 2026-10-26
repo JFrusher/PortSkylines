@@ -15,6 +15,8 @@ func _initialize() -> void:
 	_test_rmg_siding()
 	_test_track_is_locked()
 	_test_trains_take_rail_imports()
+	_test_discount()
+	_test_rail_cuts_the_gate_queue()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -125,6 +127,47 @@ func _test_trains_take_rail_imports() -> void:
 	var most: float = least + 2 * 30 * Grid.CELL / gear.speed
 	var seconds := worked_ticks * Machines.SECONDS_PER_TICK
 	_expect(seconds >= 12 * least and seconds <= 12 * most + 2 * Machines.SECONDS_PER_TICK * 10, true, "the train is worked in the data's time: %.0f s for 12 moves, %.0f to %.0f" % [seconds, 12 * least, 12 * most])
+
+
+## The rail discount buys every line a share of rail, at a cost per box.
+func _test_discount() -> void:
+	var sim := AreaPort.base()
+	var line: String = sim.rules.lines.keys()[0]
+	var base: float = sim.rules.lines[line].rail_share
+	_expect(sim.apply({"op": "set_rail_discount", "dollars": 50}), "", "a discount is offered")
+	_expect(is_equal_approx(sim.rail_share(line), base + 50 * sim.rules.rail.discount.share_per_dollar), true, "it adds share_per_dollar a dollar")
+	_expect(sim.apply({"op": "set_rail_discount", "dollars": 100}), "", "up to the most")
+	_expect(is_equal_approx(sim.rail_share(line), minf(base + 100 * sim.rules.rail.discount.share_per_dollar, sim.rules.rail.discount.max_share)), true, "the most buys its share, never past max_share")
+	_expect(sim.apply({"op": "set_rail_discount", "dollars": 101}), "The rail discount runs from $0 to $100 a box", "and no more")
+
+
+## M6's exit scenario: with 30% of boxes by rail, the gate queue is shorter.
+func _test_rail_cuts_the_gate_queue() -> void:
+	var queued := []
+	var rail_share := []
+	for share: float in [0.0, 0.3]:
+		var rules := RandomPort.rules()
+		rules.lorry_interval_minutes = 0.25
+		for line: String in rules.lines:
+			rules.lines[line].rail_share = share
+		var sim := AreaPort.base(rules)
+		AreaPort.add_export_block(sim)
+		AreaPort.add_rail_block(sim)
+		var gates: Array = sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "gate")
+		var total := 0
+		var imports := {}
+		for i in SimClock.TICKS_PER_DAY:
+			sim.tick()
+			for gate: int in gates:
+				total += sim.lorries_bound_for(gate)
+			for id: int in sim.boxes:
+				if sim.boxes[id].kind == "import":
+					imports[id] = sim.boxes[id].rail
+		queued.append(total / float(SimClock.TICKS_PER_DAY))
+		rail_share.append(imports.values().count(true) / float(imports.size()))
+	print("  a day of calls: %.1f lorries at the gate on average with no rail, %.1f with %.0f%% of imports booked to rail" % [queued[0], queued[1], rail_share[1] * 100])
+	_expect(rail_share[1] > 0.2 and rail_share[1] < 0.4, true, "about 30%% of imports go by rail (%.2f)" % rail_share[1])
+	_expect(queued[1] < queued[0] * 0.85, true, "and the gate queue is measurably shorter (%.1f against %.1f)" % [queued[1], queued[0]])
 
 
 func _expect(got: Variant, want: Variant, what: String) -> void:

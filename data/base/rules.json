@@ -60,7 +60,8 @@
 		"loan_payments": "Loan payments",
 		"bailout": "Bailout",
 		"land": "Land",
-		"dredging": "Dredging"
+		"dredging": "Dredging",
+		"rail": "Rail discounts"
 	},
 	"loans": {
 		"small": {

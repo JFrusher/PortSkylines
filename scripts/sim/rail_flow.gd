@@ -59,6 +59,15 @@ static func _send(sim: PortSim, block: int) -> void:
 	# The locomotive stands at one bay and a wagon at each of the others.
 	var train := Train.new(sim._next_train, block, rail_blocks(sim)[block], mini(sim.rules.rail.train.wagons, bays - 1))
 	sim._next_train += 1
+	# It brings the lines' share, on average, of the exports still wanted.
+	var share := 0.0
+	for line: String in sim.rules.lines:
+		share += sim.rail_share(line) / sim.rules.lines.size()
+	var exports := mini(train.wagons.size(), ceili(maxi(AreaFlow.export_demand(sim), 0) * share))
+	for i in exports:
+		# shortcut: an export is booked on no line until a ship loads it, as by road.
+		train.wagons[i] = sim._new_box("export", 0.0, "")
+	_pay_discount(sim, exports)
 	sim.trains.append(train)
 	sim._event("A train is coming for %s" % sim.areas.terminals[sim.areas.list[block].terminal].name, sim.areas.list[block].start)
 
@@ -194,7 +203,14 @@ static func _gone(sim: PortSim, train: Train) -> void:
 			sim._drop_box(box)
 			sim.delivered += 1
 			sim.by_rail += 1
+	_pay_discount(sim, train.wagons.filter(func(box: int) -> bool: return box != 0).size())
 	sim.trains.erase(train)
+
+
+## The rail discount on `boxes` boxes carried by train.
+static func _pay_discount(sim: PortSim, boxes: int) -> void:
+	if boxes > 0 and sim.rail_discount > 0:
+		sim.ledger.post("rail", -boxes * sim.rail_discount)
 
 
 ## Takes away the trains serving block `id`, with their boxes, as the block goes.

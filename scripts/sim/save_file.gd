@@ -92,6 +92,7 @@ static func _migrate_v11(data: Dictionary) -> Dictionary:
 static func _migrate_v12(data: Dictionary) -> Dictionary:
 	data.sim.rails = {"nodes": {}, "segments": {}, "next_node": 1, "next_segment": 1}
 	data.sim.by_rail = 0
+	data.sim.rail_discount = 0
 	data.sim.trains = []
 	data.sim.next_train = 1
 	data.sim.until_train = {}
@@ -107,7 +108,7 @@ static func _migrate_v12(data: Dictionary) -> Dictionary:
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
-		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "rail_discount": TYPE_INT, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
 		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,

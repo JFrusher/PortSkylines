@@ -530,7 +530,7 @@ func _process(dt: float) -> void:
 		if _actions_drawn != [sim, sim.areas.version, _inspected]:
 			_draw_inspect_actions()
 
-	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim)]:
+	if _contracts.is_visible_in_tree() and _contracts_drawn != [sim.contracts.version, sim, sim.storage, AreaFlow.offer_berths(sim), sim.rail_discount]:
 		_draw_contracts()
 
 	# Throttled refresh of the info bar and the open drawer
@@ -721,7 +721,7 @@ func _show_milestone() -> void:
 
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 func _draw_contracts() -> void:
-	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim)]
+	_contracts_drawn = [sim.contracts.version, sim, sim.storage.duplicate(), AreaFlow.offer_berths(sim), sim.rail_discount]
 	for child in _contracts.get_children():
 		child.queue_free()
 	var contracts := sim.contracts
@@ -740,6 +740,19 @@ func _draw_contracts() -> void:
 		var new_fee: int = fee + change[2]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_storage", "free_days": free_days, "fee": new_fee}))
 		terms.add_child(button)
+	var rail := _row(_contracts)
+	var discount := sim.rail_discount
+	var locked := sim.lock_error("rmg")
+	var shares := sim.rules.lines.keys().map(func(line: String) -> String: return "%s %d%%" % [contracts.name_of(line), roundi(sim.rail_share(line) * 100)])
+	rail.add_child(_label("Rail discount: $%d a box by train. By rail where a rail block can take it: %s" % [discount, ", ".join(shares)]))
+	for change: Array in [["- $10", -10], ["+ $10", 10]]:
+		var button := Button.new()
+		button.text = change[0]
+		var dollars: int = discount + change[1]
+		button.disabled = locked != ""
+		button.tooltip_text = locked if locked else "Each box carried by train costs the discount; each dollar moves %.1f%% more of every line's boxes onto rail, up to %d%%" % [sim.rules.rail.discount.share_per_dollar * 100, roundi(sim.rules.rail.discount.max_share * 100)]
+		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_rail_discount", "dollars": dollars}))
+		rail.add_child(button)
 	if contracts.offers.is_empty() and contracts.services.is_empty():
 		_contracts.add_child(_label("No offers: lines offer services once a crane stands at a berth, while reputation is good and berths have room"))
 		return

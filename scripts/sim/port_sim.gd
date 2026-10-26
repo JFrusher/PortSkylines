@@ -22,6 +22,8 @@ var money: int:
 var delivered := 0
 ## Of those, the ones that left by train.
 var by_rail := 0
+## Dollars off each box carried by train, to shift lines' boxes onto rail.
+var rail_discount := 0
 ## Shipping lines, their services and offers, and their reputation of the port.
 var contracts: Contracts
 ## Loans and the bailout.
@@ -251,6 +253,7 @@ func to_dict() -> Dictionary:
 		"creative": creative,
 		"delivered": delivered,
 		"by_rail": by_rail,
+		"rail_discount": rail_discount,
 		"trains": trains.map(func(train: Train) -> Dictionary: return train.to_dict()),
 		"next_train": _next_train,
 		"until_train": _until_train.duplicate(),
@@ -312,6 +315,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.creative = d.creative
 	sim.delivered = d.delivered
 	sim.by_rail = d.by_rail
+	sim.rail_discount = d.rail_discount
 	for train: Dictionary in d.trains:
 		sim.trains.append(Train.from_dict(train))
 	sim._next_train = d.next_train
@@ -367,6 +371,8 @@ func apply(command: Dictionary) -> String:
 			return contracts.decline(command.id)
 		"set_storage":
 			return set_storage(command.free_days, command.fee)
+		"set_rail_discount":
+			return set_rail_discount(command.dollars)
 		"take_loan":
 			var locked := lock_error("loans")
 			return locked if locked else finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
@@ -471,6 +477,23 @@ func build_rail(from: Vector2i, to: Vector2i) -> String:
 		ledger.post("construction", -RoadNet.length(from, to) * rules.rail.cost_per_cell)
 		rails.add(from, to, "track")
 	return err
+
+
+func set_rail_discount(dollars: int) -> String:
+	var locked := lock_error("rmg")
+	if locked:
+		return locked
+	if dollars < 0 or dollars > rules.rail.discount.max:
+		return "The rail discount runs from $0 to $%d a box" % rules.rail.discount.max
+	rail_discount = dollars
+	return ""
+
+
+## The share of `line`'s boxes booked to rail where a rail block can take
+## them: its own share, plus what the rail discount buys, capped.
+func rail_share(line: String) -> float:
+	var discount: Dictionary = rules.rail.discount
+	return minf(rules.lines[line].rail_share + rail_discount * discount.share_per_dollar, maxf(discount.max_share, rules.lines[line].rail_share))
 
 
 func remove_rail(segment: int) -> String:
