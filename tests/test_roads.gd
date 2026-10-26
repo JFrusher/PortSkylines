@@ -364,7 +364,9 @@ func _test_area_settings() -> void:
 	var line: String = sim.rules.lines.keys()[0]
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "export", "lines": [line]}}), "", "a yard block's role and lines are set")
 	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line]}, "unset rules stay as they were")
-	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "reefer"}}), "", "reefer is a yard role")
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "reefer"}}), "Unlocked at milestone 2: %d TEU across the quay" % sim.rules.milestones.terminal.teu, "reefer blocks wait for the terminal milestone")
+	sim.teu_handled = int(sim.rules.milestones.terminal.teu)
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "reefer"}}), "", "then reefer is a yard role")
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "transit"}}), "Unknown yard role: transit", "unknown roles are refused")
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"gear": "crane_on_legs"}}), "Unknown yard gear: crane_on_legs", "unknown gear is refused")
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"lines": ["Nobody Lines"]}}), "Line priority lists known shipping lines", "unknown lines are refused")
