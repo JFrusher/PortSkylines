@@ -51,6 +51,8 @@ const AREA_VEHICLE_SCALE := Vector3(0.45, 0.6, 1.0)
 const BUFFER_COLOR := Color(0.3, 0.3, 0.32)
 const SLOT_COLORS: Array[Color] = [Color(0.24, 0.24, 0.26), Color(0.33, 0.33, 0.35)]
 const RAIL_COLOR := Color(0.16, 0.16, 0.17)
+## A berth's crane spots, striped across its apron.
+const SPOT_COLOR := Color(0.85, 0.7, 0.2)
 ## The quay edge's fender line, in safety yellow.
 const EDGE_COLOR := Color(0.85, 0.7, 0.15)
 ## Mixed into an idle area's ground, so an area cut off from its road stands out.
@@ -170,8 +172,17 @@ static func site_size(port: PortSim) -> Vector2:
 
 ## Marks grid cell `cell` under the mouse, green if the tool can act there, else red.
 func show_hover(cell: Vector2i, ok: bool) -> void:
-	_hover.visible = cell != Grid.NONE
-	_hover.position = _world((Vector2(cell) + Vector2(0.5, 0.5)) * Grid.CELL, 1.0)
+	show_hover_at(Vector2(cell) + Vector2(0.5, 0.5) if cell != Grid.NONE else Vector2.INF, 1, ok)
+
+
+## Marks a square `cells` cells across centred on grid point `centre` (in
+## cells): a road's width where a drag would start it. Hidden at INF.
+func show_hover_at(centre: Vector2, cells: int, ok: bool) -> void:
+	_hover.visible = centre != Vector2.INF
+	if not _hover.visible:
+		return
+	_hover.position = _world(centre * Grid.CELL, 1.0)
+	_hover.scale = Vector3(cells, 1, cells)
 	(_hover.mesh.material as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
@@ -269,6 +280,10 @@ func _draw_areas() -> void:
 				colors[cell] = RAIL_COLOR
 		for cell: Vector2i in layout.get("edge", []):
 			colors[cell] = EDGE_COLOR
+		var area: Dictionary = sim.areas.list[id]
+		for spot in AreaFlow.crane_spots(sim, id) if area.type == "quay_apron" else ([] as Array[int]):
+			for d in sim.areas.depth_of(area):
+				colors[area.start + (area.end - area.start).sign() * spot + area.out * d] = SPOT_COLOR
 		for i: int in layout.get("slots", []).size():
 			for cell: Vector2i in layout.slots[i]:
 				colors[cell] = SLOT_COLORS[i % 2]

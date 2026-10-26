@@ -1,8 +1,9 @@
 # Port Skylines
 
-A port-building game in the spirit of city builders. Draw roads on a 4 m
-grid from the highway to the coast, drag quay aprons, gates and yard blocks
-out along them into terminals, place quay cranes and buy tractors. Shipping lines offer weekly services; accepted
+A port-building game in the spirit of city builders. Place fixed-size berths
+on the coast, draw roads on a 4 m grid from the highway to them, drag gates
+and yard blocks out along them into terminals, set quay cranes on the
+berths' crane spots and buy tractors. Shipping lines offer weekly services; accepted
 ones call in their window, berth by class and depth, and wait at anchorage
 when the berths are full. Cranes work them at a set rate, tractors shuttle
 boxes to handover slots at import and export blocks where yard machines

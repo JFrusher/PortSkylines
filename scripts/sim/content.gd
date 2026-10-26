@@ -79,6 +79,10 @@ const SCHEMA := {
 	# by train, up to `max` dollars, adds share_per_dollar to every line's
 	# rail_share, up to max_share.
 	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
+	# Berths the player places on the coast: a quay apron `length` cells long
+	# with its road along its back, and STS crane spots evenly along it. A
+	# berth's key is also what milestones unlock it by (its ship class's name).
+	"berths": {"*": {"name": TYPE_STRING, "length": TYPE_INT, "crane_spots": TYPE_INT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
 	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
@@ -88,7 +92,7 @@ const SCHEMA := {
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
 
 static var _base := {}
 

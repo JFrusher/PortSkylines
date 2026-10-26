@@ -3,7 +3,7 @@
 		"cost": 1500.0,
 		"rate": 25.0,
 		"outreach": 13.0,
-		"lead_days": 1.0,
+		"lead_days": 0.0,
 		"width": 28.0,
 		"max_fetchers": 4.0
 	},
