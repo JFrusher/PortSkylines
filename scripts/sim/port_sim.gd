@@ -739,6 +739,11 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		var locked := lock_error(settings.gear)
 		if locked:
 			return locked
+	var role: String = settings.get("role", areas.list[id].settings.get("role", ""))
+	var gear: String = settings.get("gear", areas.list[id].settings.get("gear", ""))
+	if gear != "" and rules.yard_gear[gear].empties_only and role != "empty":
+		var name: String = rules.yard_gear[gear].name
+		return "%s only work empty blocks" % (name[0].to_upper() + name.substr(1))
 	if settings.has("lines"):
 		if not settings.lines is Array or not settings.lines.all(func(line: Variant) -> bool: return line is String and rules.lines.has(line)):
 			return "Line priority lists known shipping lines"
