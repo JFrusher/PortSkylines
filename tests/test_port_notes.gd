@@ -12,6 +12,7 @@ func _initialize() -> void:
 	_test_remove_one_crane()
 	_test_berth_plan()
 	_test_ships_go_to_their_berth()
+	_test_berth_board()
 	_test_cost_per_move()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -102,6 +103,32 @@ func _test_ships_go_to_their_berth() -> void:
 	_expect(AreaFlow.berth(sim, waiting), false, "with its berth full, it waits at anchor")
 	waiting.any_berth = true
 	_expect(AreaFlow.berth(sim, waiting) and waiting.apron == aprons[1], true, "unless its service takes any berth")
+
+
+## The board shows where a dragged offer would land, or why not, and a drop
+## or a click on a call sends the command that does it.
+func _test_berth_board() -> void:
+	var sim := _two_berths()
+	var aprons := AreaFlow.ready_aprons(sim)
+	var line: String = sim.rules.lines.keys()[0]
+	for id: int in [1, 2]:
+		var asked := (id - 1) * 6 * 60
+		sim.contracts.offers.append({"id": id, "line": line, "kind": "feeder", "start": asked, "asked": asked, "window_hours": 12.0, "moves": 40, "apron": aprons[0], "any_berth": false, "expires": 1e9})
+	var board := BerthBoard.new()
+	board.sim = sim
+	var sent: Array[Dictionary] = []
+	board.command_issued.connect(func(command: Dictionary) -> void: sent.append(command))
+	_expect(board.landing({"id": 1, "offer": true}, aprons[0]).start, 0, "an offer lands at its line's time on a free berth")
+	board.drop({"id": 1, "offer": true}, aprons[0])
+	_expect(sent[-1], {"op": "accept_offer", "id": 1, "apron": aprons[0]}, "a drop agrees it there")
+	_expect(sim.apply(sent[-1]), "", "and the sim takes it")
+	_expect(board.landing({"id": 2, "offer": true}, aprons[0]).start, 12 * 60, "the next, asked for 06:00, lands at the nearest free hour, 12:00")
+	_expect(board.landing({"id": 2, "offer": true}, 999).why, "Not a working berth", "and shows why where it can't")
+	board.toggle_any_berth(1)
+	_expect(sent[-1], {"op": "set_any_berth", "id": 1, "any_berth": true}, "a click lets a call take any berth")
+	board.drop({"id": 1, "offer": false}, aprons[1])
+	_expect(sent[-1].op, "move_service", "dragging a call moves it")
+	board.free()
 
 
 ## Over three days of feeder calls, the panel's figures per move are the
