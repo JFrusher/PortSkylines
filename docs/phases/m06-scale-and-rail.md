@@ -90,6 +90,18 @@
 - **Remove one STS crane** without bulldozing its apron (M5 playtest, open 6). Test: removing a crane frees its fetchers and leaves the apron.
 - **Ships and STS cranes at true scale** (M5 playtest, open 7). Check: screenshot beside yard boxes.
 
+### Empties and truck parking (developer's notes, 27 Oct 2026)
+With ships at 10× moves the yard and gate are the limit; these add the land
+and traffic a real port spends on empties and waiting lorries. Tunables go in
+an `empties` and a `parking` block in `rules.json`.
+- **E1. Empty blocks.** A yard block set to the empty role holds only empty boxes, stacked by empty handlers: a yard gear with more tiers and cheaper upkeep, only for empty blocks. Test: an empty block takes an empty and refuses an import; an empty handler stacks its data's tiers.
+- **E2. Empties come back.** An import collected by lorry comes back as an empty of its line and size `empties.return_days` later, by lorry through the gate, into an empty block. With no room the lorry is turned away and its line's reputation drops by `empties.refused`. Save bump. Test: an import collected on day 1 returns as an empty on day 1 + return_days; with no empty block the lorry leaves and reputation drops.
+- **E3. Exporters collect an empty first.** While the port holds an unclaimed empty, an export lorry first comes in unladen, takes one out, and comes back full `empties.stuffing_hours` later; with none in the port it brings its own, as now. Test: with empties in the port, an export's lorry leaves with an empty before the export arrives.
+- **E4. Lines take surplus empties.** A ship loads empties of its line after its exports while the port holds more than `empties.keep` of that line, up to `empties.max_per_call`, each earning the move price times `empties.price_factor`. Test: a ship sails with empties when the port holds more than keep.
+- **P1. Truck parks.** A parking area: slots off the road where lorries wait. Test: a lorry sent to a park waits in a slot, in no lane.
+- **P2. A full gate queue.** A lorry arriving at a gate whose queue is full waits in its terminal's park and goes on when the queue has room; with no park it queues on the road as now. Test: with a park, no lorry queues on the road past the gate's buffer.
+- **P3. Booked slots.** Lorries come for a booked hour at their gate, arriving up to `parking.early_minutes` early. One arriving before its hour, or before its box is ready (an import still dwelling, an export whose ship isn't open), waits in the park, else on the road. The player sets slots per hour per gate. Test: no lorry passes the gate before its hour.
+
 ### Close
 19. **Endgame bench passes** on the target PC. Record it.
 20. **Fixtures and soak.** Add the new save fixture and rail to the soak test.
