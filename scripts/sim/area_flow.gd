@@ -19,10 +19,19 @@ static func ready_aprons(sim: PortSim) -> Array[int]:
 	return found
 
 
-## Moves an anchored ship to a free stretch of a ready apron; false if none yet.
+## Moves an anchored ship to a free stretch of a ready apron, its own berth
+## if it has one, or another only if it may; false if none yet.
 static func berth(sim: PortSim, ship: PortSim.Ship) -> bool:
 	var span := ship_cells(sim, ship.kind)
-	for apron in ready_aprons(sim):
+	var aprons := ready_aprons(sim)
+	if ship.berth != 0:
+		var others := aprons.filter(func(a: int) -> bool: return a != ship.berth) if ship.any_berth else []
+		var own := ship.berth in aprons
+		aprons.clear()
+		if own:
+			aprons.append(ship.berth)
+		aprons.append_array(others)
+	for apron: int in aprons:
 		for from in range(_length(sim, apron) - span + 1):
 			if sim.ships.any(func(other: PortSim.Ship) -> bool: return other.apron == apron and other.from < from + span and from < other.from + ship_cells(sim, other.kind)):
 				continue

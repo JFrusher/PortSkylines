@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 18
+const VERSION := 19
 ## The first save of roads and areas. Older saves hold the tile port M5 took
 ## out, which nothing can turn into roads and areas, so they are refused.
 const FIRST := 11
@@ -86,6 +86,8 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v16(data)
 	if data.version == 17:
 		data = _migrate_v17(data)
+	if data.version == 18:
+		data = _migrate_v18(data)
 	return data
 
 
@@ -159,6 +161,22 @@ static func _migrate_v17(data: Dictionary) -> Dictionary:
 	return data
 
 
+## v19 gives services a berth: those before it have none yet, call when
+## asked and take any free berth, as every service did.
+static func _migrate_v18(data: Dictionary) -> Dictionary:
+	for service: Variant in data.sim.contracts.services + data.sim.contracts.offers:
+		if service is Dictionary:
+			service.apron = 0
+			service.asked = service.start
+			service.any_berth = true
+	for ship: Variant in data.sim.ships:
+		if ship is Dictionary:
+			ship.berth = 0
+			ship.any_berth = true
+	data.version = 19
+	return data
+
+
 ## Check the entire payload before any typed deserialiser sees it.
 # shortcut: entries inside boxes, events and ship_log are not checked,
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
@@ -209,7 +227,7 @@ static func _valid_sim(data: Variant) -> bool:
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT,
 			"boxes": TYPE_INT, "exports": TYPE_INT, "state": TYPE_INT,
 			"sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
-			"apron": TYPE_INT, "from": TYPE_INT,
+			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL,
 		}):
 			return false
 		if (ship.apron == 0) != (ship.state == PortSim.Ship.State.ANCHORED):

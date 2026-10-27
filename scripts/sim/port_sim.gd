@@ -181,6 +181,10 @@ class Ship:
 	## apron its length starts at.
 	var apron := 0
 	var from := 0
+	## The berth its service calls at (0: any), and whether it takes another
+	## berth when that one is busy.
+	var berth := 0
+	var any_berth := true
 	## Import boxes still on board, and exports it still has room for.
 	var boxes: int
 	var exports: int
@@ -202,7 +206,7 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
@@ -213,6 +217,8 @@ class Ship:
 		ship.berthed = d.berthed
 		ship.apron = d.apron
 		ship.from = d.from
+		ship.berth = d.berth
+		ship.any_berth = d.any_berth
 		return ship
 
 
@@ -1079,7 +1085,10 @@ func _call(service: Dictionary) -> void:
 		_event_if(contracts.missed(service.line))
 		return
 	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
-	ships.append(Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves))
+	var ship := Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves)
+	ship.berth = service.apron
+	ship.any_berth = service.any_berth
+	ships.append(ship)
 	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
 	_event("%s's %s has arrived" % [who, service.kind])
 

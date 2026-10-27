@@ -11,6 +11,7 @@ var _failures := 0
 func _initialize() -> void:
 	_test_remove_one_crane()
 	_test_berth_plan()
+	_test_ships_go_to_their_berth()
 	_test_cost_per_move()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -60,6 +61,44 @@ func _test_berth_plan() -> void:
 	plan = AreaFlow.berth_plan(sim)
 	_expect(plan.map(func(p: Dictionary) -> bool: return p.clash), [false, false], "a second berth takes the overlapping call")
 	_expect(plan[0].apron != plan[1].apron, true, "on different berths")
+
+
+## A port with two ready berths: the base port's apron and one south of it.
+func _two_berths() -> PortSim:
+	var sim := AreaPort.base(RandomPort.quick(), "")
+	sim.creative = true
+	var entry := sim.site_entry()
+	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": Vector2i(85, entry.y + 90), "type": "terminal_1_1"})
+	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
+	sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 79})
+	sim.apply({"op": "set_terminal", "id": sim.areas.list.keys()[-1], "terminal": 1})
+	return sim
+
+
+## A ship goes to its service's berth though another is free first; with
+## its berth full it waits, unless its service may take any berth.
+func _test_ships_go_to_their_berth() -> void:
+	var sim := _two_berths()
+	var aprons := AreaFlow.ready_aprons(sim)
+	_expect(aprons.size(), 2, "two ready berths")
+	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 0, 0)
+	ship.berth = aprons[1]
+	ship.any_berth = false
+	_expect(AreaFlow.berth(sim, ship) and ship.apron == aprons[1], true, "a ship goes to its own berth, not the first free one")
+	# Fill the first berth end to end.
+	var span := AreaFlow.ship_cells(sim, "feeder")
+	for from in range(0, AreaFlow._length(sim, aprons[0]) - span + 1, span):
+		var moored := PortSim.Ship.new("feeder", ship.line, 0.0, 0, 0)
+		moored.apron = aprons[0]
+		moored.from = from
+		moored.state = PortSim.Ship.State.WORKING
+		sim.ships.append(moored)
+	var waiting := PortSim.Ship.new("feeder", ship.line, 0.0, 0, 0)
+	waiting.berth = aprons[0]
+	waiting.any_berth = false
+	_expect(AreaFlow.berth(sim, waiting), false, "with its berth full, it waits at anchor")
+	waiting.any_berth = true
+	_expect(AreaFlow.berth(sim, waiting) and waiting.apron == aprons[1], true, "unless its service takes any berth")
 
 
 ## Over three days of feeder calls, the panel's figures per move are the

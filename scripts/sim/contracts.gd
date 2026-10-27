@@ -11,7 +11,9 @@ var rules: Dictionary
 ## Line key -> 0..100.
 var reputation := {}
 ## Agreed weekly calls: {"id", "line", "kind", "start" (minute of the week),
-## "window_hours", "moves"}.
+## "window_hours", "moves", "apron" (the berth it calls at, 0 for none yet),
+## "asked" (the start the line asked for; start stays within flex_hours of
+## it), "any_berth" (whether its ship takes another berth when its own is busy)}.
 var services: Array[Dictionary] = []
 ## Services on offer: as above, plus "expires" (a calendar minute).
 var offers: Array[Dictionary] = []
@@ -57,6 +59,9 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, 
 		"start": _quietest_hour(now) * 60,
 		"window_hours": spec.window_hours,
 		"moves": spec.import_moves + spec.export_moves,
+		"apron": 0,
+		"asked": _quietest_hour(now) * 60,
+		"any_berth": false,
 		"expires": now + terms.offer_days * SimClock.MINUTES_PER_DAY,
 	}
 	_next_id += 1
