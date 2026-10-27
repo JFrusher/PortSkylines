@@ -49,6 +49,7 @@
 		"per_move_per_hour": 0.25,
 		"turn_target_minutes": 60.0,
 		"per_turn_minute": -0.05,
-		"missed": -15.0
+		"missed": -15.0,
+		"port_cancels": -10.0
 	}
 }

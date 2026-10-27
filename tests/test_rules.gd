@@ -313,6 +313,11 @@ func _test_offers_accept_and_decline() -> void:
 	var minute_of_week := fmod(sim.clock.calendar_minutes(), Contracts.MINUTES_PER_WEEK)
 	_run(sim, fposmod(offer.start - minute_of_week, Contracts.MINUTES_PER_WEEK) + 1)
 	_expect(sim.ships.size() == 1 and sim.ships[0].line == offer.line, true, "and its ship calls")
+	var before: float = sim.contracts.reputation[offer.line]
+	_expect(sim.apply({"op": "cancel_service", "id": offer.id}), "", "the port cancels the service")
+	_expect(sim.contracts.services, [] as Array[Dictionary], "a cancelled service is gone")
+	_expect(sim.contracts.reputation[offer.line], before + rules.reputation.port_cancels * rules.lines[offer.line].sensitivity, "and its line thinks less of the port")
+	_expect(sim.apply({"op": "cancel_service", "id": offer.id}), "No such service", "a service is cancelled once")
 
 
 ## Services agreed one after another call on different days: each new offer

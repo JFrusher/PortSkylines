@@ -113,6 +113,22 @@ func toggle_any_berth(id: int) -> void:
 	command_issued.emit({"op": "set_any_berth", "id": id, "any_berth": not service(id).any_berth})
 
 
+## Asks before ending agreed service `id`, since its line holds it against the port.
+func ask_cancel(id: int) -> void:
+	var found := service(id)
+	var line: String = found.line
+	var confirm := ConfirmationDialog.new()
+	confirm.title = "Cancel this service?"
+	confirm.dialog_text = "End %s's weekly %s service? Their reputation of the port drops by %d." % [
+		sim.contracts.name_of(line), found.kind, roundi(-sim.rules.reputation.port_cancels * sim.rules.lines[line].sensitivity)]
+	confirm.ok_button_text = "Cancel service"
+	confirm.cancel_button_text = "Keep it"
+	confirm.confirmed.connect(func() -> void: command_issued.emit({"op": "cancel_service", "id": id}))
+	confirm.visibility_changed.connect(func() -> void: if not confirm.visible: confirm.queue_free())
+	add_child(confirm)
+	confirm.popup_centered()
+
+
 func color_of(line: String) -> Color:
 	return LINE_COLORS[sim.rules.lines.keys().find(line) % LINE_COLORS.size()]
 
@@ -123,7 +139,7 @@ static func when(minute: int) -> String:
 
 
 func _build() -> void:
-	_help.text = "Drag an offer onto a berth to agree it there: it calls at the line's time, or the nearest free hour within %d h of it. Drag a call to move it; click it to let its ship take any free berth when its own is busy (a white top edge)." % sim.rules.contracts.flex_hours
+	_help.text = "Drag an offer onto a berth to agree it there: it calls at the line's time, or the nearest free hour within %d h of it. Drag a call to move it; click it to let its ship take any free berth when its own is busy (a white top edge); right-click it to cancel it." % sim.rules.contracts.flex_hours
 	var standing: Array[String] = []
 	for line: String in sim.contracts.reputation:
 		standing.append("%s %d" % [sim.contracts.name_of(line), roundi(sim.contracts.reputation[line])])
@@ -336,16 +352,21 @@ class Timeline extends Control:
 
 	func _gui_input(event: InputEvent) -> void:
 		var click := event as InputEventMouseButton
-		if click and click.button_index == MOUSE_BUTTON_LEFT and not click.pressed:
-			var found := _call_at(click.position)
-			if not found.is_empty():
-				board.toggle_any_berth(found.id)
+		if not click or click.pressed:
+			return
+		var found := _call_at(click.position)
+		if found.is_empty():
+			return
+		if click.button_index == MOUSE_BUTTON_LEFT:
+			board.toggle_any_berth(found.id)
+		elif click.button_index == MOUSE_BUTTON_RIGHT:
+			board.ask_cancel(found.id)
 
 	func _get_tooltip(at: Vector2) -> String:
 		var found := _call_at(at)
 		if found.is_empty():
 			return ""
-		return "%s %s: %s for %d h, %d moves, %s a call\nThe line asked for %s.\n%s\nDrag to move; click to %s." % [
+		return "%s %s: %s for %d h, %d moves, %s a call\nThe line asked for %s.\n%s\nDrag to move; click to %s; right-click to cancel." % [
 			board.sim.contracts.name_of(found.line), found.kind, BerthBoard.when(found.start), roundi(found.window_hours), found.moves,
 			HudDetails.dollars(board.sim.contracts.call_value(found)), BerthBoard.when(found.asked),
 			"Takes any free berth when its own is busy." if found.any_berth else "Waits for its own berth when it is busy.",

@@ -393,6 +393,8 @@ func apply(command: Dictionary) -> String:
 			return contracts.set_any_berth(command.id, command.any_berth)
 		"decline_offer":
 			return contracts.decline(command.id)
+		"cancel_service":
+			return cancel_service(command.id)
 		"set_storage":
 			return set_storage(command.free_days, command.fee)
 		"set_rail_discount":
@@ -1182,6 +1184,13 @@ func move_service_error(id: int, apron: int) -> String:
 func move_service(id: int, apron: int) -> String:
 	var err := move_service_error(id, apron)
 	return err if err else contracts.move(id, apron)
+
+
+## Ends agreed service `id`; a ship already called for it still works.
+func cancel_service(id: int) -> String:
+	var done := contracts.cancel(id)
+	_event_if(done[1])
+	return done[0]
 
 
 ## Why a ship of `kind` can't call at berth `apron`, or "".
