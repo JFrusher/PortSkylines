@@ -27,12 +27,16 @@ func _initialize() -> void:
 		var start := Time.get_ticks_usec()
 		_tick(sim)
 		add("tick", start)
+		start = Time.get_ticks_usec()
 		plain.tick()
+		add("untimed tick", start)
 	if sim.state_hash() != plain.state_hash():
 		push_error("the profiled ticks differ from PortSim.tick: update _tick to match it")
 		quit(1)
 		return
 	var tick_us: float = spent.tick
+	print("%d ticks: %.2f ms a tick untimed, %.2f profiled (the timed overrides cost the difference)" % [ticks, spent["untimed tick"] / 1000.0 / ticks, tick_us / 1000.0 / ticks])
+	spent.erase("untimed tick")
 	print("%d ticks: %.2f ms a tick, %d vehicles at the end; shares are inclusive, so route and move also count in the steps that call them" % [ticks, tick_us / 1000.0 / ticks, sim.vehicles.size()])
 	var parts := spent.keys()
 	parts.sort_custom(func(a: String, b: String) -> bool: return spent[a] > spent[b])
