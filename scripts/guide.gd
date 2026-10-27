@@ -7,6 +7,9 @@ extends RefCounted
 
 ## Services the guide asks for, so ships call through the week, not once a week.
 const SERVICES := 3
+## Cells a yard block runs along the road, so it holds a feeder's imports while
+## they wait for lorries; a shorter one fills and stalls the cranes.
+const YARD_LENGTH := 40
 
 
 ## The steps in order for `sim`: {"text", "done": Callable() -> bool}.
@@ -21,10 +24,12 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 			return not _areas(sim, "gate").is_empty()},
 		{"text": "A terminal needs its gate and quay apron. Inspect the gate (key 8) and join it to the apron's terminal.", "done": func() -> bool:
 			return sim.areas.terminals.keys().any(func(t: int) -> bool: return sim.areas.terminal_error(t) == "")},
-		{"text": "Drag a yard block along the coast road's land side, behind the apron, and join it to the terminal too. It starts as an import block (Yard, key 4).", "done": func() -> bool:
-			return _areas(sim, "yard_block").any(func(id: int) -> bool: return sim.areas.terminal_error(sim.areas.list[id].terminal) == "" and sim.areas.idle_reason(id) == "")},
-		{"text": "Place an STS crane on one of the berth's marked crane spots (Cranes, key 3).", "done": func() -> bool:
-			return not sim.cranes.is_empty() or not sim.crane_orders.is_empty()},
+		{"text": "Drag a yard block at least %d m long along the road from the highway, and join it to the terminal too. A feeder unloads hundreds of boxes, so a short block fills and stops the cranes. It starts as an import block (Yard, key 4)." % Grid.metres(YARD_LENGTH), "done": func() -> bool:
+			return _areas(sim, "yard_block").any(func(id: int) -> bool:
+				var block: Dictionary = sim.areas.list[id]
+				return RoadNet.length(block.start, block.end) + 1 >= YARD_LENGTH and sim.areas.terminal_error(block.terminal) == "" and sim.areas.idle_reason(id) == "")},
+		{"text": "Place STS cranes on both of the berth's marked crane spots: one crane alone can't work a feeder within its window (Cranes, key 3).", "done": func() -> bool:
+			return sim.cranes.size() + sim.crane_orders.size() >= sim.rules.berths.feeder.crane_spots},
 		{"text": "Buy tractors to carry boxes between crane and yard (Cranes, key 3).", "done": func() -> bool:
 			return sim.tractors > 0},
 		{"text": "Open Contracts and accept %d lines' offers. Each is a weekly call, so several keep the berth busy; offers come every few hours once the crane is up." % SERVICES, "done": func() -> bool:

@@ -166,6 +166,7 @@ func _test_yard_machines_set_the_pace() -> void:
 		rules.yard_gear.reach_stacker.bays_per_machine = per_machine
 		rules.yard_gear.reach_stacker.lift_seconds = 600.0
 		rules.lorry_interval_minutes = 1e9  # no lorries competing for the machines
+		rules.ship_classes.panamax.import_moves = 70  # a ship small enough to stack within the run
 		var sim := AreaPort.base(rules, "panamax")
 		sim.creative = true
 		sim.apply({"op": "buy_tractors", "count": 20})
@@ -472,7 +473,7 @@ func _test_creative_mode_builds_without_cash() -> void:
 ## elsewhere wait until it buys the land, which then costs upkeep.
 func _test_land_must_be_bought() -> void:
 	var sim := PortSim.new(0, RandomPort.quick())
-	sim.ledger.cash = 100000
+	sim.ledger.cash = 1000000
 	var north := {"op": "build_road", "from": Vector2i(150, 100), "to": Vector2i(170, 100), "type": "terminal_1_1"}
 	_expect(sim.apply(north), "Buy this land first", "no road outside the port's land")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(150, 205), "to": Vector2i(170, 205), "type": "terminal_1_1"}), "", "a road on the port's land")
@@ -513,7 +514,7 @@ func _test_dredging() -> void:
 	base.channel.start_depth = Content.base().channel.start_depth
 	var sim := AreaPort.base(base, "")
 	var channel: Dictionary = sim.rules.channel
-	sim.ledger.cash = 100000
+	sim.ledger.cash = 1000000
 	var before := sim.money
 	_expect(sim.apply({"op": "dredge", "metres": 2}), "", "dredge two metres")
 	_expect([sim.channel_depth, before - sim.money], [channel.start_depth + 2, 2 * channel.cost_per_metre], "the channel is deeper, at a cost per metre")

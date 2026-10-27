@@ -15,7 +15,7 @@ func _initialize() -> void:
 	var entry := sim.site_entry()
 	# A feeder berth on the coast, centred on the highway's row, and the east
 	# road from the highway meets its road in a T, so both its ends are dead
-	# ends to turn at. The yard block sits behind the apron on the east side;
+	# ends to turn at. The yard block sits on the east road's south side;
 	# the gate is on the east road's inbound lane near the highway.
 	# Segments: 1 the berth road north of the T, 2 south of it, 3 the east road.
 	var steps: Array[Array] = [
@@ -23,8 +23,8 @@ func _initialize() -> void:
 		[{"op": "build_road", "from": Vector2i(86, entry.y), "to": sim.site_entry_point(), "type": "terminal_1_1"}],
 		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 419, "to": 433}],
 		[{"op": "set_terminal", "id": 2, "terminal": 1}],
-		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 21}, {"op": "set_terminal", "id": 3, "terminal": 1}],
-		[{"op": "place_sts", "kind": "sts", "apron": 1, "along": 37}],
+		[{"op": "build_area", "type": "yard_block", "segment": 3, "side": 1, "from": 2, "to": 41}, {"op": "set_terminal", "id": 3, "terminal": 1}],
+		[{"op": "place_sts", "kind": "sts", "apron": 1, "along": 37}, {"op": "place_sts", "kind": "sts", "apron": 1, "along": 12}],
 		[{"op": "buy_tractors", "count": 4}],
 	]
 	_expect(Guide.current(sim), 0, "a new game starts at the first step")
