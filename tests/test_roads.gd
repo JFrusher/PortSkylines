@@ -595,7 +595,7 @@ func _test_apron_berths() -> void:
 	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 20}), "", "a crane is ordered on the apron")
 	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 24}), "Too close to another crane", "cranes keep their width apart")
 	_expect(sim.cranes.size() == 1 and sim.cranes[0].apron == 1 and sim.cranes[0].along == 20, true, "and stands on the apron's rails at once")
-	_expect(AreaFlow.offer_berths(sim), 1, "an apron with a crane in a ready terminal is a berth lines may offer for")
+	_expect(AreaFlow.offer_berths(sim), [1] as Array[int], "an apron with a crane in a ready terminal is a berth lines may offer for")
 	var feeder := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 1, 0)
 	_expect(AreaFlow.ship_cells(sim, "feeder"), 50, "a feeder needs 200 m of quay, 50 cells")
 	_expect(AreaFlow.berth(sim, feeder), true, "a feeder berths along a 60-cell apron")

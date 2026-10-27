@@ -795,7 +795,7 @@ func _draw_contracts() -> void:
 			continue
 		var id: int = service.id
 		status.add_child(_label("ends day %d" % int(service.expires / SimClock.MINUTES_PER_DAY)))
-		_action_button(status, "Accept", {"op": "accept_offer", "id": id})
+		_action_button(status, "Accept", {"op": "accept_offer", "id": id, "apron": p.apron})
 		_action_button(status, "Decline", {"op": "decline_offer", "id": id})
 
 

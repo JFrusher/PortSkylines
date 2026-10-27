@@ -386,7 +386,11 @@ func apply(command: Dictionary) -> String:
 		"buy_tractors":
 			return buy_tractors(command.count)
 		"accept_offer":
-			return contracts.accept(command.id)
+			return accept_offer(command.id, command.apron)
+		"move_service":
+			return move_service(command.id, command.apron)
+		"set_any_berth":
+			return contracts.set_any_berth(command.id, command.any_berth)
 		"decline_offer":
 			return contracts.decline(command.id)
 		"set_storage":
@@ -1094,23 +1098,67 @@ func _call(service: Dictionary) -> void:
 
 
 ## Whether the channel is deep enough for `kind` and some apron long enough, busy or not.
-## Whether lines may offer a service of `kind`: unlocked, and a berth and crane
-## could work it.
-func _could_offer(kind: String) -> bool:
-	return unlocked(kind) and _could_berth(kind) and AreaFlow.could_work(self, kind)
+## Whether lines may offer a service of `kind` at berth `apron`: unlocked,
+## the channel deep enough, the berth long enough and a crane on it that
+## reaches across the ship.
+func _could_offer(kind: String, apron: int) -> bool:
+	return unlocked(kind) and channel_depth >= rules.ship_classes[kind].draft and AreaFlow.could_work_at(self, kind, apron)
 
 
 func _could_berth(kind: String) -> bool:
 	return channel_depth >= rules.ship_classes[kind].draft and AreaFlow.could_berth(self, kind)
 
 
-## Lines may offer a new service while the port has berths for it.
+## Lines may offer a new service for the berth with a crane that has the
+## fewest services, while it has room for more.
 func _offer_service() -> void:
 	var now := clock.calendar_minutes()
 	contracts.expire(now)
-	var offered := contracts.offer(rng, now, AreaFlow.offer_berths(self), func(kind: String) -> bool: return _could_offer(kind), hinterland_demand())
+	var berths := AreaFlow.offer_berths(self)
+	if berths.is_empty():
+		return
+	var apron := berths[0]
+	for other in berths:
+		if contracts.booked(other).size() < contracts.booked(apron).size():
+			apron = other
+	var offered := contracts.offer(rng, now, apron, func(kind: String) -> bool: return _could_offer(kind, apron), hinterland_demand())
 	if not offered.is_empty():
 		_event("%s offers a weekly %s service" % [contracts.name_of(offered.line), offered.kind])
+
+
+## Why offer `id` can't be agreed with its calls at berth `apron`, or "".
+func accept_offer_error(id: int, apron: int) -> String:
+	var offer := contracts.offers.filter(func(o: Dictionary) -> bool: return o.id == id)
+	if offer.is_empty():
+		return "No such offer"
+	return _berth_error(offer[0].kind, apron) if _berth_error(offer[0].kind, apron) else contracts.accept_error(id, apron)
+
+
+func accept_offer(id: int, apron: int) -> String:
+	var err := accept_offer_error(id, apron)
+	return err if err else contracts.accept(id, apron)
+
+
+## Why agreed service `id` can't move to berth `apron`, or "".
+func move_service_error(id: int, apron: int) -> String:
+	var service := contracts.services.filter(func(s: Dictionary) -> bool: return s.id == id)
+	if service.is_empty():
+		return "No such service"
+	return _berth_error(service[0].kind, apron) if _berth_error(service[0].kind, apron) else contracts.move_error(id, apron)
+
+
+func move_service(id: int, apron: int) -> String:
+	var err := move_service_error(id, apron)
+	return err if err else contracts.move(id, apron)
+
+
+## Why a ship of `kind` can't call at berth `apron`, or "".
+func _berth_error(kind: String, apron: int) -> String:
+	if apron not in AreaFlow.ready_aprons(self):
+		return "Not a working berth"
+	if AreaFlow._length(self, apron) < AreaFlow.ship_cells(self, kind):
+		return "This berth is too short for a %s" % kind
+	return ""
 
 
 func _event_if(text: String) -> void:
