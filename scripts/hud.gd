@@ -42,6 +42,8 @@ var sim: PortSim
 var tool := DRAW_ROAD
 ## The road type DRAW_ROAD draws, a key of rules.road_types.
 var road_type := ""
+## With DRAW_ROAD, clicking a road changes it to road_type instead of drawing.
+var upgrade_roads := false
 ## The area type DRAW_AREA drags out, a key of rules.area_types, and for a
 ## gate whether it is built on both sides of the road.
 var area_type := ""
@@ -103,9 +105,15 @@ var _confirm := ConfirmationDialog.new()
 var _menu: PanelContainer
 var _speed_buttons: Array[Button] = []
 var _speed_before_menu := 1
+## Text beside the mouse, such as the road under it.
+var _hint := Label.new()
 
 
 func _ready() -> void:
+	_hint.add_theme_constant_override("outline_size", 6)
+	_hint.add_theme_color_override("font_outline_color", Color.BLACK)
+	_hint.visible = false
+	add_child(_hint)
 	# Left column: city stats, headline KPI cards, detail drawer, and panels.
 	var left := _corner(Control.PRESET_TOP_LEFT)
 	var stats := _panel(left)
@@ -283,6 +291,12 @@ func _ready() -> void:
 	_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
 		tool = DRAW_ROAD
 		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge; it crosses roads only straight across, at level crossings. $%d per 4 m, $%.1f a day upkeep." % [rail.cost_per_cell, rail.upkeep_per_cell]
+	var upgrade := _item(Button.new())
+	upgrade.text = "Upgrade\nclick a road"
+	upgrade.toggle_mode = true
+	upgrade.toggled.connect(func(on: bool) -> void: upgrade_roads = on)
+	upgrade.tooltip_text = "While on, pick a road type, then click a road to rebuild it as that type, at the new type's price."
+	rows.Roads.add_child(upgrade)
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
 		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
@@ -514,6 +528,13 @@ func inspect(cell: Vector2i) -> void:
 
 
 ## Shows a short-lived message, such as why a build was refused.
+## Shows `text` beside the mouse; "" hides it.
+func hint(text: String) -> void:
+	_hint.text = text
+	_hint.visible = text != ""
+	_hint.position = _hint.get_viewport().get_mouse_position() + Vector2(18, 18)
+
+
 func flash(text: String) -> void:
 	_message.text = text
 	_flash_left = FLASH_SECONDS

@@ -412,6 +412,8 @@ func apply(command: Dictionary) -> String:
 			return remove_rail(command.segment)
 		"remove_road":
 			return remove_road(command.segment)
+		"change_road":
+			return change_road(command.segment, command.type)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
@@ -436,8 +438,14 @@ func site_entry() -> Vector2i:
 	return Vector2i(size.x - 1, size.y / 2)
 
 
-func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
-	var err := roads.add_error(from, to, type)
+## Why a road can't be built, or "": as though segment `skip` weren't built,
+## which keeps its way round. A new road is built the way RoadNet.oriented says.
+func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
+	if skip == 0:
+		var ends := roads.oriented(from, to, type)
+		from = ends[0]
+		to = ends[1]
+	var err := roads.add_error(from, to, type, skip)
 	if err == "" and not RoadNet.line(from, to).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -457,8 +465,30 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String) -> String:
 func build_road(from: Vector2i, to: Vector2i, type: String) -> String:
 	var err := build_road_error(from, to, type)
 	if err == "":
+		var ends := roads.oriented(from, to, type)
 		ledger.post("construction", -road_price(from, to, type))
-		roads.add(from, to, type)
+		roads.add(ends[0], ends[1], type)
+	return err
+
+
+## Why `segment` can't become a road of `type` in its place, or "".
+func change_road_error(segment: int, type: String) -> String:
+	if segment not in roads.segments:
+		return "No road there"
+	var road: Dictionary = roads.segments[segment]
+	if road.type == type:
+		return "This road is already a %s" % rules.road_types[type].name
+	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment)
+
+
+## Rebuilds `segment` as a road of `type` on the same line, at the new
+## type's full price, as Cities: Skylines upgrades a road.
+func change_road(segment: int, type: String) -> String:
+	var err := change_road_error(segment, type)
+	if err == "":
+		var road: Dictionary = roads.segments[segment]
+		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type))
+		roads.retype(segment, type)
 	return err
 
 
