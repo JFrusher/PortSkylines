@@ -144,7 +144,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	rules = game_rules
 	creative = creative_mode
 	roads = RoadNet.new(rules.road_types)
-	roads.anchors = [site_entry()]
+	roads.anchors = [site_entry_point()]
 	rails = RoadNet.new(rail_types())
 	rails.anchors = [site_rail_entry()]
 	lanes = LaneGraph.new(roads)
@@ -312,7 +312,7 @@ func _area_stacks_dict() -> Dictionary:
 static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
-	sim.roads.anchors = [sim.site_entry()]
+	sim.roads.anchors = [sim.site_entry_point()]
 	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types())
 	sim.rails.anchors = [sim.site_rail_entry()]
 	sim.lanes = LaneGraph.new(sim.roads)
@@ -438,15 +438,17 @@ func site_entry() -> Vector2i:
 	return Vector2i(size.x - 1, size.y / 2)
 
 
-## Why a road can't be built, or "": as though segment `skip` weren't built,
-## which keeps its way round. A new road is built the way RoadNet.oriented says.
+## The grid point on the site's east edge where the highway's line meets it,
+## at the top-left corner of the entry cell's east neighbour: a road drawn to
+## it runs in line with the highway, with a lane on the entry cell.
+func site_entry_point() -> Vector2i:
+	return site_entry() + Vector2i(1, 0)
+
+
+## Why a road can't be built, or "": as though segment `skip` weren't built.
 func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
-	if skip == 0:
-		var ends := roads.oriented(from, to, type)
-		from = ends[0]
-		to = ends[1]
 	var err := roads.add_error(from, to, type, skip)
-	if err == "" and not RoadNet.line(from, to).all(owns):
+	if err == "" and not roads.footprint(from, to, type).all(owns):
 		err = "Buy this land first"
 	if err == "":
 		var built := {}
@@ -465,9 +467,8 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> 
 func build_road(from: Vector2i, to: Vector2i, type: String) -> String:
 	var err := build_road_error(from, to, type)
 	if err == "":
-		var ends := roads.oriented(from, to, type)
 		ledger.post("construction", -road_price(from, to, type))
-		roads.add(ends[0], ends[1], type)
+		roads.add(from, to, type)
 	return err
 
 
@@ -626,14 +627,15 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 	return ""
 
 
-## The road line, top to bottom, of a berth of `kind` centred on row `y`: at
-## the column where its apron reaches the water exactly, and a cell longer
-## each way, so a berth placed end to end with another joins its road.
+## The road line, top to bottom, of a berth of `kind` centred on row `y`:
+## grid points down the grid line one cell east of where its apron reaches
+## the water exactly (its road's lanes lie either side), as long as the
+## apron, so a berth placed end to end with another shares its road's end.
 func berth_line(kind: String, y: int) -> Array[Vector2i]:
 	var length: int = rules.berths[kind].length
-	var x: int = Grid.cells(rules.site.sea_width) + rules.area_types.quay_apron.depth
+	var x: int = Grid.cells(rules.site.sea_width) + rules.area_types.quay_apron.depth + 1
 	var top := y - length / 2
-	return [Vector2i(x, top - 1), Vector2i(x, top + length)] as Array[Vector2i]
+	return [Vector2i(x, top), Vector2i(x, top + length)] as Array[Vector2i]
 
 
 ## The cells a berth of `kind` centred on row `y` would cover: its apron,
@@ -641,8 +643,8 @@ func berth_line(kind: String, y: int) -> Array[Vector2i]:
 func berth_cells(kind: String, y: int) -> Array[Vector2i]:
 	var line := berth_line(kind, y)
 	var found: Array[Vector2i] = []
-	for row in range(line[0].y + 1, line[1].y):
-		for x in range(Grid.cells(rules.site.sea_width), line[0].x):
+	for row in range(line[0].y, line[1].y):
+		for x in range(Grid.cells(rules.site.sea_width), line[0].x - 1):
 			found.append(Vector2i(x, row))
 	return found
 
@@ -668,7 +670,7 @@ func build_berth_error(kind: String, y: int) -> String:
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
 	# A road meeting the berth's road part-way would split it under the apron.
-	if RoadNet.line(line[0] + Vector2i(0, 1), line[1] - Vector2i(0, 1)).any(func(c: Vector2i) -> bool: return c in built):
+	if roads.footprint(line[0] + Vector2i(0, 1), line[1] - Vector2i(0, 1), BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
 		return "A road already runs here: place the berth clear of it, it brings its own"
 	var err := build_road_error(line[0], line[1], BERTH_ROAD)
 	if err:
@@ -687,7 +689,7 @@ func build_berth(kind: String, y: int) -> String:
 	var line := berth_line(kind, y)
 	build_road(line[0], line[1], BERTH_ROAD)
 	# The road runs south from line[0], so its right, side 1, faces the sea.
-	err = build_area("quay_apron", roads.segment_at(Vector2i(line[0].x, y)), 1, 1, rules.berths[kind].length)
+	err = build_area("quay_apron", roads.segment_at(Vector2i(line[0].x, y)), 1, 0, rules.berths[kind].length - 1)
 	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
 	return ""
 

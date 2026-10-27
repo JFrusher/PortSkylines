@@ -20,10 +20,10 @@ func _initialize() -> void:
 	# Segments: 1 the berth road north of the T, 2 south of it, 3 the east road.
 	var steps: Array[Array] = [
 		[{"op": "build_berth", "kind": "feeder", "y": entry.y}],
-		[{"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"}],
-		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 420, "to": 434}],
+		[{"op": "build_road", "from": Vector2i(86, entry.y), "to": sim.site_entry_point(), "type": "terminal_1_1"}],
+		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 419, "to": 433}],
 		[{"op": "set_terminal", "id": 2, "terminal": 1}],
-		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 1, "to": 22}, {"op": "set_terminal", "id": 3, "terminal": 1}],
+		[{"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 21}, {"op": "set_terminal", "id": 3, "terminal": 1}],
 		[{"op": "place_sts", "kind": "sts", "apron": 1, "along": 37}],
 		[{"op": "buy_tractors", "count": 4}],
 	]

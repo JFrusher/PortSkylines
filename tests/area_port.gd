@@ -5,20 +5,22 @@ const RandomPort := preload("res://tests/random_port.gd")
 ## working its first ship. Building them is checked with push_error, so a
 ## broken helper shows up as an ERROR line, which CI fails on.
 
-## A terminal on the coast: a 1+1 road south along x = 85 from y = 200 to the
-## site entry's row, then east to the entry; a quay apron `apron_length`
-## cells long west of the coast road, and a gate on the north side of the
-## east road, fed by the westbound lane lorries come in on. Traffic only
-## turns back at dead ends, so areas sit beside the lane that reaches them.
+## A terminal on the coast: a 1+1 road south down grid line x = 86 from y =
+## 200 to the site entry's row, its lanes in columns 85 and 86, then east to
+## the entry, its lanes in the entry's row and the one above; a quay apron
+## `apron_length` cells long west of the coast road, and a gate on the north
+## side of the east road, fed by the westbound lane lorries come in on.
+## Traffic only turns back at dead ends, so areas sit beside the lane that
+## reaches them. Along the east road, index i is column 86 + i.
 static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
 	var sim := PortSim.new(0, rules, true)
 	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, entry.y), "type": "terminal_1_1"})
-	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(86, 200), "to": Vector2i(86, entry.y), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": sim.site_entry_point(), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, 250))
 	var east := sim.roads.segment_at(Vector2i(200, entry.y))
 	_built(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 0, "to": apron_length - 1}), "the terminal's apron is built")
-	_built(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 300, "to": 314}), "the terminal's gate is built")
+	_built(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 299, "to": 313}), "the terminal's gate is built")
 	sim.apply({"op": "set_terminal", "id": 2, "terminal": 1})
 	return sim
 
@@ -30,10 +32,10 @@ static func working_terminal(imports: int, exports := 0, rules := Content.base()
 	var sim := terminal(60, rules)
 	# South of the east road, fed by the eastbound lane tractors come off the coast road on.
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
-	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the terminal's yard block is built")
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 29, "to": 58}), "the terminal's yard block is built")
 	sim.apply({"op": "set_terminal", "id": 3, "terminal": 1})
 	if exports > 0:
-		_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "the terminal's export block is built")
+		_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 60, "to": 89}), "the terminal's export block is built")
 		sim.apply({"op": "set_area", "id": 4, "settings": {"role": "export"}})
 		sim.apply({"op": "set_terminal", "id": 4, "terminal": 1})
 	sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": 20})
@@ -57,7 +59,7 @@ static func working_terminal(imports: int, exports := 0, rules := Content.base()
 static func base(rules := RandomPort.quick(), calls := "feeder") -> PortSim:
 	var sim := terminal(80, rules)
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
-	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the import block is built")
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 29, "to": 58}), "the import block is built")
 	_built(sim.apply({"op": "set_terminal", "id": 3, "terminal": 1}), "the block joins the terminal")
 	for along: int in [20, 40]:
 		_built(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": along}), "a crane is ordered")
@@ -73,7 +75,7 @@ static func base(rules := RandomPort.quick(), calls := "feeder") -> PortSim:
 static func add_export_block(sim: PortSim) -> int:
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	sim.creative = true
-	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "the export block is built")
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 60, "to": 89}), "the export block is built")
 	sim.creative = false
 	var id: int = sim.areas.list.keys()[-1]
 	_built(sim.apply({"op": "set_area", "id": id, "settings": {"role": "export"}}), "the export block is set")
@@ -87,7 +89,7 @@ static func add_rail_block(sim: PortSim) -> int:
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	var creative := sim.creative
 	sim.creative = true
-	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 92, "to": 121}), "the rail block is built")
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 91, "to": 120}), "the rail block is built")
 	var id: int = sim.areas.list.keys()[-1]
 	_built(sim.apply({"op": "set_area", "id": id, "settings": {"gear": "rmg"}}), "it gets RMGs")
 	_built(sim.apply({"op": "set_terminal", "id": id, "terminal": 1}), "it joins the terminal")
@@ -108,8 +110,8 @@ static func chain(seed_value: int) -> PortSim:
 	var sim := terminal(60)
 	sim.rng.seed = seed_value
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
-	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "the import block is built")
-	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "the export block is built")
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 29, "to": 58}), "the import block is built")
+	_built(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 60, "to": 89}), "the export block is built")
 	_built(sim.apply({"op": "set_area", "id": 4, "settings": {"role": "export"}}), "the export block is set")
 	for id: int in [3, 4]:
 		_built(sim.apply({"op": "set_terminal", "id": id, "terminal": 1}), "the blocks join the terminal")

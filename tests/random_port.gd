@@ -47,12 +47,12 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	rng.seed = seed_value
 	var entry := PortSim.new().site_entry()
 	var port: Array[Dictionary] = [
-		{"op": "build_road", "from": Vector2i(85, 200), "to": Vector2i(85, entry.y), "type": "terminal_1_1"},
-		{"op": "build_road", "from": Vector2i(85, entry.y), "to": entry, "type": "terminal_1_1"},
+		{"op": "build_road", "from": Vector2i(86, 200), "to": Vector2i(86, entry.y), "type": "terminal_1_1"},
+		{"op": "build_road", "from": Vector2i(86, entry.y), "to": PortSim.new().site_entry_point(), "type": "terminal_1_1"},
 		{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 79},
-		{"op": "build_area", "type": "gate", "segment": 2, "side": -1, "from": 300, "to": 314},
-		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 30, "to": 59},
-		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 61, "to": 90},
+		{"op": "build_area", "type": "gate", "segment": 2, "side": -1, "from": 299, "to": 313},
+		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 29, "to": 58},
+		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 60, "to": 89},
 		{"op": "set_area", "id": 4, "settings": {"role": "export"}},
 	]
 	for id: int in [2, 3, 4]:

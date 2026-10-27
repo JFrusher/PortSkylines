@@ -72,7 +72,7 @@ func _two_berths() -> PortSim:
 	var sim := AreaPort.base(RandomPort.quick(), "")
 	sim.creative = true
 	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": Vector2i(85, entry.y + 90), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 79})
 	sim.apply({"op": "set_terminal", "id": sim.areas.list.keys()[-1], "terminal": 1})

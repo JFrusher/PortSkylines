@@ -6,10 +6,11 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 19
-## The first save of roads and areas. Older saves hold the tile port M5 took
-## out, which nothing can turn into roads and areas, so they are refused.
-const FIRST := 11
+const VERSION := 20
+## The first save with roads on grid lines. Older saves hold roads whose
+## lanes hang to one side of their line, which can't be moved onto grid lines
+## where roads meet, so they are refused.
+const FIRST := 20
 ## Every field Vehicle.from_dict reads.
 const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
@@ -63,117 +64,15 @@ static func load_from(path: String) -> Dictionary:
 	if data.version < 1:
 		return {"error": "%s has an invalid save version %d" % [path, data.version]}
 	if data.version < FIRST:
-		return {"error": "%s was saved before roads and areas (save v%d) and can't be loaded; start a new game" % [path, data.version]}
+		return {"error": "%s was saved before roads ran on grid lines (save v%d) and can't be loaded; start a new game" % [path, data.version]}
 	data = _migrate(data)
 	if not _valid_sim(data.get("sim")):
 		return {"error": "%s is not a Port Skylines save" % path}
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time.
+## Brings an older save up to VERSION one step at a time; none yet since FIRST.
 static func _migrate(data: Dictionary) -> Dictionary:
-	if data.version == 11:
-		data = _migrate_v11(data)
-	if data.version == 12:
-		data = _migrate_v12(data)
-	if data.version == 13:
-		data = _migrate_v13(data)
-	if data.version == 14:
-		data = _migrate_v14(data)
-	if data.version == 15:
-		data = _migrate_v15(data)
-	if data.version == 16:
-		data = _migrate_v16(data)
-	if data.version == 17:
-		data = _migrate_v17(data)
-	if data.version == 18:
-		data = _migrate_v18(data)
-	return data
-
-
-## v12 gives gates a level; every gate before it had manual booths.
-static func _migrate_v11(data: Dictionary) -> Dictionary:
-	for area: Variant in data.sim.areas.list.values():
-		if area is Dictionary and area.get("type") == "gate" and area.get("settings") is Dictionary:
-			area.settings.level = "manual"
-	data.version = 12
-	return data
-
-
-## v13 adds rail: no track or trains yet, and no box booked to rail.
-static func _migrate_v12(data: Dictionary) -> Dictionary:
-	data.sim.rails = {"nodes": {}, "segments": {}, "next_node": 1, "next_segment": 1}
-	data.sim.by_rail = 0
-	data.sim.rail_discount = 0
-	data.sim.trains = []
-	data.sim.next_train = 1
-	data.sim.until_train = {}
-	for box: Variant in data.sim.boxes.values():
-		if box is Dictionary:
-			box.rail = false
-	data.version = 13
-	return data
-
-
-## v14 gives boxes a hinterland place; those already in the port go to the first.
-static func _migrate_v13(data: Dictionary) -> Dictionary:
-	var first: String = Content.base().hinterland.places.keys()[0]
-	for box: Variant in data.sim.boxes.values():
-		if box is Dictionary:
-			box.place = first
-	data.version = 14
-	return data
-
-
-## v15 bills reefer power: the day so far has drawn nothing.
-static func _migrate_v14(data: Dictionary) -> Dictionary:
-	data.sim.power = {"peak_kw": 0.0, "kwh": 0.0}
-	data.version = 15
-	return data
-
-
-## v16 gives cranes a kind; every crane before it was the standard STS.
-static func _migrate_v15(data: Dictionary) -> Dictionary:
-	for crane: Variant in data.sim.cranes + data.sim.crane_orders:
-		if crane is Dictionary:
-			crane.kind = "sts"
-	data.version = 16
-	return data
-
-
-## v17 marks boxes rush or dangerous goods; none in the port before it were.
-static func _migrate_v16(data: Dictionary) -> Dictionary:
-	for box: Variant in data.sim.boxes.values():
-		if box is Dictionary:
-			box.rush = false
-			box.dg = false
-	data.version = 17
-	return data
-
-
-## v18 counts moves by line and terminal in the ledger; days before it counted none.
-static func _migrate_v17(data: Dictionary) -> Dictionary:
-	data.sim.ledger.moves = {"total": 0, "lines": {}, "terminals": {}}
-	for day: Variant in data.sim.ledger.days:
-		if day is Dictionary:
-			day.moves = {"total": 0, "lines": {}, "terminals": {}}
-	data.version = 18
-	return data
-
-
-## v19 gives services a berth: those before it have none yet, call when
-## asked and take any free berth, as every service did.
-static func _migrate_v18(data: Dictionary) -> Dictionary:
-	for service: Variant in data.sim.contracts.services + data.sim.contracts.offers:
-		if service is Dictionary:
-			service.apron = 0
-			service.asked = service.start
-			service.any_berth = true
-	for ship: Variant in data.sim.ships:
-		if ship is Dictionary:
-			ship.berth = 0
-			ship.any_berth = true
-	data.version = 19
 	return data
 
 

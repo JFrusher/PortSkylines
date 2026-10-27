@@ -23,10 +23,11 @@ func _initialize() -> void:
 	quit(1 if _failures else 0)
 
 
-## A road south along x = 20 from y = 0 to 40, and one east along y = 20 from
-## x = 0 to 40 (or to 20 for a T). Southbound and eastbound lanes are on the
-## drawn lines, so x = 20 and y = 20 are in-lanes from north and west, and
-## x = 21 and y = 19 the lanes back out.
+## A road south down grid line x = 20 from y = 0 to 40, and one east along
+## grid line y = 20 from x = 0 to 40 (or to 20 for a T). Traffic keeps right
+## and the inner lanes sit either side of each line, so columns 19 and rows
+## 20 are the in-lanes from north and west, and column 20 and row 19 the
+## lanes back out; a road's cells run 0 to 39 between points 0 and 40.
 func _net(type: String, crossing: bool) -> RoadNet:
 	var net := RoadNet.new(Content.base().road_types)
 	_expect(net.add(Vector2i(20, 0), Vector2i(20, 40), type), "", "%s north-south road is built" % type)
@@ -37,12 +38,12 @@ func _net(type: String, crossing: bool) -> RoadNet:
 ## Each arm: [cell driving in, cell driving out].
 func _arms(crossing: bool) -> Dictionary:
 	var arms := {
-		"north": [Vector2i(20, 0), Vector2i(21, 0)],
-		"south": [Vector2i(21, 40), Vector2i(20, 40)],
+		"north": [Vector2i(19, 0), Vector2i(20, 0)],
+		"south": [Vector2i(20, 39), Vector2i(19, 39)],
 		"west": [Vector2i(0, 20), Vector2i(0, 19)],
 	}
 	if crossing:
-		arms.east = [Vector2i(40, 19), Vector2i(40, 20)]
+		arms.east = [Vector2i(39, 19), Vector2i(39, 20)]
 	return arms
 
 
@@ -70,7 +71,7 @@ func _test_turns(type: String, crossing: bool) -> void:
 func _test_turn_back(type: String) -> void:
 	var lanes := LaneGraph.new(_net(type, false))
 	# Southbound 15 cells north of the T, back to where it started, northbound.
-	var route := lanes.route(Vector2i(20, 5), Vector2i(21, 5), true)
+	var route := lanes.route(Vector2i(19, 5), Vector2i(20, 5), true)
 	_expect(route.size() > 0 and route.size() <= 40, true, "%s: a vehicle turns back at the junction, not the dead end 20 cells on (%d cells)" % [type, route.size()])
 
 

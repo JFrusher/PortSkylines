@@ -272,8 +272,11 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	var a: Vector2i = _roads.nodes[_roads.segments[segment].a]
 	var b: Vector2i = _roads.nodes[_roads.segments[segment].b]
 	var out := RoadNet.right_of(b - a) * side
-	# Lanes reach `forward` cells to the right of the drawn line (counting it) and `backward` to the left.
-	var edge: int = road.forward if side == 1 else road.backward + 1
+	# `along` is the row just right of the line; the lanes fill half the road's
+	# width each side of it, so the first free row right is that half on, and
+	# left one more.
+	var half: int = (road.forward + road.backward) / 2
+	var edge: int = half if side == 1 else half + 1
 	return {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
 
 
