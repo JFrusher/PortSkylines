@@ -50,10 +50,18 @@ func add(from: Vector2i, to: Vector2i, type: String) -> String:
 	return ""
 
 
-## Why `add` would refuse this road, or "".
-func add_error(from: Vector2i, to: Vector2i, type: String) -> String:
-	var found: Variant = _meets(from, to, type)
+## Why `add` would refuse this road, or "": as though `skip` weren't built,
+## so a segment can be checked as another type in its own place.
+func add_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
+	var found: Variant = _meets(from, to, type, skip)
 	return found if found is String else ""
+
+
+## Makes `segment` a road of `type` on the same line, the same way round,
+## keeping its id. The caller checks add_error with `skip` set to it first.
+func retype(segment: int, type: String) -> void:
+	segments[segment].type = type
+	version += 1
 
 
 ## Takes `segment` out, and any node left with no road.
@@ -109,12 +117,42 @@ func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
 	return _snap_onto(snap(from, to), from, snap(from, to))
 
 
+## `from` and `to` in the order a free two-way road between them is built.
+## Its lanes lie to one side of its line, so it runs west to east (else north
+## to south) whichever way it was dragged: stubs from either side of a road
+## line up across it. A one-way road runs the way it was dragged.
+static func ordered(from: Vector2i, to: Vector2i, road: Dictionary) -> Array[Vector2i]:
+	if road.forward == road.backward and to < from:
+		return [to, from] as Array[Vector2i]
+	return [from, to] as Array[Vector2i]
+
+
+## `from` and `to` in the order a new road of `type` between them is built.
+## Carrying on from a road's free end, it keeps going that road's way, so
+## their lanes meet at the bend or run on in line; else as `ordered`.
+func oriented(from: Vector2i, to: Vector2i, type: String) -> Array[Vector2i]:
+	if type not in types or types[type].forward != types[type].backward:
+		return [from, to] as Array[Vector2i]
+	for end: Vector2i in [from, to]:
+		var node: Variant = nodes.find_key(end)
+		if node == null or degree(node) != 1:
+			continue
+		var road: Dictionary = segments.values().filter(func(s: Dictionary) -> bool: return s.a == node or s.b == node)[0]
+		# The road arrives at its b end, so the new one leaves from there.
+		var leaves := end if road.b == node else (to if end == from else from)
+		return [leaves, to if leaves == from else from] as Array[Vector2i]
+	return ordered(from, to, types[type])
+
+
 ## The drawn line of a drag from `from` to `to` moved straight across so
 ## the lanes of a road of type `road` centre on `at`, the grid point (in cells,
 ## fractional) the mouse pressed at. Lanes lie on the drawn line and to its
 ## left of travel, so a road is never centred on its line, and which side it
 ## falls on turns with the drag; this keeps it under the mouse either way.
 static func centred(from: Vector2i, to: Vector2i, road: Dictionary, at: Vector2) -> Array[Vector2i]:
+	var ends := ordered(from, to, road)
+	from = ends[0]
+	to = ends[1]
 	var across := right_of(to - from)
 	# The lanes' middle, across, sits half a cell in from the line's cell edge
 	# plus the mean of their offsets, -backward to forward - 1.
@@ -204,8 +242,9 @@ static func from_dict(d: Dictionary, road_types: Dictionary) -> RoadNet:
 
 
 ## Where a road from `from` to `to` meets the roads already built, as cell ->
-## the segment it splits; or why it can't be built.
-func _meets(from: Vector2i, to: Vector2i, type: String) -> Variant:
+## the segment it splits; or why it can't be built. Segment `skip` counts as
+## not built.
+func _meets(from: Vector2i, to: Vector2i, type: String, skip := 0) -> Variant:
 	if type not in types:
 		return "Unknown road type \"%s\"" % type
 	var d := to - from
@@ -219,6 +258,8 @@ func _meets(from: Vector2i, to: Vector2i, type: String) -> Variant:
 		on_drawn[cell] = true
 	var meets := {}
 	for id: int in segments:
+		if id == skip:
+			continue
 		var shared := cells(id).filter(func(c: Vector2i) -> bool: return c in on_drawn)
 		if shared.size() > 1:
 			return "A road already runs here"
@@ -230,6 +271,8 @@ func _meets(from: Vector2i, to: Vector2i, type: String) -> Variant:
 	var width: int = types[type].forward + types[type].backward
 	var mine := footprint(from, to, type)
 	for id: int in segments:
+		if id == skip:
+			continue
 		var road: Dictionary = types[segments[id].type]
 		var reach := maxi(width, road.forward + road.backward)
 		var theirs := {}

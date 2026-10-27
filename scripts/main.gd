@@ -95,7 +95,7 @@ func _process(dt: float) -> void:
 	_follow(dt)
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would snap on.
-	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "track" and _road_from == Grid.NONE and cell != Grid.NONE and not sim.roads.snaps(cell):
+	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "track" and not _upgrading() and _road_from == Grid.NONE and cell != Grid.NONE and not sim.roads.snaps(cell):
 		# A free start: the road's width, centred on the grid line it will centre on.
 		var road: Dictionary = sim.rules.road_types[hud.road_type]
 		var lanes: int = road.forward + road.backward
@@ -103,6 +103,7 @@ func _process(dt: float) -> void:
 		view.show_hover_at(at.round() if lanes % 2 == 0 else at.floor() + Vector2(0.5, 0.5), lanes, _order_error(cell) == "")
 	else:
 		view.show_hover(_net().snap_start(cell) if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE else cell, _order_error(cell) == "")
+	view.show_snaps(_snapped_ends(cell))
 	var dragged: Array[Vector2i] = []
 	if not _area_from.is_empty():
 		var area := _area_command()
@@ -113,12 +114,25 @@ func _process(dt: float) -> void:
 	view.show_area_preview(dragged, _order_error(cell) == "")
 	var ends: Array[Vector2i] = [Grid.NONE, Grid.NONE]
 	var road_type := hud.road_type
+	var ok := _order_error(cell) == ""
+	var picked := _picked_segment(cell)
+	hud.hint(_segment_hint(picked))
 	if _road_from != Grid.NONE:
 		ends = _road_ends()
+	elif not picked.is_empty():
+		# The one segment, junction to junction, that a click would remove or change.
+		var net: RoadNet = picked[0]
+		var road: Dictionary = net.segments[picked[1]]
+		ends = [net.nodes[road.a], net.nodes[road.b]] as Array[Vector2i]
+		road_type = "track" if net == sim.rails else road.type
+		if _upgrading():
+			road_type = hud.road_type
+		else:
+			ok = false
 	elif hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
 		ends = sim.berth_line(hud.berth, cell.y)
 		road_type = PortSim.BERTH_ROAD
-	view.show_road_preview(ends[0], ends[1], road_type, _order_error(cell) == "")
+	view.show_road_preview(ends[0], ends[1], road_type, ok)
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_painting = false
@@ -154,6 +168,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if hud.tool == Hud.BUILD_BERTH:
 			_order(_hovered_grid_cell(), true)
+			return
+		if _upgrading():
+			_report(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(_hovered_grid_cell()), "type": hud.road_type}))
 			return
 		if hud.tool == Hud.DRAW_ROAD:
 			_road_from = _net().snap_start(_hovered_grid_cell())
@@ -257,6 +274,8 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.INSPECT:
 			return ""
 		Hud.DRAW_ROAD:
+			if _upgrading():
+				return sim.change_road_error(sim.roads.segment_at(cell), hud.road_type)
 			if _road_from == Grid.NONE:
 				return ""
 			if hud.road_type == "track":
@@ -295,6 +314,62 @@ func _road_to() -> Vector2i:
 	return _net().snap_end(_road_from, _hovered_grid_cell())
 
 
+## Whether the road tool changes roads' type instead of drawing them.
+func _upgrading() -> bool:
+	return hud.tool == Hud.DRAW_ROAD and hud.upgrade_roads and hud.road_type != "track"
+
+
+## The segment a click at `cell` would remove (bulldoze) or change
+## (upgrade): [its RoadNet, its id], or [] for none.
+func _picked_segment(cell: Vector2i) -> Array:
+	if cell == Grid.NONE:
+		return []
+	if _upgrading() and sim.roads.segment_at(cell):
+		return [sim.roads, sim.roads.segment_at(cell)]
+	if hud.tool != Hud.BULLDOZE or AreaFlow.crane_at(sim, cell) or sim.areas.area_at(cell):
+		return []
+	if sim.roads.segment_at(cell):
+		return [sim.roads, sim.roads.segment_at(cell)]
+	if sim.rails.segment_at(cell):
+		return [sim.rails, sim.rails.segment_at(cell)]
+	return []
+
+
+## The text beside the mouse for segment `picked`, from _picked_segment:
+## what it is and how long, and for an upgrade what it becomes and costs.
+func _segment_hint(picked: Array) -> String:
+	if picked.is_empty():
+		return ""
+	var net: RoadNet = picked[0]
+	var road: Dictionary = net.segments[picked[1]]
+	var a: Vector2i = net.nodes[road.a]
+	var b: Vector2i = net.nodes[road.b]
+	var name: String = sim.rules.rail.name if net == sim.rails else sim.rules.road_types[road.type].name
+	var text := "%s, %d m" % [name, Grid.metres(RoadNet.length(a, b))]
+	if not _upgrading():
+		return "Remove " + text
+	var err := sim.change_road_error(picked[1], hud.road_type)
+	if err != "":
+		return "%s\n%s" % [text, err]
+	return "%s\nto %s: %s" % [text, sim.rules.road_types[hud.road_type].name, Hud.HudDetails.dollars(sim.road_price(a, b, hud.road_type))]
+
+
+## The ends of the road being drawn, or about to be, that join a road.
+func _snapped_ends(cell: Vector2i) -> Array[Vector2i]:
+	var found: Array[Vector2i] = []
+	if hud.tool != Hud.DRAW_ROAD or _upgrading() or cell == Grid.NONE:
+		return found
+	if _road_from == Grid.NONE:
+		if _net().snaps(cell):
+			found.append(_net().snap_start(cell))
+		return found
+	if _net().snaps(_road_from):
+		found.append(_road_from)
+	if _net().snaps(cell, _road_from):
+		found.append(_road_to())
+	return found
+
+
 ## The graph the road tool draws on: rail for track, else roads.
 func _net() -> RoadNet:
 	return sim.rails if hud.road_type == "track" else sim.roads
@@ -305,7 +380,7 @@ func _net() -> RoadNet:
 func _road_ends() -> Array[Vector2i]:
 	var to := _road_to()
 	if to == _road_from or sim.roads.snaps(_road_from) or sim.roads.snaps(_hovered_grid_cell(), _road_from):
-		return [_road_from, to] as Array[Vector2i]
+		return sim.roads.oriented(_road_from, to, hud.road_type)
 	return RoadNet.centred(_road_from, to, sim.rules.road_types[hud.road_type], _road_at)
 
 
