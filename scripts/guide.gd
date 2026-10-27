@@ -15,7 +15,7 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 	return [
 		{"text": "Place a feeder berth: pick it under Quay (key 2) and click the coast. It brings its own road along its back.", "done": func() -> bool:
 			return _areas(sim, "quay_apron").any(func(id: int) -> bool: return RoadNet.length(sim.areas.list[id].start, sim.areas.list[id].end) + 1 >= feeder)},
-		{"text": "Draw a terminal road from the highway at the middle of the east edge to the berth's road (Roads, key 1).", "done": func() -> bool:
+		{"text": "Draw a two-lane road from the highway at the middle of the east edge to the berth's road (Roads, key 1).", "done": func() -> bool:
 			return sim.roads.segment_at(sim.site_entry()) != 0},
 		{"text": "Drag a gate along the road near the highway, beside the lane coming in, where lorries check in (Gate, key 5).", "done": func() -> bool:
 			return not _areas(sim, "gate").is_empty()},

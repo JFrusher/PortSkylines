@@ -36,6 +36,9 @@
 - **Utilities.** Power (reefers, shore power, chargers) and data (automation needs a link) as networks drawn like roads, with substations. Test: an unpowered charger charges nothing, and an unlinked ASC doesn't work.
 - **Manned or automated, per area.** Each block and the horizontal transport choose manned (cheap, slower, labour cost) or automated (capex, ramp-up, IT upkeep), so the trade-off is the player's. Test: switching a block changes its costs and rates as the data says.
 
+### From the developer's notes (27 Oct 2026)
+- **AGV depots and fleets, taken further.** AGV depots become placed buildings with bays the player sizes. Each depot owns a fleet that the player can grow or shrink, and shows its AGVs' state (working, queuing, charging, idle). Blocks are assigned to a depot. Test: a block takes its AGVs only from its assigned depot, and growing a fleet adds AGVs up to the depot's bays.
+
 ### Close
 12. **Fixture and soak.** New save fixture, and policies and rules in the soak test.
 13. **Public playtest build.** Notes go in `docs/playtests/m11.md`.

@@ -170,6 +170,18 @@ func _test_editing() -> void:
 	snapping.anchors = [Vector2i(100, 70)] as Array[Vector2i]
 	_expect(snapping.snap_start(Vector2i(101, 72)), Vector2i(100, 70), "a drag starting near the highway starts on it")
 	_expect(snapping.snap_end(Vector2i(60, 70), Vector2i(98, 72)), Vector2i(100, 70), "and one ending near it ends on it")
+	# Guides run on from road ends, so a new road lines up with an old one.
+	var guided := RoadNet.new(Content.base().road_types)
+	guided.add(Vector2i(0, 0), Vector2i(20, 0), "terminal_1_1")
+	guided.add(Vector2i(40, 10), Vector2i(40, 30), "terminal_1_1")
+	_expect(guided.guides().size(), 4, "each road end has a guide")
+	_expect(guided.snap_end(Vector2i(60, 5), Vector2i(42, 6)), Vector2i(40, 5), "a drag ending near a guide ends on it")
+	_expect(guided.guide_end(Vector2i(60, 5), Vector2i(42, 6)).guides, [{"at": Vector2i(40, 10), "dir": Vector2i(0, -1)}], "the guide it ends on is the road's line run on north")
+	_expect(guided.snap_start(Vector2i(41, 2)), Vector2i(40, 0), "a drag starts where two guides cross before anywhere else on them")
+	_expect(guided.snap_end(Vector2i(60, 50), Vector2i(61, 70)), Vector2i(60, 70), "away from guides the end snaps straight as before")
+	_expect([RoadNet.on_guide({"at": Vector2i(20, 0), "dir": Vector2i(1, 0)}, Vector2i(80, 0)), RoadNet.on_guide({"at": Vector2i(20, 0), "dir": Vector2i(1, 0)}, Vector2i(81, 0))], [true, false], "a guide runs %d cells" % RoadNet.GUIDE_CELLS)
+	guided.add(Vector2i(20, 0), Vector2i(30, 0), "terminal_1_1")
+	_expect(guided.guides().filter(func(g: Dictionary) -> bool: return g.at == Vector2i(20, 0)), [], "no guide where a road carries on straight")
 	# A road's lanes lie evenly either side of its line, so it covers the same
 	# cells drawn either way, and they centre on the line.
 	var types: Dictionary = Content.base().road_types

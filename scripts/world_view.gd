@@ -34,6 +34,8 @@ const STOP_WIDTH := 0.4
 const JUNCTION_MARKS := ZEBRA_DEPTH + STOP_GAP + STOP_WIDTH + 1.0
 ## Where a road drag joins a road, and the ring's inner radius in cells.
 const SNAP_COLOR := Color(0.2, 0.85, 1.0)
+## Half a guide line's width, in cells.
+const GUIDE_HALF := 0.2
 const SNAP_RING := 1.6
 const BALLAST := Color(0.42, 0.38, 0.33)
 const STEEL := Color(0.62, 0.62, 0.66)
@@ -225,14 +227,22 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 
 
 ## Rings the places where a road drag joins a road, in grid units (a road's
-## grid point, or a track cell's middle); hidden when empty.
-func show_snaps(places: Array[Vector2]) -> void:
-	_snap_marks.visible = not places.is_empty()
-	if places.is_empty():
+## grid point, or a track cell's middle), and dashes the guides it lines up
+## with, as pairs of ends in `guides`; hidden when both are empty.
+func show_snaps(places: Array[Vector2], guides: Array[Vector2]) -> void:
+	_snap_marks.visible = not places.is_empty() or not guides.is_empty()
+	if not _snap_marks.visible:
 		return
 	var tool := _road_tool()
 	for place in places:
 		_ring(tool, place * Grid.CELL, SNAP_RING * Grid.CELL, (SNAP_RING + 0.7) * Grid.CELL, ROAD_TOP + MARK_RISE * 2)
+	for i in range(0, guides.size(), 2):
+		var cells := guides[i].distance_to(guides[i + 1])
+		var dir := guides[i].direction_to(guides[i + 1])
+		# One cell dash, one cell gap.
+		for k in range(0, ceili(cells), 2):
+			var to := guides[i] + dir * minf(k + 1, cells)
+			_strip(tool, (guides[i] + dir * k) * Grid.CELL, to * Grid.CELL, GUIDE_HALF * Grid.CELL, ROAD_TOP + MARK_RISE * 2)
 	_snap_marks.mesh = tool.commit()
 
 
