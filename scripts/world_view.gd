@@ -25,6 +25,16 @@ const ASPHALT := Color(0.2, 0.2, 0.22)
 ## The surface of a road lorries may not use, so tractor lanes read at a glance.
 const TRACTOR_ONLY := Color(0.36, 0.24, 0.2)
 const MARKING := Color(0.92, 0.92, 0.85)
+## A zebra crossing's depth and stripe width, the gap to the stop line and
+## its width, in metres; and the length of road they take at a junction.
+const ZEBRA_DEPTH := 3.0
+const ZEBRA_STRIPE := 0.5
+const STOP_GAP := 1.0
+const STOP_WIDTH := 0.4
+const JUNCTION_MARKS := ZEBRA_DEPTH + STOP_GAP + STOP_WIDTH + 1.0
+## Where a road drag joins a road, and the ring's inner radius in cells.
+const SNAP_COLOR := Color(0.2, 0.85, 1.0)
+const SNAP_RING := 1.6
 const BALLAST := Color(0.42, 0.38, 0.33)
 const STEEL := Color(0.62, 0.62, 0.66)
 ## Half the gauge and a rail's half width, in metres.
@@ -131,6 +141,8 @@ var _areas_drawn := []
 var _area_preview := MeshInstance3D.new()
 ## The road being dragged out, tinted by whether it can be built.
 var _road_preview := MeshInstance3D.new()
+## A ring on each end of a road drag that joins a road, so a join is plain.
+var _snap_marks := MeshInstance3D.new()
 var _hover := _box(Vector3(Grid.CELL, 1.5, Grid.CELL) / METRES_PER_UNIT, Color(1, 1, 1, 0.5))
 ## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _info := MeshInstance3D.new()
@@ -153,7 +165,7 @@ func _ready() -> void:
 	land.position = Vector3((site.x - SEA_START + sea) / 2.0, -0.5, site.y / 2.0)
 	add_child(land)
 	add_child(_hover)
-	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _areas, _area_preview]:
+	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _areas, _area_preview]:
 		add_child(node)
 	add_child(_info)
 	for preview: MeshInstance3D in [_road_preview, _area_preview, _info]:
@@ -161,6 +173,9 @@ func _ready() -> void:
 		preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		preview.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_info.material_override.vertex_color_use_as_albedo = true
+	_snap_marks.material_override = StandardMaterial3D.new()
+	_snap_marks.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_snap_marks.material_override.albedo_color = SNAP_COLOR
 	for gear: String in sim.rules.yard_gear:
 		_machine_meshes[gear] = _machine_mesh(gear)
 		_machine_heights[gear] = _machine_meshes[gear].get_aabb().end.y
@@ -207,6 +222,17 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 		_add_road(surface, null, from, to, sim.rules.road_types[type])
 	_road_preview.mesh = surface.commit()
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
+
+
+## Rings the cells where a road drag joins a road; hidden when empty.
+func show_snaps(cells: Array[Vector2i]) -> void:
+	_snap_marks.visible = not cells.is_empty()
+	if cells.is_empty():
+		return
+	var tool := _road_tool()
+	for cell in cells:
+		_ring(tool, (Vector2(cell) + Vector2(0.5, 0.5)) * Grid.CELL, SNAP_RING * Grid.CELL, (SNAP_RING + 0.7) * Grid.CELL, ROAD_TOP + MARK_RISE * 2)
+	_snap_marks.mesh = tool.commit()
 
 
 ## Shows `cells` as the area a drag would build, green or red; hidden when empty.
@@ -399,6 +425,18 @@ static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vect
 	var length: float = start.distance_to(end) - trim_a - trim_b
 	if length <= 0.0:
 		return
+	# Where a road meets a junction: a zebra crossing at its edge, a stop line
+	# behind it across the lanes driving in, then the lane markings, if they fit.
+	var ends := int(trim_a > 0.0) + int(trim_b > 0.0)
+	if ends > 0 and length >= JUNCTION_MARKS * ends + DASH:
+		var middle_line: float = road.backward * lane_width - half
+		if trim_a > 0.0:
+			_junction_marks(marks, start + along * trim_a, along, side, half, -half, middle_line)
+			trim_a += JUNCTION_MARKS
+		if trim_b > 0.0:
+			_junction_marks(marks, end - along * trim_b, -along, side, half, middle_line, half)
+			trim_b += JUNCTION_MARKS
+		length = start.distance_to(end) - trim_a - trim_b
 	start += along * trim_a
 	end = start + along * length
 	for k in range(1, lanes):
@@ -411,6 +449,19 @@ static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vect
 			var dash_end := minf(at + DASH, length)
 			_strip(marks, start + offset + along * at, start + offset + along * dash_end, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
 			at += DASH + DASH_GAP
+
+
+## A zebra crossing across a road `half` metres wide each side of `edge`,
+## where it meets a junction, reaching `away` from it; then a stop line
+## across the lanes from `from` to `to` metres along `side`.
+static func _junction_marks(marks: SurfaceTool, edge: Vector2, away: Vector2, side: Vector2, half: float, from: float, to: float) -> void:
+	var stripe := -half + ZEBRA_STRIPE
+	while stripe < half - ZEBRA_STRIPE / 2.0:
+		_strip(marks, edge + side * stripe, edge + side * stripe + away * ZEBRA_DEPTH, ZEBRA_STRIPE / 2.0, ROAD_TOP + MARK_RISE)
+		stripe += ZEBRA_STRIPE * 2.0
+	if to > from:
+		var line := edge + away * (ZEBRA_DEPTH + STOP_GAP)
+		_strip(marks, line + side * from, line + side * to, STOP_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
 
 
 ## Adds rail track from cell `a` to cell `b`: a ballast bed a cell wide on
@@ -435,6 +486,17 @@ static func _strip(tool: SurfaceTool, from: Vector2, to: Vector2, half: float, h
 	# Clockwise from above, Godot's front face.
 	for i: int in [0, 2, 1, 0, 3, 2]:
 		tool.add_vertex(_world(corners[i], height))
+
+
+## A flat ring between `inner` and `outer` metres round `centre`.
+static func _ring(tool: SurfaceTool, centre: Vector2, inner: float, outer: float, height: float) -> void:
+	const STEPS := 24
+	for i in STEPS:
+		var a := Vector2.from_angle(TAU * i / STEPS)
+		var b := Vector2.from_angle(TAU * (i + 1) / STEPS)
+		# Clockwise from above, Godot's front face.
+		for point: Vector2 in [a * inner, a * outer, b * outer, a * inner, b * outer, b * inner]:
+			tool.add_vertex(_world(centre + point, height))
 
 
 ## A flat disc of `radius` metres round `centre`, for a road's round end.
