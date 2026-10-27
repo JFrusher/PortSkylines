@@ -103,7 +103,7 @@ var rails: RoadNet
 var lanes: LaneGraph
 ## The areas dragged along those roads.
 var areas: Areas
-## Every box in the port by id: {"kind": "import" or "export", "due": the
+## Every box in the port by id: {"kind": "import", "export" or "empty", "due": the
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
 ## the line that owns it, a key of rules.lines, or "" for an export not yet
@@ -123,12 +123,16 @@ var turn_times: Array[float] = []
 var dwell_times: Array[float] = []
 ## The player's storage terms: free days (0-3) and the fee per box per day after them.
 var storage := {}
+## Empties on their way back from the hinterland, soonest first: {"at": the
+## calendar minute one comes, "line", "teu"}.
+var returning: Array[Dictionary] = []
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
+var _until_empty := 0.0
 var _next_vehicle := 1
 var _next_box := 1
 var _delivered_at_midnight := 0
@@ -292,6 +296,8 @@ func to_dict() -> Dictionary:
 		"claimed": _claimed.duplicate(),
 		"until_lorry": _until_lorry,
 		"until_export": _until_export,
+		"until_empty": _until_empty,
+		"returning": returning.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"lane_traffic": lane_traffic.to_dict(),
@@ -358,6 +364,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._claimed = d.claimed.duplicate()
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
+	sim._until_empty = d.until_empty
+	sim.returning.assign(d.returning)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
@@ -967,6 +975,9 @@ func tick() -> void:
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
+	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
+	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
+		_until_empty = rules.lorry_interval_minutes
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
 
@@ -1287,6 +1298,21 @@ func hinterland_demand() -> float:
 ## Whether box `id` can go by rail: its hinterland place has a rail link.
 func by_rail_to(id: int) -> bool:
 	return rules.hinterland.places[boxes[id].place].rail_km > 0.0
+
+
+## Import `id` has left for the hinterland: once empties are unlocked, it
+## comes back as an empty of its line and size return_days later.
+func _import_left(id: int) -> void:
+	if lock_error("empties") == "":
+		returning.append({"at": clock.calendar_minutes() + rules.empties.return_days * SimClock.MINUTES_PER_DAY, "line": boxes[id].line, "teu": boxes[id].teu})
+
+
+## A new empty box of `line` and `teu`, coming back from the hinterland.
+func _new_empty(line: String, teu: int) -> int:
+	var id := _next_box
+	_next_box += 1
+	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
+	return id
 
 
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.

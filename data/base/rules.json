@@ -41,6 +41,7 @@
 		"price_per_kwh": 0.15,
 		"peak_charge_per_kw": 1.5
 	},
+	"empties": {"return_days": 3.0, "refused": -0.05},
 	"storage": {
 		"free_days": 2.0,
 		"fee": 20.0,
@@ -118,7 +119,7 @@
 				"loans": "loans",
 				"rtg": "RTG cranes for yard blocks",
 				"ocr": "OCR gate portals",
-				"reefers": "reefer boxes and reefer blocks"
+				"reefers": "reefer boxes and reefer blocks", "empties": "empties coming back, and empty blocks"
 			}
 		},
 		"gateway": {

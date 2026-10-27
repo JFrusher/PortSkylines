@@ -10,6 +10,8 @@ var _failures := 0
 
 func _initialize() -> void:
 	_test_empty_blocks()
+	_test_empties_come_back()
+	_test_empties_turned_away()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -30,3 +32,49 @@ func _test_empty_blocks() -> void:
 	_expect(sim.apply({"op": "set_area", "id": block, "settings": {"role": "import"}}), "Empty handlers only work empty blocks", "and can't be made an import block while they work it")
 	sim.tick()
 	_expect(AreaFlow._stacks(sim, block).to_dict().tiers, sim.rules.yard_gear.empty_handler.tiers, "its stacks go the handlers' tiers high")
+
+
+## A port whose imports go out by lorry 30 minutes after landing and come back
+## as empties `return_days` later; `empty_block` adds an empty block.
+func _returning_port(empty_block: bool) -> PortSim:
+	var rules := RandomPort.rules()
+	rules.empties.return_days = 0.25
+	var sim := AreaPort.base(rules, "")
+	if empty_block:
+		var block := AreaPort.add_export_block(sim)
+		sim.apply({"op": "set_area", "id": block, "settings": {"role": "empty"}})
+	RandomPort.calls(sim, "feeder", 10, 45, 1)
+	return sim
+
+
+## Each import collected comes back as an empty of its line and size, by lorry
+## into the empty block, return_days after it left.
+func _test_empties_come_back() -> void:
+	var sim := _returning_port(true)
+	var left := {}  # import box id -> the minute it left
+	var lines := {}
+	for i in roundi(SimClock.MINUTES_PER_DAY / SimClock.CALENDAR_MINUTES_PER_TICK):
+		for vehicle: Vehicle in sim.vehicles:
+			if vehicle.state == "leaving" and vehicle.loaded and sim.boxes[vehicle.box].kind == "import" and vehicle.box not in left:
+				left[vehicle.box] = sim.clock.calendar_minutes()
+				lines[sim.boxes[vehicle.box].line] = true
+		sim.tick()
+	var block: int = sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.list[id].settings.get("role") == "empty")[0]
+	var empties: Array = AreaFlow._stacks(sim, block).boxes().filter(func(id: int) -> bool: return sim.boxes[id].kind == "empty")
+	_expect(left.size() > 0 and empties.size() > 0, true, "imports left (%d) and empties came back into the empty block (%d)" % [left.size(), empties.size()])
+	var first_left: float = left.values().min() if not left.is_empty() else INF
+	_expect(empties.all(func(id: int) -> bool: return sim.boxes[id].in >= first_left + sim.rules.empties.return_days * SimClock.MINUTES_PER_DAY), true, "none came back before return_days had passed")
+	_expect(empties.all(func(id: int) -> bool: return sim.boxes[id].line in lines), true, "each is of a line whose imports left")
+
+
+## With no empty block, a returning empty's lorry is turned away at the gate
+## and its line thinks less of the port.
+func _test_empties_turned_away() -> void:
+	var sim := _returning_port(false)
+	var line: String = sim.rules.lines.keys()[0]
+	var before: float = sim.contracts.reputation[line]
+	for i in roundi(SimClock.MINUTES_PER_DAY / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+	_expect(sim.boxes.values().any(func(b: Dictionary) -> bool: return b.kind == "empty" and b.in >= 0.0), false, "no empty is stacked")
+	_expect(sim.contracts.reputation[line] < before, true, "the line's reputation fell (%.1f -> %.1f)" % [before, sim.contracts.reputation[line]])
+	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.contains("turned away")), true, "the status says an empty was turned away")

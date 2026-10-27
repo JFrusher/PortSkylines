@@ -431,6 +431,31 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	return true
 
 
+## Sends a lorry in with the empty due back soonest, to a terminal with room
+## in its empty blocks, else to any terminal with a gate, where it is turned
+## away; false when none is due, no terminal has a gate, or the way in is busy.
+static func dispatch_empty_lorry(sim: PortSim) -> bool:
+	if sim.returning.is_empty() or sim.returning[0].at > sim.clock.calendar_minutes():
+		return false
+	var gated: Array = sim.areas.terminals.keys().filter(func(t: int) -> bool: return _has_gate(sim, t))
+	if gated.is_empty():
+		return false
+	var roomy: Array = gated.filter(func(t: int) -> bool: return _block_for(sim, "empty", t) != 0)
+	var terminal: int = roomy[0] if not roomy.is_empty() else gated[0]
+	var entry := _entry_cell(sim)
+	if entry == Grid.NONE:
+		return false
+	var back: Dictionary = sim.returning.pop_front()
+	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
+	sim.lane_traffic.place(lorry)
+	sim._next_vehicle += 1
+	lorry.box = sim._new_empty(back.line, back.teu)
+	lorry.loaded = true
+	sim._add_vehicle(lorry)
+	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
+	return true
+
+
 ## Sends a lorry in from the site entry with an export box, while calls want
 ## more exports than the port holds, to a terminal with a gate whose export
 ## blocks have room for more than the export lorries already on their way;
@@ -652,7 +677,9 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 			vehicle.state = "under_crane"
 		"leaving":
 			if vehicle.loaded:
-				sim.delivered += 1 if sim.boxes[vehicle.box].kind == "import" else 0
+				if sim.boxes[vehicle.box].kind == "import":
+					sim.delivered += 1
+					sim._import_left(vehicle.box)
 				sim._drop_box(vehicle.box)
 			_gone(sim, vehicle)
 
@@ -717,14 +744,19 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 		var box: Dictionary = sim.boxes[vehicle.box]
 		var terminal: int = sim.areas.list[gate].terminal
 		var block := _block_for(sim, "reefer", terminal) if box.reefer else 0
-		if box.dg:
+		if box.kind == "empty":
+			block = _block_for(sim, "empty", terminal)
+		elif box.dg:
 			block = _block_for(sim, "dangerous", terminal)
 		elif block == 0:
 			block = _block_for(sim, "export", terminal)
 		if block:
 			_go_to(sim, vehicle, block)
 		else:
-			# The export blocks filled while it queued: it takes its box away.
+			# Its blocks filled while it queued, or it has none: it takes its box away.
+			if box.kind == "empty":
+				sim._event("An empty of %s was turned away: no room in an empty block in %s" % [sim.contracts.name_of(box.line), sim.areas.terminals[terminal].name], sim.areas.list[gate].start)
+				sim._event_if(sim.contracts.penalise(box.line, sim.rules.empties.refused))
 			vehicle.gate_in = -1.0
 			_go_out(sim, vehicle, 0)
 	else:

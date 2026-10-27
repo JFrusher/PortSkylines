@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 20
+const VERSION := 21
 ## The first save with roads on grid lines. Older saves hold roads whose
 ## lanes hang to one side of their line, which can't be moved onto grid lines
 ## where roads meet, so they are refused.
@@ -71,8 +71,18 @@ static func load_from(path: String) -> Dictionary:
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time; none yet since FIRST.
+## Brings an older save up to VERSION one step at a time.
 static func _migrate(data: Dictionary) -> Dictionary:
+	if data.version == 20:
+		data = _migrate_v20(data)
+	return data
+
+
+## v21 brings empties back from the hinterland: none are on their way yet.
+static func _migrate_v20(data: Dictionary) -> Dictionary:
+	data.sim.returning = []
+	data.sim.until_empty = 0.0
+	data.version = 21
 	return data
 
 
@@ -88,7 +98,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,

@@ -225,6 +225,7 @@ static func job_done(sim: PortSim, machine: int) -> void:
 static func _gone(sim: PortSim, train: Train) -> void:
 	for box: int in train.wagons:
 		if box != 0:
+			sim._import_left(box)
 			sim._drop_box(box)
 			sim.delivered += 1
 			sim.by_rail += 1
