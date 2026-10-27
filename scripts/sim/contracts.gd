@@ -181,6 +181,18 @@ func decline(id: int) -> String:
 	return ""
 
 
+## Ends agreed service `id` at the port's wish; its line thinks less of the
+## port by port_cancels. Returns "" and the line's notice, if that knock makes
+## it cancel a service of its own, or ["No such service", ""].
+func cancel(id: int) -> Array[String]:
+	var service := _service(id)
+	if service.is_empty():
+		return ["No such service", ""] as Array[String]
+	services.erase(service)
+	version += 1
+	return ["", _change(service.line, rules.reputation.port_cancels)] as Array[String]
+
+
 func expire(now: float) -> void:
 	var before := offers.size()
 	offers = offers.filter(func(o: Dictionary) -> bool: return o.expires > now)

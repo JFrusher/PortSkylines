@@ -95,15 +95,15 @@ func _process(dt: float) -> void:
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would start, a road's
 	# width across: on a road it snaps to, else at the point under the mouse.
-	if hud.tool == Hud.DRAW_ROAD and not _upgrading() and _road_from == Grid.NONE and cell != Grid.NONE:
-		view.show_hover_at(_place(_net().snap_start(_hovered_node())), _width(), _order_error(cell) == "")
+	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "" and not _upgrading() and _road_from == Grid.NONE and cell != Grid.NONE:
+		view.show_hover_at(_place(_road_start()), _width(), _order_error(cell) == "")
 	else:
 		view.show_hover(cell, _order_error(cell) == "")
-	view.show_snaps(_snapped_ends(cell))
+	view.show_snaps(_snapped_ends(cell), _guide_lines(cell))
 	var dragged: Array[Vector2i] = []
 	if not _area_from.is_empty():
 		var area := _area_command()
-		for side: int in ([1, -1] if hud.two_way else [area.side]):
+		for side: int in ([1, -1] if hud.both_sides() else [area.side]):
 			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
 	if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
 		dragged = sim.berth_cells(hud.berth, cell.y)
@@ -112,7 +112,7 @@ func _process(dt: float) -> void:
 	var road_type := hud.road_type
 	var ok := _order_error(cell) == ""
 	var picked := _picked_segment(cell)
-	hud.hint(_segment_hint(picked))
+	hud.hint(_segment_hint(picked) if _road_from == Grid.NONE else "%d m" % Grid.metres(RoadNet.length(_road_from, _road_to())))
 	if _road_from != Grid.NONE:
 		ends = _road_ends()
 	elif not picked.is_empty():
@@ -151,7 +151,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
 		if hud.tool == Hud.DRAW_AREA:
 			var area := _area_command()
-			if hud.two_way:
+			if hud.both_sides():
 				area = {"op": "build_two_way_gate", "type": area.type, "segment": area.segment, "from": area.from, "to": area.to}
 			_report(sim.apply(area))
 		_area_from = {}
@@ -169,7 +169,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_report(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(_hovered_grid_cell()), "type": hud.road_type}))
 			return
 		if hud.tool == Hud.DRAW_ROAD:
-			_road_from = _net().snap_start(_hovered_node())
+			_road_from = _road_start()
 			return
 		if hud.tool == Hud.INSPECT:
 			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
@@ -281,7 +281,7 @@ func _order_error(cell: Vector2i) -> String:
 			if _area_from.is_empty():
 				return ""
 			var area := _area_command()
-			if hud.two_way:
+			if hud.both_sides():
 				return sim.build_two_way_gate_error(area.type, area.segment, area.from, area.to)
 			return sim.build_area_error(area.type, area.segment, area.side, area.from, area.to)
 		Hud.BULLDOZE:
@@ -303,10 +303,38 @@ func _hovered_grid_cell() -> Vector2i:
 	return Grid.NONE if hit == null else WorldView.grid_cell(hit)
 
 
-## Where a road drag from _road_from ends: snapped onto a road near the
-## mouse, else straight or to 45°.
+## Where a road drag from _road_from ends: snapped onto a road or guide near
+## the mouse, else straight or to 45°; with Shift held, only straight or 45°.
 func _road_to() -> Vector2i:
+	if _raw():
+		return RoadNet.snap(_road_from, _hovered_node())
 	return _net().snap_end(_road_from, _hovered_node())
+
+
+## Where a road drag would start: on a road or guide near the mouse, or with
+## Shift held the point under it.
+func _road_start() -> Vector2i:
+	return _hovered_node() if _raw() else _net().snap_start(_hovered_node())
+
+
+## Whether Shift is held, turning road and guide snapping off.
+func _raw() -> bool:
+	return Input.is_key_pressed(KEY_SHIFT)
+
+
+## The guides the road drag's start or end lies on, unless it joins a road
+## there: pairs of [guide's road end, the drag's point] in grid units.
+func _guide_lines(cell: Vector2i) -> Array[Vector2]:
+	var found: Array[Vector2] = []
+	if hud.tool != Hud.DRAW_ROAD or hud.road_type == "" or _upgrading() or cell == Grid.NONE or _raw():
+		return found
+	var node := _hovered_node()
+	var guided := _net().guide_start(node) if _road_from == Grid.NONE else _net().guide_end(_road_from, node)
+	if _net().snaps(node, _road_from):
+		return found
+	for guide: Dictionary in guided.guides:
+		found.append_array([_place(guide.at), _place(guided.point)])
+	return found
 
 
 ## The node a road drag would use under the mouse: the nearest grid point,
@@ -374,11 +402,11 @@ func _segment_hint(picked: Array) -> String:
 func _snapped_ends(cell: Vector2i) -> Array[Vector2]:
 	var found: Array[Vector2] = []
 	var node := _hovered_node()
-	if hud.tool != Hud.DRAW_ROAD or _upgrading() or cell == Grid.NONE:
+	if hud.tool != Hud.DRAW_ROAD or _upgrading() or cell == Grid.NONE or _raw():
 		return found
 	if _road_from == Grid.NONE:
 		if _net().snaps(node):
-			found.append(_place(_net().snap_start(node)))
+			found.append(_place(_road_start()))
 		return found
 	if _net().snaps(_road_from):
 		found.append(_place(_road_from))

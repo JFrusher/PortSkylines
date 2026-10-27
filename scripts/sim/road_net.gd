@@ -24,6 +24,8 @@ var _next_node := 1
 var _next_segment := 1
 ## How near, in cells, a drawn road's ends must come to a road to snap onto it.
 const SNAP_CELLS := 3
+## How far a guide runs on from a road's end, in cells.
+const GUIDE_CELLS := 60
 ## Cells a drag snaps onto as onto a road's end, though no road is there yet:
 ## where the highway meets the site.
 var anchors: Array[Vector2i] = []
@@ -115,9 +117,9 @@ static func snap(from: Vector2i, to: Vector2i) -> Vector2i:
 
 ## Where a road drag starts: on the nearest road within SNAP_CELLS of `cell`,
 ## a junction or road end before any other point, as Cities: Skylines snaps;
-## `cell` itself when no road is that close.
+## else on a guide (see guide_start); else `cell` itself.
 func snap_start(cell: Vector2i) -> Vector2i:
-	return _snap_onto(cell, Grid.NONE, cell)
+	return _snap_onto(cell, Grid.NONE, guide_start(cell).point)
 
 
 ## Where a drag from `from` towards `to` ends: on the nearest road within
@@ -125,9 +127,72 @@ func snap_start(cell: Vector2i) -> Vector2i:
 ## reaches, a junction or road end first; otherwise `to` snapped. Measured
 ## from the snapped end, not the mouse, so a release off to the side of the
 ## line still joins the road the line meets. Roads `from` is on don't count,
-## so a drag never snaps back along its own road.
+## so a drag never snaps back along its own road. With no road that close,
+## it ends on a guide (see guide_end).
 func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
-	return _snap_onto(snap(from, to), from, snap(from, to))
+	return _snap_onto(snap(from, to), from, guide_end(from, to).point)
+
+
+## The guides a drag can line up with, as Cities: Skylines draws them: from
+## each road end that no road carries on straight from, the road's line run
+## on GUIDE_CELLS. Each is {"at": the end, "dir": its step outward}.
+func guides() -> Array[Dictionary]:
+	var out := {}  # node -> the steps outward of its segments
+	for id: int in segments:
+		var a: Vector2i = nodes[segments[id].a]
+		var b: Vector2i = nodes[segments[id].b]
+		out.get_or_add(a, []).append((b - a).sign())
+		out.get_or_add(b, []).append((a - b).sign())
+	var found: Array[Dictionary] = []
+	for at: Vector2i in out:
+		for step: Vector2i in out[at]:
+			if -step not in out[at]:
+				found.append({"at": at, "dir": -step})
+	return found
+
+
+## Whether `point` lies on `guide`, past its end and within GUIDE_CELLS.
+static func on_guide(guide: Dictionary, point: Vector2i) -> bool:
+	var t := length(guide.at, point)
+	return t >= 1 and t <= GUIDE_CELLS and guide.at + guide.dir * t == point
+
+
+## Where a drag from `from` towards `to`, snapped straight or to 45°, meets a
+## guide within SNAP_CELLS of its snapped end, nearest first: {"point", "guides":
+## the guides there}; the snapped end and no guides when none is that close.
+## Guides from `from` itself don't count.
+func guide_end(from: Vector2i, to: Vector2i) -> Dictionary:
+	var end := snap(from, to)
+	var best := {"point": end, "guides": []}
+	var step := (end - from).sign()
+	var run := length(from, end)
+	var near := SNAP_CELLS + 1
+	var all := guides().filter(func(g: Dictionary) -> bool: return g.at != from)
+	for s in range(maxi(1, run - SNAP_CELLS), run + SNAP_CELLS + 1):
+		var point := from + step * s
+		var on := all.filter(func(g: Dictionary) -> bool: return on_guide(g, point))
+		if step != Vector2i.ZERO and not on.is_empty() and absi(s - run) < near:
+			best = {"point": point, "guides": on}
+			near = absi(s - run)
+	return best
+
+
+## Where a drag starting near `cell` lines up with guides within SNAP_CELLS:
+## where two cross before any other point, then the nearest; {"point",
+## "guides"} as guide_end, `cell` and no guides when none is that close.
+func guide_start(cell: Vector2i) -> Dictionary:
+	var best := {"point": cell, "guides": []}
+	var best_score := INF
+	var all := guides()
+	for dx in range(-SNAP_CELLS, SNAP_CELLS + 1):
+		for dy in range(-SNAP_CELLS, SNAP_CELLS + 1):
+			var point := cell + Vector2i(dx, dy)
+			var on := all.filter(func(g: Dictionary) -> bool: return on_guide(g, point))
+			var score := Vector2(dx, dy).length() - (SNAP_CELLS * 2 if on.size() > 1 else 0)
+			if not on.is_empty() and score < best_score:
+				best = {"point": point, "guides": on}
+				best_score = score
+	return best
 
 
 ## Whether a drag from `from` (NONE for a start) at `cell` would snap onto a road.

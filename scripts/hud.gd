@@ -48,6 +48,7 @@ var upgrade_roads := false
 ## gate whether it is built on both sides of the road.
 var area_type := ""
 var two_way := false
+## The gate tool builds on both sides of the road when this is on.
 ## The berth BUILD_BERTH places, a key of rules.berths.
 var berth := ""
 ## The crane CRANE places, a key of rules.sts_cranes.
@@ -247,7 +248,7 @@ func _ready() -> void:
 		var open := _button(cat_row, "%s\n%d" % [category, _category_buttons.size() + 1], categories, false, func() -> void:
 			for other: HBoxContainer in rows.values():
 				other.visible = other == row
-			var first: Button = row.get_children().filter(func(b: Button) -> bool: return b.visible and b.toggle_mode).front()
+			var first: Button = row.get_children().filter(func(b: Node) -> bool: return b is Button and b.visible and b.toggle_mode).front()
 			if first:
 				first.button_pressed = true)
 		open.theme_type_variation = "CategoryButton"
@@ -284,15 +285,16 @@ func _ready() -> void:
 	# Build tool item buttons
 	for key: String in sim.rules.road_types:
 		var road: Dictionary = sim.rules.road_types[key]
-		_item(_button(rows.Roads, "%s\n$%d per 4 m" % [road.name, road.cost_per_cell], tools, false, func() -> void:
+		_item(_button(rows.Roads, "%s\n%s, $%d" % [road.name, _lanes_of(road), road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
 			road_type = key)).tooltip_text = _road_tip(road)
 	var rail: Dictionary = sim.rules.rail
 	_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
 		tool = DRAW_ROAD
 		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge; it crosses roads only straight across, at level crossings. $%d per 4 m, $%.1f a day upkeep." % [rail.cost_per_cell, rail.upkeep_per_cell]
+	rows.Roads.add_child(VSeparator.new())
 	var upgrade := _item(Button.new())
-	upgrade.text = "Upgrade\nclick a road"
+	upgrade.text = "Upgrade mode\nclick a road"
 	upgrade.toggle_mode = true
 	upgrade.toggled.connect(func(on: bool) -> void: upgrade_roads = on)
 	upgrade.tooltip_text = "While on, pick a road type, then click a road to rebuild it as that type, at the new type's price."
@@ -306,13 +308,14 @@ func _ready() -> void:
 		var detail := "%d lanes, $%d a cell" % [area.depth - 2, area.cost_per_cell] if area.kind == "gate" else "$%d per 4 m cell" % area.cost_per_cell
 		_item(_button(rows[AREA_ROWS[area.kind]], "%s\n%s" % [area.name, detail], tools, false, func() -> void:
 			tool = DRAW_AREA
-			area_type = key
-			two_way = false)).tooltip_text = _area_tip(area, false)
-		if area.kind == "gate":
-			_item(_button(rows.Gate, "Two-way %s\n%d lanes each way" % [area.name.to_lower(), area.depth - 2], tools, false, func() -> void:
-				tool = DRAW_AREA
-				area_type = key
-				two_way = true)).tooltip_text = _area_tip(area, true)
+			area_type = key)).tooltip_text = _area_tip(area, false)
+	rows.Gate.add_child(VSeparator.new())
+	var both := _item(Button.new())
+	both.text = "Two-way\nboth sides"
+	both.toggle_mode = true
+	both.toggled.connect(func(on: bool) -> void: two_way = on)
+	both.tooltip_text = "While on, a gate is built on both sides of the road, checking lorries in each way, at twice the price."
+	rows.Gate.add_child(both)
 	for key: String in sim.rules.berths:
 		var spec: Dictionary = sim.rules.berths[key]
 		var apron: Dictionary = sim.rules.area_types.quay_apron
@@ -711,6 +714,20 @@ func _ask(row: Container, text: String, question: String, then: Callable) -> voi
 
 
 ## A road type's tooltip: lanes, who may use it, cost and upkeep.
+## A road type's lanes in a few words, for its button.
+static func _lanes_of(road: Dictionary) -> String:
+	if not road.lorries:
+		return "no lorries"
+	if road.backward == 0:
+		return "%d lanes" % road.forward
+	return "%d each way" % road.forward
+
+
+## Whether the area tool builds a gate on both sides of the road.
+func both_sides() -> bool:
+	return two_way and tool == DRAW_AREA and sim.rules.area_types[area_type].kind == "gate"
+
+
 func _road_tip(road: Dictionary) -> String:
 	var lanes := "%d lanes one way" % road.forward if road.backward == 0 else "%d lane%s each way" % [road.forward, "" if road.forward == 1 else "s"]
 	var who := "Lorries and tractors" if road.lorries else "Tractors only, no lorries"

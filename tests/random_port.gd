@@ -96,6 +96,7 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 			var economy: Array[Dictionary] = [
 				{"op": "accept_offer", "id": rng.randi_range(1, 10), "apron": rng.randi_range(1, 4)},
 				{"op": "decline_offer", "id": rng.randi_range(1, 10)},
+				{"op": "cancel_service", "id": rng.randi_range(1, 10)},
 				{"op": "take_loan", "kind": ["small", "medium"][rng.randi() % 2]},
 				{"op": "buy_land", "tile": Vector2i(rng.randi_range(0, 2), rng.randi_range(0, 2))},
 				{"op": "dredge", "metres": 1},
