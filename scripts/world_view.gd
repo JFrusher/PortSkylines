@@ -224,14 +224,15 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
-## Rings the cells where a road drag joins a road; hidden when empty.
-func show_snaps(cells: Array[Vector2i]) -> void:
-	_snap_marks.visible = not cells.is_empty()
-	if cells.is_empty():
+## Rings the places where a road drag joins a road, in grid units (a road's
+## grid point, or a track cell's middle); hidden when empty.
+func show_snaps(places: Array[Vector2]) -> void:
+	_snap_marks.visible = not places.is_empty()
+	if places.is_empty():
 		return
 	var tool := _road_tool()
-	for cell in cells:
-		_ring(tool, (Vector2(cell) + Vector2(0.5, 0.5)) * Grid.CELL, SNAP_RING * Grid.CELL, (SNAP_RING + 0.7) * Grid.CELL, ROAD_TOP + MARK_RISE * 2)
+	for place in places:
+		_ring(tool, place * Grid.CELL, SNAP_RING * Grid.CELL, (SNAP_RING + 0.7) * Grid.CELL, ROAD_TOP + MARK_RISE * 2)
 	_snap_marks.mesh = tool.commit()
 
 
@@ -285,7 +286,7 @@ func _draw_roads() -> void:
 		var road: Dictionary = sim.roads.segments[id]
 		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
-	var entry := sim.site_entry()
+	var entry := sim.site_entry_point()
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
 	_add_road(surface, marks, entry + off_map, entry, sim.rules.road_types.terminal_2_2)
 	# The main line the same way, to the rail entry.
@@ -407,9 +408,11 @@ static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vect
 	var side := Vector2(-along.y, along.x)
 	# A lane's width across the road: a cell, or less on 45° roads, where lanes step straight across.
 	var lane_width := Grid.CELL * absf(across.dot(side))
-	var middle: Vector2 = across * ((lanes - 1) / 2.0 - road.backward)
-	var start: Vector2 = (Vector2(a) + Vector2(0.5, 0.5) + middle) * Grid.CELL
-	var end: Vector2 = (Vector2(b) + Vector2(0.5, 0.5) + middle) * Grid.CELL
+	# The lanes lie evenly either side of the line between grid points a and b;
+	# a 45° road's sit half a cell south of it (see RoadNet._row).
+	var middle := Vector2(0, 0.5) if (b - a).x * (b - a).y != 0 else Vector2.ZERO
+	var start: Vector2 = (Vector2(a) + middle) * Grid.CELL
+	var end: Vector2 = (Vector2(b) + middle) * Grid.CELL
 	var half := lanes * lane_width / 2.0
 	surface.set_color(ASPHALT if road.lorries else TRACTOR_ONLY)
 	var top := ROAD_TOP + (ASPHALT_RISE if road.lorries else 0.0)

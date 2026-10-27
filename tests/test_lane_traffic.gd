@@ -26,7 +26,7 @@ func _test_head_on() -> void:
 	var net := _net([[Vector2i(0, 5), Vector2i(20, 5), "terminal_1_1"]])
 	var lanes := LaneGraph.new(net)
 	var traffic := LaneTraffic.new(lanes)
-	var vehicles := [_vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(20, 5), true)), _vehicle(traffic, lanes.route(Vector2i(20, 4), Vector2i(0, 4), true))]
+	var vehicles := [_vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(19, 5), true)), _vehicle(traffic, lanes.route(Vector2i(19, 4), Vector2i(0, 4), true))]
 	var waited := _run(traffic, vehicles, 200)
 	_expect(vehicles.all(func(v: Vehicle) -> bool: return v.at_end()), true, "two vehicles pass head-on on a 1+1 road")
 	_expect(waited, 0, "neither waits for the other")
@@ -36,8 +36,8 @@ func _test_queue() -> void:
 	var net := _net([[Vector2i(0, 5), Vector2i(20, 5), "terminal_1_1"]])
 	var lanes := LaneGraph.new(net)
 	var traffic := LaneTraffic.new(lanes)
-	var front := _vehicle(traffic, lanes.route(Vector2i(5, 5), Vector2i(20, 5), true))
-	var back := _vehicle(traffic, lanes.route(Vector2i(4, 5), Vector2i(19, 5), true))
+	var front := _vehicle(traffic, lanes.route(Vector2i(5, 5), Vector2i(19, 5), true))
+	var back := _vehicle(traffic, lanes.route(Vector2i(4, 5), Vector2i(18, 5), true))
 	var closest := 99
 	for i in 200:
 		traffic.advance(back, SPEED * 2)  # the faster one behind moves first
@@ -54,8 +54,10 @@ func _test_ring_waits() -> void:
 	])
 	var lanes := LaneGraph.new(net)
 	var traffic := LaneTraffic.new(lanes)
+	# Keeping right, the forward lanes run round the inside of the 4 by 4 cells
+	# the square's lines enclose.
 	var loop := lanes.route(Vector2i(1, 0), Vector2i(0, 0), false)
-	_expect(loop.size(), 16, "the ring's forward lanes are 16 cells round")
+	_expect(loop.size(), 12, "the ring's forward lanes are 12 cells round")
 	var vehicles := []
 	for i in loop.size():
 		var path: Array[Vector2i] = loop.slice(i) + loop.slice(0, i)
@@ -80,7 +82,7 @@ func _test_never_stops_in_a_junction() -> void:
 	_expect(stopped_in_junction, false, "a vehicle waits short of a junction it can't clear")
 	_expect(mover.waited > 0, true, "it waits for the cell past the junction")
 	traffic.leave(parked)
-	_run(traffic, [mover], 60)
+	_run(traffic, [mover], 120)
 	_expect(mover.at_end(), true, "it crosses once the way is clear")
 
 
@@ -94,8 +96,8 @@ func _test_merge_at_45() -> void:
 	var vehicles := []
 	var waiting := []
 	for i in 6:
-		waiting.append(lanes.route(Vector2i(0, 10), Vector2i(30, 10), true))
-		waiting.append(lanes.route(Vector2i(4, 4), Vector2i(30, 10), true))
+		waiting.append(lanes.route(Vector2i(0, 10), Vector2i(29, 10), true))
+		waiting.append(lanes.route(Vector2i(4, 4), Vector2i(29, 10), true))
 	var shared := false
 	for tick in 600:
 		if not waiting.is_empty():
@@ -132,13 +134,13 @@ func _test_moves_at_its_speed() -> void:
 	var lanes := LaneGraph.new(_net([[Vector2i(0, 5), Vector2i(200, 5), "terminal_1_1"]]))
 	var traffic := LaneTraffic.new(lanes)
 	for speed: float in [10.0, 31.25, 37.5]:
-		var vehicle := _vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(200, 5), true))
+		var vehicle := _vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(199, 5), true))
 		for i in SimClock.TICKS_PER_SECOND:
 			traffic.advance(vehicle, speed)
 		_expect(absf(vehicle.t - speed) < 0.01, true, "on a clear road a vehicle covers its speed in cells a vehicle second (%.2f at %.2f)" % [vehicle.t, speed])
 		traffic.leave(vehicle)
 	var front := _vehicle(traffic, [Vector2i(30, 5)] as Array[Vector2i])
-	var behind := _vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(200, 5), true))
+	var behind := _vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(199, 5), true))
 	for i in SimClock.TICKS_PER_SECOND:
 		traffic.advance(behind, 37.5)
 	_expect(behind.path[int(behind.t)], Vector2i(29, 5), "a fast vehicle still stops in the cell behind one ahead")

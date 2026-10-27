@@ -7,8 +7,11 @@ extends RefCounted
 # shortcut: no trains until M6's rail steps add them.
 
 const RandomPort := preload("res://tests/random_port.gd")
-const COAST_X := 88
-const SPINE_X := 560
+## The grid lines the coast road and the spine run south down: their 2+2
+## lanes cover the two columns either side, and each row road meets them at
+## a grid point.
+const COAST_X := 89
+const SPINE_X := 561
 const ROWS: Array[int] = [12, 108, 204, 300, 396, 492, 588]
 const BLOCK := 50
 const BOXES := 20000
@@ -49,7 +52,7 @@ static func build(rules: Dictionary) -> PortSim:
 	_do(sim, {"op": "build_road", "from": Vector2i(SPINE_X, ROWS[0]), "to": Vector2i(SPINE_X, ROWS[-1]), "type": "terminal_2_2"})
 	for y in ROWS:
 		_do(sim, {"op": "build_road", "from": Vector2i(COAST_X, y), "to": Vector2i(SPINE_X, y), "type": "terminal_1_1"})
-	_do(sim, {"op": "build_road", "from": Vector2i(SPINE_X, 300), "to": sim.site_entry(), "type": "terminal_2_2"})
+	_do(sim, {"op": "build_road", "from": Vector2i(SPINE_X, 300), "to": sim.site_entry_point(), "type": "terminal_2_2"})
 	var aprons: Array[int] = []
 	for i in ROWS.size() - 1:
 		var coast := sim.roads.segment_at(Vector2i(COAST_X, ROWS[i] + 48))

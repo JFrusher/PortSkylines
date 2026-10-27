@@ -16,7 +16,6 @@ func _initialize() -> void:
 	_test_every_fixture_loads_or_is_refused()
 	_test_area_flow_round_trips()
 	_test_a_removed_apron_saves()
-	_test_v11_gates_get_manual_booths()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -51,15 +50,15 @@ func _test_bad_files_are_refused() -> void:
 	_expect(SaveFile.load_from("user://missing.bin").has("error"), true, "a missing file is refused")
 
 
-## Saves from before roads and areas are refused with a reason; every later
-## one loads and plays on.
+## Saves from before roads ran on grid lines are refused with a reason;
+## every later one loads and plays on.
 func _test_every_fixture_loads_or_is_refused() -> void:
 	var fixtures := Array(DirAccess.get_files_at("res://tests/fixtures")).filter(func(f: String) -> bool: return f.begins_with("save_v") and f.ends_with(".bin"))
 	_expect(fixtures.size() >= SaveFile.VERSION, true, "a fixture exists for every save version (%s)" % [fixtures])
 	for name: String in fixtures:
 		var loaded := SaveFile.load_from("res://tests/fixtures/" + name)
 		if name.trim_prefix("save_v").to_int() < SaveFile.FIRST:
-			_expect(loaded.get("error", "").contains("saved before roads and areas"), true, "%s is refused with the reason (%s)" % [name, loaded.get("error", "")])
+			_expect(loaded.get("error", "").contains("saved before roads ran on grid lines"), true, "%s is refused with the reason (%s)" % [name, loaded.get("error", "")])
 			continue
 		_expect(loaded.has("sim"), true, "%s loads (%s)" % [name, loaded.get("error", "")])
 		if loaded.has("sim"):
@@ -67,12 +66,6 @@ func _test_every_fixture_loads_or_is_refused() -> void:
 			for i in 100:
 				sim.tick()
 			_expect(sim.clock.ticks > 100, true, "%s plays on after loading" % name)
-
-
-func _test_v11_gates_get_manual_booths() -> void:
-	var sim: PortSim = SaveFile.load_from("res://tests/fixtures/save_v11.bin").sim
-	var gates := sim.areas.list.values().filter(func(a: Dictionary) -> bool: return sim.areas.kind_of(a) == "gate")
-	_expect(not gates.is_empty() and gates.all(func(a: Dictionary) -> bool: return a.settings.level == "manual"), true, "a v11 save's gates load with manual booths")
 
 
 func _test_save_replaces_existing() -> void:

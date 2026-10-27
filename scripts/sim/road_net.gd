@@ -2,9 +2,17 @@ class_name RoadNet
 extends RefCounted
 ## The roads the player draws: nodes on the 4 m grid joined by straight
 ## segments at 0°, 45° or 90°. Corners are drawn as arcs by the view; in the
-## sim a road is the cells along its segments.
+## sim a road is the cells its lanes cover.
+##
+## A road's lanes lie evenly either side of its line, as in Cities: Skylines,
+## so which way it was drawn never moves it. Every road type has an even
+## number of lanes, so its line runs along grid lines, between cells: a node
+## is a grid point, the corner where four cells meet, and point (x, y) is the
+## top-left corner of cell (x, y). Rail track has one lane, so its line runs
+## through cell middles and a node is a cell. A net's types are all one or
+## the other.
 
-## Node id -> its cell.
+## Node id -> its grid point (even-width types) or cell (odd-width).
 var nodes := {}
 ## Segment id -> {"a": node id, "b": node id, "type": a key of road_types}.
 var segments := {}
@@ -25,6 +33,10 @@ var _next_for := -1
 
 func _init(road_types: Dictionary) -> void:
 	types = road_types
+	var parities := {}
+	for type: Dictionary in types.values():
+		parities[(type.forward + type.backward) % 2] = true
+	assert(parities.size() <= 1, "a net's road types are all even-width or all odd-width")
 
 
 ## Adds a straight road of `type` from `from` to `to`. Its forward lanes run
@@ -83,7 +95,8 @@ func segment_at(cell: Vector2i) -> int:
 	return 0
 
 
-## A road's length in cells from `from` to `to`, which costs are counted in.
+## A road's length in cells from `from` to `to`, which costs are counted in:
+## the cells along it between two grid points, or along it from cell to cell.
 static func length(from: Vector2i, to: Vector2i) -> int:
 	var d := (to - from).abs()
 	return maxi(d.x, d.y)
@@ -117,50 +130,6 @@ func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
 	return _snap_onto(snap(from, to), from, snap(from, to))
 
 
-## `from` and `to` in the order a free two-way road between them is built.
-## Its lanes lie to one side of its line, so it runs west to east (else north
-## to south) whichever way it was dragged: stubs from either side of a road
-## line up across it. A one-way road runs the way it was dragged.
-static func ordered(from: Vector2i, to: Vector2i, road: Dictionary) -> Array[Vector2i]:
-	if road.forward == road.backward and to < from:
-		return [to, from] as Array[Vector2i]
-	return [from, to] as Array[Vector2i]
-
-
-## `from` and `to` in the order a new road of `type` between them is built.
-## Carrying on from a road's free end, it keeps going that road's way, so
-## their lanes meet at the bend or run on in line; else as `ordered`.
-func oriented(from: Vector2i, to: Vector2i, type: String) -> Array[Vector2i]:
-	if type not in types or types[type].forward != types[type].backward:
-		return [from, to] as Array[Vector2i]
-	for end: Vector2i in [from, to]:
-		var node: Variant = nodes.find_key(end)
-		if node == null or degree(node) != 1:
-			continue
-		var road: Dictionary = segments.values().filter(func(s: Dictionary) -> bool: return s.a == node or s.b == node)[0]
-		# The road arrives at its b end, so the new one leaves from there.
-		var leaves := end if road.b == node else (to if end == from else from)
-		return [leaves, to if leaves == from else from] as Array[Vector2i]
-	return ordered(from, to, types[type])
-
-
-## The drawn line of a drag from `from` to `to` moved straight across so
-## the lanes of a road of type `road` centre on `at`, the grid point (in cells,
-## fractional) the mouse pressed at. Lanes lie on the drawn line and to its
-## left of travel, so a road is never centred on its line, and which side it
-## falls on turns with the drag; this keeps it under the mouse either way.
-static func centred(from: Vector2i, to: Vector2i, road: Dictionary, at: Vector2) -> Array[Vector2i]:
-	var ends := ordered(from, to, road)
-	from = ends[0]
-	to = ends[1]
-	var across := right_of(to - from)
-	# The lanes' middle, across, sits half a cell in from the line's cell edge
-	# plus the mean of their offsets, -backward to forward - 1.
-	var want: float = at.x * across.x + at.y * across.y - 0.5 * (across.x + across.y) - (road.forward - 1 - road.backward) / 2.0
-	var shift := roundi(want) - (from.x * across.x + from.y * across.y)
-	return [from + across * shift, to + across * shift] as Array[Vector2i]
-
-
 ## Whether a drag from `from` (NONE for a start) at `cell` would snap onto a road.
 func snaps(cell: Vector2i, from := Grid.NONE) -> bool:
 	return _snap_onto(cell if from == Grid.NONE else snap(from, cell), from, Grid.NONE) != Grid.NONE
@@ -173,7 +142,7 @@ func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i
 	var best := otherwise
 	var best_score := INF
 	for id: int in segments:
-		var road := cells(id)
+		var road := points(id)
 		if from in road:
 			continue
 		var ends := [road[0], road[-1]]
@@ -203,7 +172,7 @@ func path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 		_next_for = version
 		_next_cells.clear()
 		for id: int in segments:
-			var run := cells(id)
+			var run := points(id)
 			for i in run.size() - 1:
 				_next_cells[run[i]] = _next_cells.get(run[i], []) + [run[i + 1]]
 				_next_cells[run[i + 1]] = _next_cells.get(run[i + 1], []) + [run[i]]
@@ -260,21 +229,24 @@ func _meets(from: Vector2i, to: Vector2i, type: String, skip := 0) -> Variant:
 	for id: int in segments:
 		if id == skip:
 			continue
-		var shared := cells(id).filter(func(c: Vector2i) -> bool: return c in on_drawn)
+		var shared := points(id).filter(func(c: Vector2i) -> bool: return c in on_drawn)
 		if shared.size() > 1:
 			return "A road already runs here"
 		if shared.size() == 1:
 			meets[shared[0]] = id
 		elif _crosses_between_cells(drawn, id):
-			return "Roads must cross at a cell, not between two"
-	# Lanes may overlap only where roads meet, within a road's width of it.
+			return "Roads must cross at a grid point, not between two"
+	# Lanes may overlap only where roads meet, within a road's width of it; a
+	# cell further where either road runs at 45°, as its lanes sit half a cell
+	# off its line.
 	var width: int = types[type].forward + types[type].backward
 	var mine := footprint(from, to, type)
 	for id: int in segments:
 		if id == skip:
 			continue
 		var road: Dictionary = types[segments[id].type]
-		var reach := maxi(width, road.forward + road.backward)
+		var theirs_d: Vector2i = nodes[segments[id].b] - nodes[segments[id].a]
+		var reach := maxi(width, road.forward + road.backward) + (1 if d.x * d.y != 0 or theirs_d.x * theirs_d.y != 0 else 0)
 		var theirs := {}
 		for lane in lanes(id):
 			for cell: Vector2i in lane.cells:
@@ -294,7 +266,7 @@ func degree(node: int) -> int:
 ## are themselves a 45° step across it, so the roads cross with no cell in common.
 func _crosses_between_cells(drawn: Array[Vector2i], segment: int) -> bool:
 	var other := {}
-	for cell in cells(segment):
+	for cell in points(segment):
 		other[cell] = true
 	for i in drawn.size() - 1:
 		var p := drawn[i]
@@ -316,9 +288,18 @@ func _split(segment: int, cell: Vector2i) -> void:
 	road.b = middle
 
 
-## The cells along `segment`, from its a end to its b end.
-func cells(segment: int) -> Array[Vector2i]:
+## The grid points (or cells, for odd-width types) `segment`'s line runs
+## through, from its a end to its b end.
+func points(segment: int) -> Array[Vector2i]:
 	return line(nodes[segments[segment].a], nodes[segments[segment].b])
+
+
+## The cells just right of `segment`'s line from its a end to its b end: the
+## row areas beside it measure from. For odd-width types, the line's cells.
+func cells(segment: int) -> Array[Vector2i]:
+	var a: Vector2i = nodes[segments[segment].a]
+	var b: Vector2i = nodes[segments[segment].b]
+	return _row(a, b, types[segments[segment].type], 0)
 
 
 ## `segment`'s lanes from left to right across its drawn direction, each
@@ -335,13 +316,40 @@ func footprint(from: Vector2i, to: Vector2i, type: String) -> Array[Vector2i]:
 	return found
 
 
+## Lanes left to right across the way from `a` to `b`: the first `backward`
+## run from b to a, the rest from a to b. They lie evenly either side of the
+## line, lane k (0-based) in the row k - lanes / 2 to its right, so drawn
+## either way a road covers the same cells.
 static func _lanes(a: Vector2i, b: Vector2i, road: Dictionary) -> Array[Dictionary]:
-	var across := right_of(b - a)
+	var width: int = road.forward + road.backward
 	var found: Array[Dictionary] = []
-	for i: int in road.backward + road.forward:
-		var offset: Vector2i = across * (i - road.backward)
-		var forward: bool = i >= road.backward
-		found.append({"cells": line(a + offset, b + offset) if forward else line(b + offset, a + offset), "forward": forward})
+	for k in width:
+		var forward: bool = k >= road.backward
+		var cells := _row(a, b, road, k - width / 2)
+		if not forward:
+			cells.reverse()
+		found.append({"cells": cells, "forward": forward})
+	return found
+
+
+## The cells from `a` to `b` in row `row` right of the line (negative: left).
+## Rows sit half a cell either side of a line along grid lines, so one
+## between points a and b has a cell per step; a line through cell middles
+## has its rows a whole cell apart and covers both end cells. A 45° line
+## through grid points also runs through cell middles, so its even rows
+## can't sit evenly either side: they step straight across, half a cell
+## south of the line, whichever way it was drawn.
+static func _row(a: Vector2i, b: Vector2i, road: Dictionary, row: int) -> Array[Vector2i]:
+	var d := (b - a).sign()
+	var across := right_of(b - a)
+	var found: Array[Vector2i] = []
+	if (road.forward + road.backward) % 2 == 1:
+		for cell in line(a, b):
+			found.append(cell + across * row)
+		return found
+	for t in length(a, b):
+		var middle := Vector2(a) + Vector2(d) * (t + 0.5) + Vector2(across) * (row + 0.5)
+		found.append(Vector2i(middle.floor()))
 	return found
 
 

@@ -20,7 +20,6 @@ var _last_cell := Grid.NONE
 ## Where a road drag started on the 4 m grid, or NONE.
 var _road_from := Grid.NONE
 ## The grid point, in cells, the mouse pressed at to start that drag.
-var _road_at := Vector2.ZERO
 ## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
 var _area_from := {}
 ## The box the camera follows, or 0.
@@ -94,15 +93,12 @@ func _process(dt: float) -> void:
 	view.info_view = hud.info_view()
 	_follow(dt)
 	var cell := _hovered_grid_cell()
-	# Before a road drag, the hover shows where the drag would snap on.
-	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "track" and not _upgrading() and _road_from == Grid.NONE and cell != Grid.NONE and not sim.roads.snaps(cell):
-		# A free start: the road's width, centred on the grid line it will centre on.
-		var road: Dictionary = sim.rules.road_types[hud.road_type]
-		var lanes: int = road.forward + road.backward
-		var at := _hovered_grid_point()
-		view.show_hover_at(at.round() if lanes % 2 == 0 else at.floor() + Vector2(0.5, 0.5), lanes, _order_error(cell) == "")
+	# Before a road drag, the hover shows where the drag would start, a road's
+	# width across: on a road it snaps to, else at the point under the mouse.
+	if hud.tool == Hud.DRAW_ROAD and not _upgrading() and _road_from == Grid.NONE and cell != Grid.NONE:
+		view.show_hover_at(_place(_net().snap_start(_hovered_node())), _width(), _order_error(cell) == "")
 	else:
-		view.show_hover(_net().snap_start(cell) if hud.tool == Hud.DRAW_ROAD and _road_from == Grid.NONE else cell, _order_error(cell) == "")
+		view.show_hover(cell, _order_error(cell) == "")
 	view.show_snaps(_snapped_ends(cell))
 	var dragged: Array[Vector2i] = []
 	if not _area_from.is_empty():
@@ -173,8 +169,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_report(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(_hovered_grid_cell()), "type": hud.road_type}))
 			return
 		if hud.tool == Hud.DRAW_ROAD:
-			_road_from = _net().snap_start(_hovered_grid_cell())
-			_road_at = _hovered_grid_point()
+			_road_from = _net().snap_start(_hovered_node())
 			return
 		if hud.tool == Hud.INSPECT:
 			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
@@ -311,7 +306,27 @@ func _hovered_grid_cell() -> Vector2i:
 ## Where a road drag from _road_from ends: snapped onto a road near the
 ## mouse, else straight or to 45°.
 func _road_to() -> Vector2i:
-	return _net().snap_end(_road_from, _hovered_grid_cell())
+	return _net().snap_end(_road_from, _hovered_node())
+
+
+## The node a road drag would use under the mouse: the nearest grid point,
+## where a road's line runs, or for track the cell, as its line runs through
+## cell middles (see RoadNet); NONE off the ground.
+func _hovered_node() -> Vector2i:
+	if _hovered_point() == null:
+		return Grid.NONE
+	return _hovered_grid_cell() if hud.road_type == "track" else Vector2i(_hovered_grid_point().round())
+
+
+## Node `node` of the road tool's net in grid units, for markers.
+func _place(node: Vector2i) -> Vector2:
+	return Vector2(node) + (Vector2(0.5, 0.5) if hud.road_type == "track" else Vector2.ZERO)
+
+
+## How many lanes across the road tool's road type is.
+func _width() -> int:
+	var road: Dictionary = _net().types[hud.road_type]
+	return road.forward + road.backward
 
 
 ## Whether the road tool changes roads' type instead of drawing them.
@@ -354,19 +369,21 @@ func _segment_hint(picked: Array) -> String:
 	return "%s\nto %s: %s" % [text, sim.rules.road_types[hud.road_type].name, Hud.HudDetails.dollars(sim.road_price(a, b, hud.road_type))]
 
 
-## The ends of the road being drawn, or about to be, that join a road.
-func _snapped_ends(cell: Vector2i) -> Array[Vector2i]:
-	var found: Array[Vector2i] = []
+## Where the ends of the road being drawn, or about to be, join a road, in
+## grid units.
+func _snapped_ends(cell: Vector2i) -> Array[Vector2]:
+	var found: Array[Vector2] = []
+	var node := _hovered_node()
 	if hud.tool != Hud.DRAW_ROAD or _upgrading() or cell == Grid.NONE:
 		return found
 	if _road_from == Grid.NONE:
-		if _net().snaps(cell):
-			found.append(_net().snap_start(cell))
+		if _net().snaps(node):
+			found.append(_place(_net().snap_start(node)))
 		return found
 	if _net().snaps(_road_from):
-		found.append(_road_from)
-	if _net().snaps(cell, _road_from):
-		found.append(_road_to())
+		found.append(_place(_road_from))
+	if _net().snaps(node, _road_from):
+		found.append(_place(_road_to()))
 	return found
 
 
@@ -375,13 +392,9 @@ func _net() -> RoadNet:
 	return sim.rails if hud.road_type == "track" else sim.roads
 
 
-## The cells a road drag builds between: where it snaps onto roads, else
-## moved across so the road centres under the mouse, whichever way it was dragged.
+## The grid points a road drag builds between.
 func _road_ends() -> Array[Vector2i]:
-	var to := _road_to()
-	if to == _road_from or sim.roads.snaps(_road_from) or sim.roads.snaps(_hovered_grid_cell(), _road_from):
-		return sim.roads.oriented(_road_from, to, hud.road_type)
-	return RoadNet.centred(_road_from, to, sim.rules.road_types[hud.road_type], _road_at)
+	return [_road_from, _road_to()] as Array[Vector2i]
 
 
 ## The grid point under the mouse, in cells with their fractions.
