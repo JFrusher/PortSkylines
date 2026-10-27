@@ -27,6 +27,8 @@ var _frames: Array[float] = []
 var _sim_ms: Array[float] = []
 var _route_ms: Array[float] = []
 var _render_ms: Array[float] = []
+var _gpu_ms: Array[float] = []
+var _ticks: Array[float] = []
 var _draw_calls := 0
 var _primitives := 0
 
@@ -89,14 +91,16 @@ func _process(dt: float) -> bool:
 		_sim_ms.append(sim_us / 1000.0)
 		_route_ms.append(_route_us / 1000.0)
 		_render_ms.append(RenderingServer.viewport_get_measured_render_time_cpu(root.get_viewport_rid()) + RenderingServer.get_frame_setup_time_cpu())
+		_gpu_ms.append(RenderingServer.viewport_get_measured_render_time_gpu(root.get_viewport_rid()))
+		_ticks.append(ticks)
 		_draw_calls = RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME)
 		_primitives = RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)
 	_last = now
 	if _frame < WARMUP + FRAMES:
 		return false
 	print("hidden: %s" % (_hide if _hide else "nothing"))
-	print("speed %dx, distance %d, %d vehicles: frame avg %.1f ms (p95 %.1f), sim %.2f ms (routes %.2f), render cpu %.1f ms, %d draw calls, %d primitives" % [
-		_speed, _distance, _sim.vehicles.size(), _average(_frames), _p95(_frames), _average(_sim_ms), _average(_route_ms), _average(_render_ms), _draw_calls, _primitives])
+	print("speed %dx, distance %d, %d vehicles: frame avg %.1f ms (p95 %.1f), sim %.2f ms in %.2f ticks (routes %.2f), render cpu %.1f ms, gpu %.1f ms, %d draw calls, %d primitives" % [
+		_speed, _distance, _sim.vehicles.size(), _average(_frames), _p95(_frames), _average(_sim_ms), _average(_ticks), _average(_route_ms), _average(_render_ms), _average(_gpu_ms), _draw_calls, _primitives])
 	return true
 
 
