@@ -32,7 +32,7 @@ static func calls(sim: PortSim, kind := "feeder", first := 10, every := 45, coun
 	var line: String = sim.rules.lines.keys()[0]
 	var spec: Dictionary = sim.rules.ship_classes[kind]
 	for i in count:
-		sim.contracts.services.append({"id": 1000 + i, "line": line, "kind": kind, "start": first + every * i, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves})
+		sim.contracts.services.append({"id": 1000 + i, "line": line, "kind": kind, "start": first + every * i, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": 0, "asked": first + every * i, "any_berth": true})
 
 
 ## A tick-tagged log: AreaPort.chain's port built by commands at tick 0 (a
@@ -94,7 +94,7 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 		# some are refused; loans, land and dredging are refused without the cash.
 		else:
 			var economy: Array[Dictionary] = [
-				{"op": "accept_offer", "id": rng.randi_range(1, 10)},
+				{"op": "accept_offer", "id": rng.randi_range(1, 10), "apron": rng.randi_range(1, 4)},
 				{"op": "decline_offer", "id": rng.randi_range(1, 10)},
 				{"op": "take_loan", "kind": ["small", "medium"][rng.randi() % 2]},
 				{"op": "buy_land", "tile": Vector2i(rng.randi_range(0, 2), rng.randi_range(0, 2))},

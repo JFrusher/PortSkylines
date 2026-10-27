@@ -31,12 +31,12 @@ func _test_could_berth() -> void:
 	var sim := _port(100, "wide_sts")
 	var draft: float = sim.rules.ship_classes.neopanamax.draft
 	sim.channel_depth = draft - 1.0
-	_expect(sim._could_offer("neopanamax"), false, "a channel shallower than its draft keeps it away")
+	_expect(_offers(sim, "neopanamax"), false, "a channel shallower than its draft keeps it away")
 	sim.channel_depth = draft
-	_expect(sim._could_offer("neopanamax"), true, "dredged to its draft, with a long berth and a wide crane, lines offer it")
-	_expect(_port(75, "wide_sts", draft)._could_offer("neopanamax"), false, "a Panamax berth is too short")
-	_expect(_port(100, "sts", draft)._could_offer("neopanamax"), false, "standard cranes don't reach across it")
-	_expect(_port(100, "sts", draft)._could_offer("panamax"), true, "they still serve a Panamax")
+	_expect(_offers(sim, "neopanamax"), true, "dredged to its draft, with a long berth and a wide crane, lines offer it")
+	_expect(_offers(_port(75, "wide_sts", draft), "neopanamax"), false, "a Panamax berth is too short")
+	_expect(_offers(_port(100, "sts", draft), "neopanamax"), false, "standard cranes don't reach across it")
+	_expect(_offers(_port(100, "sts", draft), "panamax"), true, "they still serve a Panamax")
 
 
 ## A Neopanamax alongside is worked only by the wide crane on its berth.
@@ -74,3 +74,8 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 	if actual != expected:
 		_failures += 1
 		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
+
+
+## Whether lines may offer `kind` at the port's first berth.
+func _offers(sim: PortSim, kind: String) -> bool:
+	return sim._could_offer(kind, AreaFlow.ready_aprons(sim)[0])

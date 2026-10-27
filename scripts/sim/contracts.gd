@@ -11,7 +11,9 @@ var rules: Dictionary
 ## Line key -> 0..100.
 var reputation := {}
 ## Agreed weekly calls: {"id", "line", "kind", "start" (minute of the week),
-## "window_hours", "moves"}.
+## "window_hours", "moves", "apron" (the berth it calls at, 0 for none yet),
+## "asked" (the start the line asked for; start stays within flex_hours of
+## it), "any_berth" (whether its ship takes another berth when its own is busy)}.
 var services: Array[Dictionary] = []
 ## Services on offer: as above, plus "expires" (a calendar minute).
 var offers: Array[Dictionary] = []
@@ -27,13 +29,13 @@ func _init(game_rules: Dictionary) -> void:
 		reputation[line] = float(rules.reputation.start)
 
 
-## Maybe offers one new service: from a line whose reputation is high enough,
-## for a class `fits` says the port can berth, while there are fewer than
-## `berths` × max_services_per_berth services, more often as the
-## hinterland's `demand` grows. Returns the offer or {}.
-func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, demand: float) -> Dictionary:
+## Maybe offers one new service for berth `apron`: from a line whose
+## reputation is high enough, for a class `fits` says that berth can take,
+## while the berth has fewer than max_services_per_berth services and offers,
+## more often as the hinterland's `demand` grows. Returns the offer or {}.
+func offer(rng: RandomNumberGenerator, now: float, apron: int, fits: Callable, demand: float) -> Dictionary:
 	var terms: Dictionary = rules.contracts
-	if offers.size() >= terms.max_offers or services.size() + offers.size() >= berths * terms.max_services_per_berth:
+	if offers.size() >= terms.max_offers or booked(apron).size() >= terms.max_services_per_berth:
 		return {}
 	# A port with no lines yet gets its first offer at the first check.
 	if rng.randf() >= (1.0 if services.is_empty() and offers.is_empty() else terms.offer_chance * demand):
@@ -42,7 +44,7 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, 
 	if willing.is_empty():
 		return {}
 	var line: String = willing[rng.randi_range(0, willing.size() - 1)]
-	# A line offers only classes the port can take, by its weights among them.
+	# A line offers only classes the berth can take, by its weights among them.
 	var classes := {}
 	for kind: String in rules.lines[line].classes:
 		if fits.call(kind):
@@ -51,12 +53,13 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, 
 		return {}
 	var kind := _pick(rng, classes)
 	var spec: Dictionary = rules.ship_classes[kind]
+	# Whole hours, so every call starts exactly on a tick.
+	var start := _quietest_hour(now, apron) * 60
 	var service := {
-		"id": _next_id, "line": line, "kind": kind,
-		# Whole hours, so every call starts exactly on a tick.
-		"start": _quietest_hour(now) * 60,
+		"id": _next_id, "line": line, "kind": kind, "start": start,
 		"window_hours": spec.window_hours,
 		"moves": spec.import_moves + spec.export_moves,
+		"apron": apron, "asked": start, "any_berth": false,
 		"expires": now + terms.offer_days * SimClock.MINUTES_PER_DAY,
 	}
 	_next_id += 1
@@ -65,19 +68,28 @@ func offer(rng: RandomNumberGenerator, now: float, berths: int, fits: Callable, 
 	return service
 
 
-## The hour of the week for a new service's calls: the one furthest from
-## every call already agreed or on offer, as a terminal plans its berth
-## windows, at least 2 h ahead; the soonest of equals, so a port's first
-## service calls soon.
-func _quietest_hour(now: float) -> int:
+## The services agreed or on offer for berth `apron`.
+func booked(apron: int) -> Array[Dictionary]:
+	var found: Array[Dictionary] = []
+	for service in services + offers:
+		if service.apron == apron:
+			found.append(service)
+	return found
+
+
+## The hour of the week for a new service's calls at berth `apron`: the one
+## furthest from every call already agreed or on offer there, as a terminal
+## plans its berth windows, at least 2 h ahead; the soonest of equals, so a
+## berth's first service calls soon.
+func _quietest_hour(now: float, apron: int) -> int:
 	var week := 7 * 24
-	var booked := (services + offers).map(func(s: Dictionary) -> int: return s.start / 60)
+	var hours := booked(apron).map(func(s: Dictionary) -> int: return s.start / 60)
 	var best := 0
 	var widest := -1
 	for ahead in range(2, week + 2):
 		var hour := (floori(now / 60.0) + ahead) % week
 		var gap := week
-		for other: int in booked:
+		for other: int in hours:
 			gap = mini(gap, mini(absi(hour - other), week - absi(hour - other)))
 		if gap > widest:
 			best = hour
@@ -85,19 +97,79 @@ func _quietest_hour(now: float) -> int:
 	return best
 
 
-func accept_error(id: int) -> String:
-	return "" if _offer(id) else "No such offer"
+## Where `service`'s calls would start at berth `apron`: the hour nearest the
+## line's asked start, within flex_hours of it, whose window overlaps no other
+## agreed service there; -1 when none is free.
+func place(service: Dictionary, apron: int) -> int:
+	var flex: int = rules.contracts.flex_hours
+	for step in range(0, flex * 2 + 1):
+		# 0, +1 h, -1 h, +2 h, -2 h, ...
+		var shift := floori((step + 1) / 2.0) * (1 if step % 2 == 1 else -1)
+		var tried := service.duplicate()
+		tried.start = posmod(service.asked + shift * 60, MINUTES_PER_WEEK)
+		if not services.any(func(other: Dictionary) -> bool: return other.id != service.id and other.apron == apron and windows_overlap(tried, other)):
+			return tried.start
+	return -1
 
 
-func accept(id: int) -> String:
-	var err := accept_error(id)
+func accept_error(id: int, apron: int) -> String:
+	var service := _offer(id)
+	if service.is_empty():
+		return "No such offer"
+	return "" if place(service, apron) != -1 else _no_window()
+
+
+## Agrees offer `id` with its calls at berth `apron`, as `place` times them.
+func accept(id: int, apron: int) -> String:
+	var err := accept_error(id, apron)
 	if err == "":
 		var service := _offer(id)
+		service.start = place(service, apron)
+		service.apron = apron
 		offers.erase(service)
 		service.erase("expires")
 		services.append(service)
 		version += 1
 	return err
+
+
+func move_error(id: int, apron: int) -> String:
+	var service := _service(id)
+	if service.is_empty():
+		return "No such service"
+	return "" if place(service, apron) != -1 else _no_window()
+
+
+## Moves agreed service `id`'s calls to berth `apron`, as `place` times them.
+func move(id: int, apron: int) -> String:
+	var err := move_error(id, apron)
+	if err == "":
+		var service := _service(id)
+		service.start = place(service, apron)
+		service.apron = apron
+		version += 1
+	return err
+
+
+## Whether service `id`'s ship takes another berth when its own is busy.
+func set_any_berth(id: int, any: bool) -> String:
+	var service := _service(id)
+	if service.is_empty():
+		return "No such service"
+	service.any_berth = any
+	version += 1
+	return ""
+
+
+func _no_window() -> String:
+	return "No free window on this berth within %d h of the line's time" % rules.contracts.flex_hours
+
+
+func _service(id: int) -> Dictionary:
+	for service in services:
+		if service.id == id:
+			return service
+	return {}
 
 
 func decline(id: int) -> String:

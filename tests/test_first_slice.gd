@@ -28,7 +28,7 @@ func _test_first_ship_end_to_end() -> void:
 		for offer: Dictionary in sim.contracts.offers:
 			if line == "":
 				line = offer.line
-				sim.apply({"op": "accept_offer", "id": offer.id})
+				sim.apply({"op": "accept_offer", "id": offer.id, "apron": offer.apron})
 		if sailed < 0 and not sim.ship_log.is_empty():
 			sailed = i
 		if sailed >= 0 and not sim.boxes.values().any(func(b: Dictionary) -> bool: return b.kind == "import"):

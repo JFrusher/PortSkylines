@@ -11,6 +11,8 @@ var _failures := 0
 func _initialize() -> void:
 	_test_remove_one_crane()
 	_test_berth_plan()
+	_test_ships_go_to_their_berth()
+	_test_berth_board()
 	_test_cost_per_move()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -38,28 +40,95 @@ func _test_remove_one_crane() -> void:
 	_expect(AreaFlow.crane_at(sim, cell) == sim.cranes[0], true, "the crane left is found from a cell under it")
 
 
-## Two feeder windows that overlap on the port's one berth are a clash; apart
-## in the week, or with a second berth to take one, they are not.
+## An offer accepted onto a berth calls at the line's time if free there,
+## else the nearest free hour within flex_hours; with none, it is refused,
+## and another berth takes it at its own time. An agreed service moves the
+## same way, and may be let take any berth.
 func _test_berth_plan() -> void:
-	var sim := AreaPort.base(RandomPort.quick(), "")
+	var sim := _two_berths()
+	var aprons := AreaFlow.ready_aprons(sim)
 	var line: String = sim.rules.lines.keys()[0]
-	var call := func(id: int, hour: int) -> Dictionary: return {"id": id, "line": line, "kind": "feeder", "start": hour * 60, "window_hours": 12.0, "moves": 40}
-	sim.contracts.services.assign([call.call(1, 0), call.call(2, 6)])
-	var plan := AreaFlow.berth_plan(sim)
-	_expect(plan.map(func(p: Dictionary) -> Array: return [p.service.id, p.apron, p.clash]), [[1, 1, true], [2, 1, true]], "overlapping windows on one berth clash")
-	sim.contracts.services.assign([call.call(1, 0), call.call(2, 12), call.call(3, 7 * 24 - 2)])
-	plan = AreaFlow.berth_plan(sim)
-	_expect(plan.map(func(p: Dictionary) -> Array: return [p.service.id, p.clash]), [[1, true], [2, false], [3, true]], "a window across the week's end clashes with Monday's")
+	var offer := func(id: int, hour: int) -> int:
+		sim.contracts.offers.append({"id": id, "line": line, "kind": "feeder", "start": hour * 60, "asked": hour * 60, "window_hours": 12.0, "moves": 40, "apron": aprons[0], "any_berth": false, "expires": 1e9})
+		return id
+	_expect(sim.apply({"op": "accept_offer", "id": offer.call(1, 0), "apron": aprons[0]}), "", "an offer is agreed on a berth")
+	_expect(sim.apply({"op": "accept_offer", "id": offer.call(2, 6), "apron": aprons[0]}), "", "an overlapping one too")
+	var starts: Array = sim.contracts.services.map(func(s: Dictionary) -> int: return s.start / 60)
+	_expect(starts, [0, 12], "at the line's time, then moved to the nearest free hour (12:00, 6 h on)")
+	_expect(sim.apply({"op": "accept_offer", "id": offer.call(3, 6), "apron": aprons[0]}), "No free window on this berth within %d h of the line's time" % sim.rules.contracts.flex_hours, "with no free hour in reach it is refused")
+	_expect(sim.apply({"op": "accept_offer", "id": 3, "apron": aprons[1]}), "", "the other berth takes it")
+	_expect(sim.contracts.services[-1].start, 6 * 60, "at the line's own time")
+	_expect(AreaFlow.berth_plan(sim).any(func(p: Dictionary) -> bool: return p.clash), false, "nothing clashes")
+	_expect(sim.apply({"op": "move_service", "id": 3, "apron": aprons[0]}), "No free window on this berth within %d h of the line's time" % sim.rules.contracts.flex_hours, "a move onto a full berth is refused")
+	_expect(sim.apply({"op": "move_service", "id": 1, "apron": aprons[1]}), "", "a service moves to another berth")
+	_expect([sim.contracts.services[0].apron, sim.contracts.services[0].start / 60], [aprons[1], 7 * 24 - 6], "the nearest free hour there to its line's Monday 00:00: Sunday 18:00")
+	_expect(sim.apply({"op": "set_any_berth", "id": 2, "any_berth": true}), "", "a service may take any berth")
+	_expect(sim.contracts.services[1].any_berth, true, "and keeps that")
+	_expect(sim.apply({"op": "accept_offer", "id": offer.call(4, 30), "apron": 999}), "Not a working berth", "only a working berth takes calls")
+
+
+## A port with two ready berths: the base port's apron and one south of it.
+func _two_berths() -> PortSim:
+	var sim := AreaPort.base(RandomPort.quick(), "")
 	sim.creative = true
 	var entry := sim.site_entry()
-	_expect(sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": Vector2i(85, entry.y + 90), "type": "terminal_1_1"}), "", "the coast road runs on south")
+	sim.apply({"op": "build_road", "from": Vector2i(85, entry.y), "to": Vector2i(85, entry.y + 90), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
-	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 79}), "", "a second apron")
+	sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 79})
 	sim.apply({"op": "set_terminal", "id": sim.areas.list.keys()[-1], "terminal": 1})
-	sim.contracts.services.assign([call.call(1, 0), call.call(2, 6)])
-	plan = AreaFlow.berth_plan(sim)
-	_expect(plan.map(func(p: Dictionary) -> bool: return p.clash), [false, false], "a second berth takes the overlapping call")
-	_expect(plan[0].apron != plan[1].apron, true, "on different berths")
+	return sim
+
+
+## A ship goes to its service's berth though another is free first; with
+## its berth full it waits, unless its service may take any berth.
+func _test_ships_go_to_their_berth() -> void:
+	var sim := _two_berths()
+	var aprons := AreaFlow.ready_aprons(sim)
+	_expect(aprons.size(), 2, "two ready berths")
+	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 0, 0)
+	ship.berth = aprons[1]
+	ship.any_berth = false
+	_expect(AreaFlow.berth(sim, ship) and ship.apron == aprons[1], true, "a ship goes to its own berth, not the first free one")
+	# Fill the first berth end to end.
+	var span := AreaFlow.ship_cells(sim, "feeder")
+	for from in range(0, AreaFlow._length(sim, aprons[0]) - span + 1, span):
+		var moored := PortSim.Ship.new("feeder", ship.line, 0.0, 0, 0)
+		moored.apron = aprons[0]
+		moored.from = from
+		moored.state = PortSim.Ship.State.WORKING
+		sim.ships.append(moored)
+	var waiting := PortSim.Ship.new("feeder", ship.line, 0.0, 0, 0)
+	waiting.berth = aprons[0]
+	waiting.any_berth = false
+	_expect(AreaFlow.berth(sim, waiting), false, "with its berth full, it waits at anchor")
+	waiting.any_berth = true
+	_expect(AreaFlow.berth(sim, waiting) and waiting.apron == aprons[1], true, "unless its service takes any berth")
+
+
+## The board shows where a dragged offer would land, or why not, and a drop
+## or a click on a call sends the command that does it.
+func _test_berth_board() -> void:
+	var sim := _two_berths()
+	var aprons := AreaFlow.ready_aprons(sim)
+	var line: String = sim.rules.lines.keys()[0]
+	for id: int in [1, 2]:
+		var asked := (id - 1) * 6 * 60
+		sim.contracts.offers.append({"id": id, "line": line, "kind": "feeder", "start": asked, "asked": asked, "window_hours": 12.0, "moves": 40, "apron": aprons[0], "any_berth": false, "expires": 1e9})
+	var board := BerthBoard.new()
+	board.sim = sim
+	var sent: Array[Dictionary] = []
+	board.command_issued.connect(func(command: Dictionary) -> void: sent.append(command))
+	_expect(board.landing({"id": 1, "offer": true}, aprons[0]).start, 0, "an offer lands at its line's time on a free berth")
+	board.drop({"id": 1, "offer": true}, aprons[0])
+	_expect(sent[-1], {"op": "accept_offer", "id": 1, "apron": aprons[0]}, "a drop agrees it there")
+	_expect(sim.apply(sent[-1]), "", "and the sim takes it")
+	_expect(board.landing({"id": 2, "offer": true}, aprons[0]).start, 12 * 60, "the next, asked for 06:00, lands at the nearest free hour, 12:00")
+	_expect(board.landing({"id": 2, "offer": true}, 999).why, "Not a working berth", "and shows why where it can't")
+	board.toggle_any_berth(1)
+	_expect(sent[-1], {"op": "set_any_berth", "id": 1, "any_berth": true}, "a click lets a call take any berth")
+	board.drop({"id": 1, "offer": false}, aprons[1])
+	_expect(sent[-1].op, "move_service", "dragging a call moves it")
+	board.free()
 
 
 ## Over three days of feeder calls, the panel's figures per move are the

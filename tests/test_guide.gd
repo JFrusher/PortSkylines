@@ -40,7 +40,7 @@ func _initialize() -> void:
 		if not sim.contracts.offers.is_empty() and crane_up < 0.0:
 			_expect(true, false, "no line offers a service before the crane is up")
 		for offer in sim.contracts.offers:
-			sim.apply({"op": "accept_offer", "id": offer.id})
+			sim.apply({"op": "accept_offer", "id": offer.id, "apron": offer.apron})
 		return sim.contracts.services.size() >= Guide.SERVICES)
 	_expect(accepted, true, "lines offer %d services and they are accepted" % Guide.SERVICES)
 	# The first service calls soon after it is agreed, so its ship may already be worked.

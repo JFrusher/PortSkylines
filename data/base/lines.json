@@ -36,7 +36,8 @@
 		"offer_chance": 0.35,
 		"max_offers": 3.0,
 		"offer_days": 3.0,
-		"max_services_per_berth": 12.0
+		"max_services_per_berth": 12.0,
+		"flex_hours": 6.0
 	},
 	"reputation": {
 		"start": 60.0,

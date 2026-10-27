@@ -307,8 +307,8 @@ func _test_offers_accept_and_decline() -> void:
 	_expect(sim.apply({"op": "decline_offer", "id": declined}), "", "decline an offer")
 	_expect(sim.contracts.offers.any(func(o: Dictionary) -> bool: return o.id == declined), false, "a declined offer is gone")
 	var offer: Dictionary = sim.contracts.offers[0]
-	_expect(sim.apply({"op": "accept_offer", "id": offer.id}), "", "accept an offer")
-	_expect(sim.apply({"op": "accept_offer", "id": offer.id}), "No such offer", "an offer is accepted once")
+	_expect(sim.apply({"op": "accept_offer", "id": offer.id, "apron": offer.apron}), "", "accept an offer")
+	_expect(sim.apply({"op": "accept_offer", "id": offer.id, "apron": offer.apron}), "No such offer", "an offer is accepted once")
 	_expect(sim.contracts.services.map(func(s: Dictionary) -> int: return s.id), [offer.id], "the accepted offer is a service")
 	var minute_of_week := fmod(sim.clock.calendar_minutes(), Contracts.MINUTES_PER_WEEK)
 	_run(sim, fposmod(offer.start - minute_of_week, Contracts.MINUTES_PER_WEEK) + 1)
@@ -325,9 +325,9 @@ func _test_services_spread_across_the_week() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
 	while contracts.services.size() < 4:
-		var offer := contracts.offer(rng, 8 * 60.0, 10, func(_kind: String) -> bool: return true, 1.0)
+		var offer := contracts.offer(rng, 8 * 60.0, 1, func(_kind: String) -> bool: return true, 1.0)
 		if not offer.is_empty():
-			contracts.accept(offer.id)
+			contracts.accept(offer.id, 1)
 	var hours: Array = contracts.services.map(func(s: Dictionary) -> int: return s.start / 60)
 	var closest := 7 * 24
 	for a: int in hours:
@@ -344,7 +344,7 @@ func _test_reputation_cancels_and_recovers() -> void:
 	rules.contracts.offer_chance = 1.0
 	var contracts := Contracts.new(rules)
 	for id: int in [1, 2]:
-		contracts.services.append({"id": id, "line": "kestrel", "kind": "feeder", "start": 0, "window_hours": 12.0, "moves": 40})
+		contracts.services.append({"id": id, "line": "kestrel", "kind": "feeder", "start": 0, "window_hours": 12.0, "moves": 40, "apron": 1, "asked": 0, "any_berth": false})
 	var said := ""
 	var calls := 0
 	while said == "" and calls < 20:
