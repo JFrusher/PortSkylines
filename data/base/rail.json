@@ -1,8 +1,8 @@
 {
 	"rail": {
 		"name": "Rail track",
-		"cost_per_cell": 6.0,
-		"upkeep_per_cell": 0.3,
+		"cost_per_cell": 60.0,
+		"upkeep_per_cell": 3.0,
 		"entry_offset": 60.0,
 		"train": {
 			"wagons": 15.0,

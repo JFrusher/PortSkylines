@@ -42,6 +42,9 @@ func _run(sim: PortSim, minutes: float) -> void:
 func _test_overbooking_makes_ships_late() -> void:
 	var rules := RandomPort.quick()
 	rules.ship_classes.panamax.window_hours = 1.5
+	# Ships small enough to work in about 1.6 h.
+	rules.ship_classes.panamax.import_moves = 70
+	rules.ship_classes.panamax.export_moves = 50
 	rules.import_dwell_minutes = 0.0
 	var sim := _port(rules)
 	RandomPort.calls(sim, "panamax", 10, 90, 12)

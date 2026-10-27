@@ -466,3 +466,11 @@ the profiled one, and prints both: 200 ticks of the endgame save, **27.10 ms
 untimed, 29.77 ms profiled**. The timed route and move overrides cost about
 3 ms a tick, so per-call figures for `advance` and `route` read high; the
 untimed figure is the tick to compare against targets.
+
+### Ships at 10× moves (2026-10-27)
+
+Ships now carry 10× the moves (a feeder 400, a Panamax 1,200), so berths are
+busy most of their window instead of 4% of it. The CI sim bench rises from
+**0.728 to 1.453 ms a tick** because it runs 2.3× the vehicles (62.8 → 143.7
+on average); the cost per vehicle-tick is unchanged within noise (11.59 →
+10.11 µs). The endgame save keeps its own counts and was not re-measured.

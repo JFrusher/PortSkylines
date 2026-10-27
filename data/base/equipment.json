@@ -2,7 +2,7 @@
 	"sts_cranes": {
 		"sts": {
 			"name": "STS crane",
-			"cost": 1500.0,
+			"cost": 15000.0,
 			"rate": 25.0,
 			"outreach": 13.0,
 			"lead_days": 0.0,
@@ -11,7 +11,7 @@
 		},
 		"wide_sts": {
 			"name": "Wide STS crane",
-			"cost": 4000.0,
+			"cost": 40000.0,
 			"rate": 28.0,
 			"outreach": 22.0,
 			"lead_days": 0.0,
@@ -21,13 +21,13 @@
 	},
 	"crane_interference": 0.9,
 	"tractor": {
-		"cost": 400.0,
+		"cost": 4000.0,
 		"speed": 500.0
 	},
 	"yard_gear": {
 		"reach_stacker": {
 			"name": "reach stackers",
-			"upkeep_per_machine": 40.0,
+			"upkeep_per_machine": 400.0,
 			"speed": 7.0,
 			"lift_seconds": 20.0,
 			"set_down_seconds": 20.0,
@@ -36,7 +36,7 @@
 		},
 		"rtg": {
 			"name": "RTGs",
-			"upkeep_per_machine": 60.0,
+			"upkeep_per_machine": 600.0,
 			"speed": 2.0,
 			"lift_seconds": 30.0,
 			"set_down_seconds": 25.0,
@@ -45,7 +45,7 @@
 		},
 		"rmg": {
 			"name": "RMGs",
-			"upkeep_per_machine": 80.0,
+			"upkeep_per_machine": 800.0,
 			"speed": 3.0,
 			"lift_seconds": 25.0,
 			"set_down_seconds": 20.0,

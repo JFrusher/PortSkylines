@@ -4,32 +4,32 @@
 			"length": 200.0,
 			"draft": 10.0,
 			"outreach": 8.0,
-			"import_moves": 24.0,
-			"export_moves": 16.0,
+			"import_moves": 240.0,
+			"export_moves": 160.0,
 			"window_hours": 12.0
 		},
 		"panamax": {
 			"length": 300.0,
 			"draft": 13.0,
 			"outreach": 13.0,
-			"import_moves": 70.0,
-			"export_moves": 50.0,
+			"import_moves": 700.0,
+			"export_moves": 500.0,
 			"window_hours": 24.0
 		},
 		"neopanamax": {
 			"length": 366.0,
 			"draft": 15.5,
 			"outreach": 22.0,
-			"import_moves": 140.0,
-			"export_moves": 100.0,
+			"import_moves": 1400.0,
+			"export_moves": 1000.0,
 			"window_hours": 36.0
 		}
 	},
 	"channel": {
 		"start_depth": 11.0,
 		"max_depth": 16.0,
-		"cost_per_metre": 15000.0,
-		"maintenance_per_metre": 2000.0,
+		"cost_per_metre": 150000.0,
+		"maintenance_per_metre": 20000.0,
 		"maintenance_days": 30.0
 	}
 }
