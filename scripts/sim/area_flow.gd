@@ -405,13 +405,15 @@ static func fine_unplugged(sim: PortSim, now: float) -> void:
 
 
 ## The first yard block of `role` in `terminal` that works and has room for
-## one more box than is already on its way, or 0.
+## one more box than is already on its way to it, counting tractors waiting
+## under a crane for a box bound for it, or 0.
 static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != role or sim.areas.idle_reason(id) != "" or RailFlow.is_rail_block(sim, id):
 			continue
-		var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and v.loaded).size()
+		# Boxes on their way, and tractors under a crane waiting for a box bound here.
+		var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and (v.loaded or v.state == "under_crane")).size()
 		if _stacks(sim, id).room() > coming:
 			return id
 	return 0
