@@ -153,6 +153,7 @@ static func tick(sim: PortSim) -> void:
 	_fit_machines(sim)
 	for machine: int in sim.machines.tick():
 		_machine_done(sim, machine)
+	_unpark(sim)
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		_drive(sim, vehicle)
 
@@ -442,13 +443,16 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	var entry := _entry_cell(sim)
 	if entry == Grid.NONE:
 		return false
+	var gate := _gate_of(sim, terminal, entry)
+	if not can_book(sim, gate):
+		return false
 	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 	sim.lane_traffic.place(lorry)
 	sim._next_vehicle += 1
 	lorry.box = box
 	sim._claimed[box] = true
 	sim._add_vehicle(lorry)
-	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
+	_to_gate(sim, lorry, gate)
 	return true
 
 
@@ -466,6 +470,9 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 	var entry := _entry_cell(sim)
 	if entry == Grid.NONE:
 		return false
+	var gate := _gate_of(sim, terminal, entry)
+	if not can_book(sim, gate):
+		return false
 	var back: Dictionary = sim.returning.pop_front()
 	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 	sim.lane_traffic.place(lorry)
@@ -473,7 +480,7 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 	lorry.box = sim._new_empty(back.line, back.teu)
 	lorry.loaded = true
 	sim._add_vehicle(lorry)
-	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
+	_to_gate(sim, lorry, gate)
 	return true
 
 
@@ -495,6 +502,8 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		if entry == Grid.NONE:
 			return false
 		var gate := _gate_of(sim, terminal, entry)
+		if not can_book(sim, gate):
+			continue
 		var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 		sim.lane_traffic.place(lorry)
 		sim._next_vehicle += 1
@@ -509,7 +518,7 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 			lorry.box = sim._new_box("export", 0.0, "")
 			lorry.loaded = true
 		sim._add_vehicle(lorry)
-		_go_to(sim, lorry, gate)
+		_to_gate(sim, lorry, gate)
 		return true
 	return false
 
@@ -647,6 +656,85 @@ static func _block_of(sim: PortSim, box: int) -> int:
 	return 0
 
 
+## Sends inbound lorry `lorry` to `gate`, or, while the lorries already bound
+## for the gate fill its slots and buffer or others are in a park for it, to
+## the gate's terminal's truck park with the most room, to wait off the road
+## in turn (queueing at the park when it is full, so the park feeds the gate
+## first come, first served); with no park it queues on the road to the gate.
+static func _to_gate(sim: PortSim, lorry: Vehicle, gate: int) -> void:
+	if sim.areas.list[gate].settings.slots_per_hour > 0:
+		var hour := _free_hour(sim, gate)
+		sim.bookings[gate][hour] = sim.bookings[gate].get(hour, 0) + 1
+		lorry.booked = hour * 60.0
+	var park := _park_for(sim, sim.areas.list[gate].terminal)
+	var early := lorry.booked > sim.clock.calendar_minutes()
+	if park and (early or _gate_full(sim, gate) or sim.vehicles.any(func(v: Vehicle) -> bool: return v.area == park)):
+		_go_to(sim, lorry, park)
+	else:
+		_go_to(sim, lorry, gate)
+
+
+## The first hour of the calendar, from this one, that `gate` has a booking
+## left in, forgetting hours gone by; -1 when it takes no bookings.
+static func _free_hour(sim: PortSim, gate: int) -> int:
+	var slots: int = sim.areas.list[gate].settings.slots_per_hour
+	if slots == 0:
+		return -1
+	var now := floori(sim.clock.calendar_minutes() / 60.0)
+	var booked: Dictionary = sim.bookings.get_or_add(gate, {})
+	for hour: int in booked.keys():
+		if hour < now:
+			booked.erase(hour)
+	var hour := now
+	while booked.get(hour, 0) >= slots:
+		hour += 1
+	return hour
+
+
+## Whether a lorry can be sent to `gate` now: it takes walk-ins, or has a
+## booking left this hour or the next, so lorries come at most an hour early.
+static func can_book(sim: PortSim, gate: int) -> bool:
+	return _free_hour(sim, gate) <= floori(sim.clock.calendar_minutes() / 60.0) + 1
+
+
+## Whether the lorries coming in through `gate` fill its slots and buffer.
+static func _gate_full(sim: PortSim, gate: int) -> bool:
+	var room: int = sim.areas.layout(gate).slots.size() + sim.areas.layout(gate).buffer.size() / AreaLayout.BAY
+	var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == gate and v.gate_in < 0.0 and v.state in ["arriving", "queued", "to_slot", "at_gate", "early"]).size()
+	return coming >= room
+
+
+## The working truck park of `terminal` with the most slots no lorry has
+## taken or is coming for, or 0 when it has none.
+static func _park_for(sim: PortSim, terminal: int) -> int:
+	var best := 0
+	var most := -INF
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if sim.areas.kind_of(area) != "parking" or area.terminal != terminal or sim.areas.idle_reason(id) != "":
+			continue
+		var room: float = sim.areas.layout(id).slots.size() - sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id).size()
+		if room > most:
+			best = id
+			most = room
+	return best
+
+
+## Sends parked lorries on to their terminal's gate, first parked first, while
+## the gate has room for them.
+static func _unpark(sim: PortSim) -> void:
+	for lorry: Vehicle in sim.vehicles:
+		if lorry.state != "parked":
+			continue
+		var park := lorry.area
+		var gate := _gate_of(sim, sim.areas.list[park].terminal, lorry.path[int(lorry.t)])
+		if gate == 0 or _gate_full(sim, gate) or lorry.booked > sim.clock.calendar_minutes():
+			continue
+		sim.handovers.leave(park, lorry.id)
+		_promote(sim, park)
+		_go_to(sim, lorry, gate)
+
+
 ## Sends `vehicle` to the start of `area`'s buffer strip. It books a
 ## handover slot only on getting there, so slots go in the order vehicles
 ## arrive; with none free it waits at the start of the strip, and others
@@ -715,6 +803,10 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		if vehicle.timer <= 0.0:
 			_gate_done(sim, vehicle)
 		return
+	if vehicle.state == "early":
+		if vehicle.booked <= sim.clock.calendar_minutes():
+			_arrived(sim, vehicle)
+		return
 	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
 		return
 	if not sim.lane_traffic.advance(vehicle, _speed(sim, vehicle)):
@@ -768,6 +860,9 @@ static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
 ## time, which starts a lorry's turn on the way in and ends it on the way
 ## out; at a yard block a machine is asked for.
 static func _arrived(sim: PortSim, vehicle: Vehicle) -> void:
+	if sim.areas.kind_of(sim.areas.list[vehicle.area]) == "parking":
+		vehicle.state = "parked"
+		return
 	if sim.areas.kind_of(sim.areas.list[vehicle.area]) != "gate":
 		vehicle.state = "handling"
 		_start_handling(sim, vehicle)
@@ -775,6 +870,10 @@ static func _arrived(sim: PortSim, vehicle: Vehicle) -> void:
 	vehicle.state = "at_gate"
 	vehicle.timer = gate_minutes(sim, vehicle.area)
 	var now := sim.clock.calendar_minutes()
+	if vehicle.gate_in < 0.0 and vehicle.booked > now:
+		# Early for its booking, with no park to wait in: it waits in the booth.
+		vehicle.state = "early"
+		return
 	if vehicle.gate_in < 0.0:
 		vehicle.gate_in = now
 		return

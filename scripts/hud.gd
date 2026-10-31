@@ -27,7 +27,7 @@ const DRAW_AREA := -9
 ## Places a berth of berth on the coast by clicking.
 const BUILD_BERTH := -10
 ## The build menu row each area type sits in.
-const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate"}
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
@@ -740,6 +740,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"yard_block": "Stores boxes in stacks behind a truck lane where vehicles hand them over",
 		"quay_apron": "Where ships berth and STS cranes work. Reaches the water from a road %d–%d m in" % [Grid.metres(area.depth + 1), Grid.metres(area.max_depth + 1)],
 		"gate": "Checks lorries in and out: %d lanes, each a booth" % (area.depth - 2),
+		"parking": "Lorries wait here, off the road, while their terminal's gate is busy, and go on to it in turn. One space per %d m" % Grid.metres(AreaLayout.BAY),
 	}[area.kind]
 	if both_sides:
 		what += ", built on both sides of the road so lorries check in and out without turning round"
@@ -809,6 +810,12 @@ func _draw_inspect_actions() -> void:
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
 				_action_button(_inspect_actions, "Make %s" % sim.rules.gate_levels[level].name, {"op": "set_area", "id": id, "settings": {"level": level}})
+		var slots: int = sim.areas.list[id].settings.slots_per_hour
+		for change: int in [-5, 5]:
+			var to := clampi(slots + change, 0, PortSim.MAX_SLOTS_PER_HOUR)
+			if to != slots:
+				var button := _action_button(_inspect_actions, "%+d bookings" % change, {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}})
+				button.tooltip_text = "Lorries book an hour and are let in no sooner, %d an hour (0: no bookings, lorries come in as they arrive). Early lorries wait in a truck park, else in a booth." % to
 
 
 func _label(text: String) -> Label:
