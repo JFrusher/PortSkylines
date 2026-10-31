@@ -641,7 +641,13 @@ static func _buffer_end(sim: PortSim, area: int) -> Vector2i:
 static func _head(sim: PortSim, vehicle: Vehicle, to: Vector2i, state: String) -> void:
 	var here := vehicle.path[int(vehicle.t)]
 	var route := sim.lanes.route(here, to, vehicle.kind == "lorry")
-	vehicle.path = route if not route.is_empty() else [here] as Array[Vector2i]
+	var new_path: Array[Vector2i] = []
+	if not route.is_empty():
+		new_path.assign(route)
+	else:
+		new_path.append(here)
+
+	vehicle.path = new_path
 	vehicle.t = 0.0
 	vehicle.prev_t = 0.0
 	vehicle.state = state if not route.is_empty() else "no_route:" + state
