@@ -1312,9 +1312,10 @@ func by_rail_to(id: int) -> bool:
 
 
 ## Import `id` has left for the hinterland: once empties are unlocked, it
-## comes back as an empty of its line and size return_days later.
+## comes back as an empty of its line and size return_days later, with the
+## chance return_share; the rest go back to inland depots.
 func _import_left(id: int) -> void:
-	if lock_error("empties") == "":
+	if lock_error("empties") == "" and rng.randf() < rules.empties.return_share:
 		returning.append({"at": clock.calendar_minutes() + rules.empties.return_days * SimClock.MINUTES_PER_DAY, "line": boxes[id].line, "teu": boxes[id].teu})
 
 

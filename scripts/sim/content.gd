@@ -29,12 +29,13 @@ const SCHEMA := {
 	"export_lead_hours": TYPE_FLOAT,
 	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"sail_seconds": TYPE_FLOAT,
-	# Empties: imports come back as empties return_days after leaving; one
+	# Empties: return_share of imports come back as empties return_days after
+	# leaving, the rest going to inland depots; one
 	# turned away for want of room costs its line `refused` reputation; one
 	# taken out by an exporter comes back full stuffing_hours later. Ships take
 	# up to max_per_call of their line's empties above `keep`, each earning
 	# price_factor of a move.
-	"empties": {"return_days": TYPE_FLOAT, "refused": TYPE_FLOAT, "stuffing_hours": TYPE_FLOAT, "keep": TYPE_INT, "max_per_call": TYPE_INT, "price_factor": TYPE_FLOAT},
+	"empties": {"return_share": TYPE_FLOAT, "return_days": TYPE_FLOAT, "refused": TYPE_FLOAT, "stuffing_hours": TYPE_FLOAT, "keep": TYPE_INT, "max_per_call": TYPE_INT, "price_factor": TYPE_FLOAT},
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"export_lorry_interval_minutes": TYPE_FLOAT,
 	"import_dwell_minutes": TYPE_FLOAT,

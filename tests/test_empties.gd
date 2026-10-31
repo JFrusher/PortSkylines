@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_empties_turned_away()
 	_test_exporters_collect_empties()
 	_test_lines_ship_surplus_empties()
+	_test_some_empties_go_inland()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -41,6 +42,7 @@ func _test_empty_blocks() -> void:
 func _returning_port(empty_block: bool) -> PortSim:
 	var rules := RandomPort.rules()
 	rules.empties.return_days = 0.25
+	rules.empties.return_share = 1.0
 	var sim := AreaPort.base(rules, "")
 	if empty_block:
 		var block := AreaPort.add_export_block(sim)
@@ -145,3 +147,14 @@ func _test_lines_ship_surplus_empties() -> void:
 	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "keep empties stay in the port")
 	var empty := {"kind": "empty", "teu": 1, "reefer": false}
 	_expect(sim.move_price(empty), roundi(rules.move_price.per_20ft * rules.empties.price_factor), "an empty earns price_factor of a move")
+
+
+## Only return_share of the imports that leave come back as empties.
+func _test_some_empties_go_inland() -> void:
+	var rules := RandomPort.rules()
+	rules.empties.return_share = 0.5
+	var sim := AreaPort.base(rules, "")
+	for i in 400:
+		sim.boxes[100000 + i] = {"kind": "import", "line": sim.rules.lines.keys()[0], "teu": 1}
+		sim._import_left(100000 + i)
+	_expect(absi(sim.returning.size() - 200) < 40, true, "about half of 400 imports come back (%d)" % sim.returning.size())
