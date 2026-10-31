@@ -495,3 +495,29 @@ areas and slots a search starts or ends in: 0.24 ms a search. Re-weighting only
 the cells whose delay changed, rather than every point, took the epoch tick
 from 42 to 27 ms. The busy windows now total 77.3 ms against 72.0 ms before
 (+7%), within single-run noise.
+
+## M7 close: the endgame bench (2026-10-31)
+
+`bench/endgame.bin` rebuilt with the painted terminal (1,164 lorries, 1,236
+vehicles, 20,772 boxes, 6 ships, 2 trains). `profile_sim.gd -- 200`: **34.4 ms
+a tick** untimed. Routing is 20% of it (1,121 routes at 1.36 ms each), moves
+35%. The sim bench: 1.28 ms a tick.
+
+200-tick windows from tick 200, against step C's (an older save, so this
+compares ports, not code):
+
+| Window | Step C | M7 close |
+|---|---|---|
+| 0 | 20.2 ms, 1,128 vehicles | 27.0 ms, 934 vehicles |
+| 1 | 19.1, 866 | 25.1, 622 |
+| 2 | 16.9, 605 | 15.4, 444 |
+| 3 | 11.5, 296 | 7.8, 279 |
+
+The port drains faster and 96 lorries gave up against 149, but the busy
+windows cost more a vehicle. **Open:** which step (turn rules, signals,
+painting) costs it has not been measured; bisect on one save before acting.
+
+Replaying a hash with threads doesn't apply: the sim has no threads.
+`profile_sim.gd` and `timed_lanes.gd` had fallen behind the tick (empties,
+parks, junctions, traffic epochs) and the two-argument `LaneTraffic`; CI
+doesn't compile bench scripts, so neither failed until now.
