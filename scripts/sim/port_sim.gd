@@ -386,6 +386,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	for data: Dictionary in d.vehicles:
 		sim._add_vehicle(Vehicle.from_dict(data))
 	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes)
+	sim._weigh_routes()
 	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
 	sim.machine_jobs = d.machine_jobs.duplicate(true)
@@ -1001,6 +1002,8 @@ func tick() -> void:
 	RailFlow.tick(self)
 	if clock.ticks % roundi(rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
 		lane_traffic.settle(rules.traffic.smoothing)
+	if clock.ticks % roundi(rules.traffic.route_epoch_seconds / SimClock.TICK_SECONDS) == 0:
+		_weigh_routes()
 
 
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
@@ -1342,6 +1345,12 @@ func _new_empty(line: String, teu: int) -> int:
 	_next_box += 1
 	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
 	return id
+
+
+## Routes from now on go round the lane cells vehicles wait in, by the delays
+## LaneTraffic last settled.
+func _weigh_routes() -> void:
+	lanes.set_delays(lane_traffic.delays(), rules.lorry_speed / Grid.CELL, AreaFlow.tractor_speed(self))
 
 
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.

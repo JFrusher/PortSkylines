@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_coming_back_frees_the_cell()
 	_test_moves_at_its_speed()
 	_test_delays_rise_and_fall()
+	_test_routes_avoid_delays()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -207,3 +208,28 @@ func _test_delays_rise_and_fall() -> void:
 		if (i + 1) % epoch == 0:
 			traffic.settle(0.5)
 	_expect(traffic.delay(waiting_at) < jammed / 8.0, true, "once the jam clears the delay falls away (%.2f s from %.1f s)" % [traffic.delay(waiting_at), jammed])
+
+
+## Two ways from west to east: road A straight along y = 0, 40 cells, and
+## road B round by y = 10, 60 cells. Routes take A; with A's lanes delayed
+## they take B, and once the delays clear they take A again.
+func _test_routes_avoid_delays() -> void:
+	var net := _net([
+		[Vector2i(-20, 0), Vector2i(0, 0), "terminal_1_1"], [Vector2i(0, 0), Vector2i(40, 0), "terminal_1_1"],
+		[Vector2i(40, 0), Vector2i(60, 0), "terminal_1_1"], [Vector2i(0, 0), Vector2i(0, 10), "terminal_1_1"],
+		[Vector2i(0, 10), Vector2i(40, 10), "terminal_1_1"], [Vector2i(40, 10), Vector2i(40, 0), "terminal_1_1"],
+	])
+	var lanes := LaneGraph.new(net)
+	var from := Vector2i(-10, 0)
+	var to := Vector2i(50, 0)
+	var detours := func() -> bool: return lanes.route(from, to, true).any(func(cell: Vector2i) -> bool: return cell.y >= 5)
+	_expect(lanes.route(from, to, true).is_empty(), false, "there is a route east")
+	_expect(detours.call(), false, "free roads: it takes the short road A")
+	var jammed := {}
+	for lane: Dictionary in net.lanes(net.segment_at(Vector2i(20, 0))):
+		for cell: Vector2i in lane.cells:
+			jammed[cell] = 2.0
+	lanes.set_delays(jammed, 100.0, 120.0)
+	_expect(detours.call(), true, "with A jammed it goes round by B")
+	lanes.set_delays({}, 100.0, 120.0)
+	_expect(detours.call(), false, "once A clears it takes A again")
