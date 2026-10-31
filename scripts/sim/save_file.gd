@@ -16,7 +16,7 @@ const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
 	"prev_t": TYPE_FLOAT, "waited": TYPE_INT, "state": TYPE_STRING,
 	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
-	"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT,
+	"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
 	"area": TYPE_INT, "slot": TYPE_INT,
 }
 const MAGIC := "PSKY"
@@ -79,13 +79,22 @@ static func _migrate(data: Dictionary) -> Dictionary:
 
 
 ## v21 brings empties back from the hinterland, out to exporters and onto
-## ships: none are on their way yet, and ships in port load none.
+## ships: none are on their way yet, and ships in port load none. It also
+## books lorries in at gates: none take bookings yet.
 static func _migrate_v20(data: Dictionary) -> Dictionary:
 	data.sim.returning = []
 	data.sim.stuffing = []
 	for ship: Variant in data.sim.ships:
 		if ship is Dictionary:
 			ship.empties = 0
+	for vehicle: Variant in data.sim.vehicles:
+		if vehicle is Dictionary:
+			vehicle.booked = -1.0
+	# Gates, the only areas with a level, take no bookings yet.
+	for area: Variant in data.sim.areas.list.values():
+		if area is Dictionary and area.settings.has("level"):
+			area.settings.slots_per_hour = 0
+	data.sim.bookings = {}
 	data.sim.until_empty = 0.0
 	data.version = 21
 	return data
@@ -103,7 +112,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,

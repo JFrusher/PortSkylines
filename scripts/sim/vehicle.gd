@@ -24,6 +24,9 @@ var home := Grid.NONE
 var timer := 0.0
 ## Calendar minute a lorry came in through a gate, or -1 before it has.
 var gate_in := -1.0
+## Calendar minute of the hour a lorry is booked in at its gate, or -1 when
+## the gate takes no bookings; it is checked in no sooner.
+var booked := -1.0
 ## The area it is going to or working at, and the handover slot it holds
 ## there (-1 for none).
 var area := 0
@@ -52,7 +55,7 @@ func to_dict() -> Dictionary:
 	return {
 		"id": id, "kind": kind, "path": path.duplicate(), "t": t, "prev_t": prev_t, "waited": waited,
 		"state": state, "box": box, "loaded": loaded, "target": target, "home": home, "timer": timer,
-		"gate_in": gate_in, "area": area, "slot": slot,
+		"gate_in": gate_in, "booked": booked, "area": area, "slot": slot,
 	}
 
 
@@ -70,6 +73,7 @@ static func from_dict(d: Dictionary) -> Vehicle:
 	vehicle.home = d.home
 	vehicle.timer = d.timer
 	vehicle.gate_in = d.gate_in
+	vehicle.booked = d.booked
 	vehicle.area = d.area
 	vehicle.slot = d.slot
 	return vehicle

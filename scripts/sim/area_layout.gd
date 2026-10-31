@@ -60,6 +60,18 @@ static func gate(area: Dictionary, depth: int) -> Dictionary:
 	return layout
 
 
+## A truck park: row 0 the buffer strip, row 1 a parking slot per bay,
+## entered and left sideways from the buffer as a yard block's slots are.
+## {"buffer", "slots"}.
+# shortcut: one row of slots, so a park's room grows only with its length; add rows when parks need to be compact.
+static func parking(area: Dictionary) -> Dictionary:
+	var length := _length(area)
+	var layout := {"buffer": _row(area, 0, 0, length), "slots": []}
+	for bay in length / BAY:
+		layout.slots.append(_row(area, 1, bay * BAY, BAY))
+	return layout
+
+
 ## How many cells long `area` is along its road.
 static func _length(area: Dictionary) -> int:
 	return RoadNet.length(area.start, area.end) + 1

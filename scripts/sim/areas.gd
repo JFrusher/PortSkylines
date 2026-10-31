@@ -173,6 +173,8 @@ func layout(id: int) -> Dictionary:
 				_layouts[id] = AreaLayout.quay_apron(area, depth_of(area))
 			"gate":
 				_layouts[id] = AreaLayout.gate(area, depth_of(area))
+			"parking":
+				_layouts[id] = AreaLayout.parking(area)
 			_:
 				_layouts[id] = {}
 	return _layouts[id]

@@ -154,6 +154,7 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		lines.append("%s, %d lanes: %.1f min a lorry, %d lorries an hour" % [sim.rules.gate_levels[settings.level].name, sim.areas.layout(id).lanes.size(), AreaFlow.gate_minutes(sim, id), roundi(AreaFlow.gate_throughput(sim, id))])
 		var waiting := sim.handovers.waiting(id)
 		lines.append("%d lorries queuing" % (waiting.buffer.size() + waiting.road.size()))
+		lines.append("Bookings: %d an hour" % settings.slots_per_hour if settings.slots_per_hour > 0 else "No bookings: lorries come in as they arrive")
 	if settings.has("lines") and not settings.lines.is_empty():
 		lines.append("Favours " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
 	var idle := sim.areas.idle_reason(id)
