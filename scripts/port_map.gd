@@ -132,7 +132,7 @@ func _process(dt: float) -> void:
 
 func _help_text() -> String:
 	if mode == "land":
-		return "Click a tile to buy it: %s, then $%d a day. Owned land is lighter." % [HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
+		return "Click a tile to buy it: %s, then %s a day. Owned land is lighter." % [HudDetails.dollars(sim.rules.land.price), HudDetails.dollars(sim.rules.land.upkeep)]
 	var painting: String = "a new terminal" if selected == -1 else sim.areas.terminals[selected].name
 	return "Painting %s. Drag to paint, right-drag to erase; Fill block paints the ground a road closes in. An area joins the terminal holding most of it; one in no terminal does no work." % painting
 
