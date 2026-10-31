@@ -202,6 +202,7 @@ func _rebuild() -> void:
 	var starts := {}  # node -> [segment, first point, cells] of lanes leaving there
 	var covers := {}  # cell -> {segment: true} for each segment with a lane there
 	var next_id := 0
+	var changes: Array[Vector2i] = []  # lane-change edges (from point, to point), dropped where they reach into a junction
 	for segment: int in _net.segments:
 		var road: Dictionary = _net.segments[segment]
 		var lorries: bool = _net.types[road.type].lorries
@@ -228,12 +229,16 @@ func _rebuild() -> void:
 			for i: int in lanes[k].cells.size() - 1:
 				_connect(first_ids[k] + i, first_ids[k + 1] + i + 1, lorries)
 				_connect(first_ids[k + 1] + i, first_ids[k] + i + 1, lorries)
+				changes.append_array([Vector2i(first_ids[k] + i, first_ids[k + 1] + i + 1), Vector2i(first_ids[k + 1] + i, first_ids[k] + i + 1)])
 	for node: int in ends:
 		# Traffic turns back at dead ends and junctions, never on a bend.
 		var turns_back := _net.degree(node) != 2
+		var junction := _net.degree(node) >= 3
 		for arriving: Array in ends[node]:
 			for leaving: Array in starts.get(node, []):
 				if leaving[0] == arriving[0] and not turns_back:
+					continue
+				if junction and not _lane_may(arriving, leaving, ends[node], starts.get(node, [])):
 					continue
 				var turn := _turn(arriving, leaving)
 				_connect(turn[0], turn[1], _lorries.has_point(turn[0]) and _lorries.has_point(turn[1]))
@@ -252,6 +257,12 @@ func _rebuild() -> void:
 					_junction[cell] = true
 	for cell in crossings():
 		_junction[cell] = true
+	# No lane changes into a junction: a vehicle is in the lane its turn needs before the box.
+	for change: Vector2i in changes:
+		if Vector2i(_all.get_point_position(change.y)) in _junction:
+			_all.disconnect_points(change.x, change.y, false)
+			if _lorries.has_point(change.x) and _lorries.has_point(change.y):
+				_lorries.disconnect_points(change.x, change.y, false)
 	if areas:
 		for id: int in areas.list:
 			next_id = _add_area(id, next_id)
@@ -275,6 +286,51 @@ func _turn(arriving: Array, leaving: Array) -> Array:
 		if j >= 0:
 			return [arriving[1] + i, leaving[1] + j]
 	return [arriving[1] + into.size() - 1, leaving[1]]
+
+
+## Whether a vehicle in `arriving` may take `leaving` at a junction, by the
+## turn rules: with one lane its way, any turn; with more, the leftmost lane
+## turns left or back, the rightmost turns right, and straight on is for the
+## lanes between, for both of two lanes, and for an outer lane when no road
+## turns its way. `ends` and `starts` are every lane arriving at and leaving
+## the junction, each [segment, first point, cells].
+func _lane_may(arriving: Array, leaving: Array, ends: Array, starts: Array) -> bool:
+	var mine: Array = ends.filter(func(lane: Array) -> bool: return lane[0] == arriving[0])
+	if mine.size() == 1:
+		return true
+	var heading := _heading(arriving[2])
+	var left := Vector2(RoadNet.right_of(Vector2i(heading.round())) * -1)
+	# Lanes from the driver's left to right, by where each ends across the road.
+	mine.sort_custom(func(a: Array, b: Array) -> bool: return Vector2(a[2][-1]).dot(left) > Vector2(b[2][-1]).dot(left))
+	var i := mine.find(arriving)
+	var last := mine.size() - 1
+	var kinds := {}
+	for lane: Array in starts:
+		kinds[_kind(heading, lane, arriving[0])] = true
+	match _kind(heading, leaving, arriving[0]):
+		"left", "back":
+			return i == 0
+		"right":
+			return i == last
+		_:
+			return (i > 0 and i < last) or last == 1 or (i == 0 and "left" not in kinds) or (i == last and "right" not in kinds)
+
+
+## Which way a vehicle heading `heading` goes onto `leaving`: "back" onto the
+## road it came by (`from`), else "left", "right" or "straight" by the angle.
+static func _kind(heading: Vector2, leaving: Array, from: int) -> String:
+	if leaving[0] == from:
+		return "back"
+	var angle := heading.angle_to(_heading(leaving[2]))
+	if absf(angle) < PI / 3.0:
+		return "straight"
+	# y grows south, so a negative angle turns to the driver's left.
+	return "left" if angle < 0.0 else "right"
+
+
+## The way along `cells`, from its first cell to its last.
+static func _heading(cells: Array) -> Vector2:
+	return Vector2(cells[-1] - cells[0]).normalized()
 
 
 ## Whether segments `s` and `t` end at one node that is a junction.
