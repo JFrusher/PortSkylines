@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_merge_at_45()
 	_test_coming_back_frees_the_cell()
 	_test_moves_at_its_speed()
+	_test_delays_rise_and_fall()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -177,3 +178,32 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 	if actual != expected:
 		_failures += 1
 		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
+
+
+## A vehicle stopped in a lane holds up the one behind it: the cell it waits
+## in builds up a delay, settled once an epoch, and the delay falls back once
+## the jam clears and traffic flows through again.
+func _test_delays_rise_and_fall() -> void:
+	var net := _net([[Vector2i(0, 5), Vector2i(40, 5), "terminal_1_1"]])
+	var lanes := LaneGraph.new(net)
+	var traffic := LaneTraffic.new(lanes)
+	var epoch := roundi(10.0 / SimClock.TICK_SECONDS)
+	# A broken-down lorry at x = 20, and one behind it that must wait.
+	var stuck := _vehicle(traffic, [Vector2i(20, 5)] as Array[Vector2i])
+	var behind := _vehicle(traffic, lanes.route(Vector2i(10, 5), Vector2i(39, 5), true))
+	for i in epoch * 3:
+		traffic.advance(behind, SPEED)
+		if (i + 1) % epoch == 0:
+			traffic.settle(0.5)
+	var waiting_at: Vector2i = behind.path[int(behind.t)]
+	_expect(waiting_at, Vector2i(19, 5), "the one behind waits just short of the stopped lorry")
+	var jammed := traffic.delay(waiting_at)
+	_expect(jammed > 5.0, true, "the cell it waits in builds up a delay (%.1f s)" % jammed)
+	_expect(traffic.delay(Vector2i(12, 5)), 0.0, "a cell it drove straight through has none")
+	traffic.leave(stuck)
+	for i in epoch * 6:
+		if not behind.at_end():
+			traffic.advance(behind, SPEED)
+		if (i + 1) % epoch == 0:
+			traffic.settle(0.5)
+	_expect(traffic.delay(waiting_at) < jammed / 8.0, true, "once the jam clears the delay falls away (%.2f s from %.1f s)" % [traffic.delay(waiting_at), jammed])

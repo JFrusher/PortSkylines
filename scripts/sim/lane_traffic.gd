@@ -9,6 +9,12 @@ extends RefCounted
 var _lanes: LaneGraph
 var _holders := {}  # cell -> vehicle id
 var _held := {}  # vehicle id -> cells it holds
+## Seconds a vehicle passing each cell waits in it, smoothed over epochs; a
+## cell with none is free-flowing. Saved, as routes will weigh by it.
+var _delays := {}  # cell -> seconds
+## This epoch so far: ticks vehicles waited in each cell, and vehicles that entered it.
+var _stuck := {}  # cell -> ticks
+var _entered := {}  # cell -> vehicles
 
 
 func _init(lanes: LaneGraph) -> void:
@@ -35,11 +41,39 @@ func advance(vehicle: Vehicle, speed: float) -> bool:
 			vehicle.t = maxf(vehicle.t, i + 0.95)
 			# Waiting counts only ticks it entered no cell at all.
 			vehicle.waited = vehicle.waited + 1 if i == start else 0
+			if i == start:
+				_stuck[vehicle.path[i]] = _stuck.get(vehicle.path[i], 0) + 1
 			return false
+		_entered[vehicle.path[i + 1]] = _entered.get(vehicle.path[i + 1], 0) + 1
 		vehicle.t = i + 1
 	vehicle.waited = 0
 	vehicle.t = target
 	return vehicle.at_end()
+
+
+## Folds this epoch's waiting into each cell's delay: the seconds waited in
+## it per vehicle that entered it (all of them when none got in), mixed in at
+## `smoothing` (0 to 1); a cell nobody waited in eases back towards none.
+func settle(smoothing: float) -> void:
+	for cell: Vector2i in _delays.keys() + _stuck.keys():
+		var seconds: float = _stuck.get(cell, 0) * SimClock.TICK_SECONDS / maxi(_entered.get(cell, 0), 1)
+		var mixed: float = lerpf(_delays.get(cell, 0.0), seconds, smoothing)
+		if mixed < 0.01:
+			_delays.erase(cell)
+		else:
+			_delays[cell] = mixed
+	_stuck.clear()
+	_entered.clear()
+
+
+## Seconds a vehicle passing `cell` waits in it, smoothed; 0 when it flows.
+func delay(cell: Vector2i) -> float:
+	return _delays.get(cell, 0.0)
+
+
+## Every cell with a delay -> its seconds.
+func delays() -> Dictionary:
+	return _delays
 
 
 ## Lets go of every cell `vehicle` holds.
@@ -78,15 +112,18 @@ func release(id: int) -> void:
 
 
 func to_dict() -> Dictionary:
-	return _held.duplicate(true)
+	return {"held": _held.duplicate(true), "delays": _delays.duplicate(), "stuck": _stuck.duplicate(), "entered": _entered.duplicate()}
 
 
 static func from_dict(d: Dictionary, lanes: LaneGraph) -> LaneTraffic:
 	var traffic := LaneTraffic.new(lanes)
-	for id: int in d:
-		traffic._held[id] = d[id].duplicate()
-		for cell: Vector2i in d[id]:
+	for id: int in d.held:
+		traffic._held[id] = d.held[id].duplicate()
+		for cell: Vector2i in d.held[id]:
 			traffic._holders[cell] = id
+	traffic._delays = d.delays.duplicate()
+	traffic._stuck = d.stuck.duplicate()
+	traffic._entered = d.entered.duplicate()
 	return traffic
 
 

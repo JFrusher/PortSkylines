@@ -999,6 +999,8 @@ func tick() -> void:
 		_until_empty = rules.lorry_interval_minutes
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
+	if clock.ticks % roundi(rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
+		lane_traffic.settle(rules.traffic.smoothing)
 
 
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
