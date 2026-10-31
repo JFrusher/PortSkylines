@@ -48,15 +48,17 @@ func _initialize() -> void:
 
 ## Godot draws a triangle's front when its corners run clockwise seen from
 ## the camera; a road wound the other way vanishes from above.
-## The Traffic view colours the area a stopped vehicle is in; Containers colours yard blocks by fill.
+## The Traffic view colours each cell vehicles wait in by its smoothed delay
+## against JAM_SECONDS; Containers colours yard blocks by fill.
 func _test_info_views() -> void:
 	var sim := AreaPort.base(RandomPort.quick())
-	while not sim.vehicles.any(func(v: Vehicle) -> bool: return v.waited > 0):
+	while sim.lane_traffic.delays().is_empty():
 		sim.tick()
-	var stuck: Vehicle = sim.vehicles.filter(func(v: Vehicle) -> bool: return v.waited > 0)[0]
 	var shares := WorldView.info_shares(sim, HudDetails.GROUP_TRAFFIC)
-	var where: Array = shares.keys().filter(func(cells: Array) -> bool: return Vector2i(stuck.position(1.0).round()) in cells)
-	_expect(where.size() == 1 and shares[where[0]] > 0.0, true, "a stopped vehicle's place shows as stopped")
+	var delays := sim.lane_traffic.delays()
+	_expect(shares.size(), delays.size(), "each cell with a delay is coloured, and no other")
+	var cell: Vector2i = delays.keys()[0]
+	_expect(shares[[cell]], minf(delays[cell] / WorldView.JAM_SECONDS, 1.0), "by its delay against JAM_SECONDS")
 	var yard := WorldView.info_shares(sim, HudDetails.GROUP_CONTAINERS)
 	var blocks := sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "yard_block")
 	_expect(yard.size(), blocks.size(), "each yard block has a fill")
