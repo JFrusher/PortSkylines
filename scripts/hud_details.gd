@@ -4,6 +4,7 @@ extends RefCounted
 ## Every metric here reads directly from the live PortSim state (kpis, finance,
 ## ledger, area_stacks, roads, vehicles), so no calculation is duplicated.
 
+const GROUP_PORT := "Port"
 const GROUP_TRAFFIC := "Traffic"
 const GROUP_LOGISTICS := "Logistics"
 const GROUP_CONTAINERS := "Containers"
@@ -11,6 +12,7 @@ const GROUP_POWER := "Quay & Power"
 const GROUP_FINANCE := "Finance"
 
 const GROUPS: Array[String] = [
+	GROUP_PORT,
 	GROUP_TRAFFIC,
 	GROUP_LOGISTICS,
 	GROUP_CONTAINERS,
@@ -22,6 +24,8 @@ const GROUPS: Array[String] = [
 ## The cards a group shows: label, value, and an optional state (good, warn, danger, or "").
 static func cards_for(group: String, sim: PortSim) -> Array[Dictionary]:
 	match group:
+		GROUP_PORT:
+			return port_cards(sim)
 		GROUP_TRAFFIC:
 			return traffic_cards(sim)
 		GROUP_LOGISTICS:
@@ -38,6 +42,8 @@ static func cards_for(group: String, sim: PortSim) -> Array[Dictionary]:
 ## The detailed rows for a group's drawer.
 static func rows_for(group: String, sim: PortSim) -> Array[Dictionary]:
 	match group:
+		GROUP_PORT:
+			return port_rows(sim)
 		GROUP_TRAFFIC:
 			return traffic_rows(sim)
 		GROUP_LOGISTICS:
@@ -118,6 +124,46 @@ static func port_kpis(sim: PortSim) -> Array[Dictionary]:
 
 
 ## Traffic figure cards.
+## The port overview: its terminals, yesterday's moves and upkeep, then a
+## card per terminal with yesterday's moves and its gate turn.
+static func port_cards(sim: PortSim) -> Array[Dictionary]:
+	var yesterday: int = sim.ledger.days[-1].moves.total if not sim.ledger.days.is_empty() else 0
+	var working := sim.areas.terminals.keys().filter(func(t: int) -> bool: return sim.areas.terminal_error(t) == "").size()
+	var cards: Array[Dictionary] = [
+		card("TERMINALS", "%d of %d working" % [working, sim.areas.terminals.size()], "warn" if working < sim.areas.terminals.size() else ""),
+		card("MOVES YESTERDAY", str(yesterday)),
+		card("UPKEEP", dollars(sim.daily_upkeep()) + "/day"),
+	]
+	for terminal: int in sim.areas.terminals:
+		var k := sim.terminal_kpis(terminal)
+		var lacks := sim.areas.terminal_error(terminal)
+		cards.append(card(sim.areas.terminal_name(terminal), "%d moves, %.0f min gate" % [k.moves_yesterday, k.gate_turn_minutes], "danger" if lacks else ""))
+	return cards
+
+
+## The port's totals, then each terminal's numbers.
+static func port_rows(sim: PortSim) -> Array[Dictionary]:
+	var k := sim.kpis()
+	var rows: Array[Dictionary] = [
+		row("Port", "%d terminals" % sim.areas.terminals.size()),
+		row("    Berth moves / hour (last ship)", "%.1f" % k.berth_moves_per_hour),
+		row("    Gate turn", "%.0f min" % k.gate_turn_minutes),
+		row("    Yard use", percent(k.yard_use)),
+		row("    Upkeep", dollars(k.upkeep_per_day) + " / day"),
+	]
+	for terminal: int in sim.areas.terminals:
+		var t := sim.terminal_kpis(terminal)
+		var lacks := sim.areas.terminal_error(terminal)
+		rows.append(row(sim.areas.terminal_name(terminal), lacks if lacks else "working"))
+		rows.append(row("    Berth moves / hour (last ship)", "%.1f" % t.berth_moves_per_hour))
+		rows.append(row("    Crane moves / hour (last ship)", "%.1f" % t.crane_moves_per_hour))
+		rows.append(row("    Gate turn", "%.0f min" % t.gate_turn_minutes))
+		rows.append(row("    Yard use", percent(t.yard_use)))
+		rows.append(row("    Yesterday", "%d moves, %s in" % [t.moves_yesterday, dollars(t.income_yesterday)]))
+		rows.append(row("    Upkeep", dollars(t.upkeep_per_day) + " / day"))
+	return rows
+
+
 static func traffic_cards(sim: PortSim) -> Array[Dictionary]:
 	var lorries := 0
 	var waiting := 0
@@ -351,6 +397,17 @@ static func ledger_text(sim: PortSim) -> String:
 		if ledger.today.has(category):
 			lines.append("    %s  %s" % [ledger.categories[category], signed(ledger.today[category])])
 	lines.append("    Net  %s" % signed(ledger.today_total()))
+	if ledger.terminals.size() > 1:
+		lines.append("Today by terminal")
+		for terminal: int in ledger.terminals:
+			var section: Dictionary = ledger.terminals[terminal]
+			var net := 0
+			var parts: Array[String] = []
+			for category: String in ledger.categories:
+				if section.has(category):
+					net += section[category]
+					parts.append("%s %s" % [ledger.categories[category], signed(section[category])])
+			lines.append("    %s  net %s   %s" % ["Port-wide" if terminal == 0 else sim.areas.terminal_name(terminal), signed(net), "   ".join(parts)])
 	for loan in sim.finance.loans:
 		lines.append("Loan (%s): $%d owed, $%d a day for %d days" % [loan.kind, loan.owed, mini(loan.payment, loan.owed), loan.days_left])
 	for closed: Dictionary in sim.scoreboard.slice(-2):

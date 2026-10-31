@@ -493,7 +493,7 @@ func _test_unconnected_areas() -> void:
 	_expect(sim.areas.idle_reason(1), "", "a yard block along its road works")
 	var lines := Inspect.describe(sim, Inspect.pick(sim, sim.areas.cells(1)[5]))
 	# 10 bays by 6 rows of stacks, 4 high with reach stackers; no machines before the first tick.
-	_expect(lines, ["Yard block", "Terminal 1", "Terminal 1 needs a quay apron", "Import block, worked by reach stackers", "0 of 240 boxes (0%), 0 machines", "Working"] as Array[String], "inspecting an area shows its type, its terminal and what that lacks, its rules, its fill and state")
+	_expect(lines, ["Yard block", "Terminal 1", "Terminal 1 needs a quay apron", "Import block, worked by reach stackers", "0 of 480 TEU (0%), 0 machines", "Working"] as Array[String], "inspecting an area shows its type, its terminal and what that lacks, its rules, its fill and state")
 	var area: Dictionary = sim.areas.list[1]
 	_expect(sim.areas.along(1, area.start + (area.end - area.start).sign() * 7 + area.out * 3), 7, "a cell's place along an area, from any row")
 	_expect(sim.areas.along(1, Vector2i(5, 5)), -1, "and none off it")

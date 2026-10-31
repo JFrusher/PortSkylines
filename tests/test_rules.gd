@@ -14,6 +14,7 @@ var _failures := 0
 
 func _initialize() -> void:
 	_test_no_ship_without_a_terminal()
+	_test_yard_use_counts_teu()
 	_test_ships_unload_and_lorries_pay()
 	_test_commands()
 	_test_round_trip()
@@ -68,6 +69,23 @@ func _test_no_ship_without_a_terminal() -> void:
 	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 0, "no ship calls at an apron whose terminal has no gate")
 	_expect(sim.last_event().contains("in a terminal with a gate"), true, "and the status says why (%s)" % sim.last_event())
+
+
+## A tier holds one 40 ft or two 20 ft boxes, so a block full of 20s is
+## 100% full, not 200%: yard use is TEU against 2 TEU a slot.
+func _test_yard_use_counts_teu() -> void:
+	var sim := AreaPort.base()
+	var block := 3
+	var stacks: AreaStacks = sim.area_stacks.get_or_add(block, AreaStacks.new(sim.areas.layout(block).stacks.size(), sim.rules.yard_gear[sim.areas.list[block].settings.gear].tiers))
+	var line: String = sim.rules.lines.keys()[0]
+	while true:
+		var id := sim._new_box("import", 0.0, line)
+		sim.boxes[id].teu = 1
+		if stacks.place(id, 1) == -1:
+			sim.boxes.erase(id)
+			break
+	_expect(stacks.boxes().size(), 2 * stacks.stacks.size() * sim.rules.yard_gear[sim.areas.list[block].settings.gear].tiers, "a block takes two 20 ft boxes a slot")
+	_expect(sim.kpis().yard_use, 1.0, "and is 100% full")
 
 
 func _test_ships_unload_and_lorries_pay() -> void:

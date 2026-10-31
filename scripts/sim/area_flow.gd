@@ -25,7 +25,10 @@ static func berth(sim: PortSim, ship: PortSim.Ship) -> bool:
 	var span := ship_cells(sim, ship.kind)
 	var aprons := ready_aprons(sim)
 	if ship.berth != 0:
-		var others := aprons.filter(func(a: int) -> bool: return a != ship.berth) if ship.any_berth else []
+		# A service is signed for its berth's terminal: other berths only there,
+		# or anywhere once its berth is gone.
+		var mine := func(a: int) -> bool: return ship.berth not in sim.areas.list or sim.areas.list[a].terminal == sim.areas.list[ship.berth].terminal
+		var others := aprons.filter(func(a: int) -> bool: return a != ship.berth and mine.call(a)) if ship.any_berth else []
 		var own := ship.berth in aprons
 		aprons.clear()
 		if own:
@@ -219,7 +222,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		if plugs:
 			sim._set_area(tractor, plugs)
 	if sim.boxes[id].rush and sim.clock.calendar_minutes() > ship.due:
-		sim.ledger.post("rush_fines", -sim.rules.special_boxes.rush_fine)
+		sim.ledger.post("rush_fines", -sim.rules.special_boxes.rush_fine, sim.areas.list[ship.apron].terminal)
 	ship.boxes -= 1
 	ship.moves += 1
 	sim._moved(sim.boxes[id], ship.line, sim.areas.list[ship.apron].terminal)
@@ -385,13 +388,13 @@ static func unplugged_reefers(sim: PortSim) -> int:
 
 
 ## The reefer boxes stacked off a plug.
-static func _unplugged(sim: PortSim) -> Array[int]:
-	var found: Array[int] = []
+static func _unplugged(sim: PortSim) -> Dictionary:
+	var found := {}  # box -> its block's terminal
 	for id: int in sim.area_stacks:
 		if id in sim.areas.list and sim.areas.list[id].settings.get("role") != "reefer":
 			for box: int in sim.area_stacks[id].boxes():
 				if sim.boxes[box].reefer:
-					found.append(box)
+					found[box] = sim.areas.list[id].terminal
 	return found
 
 
@@ -399,9 +402,10 @@ static func _unplugged(sim: PortSim) -> Array[int]:
 ## the hour to `now`, so each is fined once by an hourly check.
 static func fine_unplugged(sim: PortSim, now: float) -> void:
 	var late: float = now - sim.rules.reefers.plug_minutes
-	for box in _unplugged(sim):
+	var unplugged := _unplugged(sim)
+	for box: int in unplugged:
 		if sim.boxes[box].in > late - 60.0 and sim.boxes[box].in <= late:
-			sim.ledger.post("reefer_fines", -sim.rules.reefers.fine)
+			sim.ledger.post("reefer_fines", -sim.rules.reefers.fine, unplugged[box])
 
 
 ## The first yard block of `role` in `terminal` that works and has room for

@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 24
+const VERSION := 25
 ## The first save with terminals painted on the map. Older saves hold
 ## terminals as groups of areas, which the developer chose to refuse rather
 ## than paint in.
@@ -71,8 +71,22 @@ static func load_from(path: String) -> Dictionary:
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time; none yet since FIRST.
+## Brings an older save up to VERSION one step at a time.
 static func _migrate(data: Dictionary) -> Dictionary:
+	if data.version < 25:
+		data = _migrate_v25(data)
+	return data
+
+
+## v25 splits the ledger and the ship log by terminal; older lines are all the port's.
+static func _migrate_v25(data: Dictionary) -> Dictionary:
+	var ledger: Dictionary = data.sim.ledger
+	ledger.terminals = {0: ledger.today.duplicate()} if not ledger.today.is_empty() else {}
+	for day: Dictionary in ledger.days:
+		day.terminals = {0: day.lines.duplicate()} if not day.lines.is_empty() else {}
+	for entry: Dictionary in data.sim.ship_log:
+		entry.terminal = 0
+	data.version = 25
 	return data
 
 
@@ -95,7 +109,7 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	if not _has_fields(data.ledger, {
-		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "moves": TYPE_DICTIONARY, "days": TYPE_ARRAY,
+		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "terminals": TYPE_DICTIONARY, "moves": TYPE_DICTIONARY, "days": TYPE_ARRAY,
 	}):
 		return false
 	if not _has_fields(data.storage, {"free_days": TYPE_INT, "fee": TYPE_INT}):

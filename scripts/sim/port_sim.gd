@@ -651,8 +651,9 @@ func build_area_error(type: String, segment: int, side: int, from: int, to: int)
 func build_area(type: String, segment: int, side: int, from: int, to: int) -> String:
 	var err := build_area_error(type, segment, side, from, to)
 	if err == "":
-		ledger.post("construction", -area_price(type, segment, side, from, to))
+		var price := area_price(type, segment, side, from, to)
 		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(rules.area_types[type].kind, {}).duplicate(true))
+		ledger.post("construction", -price, areas.list[areas.list.keys().max()].terminal)
 	return err
 
 
@@ -819,7 +820,7 @@ func place_sts(apron: int, along: int, kind: String) -> String:
 	if err == "" and not _afford(spec.cost):
 		err = "Not enough money"
 	if err == "":
-		ledger.post("equipment", -spec.cost)
+		ledger.post("equipment", -spec.cost, areas.list[apron].terminal)
 		crane_orders.append({"apron": apron, "along": along, "kind": kind, "due": clock.calendar_minutes() + spec.lead_days * SimClock.MINUTES_PER_DAY})
 		_deliver_cranes()
 	return err
@@ -907,7 +908,7 @@ func milestones() -> Array[Dictionary]:
 ## Counts a crane move of `box` for `line` in `terminal`: the line pays for
 ## it, and milestones may unlock.
 func _moved(box: Dictionary, line: String, terminal: int) -> void:
-	ledger.post("moves", move_price(box))
+	ledger.post("moves", move_price(box), terminal)
 	ledger.count_move(line, terminal, move_price(box))
 	var before := milestones_reached()
 	teu_handled += box.teu
@@ -1057,29 +1058,53 @@ func upkeep_parts() -> Dictionary:
 
 
 ## The numbers a terminal manager watches.
-## Boxes in yard block `id` and the most it holds, as (held, room).
+## TEU in yard block `id` and the most it holds, as (held, room). A tier
+## holds one 40 ft box or two 20 ft boxes, so each stack slot is 2 TEU.
 func block_fill(id: int) -> Vector2i:
-	var room: int = areas.layout(id).stacks.size() * rules.yard_gear[areas.list[id].settings.gear].tiers
-	return Vector2i(area_stacks[id].boxes().size() if id in area_stacks else 0, room)
+	var room: int = areas.layout(id).stacks.size() * rules.yard_gear[areas.list[id].settings.gear].tiers * 2
+	var held := 0
+	if id in area_stacks:
+		for box: int in area_stacks[id].boxes():
+			held += boxes[box].teu
+	return Vector2i(held, room)
 
 
 func kpis() -> Dictionary:
 	var last: Dictionary = ship_log[-1] if not ship_log.is_empty() else {}
-	var capacity := 0
-	var held := 0
+	var fill := Vector2i.ZERO
 	for area: int in area_stacks:
 		if area in areas.list:
-			var stacks: AreaStacks = area_stacks[area]
-			capacity += stacks.stacks.size() * rules.yard_gear[areas.list[area].settings.gear].tiers
-			held += stacks.boxes().size()
+			fill += block_fill(area)
 	return {
 		"berth_moves_per_hour": last.moves / last.hours if last else 0.0,
 		"crane_moves_per_hour": last.moves / last.hours / last.cranes if last else 0.0,
 		"gate_turn_minutes": _average(turn_times),
-		"yard_use": held / float(capacity) if capacity else 0.0,
+		"yard_use": fill.x / float(fill.y) if fill.y else 0.0,
 		"boxes_per_day": delivered_yesterday,
 		"import_dwell_hours": _average(dwell_times) / 60.0,
 		"upkeep_per_day": daily_upkeep(),
+	}
+
+
+## Terminal `terminal`'s own numbers: its last ship's berth and crane
+## rates, its gate turn, its yard use, and yesterday's moves, income and its
+## part of the upkeep.
+func terminal_kpis(terminal: int) -> Dictionary:
+	var calls := ship_log.filter(func(entry: Dictionary) -> bool: return entry.terminal == terminal)
+	var last: Dictionary = calls[-1] if not calls.is_empty() else {}
+	var fill := Vector2i.ZERO
+	for area: int in area_stacks:
+		if area in areas.list and areas.list[area].terminal == terminal:
+			fill += block_fill(area)
+	var yesterday: Array = ledger.days[-1].moves.terminals.get(terminal, [0, 0]) if not ledger.days.is_empty() else [0, 0]
+	return {
+		"berth_moves_per_hour": last.moves / last.hours if last else 0.0,
+		"crane_moves_per_hour": last.moves / last.hours / last.cranes if last else 0.0,
+		"gate_turn_minutes": terminal_turn_minutes(terminal),
+		"yard_use": fill.x / float(fill.y) if fill.y else 0.0,
+		"moves_yesterday": yesterday[0],
+		"income_yesterday": yesterday[1],
+		"upkeep_per_day": roundi(upkeep_parts().get(terminal, 0.0)),
 	}
 
 
@@ -1114,7 +1139,13 @@ func _event(text: String, at := Grid.NONE) -> void:
 
 
 func _end_of_day() -> void:
+	# Each terminal's part rounded; the port's takes the rest, so the day's total is daily_upkeep().
 	var upkeep := daily_upkeep()
+	var parts := upkeep_parts()
+	for terminal: int in parts:
+		if terminal != 0:
+			ledger.post("upkeep", -roundi(parts[terminal]), terminal)
+			upkeep -= roundi(parts[terminal])
 	ledger.post("upkeep", -upkeep)
 	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
 	if bill > 0:
@@ -1123,9 +1154,10 @@ func _end_of_day() -> void:
 	var dredged: float = channel_depth - rules.channel.start_depth
 	if dredged > 0.0 and clock.game_day() % rules.channel.maintenance_days == 0:
 		ledger.post("dredging", -roundi(dredged * rules.channel.maintenance_per_metre))
-	var storage_paid: int = _storage_due() * storage.fee
-	if storage_paid > 0:
-		ledger.post("storage", storage_paid)
+	var due := _storage_due()
+	for terminal: int in due:
+		if due[terminal] * storage.fee > 0:
+			ledger.post("storage", due[terminal] * storage.fee, terminal)
 	for text in finance.end_of_day(clock.calendar_minutes(), ledger, contracts, not creative):
 		_event(text)
 	ledger.close_day(clock.game_day() - 1)
@@ -1296,7 +1328,8 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	var now := clock.calendar_minutes()
 	var hours := (now - ship.berthed) / 60.0
 	var late := maxf(now - ship.due, 0.0) / 60.0
-	ship_log.append({"kind": ship.kind, "line": ship.line, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
+	var terminal: int = areas.list[ship.apron].terminal
+	ship_log.append({"kind": ship.kind, "line": ship.line, "terminal": terminal, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
 	if ship_log.size() > 10:
 		ship_log.pop_front()
 	year.calls += 1
@@ -1304,7 +1337,7 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	year.moves += ship.moves
 	# Shippers dislike storage fees above the fair rate, and the line hears it.
 	var fees: float = rules.storage.satisfaction_per_dollar * maxf(storage.fee - rules.storage.fair_fee, 0.0)
-	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, kpis().gate_turn_minutes, fees))
+	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, terminal_turn_minutes(terminal), fees))
 
 
 func _new_box(kind: String, due: float, line: String) -> int:
@@ -1383,15 +1416,14 @@ func _drop_box(id: int) -> void:
 
 
 ## Boxes in the yard past their free days.
-func _storage_due() -> int:
+func _storage_due() -> Dictionary:
 	var now := clock.calendar_minutes()
-	var count := 0
-	var stacked: Array = []
+	var count := {}  # terminal -> boxes
 	for area: int in area_stacks:
-		stacked.append_array(area_stacks[area].boxes())
-	for id: int in stacked:
-		if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
-			count += 1
+		var terminal: int = areas.list[area].terminal if area in areas.list else 0
+		for id: int in area_stacks[area].boxes():
+			if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
+				count[terminal] = count.get(terminal, 0) + 1
 	return count
 
 

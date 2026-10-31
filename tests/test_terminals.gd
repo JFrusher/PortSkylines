@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_fill_stops_at_roads()
 	_test_names_colours_and_saves()
 	_test_turns_by_terminal()
+	_test_two_terminals()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -101,3 +102,67 @@ func _test_turns_by_terminal() -> void:
 		sim.tick()
 	_expect(sim.terminal_turns.get(1, []).size(), mini(sim.year.turns, 50), "each lorry's turn counts for Terminal 1, the gate's")
 	_expect(sim.terminal_turn_minutes(1) > 0.0 and is_equal_approx(sim.terminal_turn_minutes(1), sim.kpis().gate_turn_minutes), true, "averaging as the port's own (%.1f min)" % sim.terminal_turn_minutes(1))
+
+
+## M8 step A: two terminals on the test port, the second painted over a
+## second apron down the coast road and a gate further along the east road.
+## Each has its own ledger section and KPIs, and a ship signed for one
+## terminal's berth waits rather than take the other's.
+func _test_two_terminals() -> void:
+	var sim := AreaPort.terminal(50)
+	var coast := sim.roads.segment_at(Vector2i(85, 250))
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 50, "to": 99}), "", "a second apron down the coast")
+	var second_apron: int = sim.areas.list.keys().max()
+	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 200, "to": 214}), "", "a second gate along the east road")
+	var second_gate: int = sim.areas.list.keys().max()
+	var cells: Array[Vector2i] = sim.areas.cells(second_apron)
+	cells.append_array(sim.areas.cells(second_gate))
+	_expect(sim.apply({"op": "paint_terminal", "cells": cells, "terminal": -1}), "", "painting them as a second terminal")
+	var two: int = sim.areas.terminals.keys().max()
+	_expect([sim.areas.list[second_apron].terminal, sim.areas.list[second_gate].terminal, sim.areas.list[1].terminal], [two, two, 1], "the second apron and gate are in it, the first apron isn't")
+	_expect([sim.areas.terminal_error(1), sim.areas.terminal_error(two)], ["", ""], "both terminals work")
+	# Ledger: building in a terminal is that terminal's cost, roads the port's.
+	sim.creative = false
+	sim.ledger.cash = 10_000_000
+	var before: Dictionary = sim.ledger.terminals.duplicate(true)
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 29, "to": 58}), "", "a yard block in terminal 1")
+	var block: int = sim.areas.list.keys().max()
+	_expect(sim.ledger.terminals[1].construction < before.get(1, {}).get("construction", 0), true, "the block is charged to terminal 1")
+	_expect(sim.ledger.terminals.get(two, {}).has("construction"), false, "and not to the other terminal")
+	sim.apply({"op": "build_road", "from": Vector2i(150, 360), "to": Vector2i(170, 360), "type": "terminal_1_1"})
+	_expect(sim.ledger.terminals[0].get("construction", 0) < before.get(0, {}).get("construction", 0), true, "a road is the port's")
+	# Moves in a terminal are its income, and its KPIs count them.
+	var line: String = sim.rules.lines.keys()[0]
+	sim._moved(sim.boxes[sim._new_box("import", 0.0, line)], line, two)
+	_expect(sim.ledger.terminals[two].moves > 0, true, "a move at the second terminal is its income")
+	# Every section adds up to the day's lines.
+	var total := {}
+	for section: Dictionary in sim.ledger.terminals.values():
+		for category: String in section:
+			total[category] = total.get(category, 0) + section[category]
+	_expect(total, sim.ledger.today, "the sections add up to the day's lines")
+	sim._end_of_day()  # closes the day too
+	var upkeep := 0
+	for section: Dictionary in sim.ledger.days[-1].terminals.values():
+		upkeep += section.get("upkeep", 0)
+	_expect(upkeep, sim.ledger.days[-1].lines.upkeep, "upkeep is split across the sections and adds up")
+	_expect(sim.ledger.days[-1].terminals[1].upkeep < 0, true, "terminal 1 pays its own upkeep")
+	_expect(sim.terminal_kpis(two).moves_yesterday, 1, "the second terminal's KPIs count its move")
+	_expect(sim.terminal_kpis(1).moves_yesterday, 0, "and the first's don't")
+	_expect(sim.terminal_kpis(1).yard_use, sim.block_fill(block).x / float(sim.block_fill(block).y), "terminal 1's yard use is its own block's")
+	# A service signed for terminal 1's berth doesn't take terminal 2's, even when it may move berth.
+	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], sim.clock.calendar_minutes() + 600.0, 10, 0)
+	ship.berth = 1
+	ship.any_berth = true
+	var blocker := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], sim.clock.calendar_minutes() + 600.0, 10, 0)
+	blocker.berth = 1
+	# Feeders until terminal 1's berth is full; the next waits rather than take terminal 2's.
+	while AreaFlow.berth(sim, blocker):
+		sim.ships.append(blocker)
+		blocker = PortSim.Ship.new("feeder", blocker.line, blocker.due, 10, 0)
+		blocker.berth = 1
+	_expect(not sim.ships.is_empty() and sim.ships.all(func(s: PortSim.Ship) -> bool: return s.apron == 1), true, "terminal 1's ships fill its own berth")
+	_expect(AreaFlow.berth(sim, ship), false, "the next ship for terminal 1 waits rather than take terminal 2's")
+	ship.berth = second_apron
+	_expect(AreaFlow.berth(sim, ship) and ship.apron == second_apron, true, "one signed for terminal 2 berths there")
