@@ -246,11 +246,11 @@ func _add_area(id: int, next_id: int) -> int:
 		for row: int in lane_rows:
 			for k in range(1, length):
 				_connect(point.call(cell.call(row, k - 1)), point.call(cell.call(row, k)), lorries)
-	if area.type in ["yard_block", "quay_apron"]:
-		# Each slot is entered sideways from the lane beside it (a block's
-		# buffer, an apron's through lane) and left sideways back into it, so a
-		# parked vehicle never blocks the way to another slot.
-		var lane := 0 if area.type == "yard_block" else 2
+	if areas.kind_of(area) in ["yard_block", "quay_apron", "parking"]:
+		# Each slot is entered sideways from the lane beside it (a block's or
+		# park's buffer, an apron's through lane) and left sideways back into
+		# it, so a parked vehicle never blocks the way to another slot.
+		var lane := 2 if area.type == "quay_apron" else 0
 		for slot: Array in layout.slots:
 			var ks := range(length).filter(func(k: int) -> bool: return cell.call(lane + 1, k) in slot)
 			for k: int in ks:

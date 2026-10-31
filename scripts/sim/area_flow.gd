@@ -153,6 +153,7 @@ static func tick(sim: PortSim) -> void:
 	_fit_machines(sim)
 	for machine: int in sim.machines.tick():
 		_machine_done(sim, machine)
+	_unpark(sim)
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		_drive(sim, vehicle)
 
@@ -448,7 +449,7 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	lorry.box = box
 	sim._claimed[box] = true
 	sim._add_vehicle(lorry)
-	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
+	_to_gate(sim, lorry, _gate_of(sim, terminal, entry))
 	return true
 
 
@@ -473,7 +474,7 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 	lorry.box = sim._new_empty(back.line, back.teu)
 	lorry.loaded = true
 	sim._add_vehicle(lorry)
-	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
+	_to_gate(sim, lorry, _gate_of(sim, terminal, entry))
 	return true
 
 
@@ -509,7 +510,7 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 			lorry.box = sim._new_box("export", 0.0, "")
 			lorry.loaded = true
 		sim._add_vehicle(lorry)
-		_go_to(sim, lorry, gate)
+		_to_gate(sim, lorry, gate)
 		return true
 	return false
 
@@ -647,6 +648,57 @@ static func _block_of(sim: PortSim, box: int) -> int:
 	return 0
 
 
+## Sends inbound lorry `lorry` to `gate`, or, while the lorries already bound
+## for the gate fill its slots and buffer or others are in a park for it, to
+## the gate's terminal's truck park with the most room, to wait off the road
+## in turn (queueing at the park when it is full, so the park feeds the gate
+## first come, first served); with no park it queues on the road to the gate.
+static func _to_gate(sim: PortSim, lorry: Vehicle, gate: int) -> void:
+	var park := _park_for(sim, sim.areas.list[gate].terminal)
+	if park and (_gate_full(sim, gate) or sim.vehicles.any(func(v: Vehicle) -> bool: return v.area == park)):
+		_go_to(sim, lorry, park)
+	else:
+		_go_to(sim, lorry, gate)
+
+
+## Whether the lorries coming in through `gate` fill its slots and buffer.
+static func _gate_full(sim: PortSim, gate: int) -> bool:
+	var room: int = sim.areas.layout(gate).slots.size() + sim.areas.layout(gate).buffer.size() / AreaLayout.BAY
+	var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == gate and v.gate_in < 0.0 and v.state in ["arriving", "queued", "to_slot", "at_gate"]).size()
+	return coming >= room
+
+
+## The working truck park of `terminal` with the most slots no lorry has
+## taken or is coming for, or 0 when it has none.
+static func _park_for(sim: PortSim, terminal: int) -> int:
+	var best := 0
+	var most := -INF
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if sim.areas.kind_of(area) != "parking" or area.terminal != terminal or sim.areas.idle_reason(id) != "":
+			continue
+		var room: float = sim.areas.layout(id).slots.size() - sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id).size()
+		if room > most:
+			best = id
+			most = room
+	return best
+
+
+## Sends parked lorries on to their terminal's gate, first parked first, while
+## the gate has room for them.
+static func _unpark(sim: PortSim) -> void:
+	for lorry: Vehicle in sim.vehicles:
+		if lorry.state != "parked":
+			continue
+		var park := lorry.area
+		var gate := _gate_of(sim, sim.areas.list[park].terminal, lorry.path[int(lorry.t)])
+		if gate == 0 or _gate_full(sim, gate):
+			continue
+		sim.handovers.leave(park, lorry.id)
+		_promote(sim, park)
+		_go_to(sim, lorry, gate)
+
+
 ## Sends `vehicle` to the start of `area`'s buffer strip. It books a
 ## handover slot only on getting there, so slots go in the order vehicles
 ## arrive; with none free it waits at the start of the strip, and others
@@ -768,6 +820,9 @@ static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
 ## time, which starts a lorry's turn on the way in and ends it on the way
 ## out; at a yard block a machine is asked for.
 static func _arrived(sim: PortSim, vehicle: Vehicle) -> void:
+	if sim.areas.kind_of(sim.areas.list[vehicle.area]) == "parking":
+		vehicle.state = "parked"
+		return
 	if sim.areas.kind_of(sim.areas.list[vehicle.area]) != "gate":
 		vehicle.state = "handling"
 		_start_handling(sim, vehicle)

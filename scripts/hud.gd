@@ -27,7 +27,7 @@ const DRAW_AREA := -9
 ## Places a berth of berth on the coast by clicking.
 const BUILD_BERTH := -10
 ## The build menu row each area type sits in.
-const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate"}
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
@@ -740,6 +740,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"yard_block": "Stores boxes in stacks behind a truck lane where vehicles hand them over",
 		"quay_apron": "Where ships berth and STS cranes work. Reaches the water from a road %d–%d m in" % [Grid.metres(area.depth + 1), Grid.metres(area.max_depth + 1)],
 		"gate": "Checks lorries in and out: %d lanes, each a booth" % (area.depth - 2),
+		"parking": "Lorries wait here, off the road, while their terminal's gate is busy, and go on to it in turn. One space per %d m" % Grid.metres(AreaLayout.BAY),
 	}[area.kind]
 	if both_sides:
 		what += ", built on both sides of the road so lorries check in and out without turning round"
