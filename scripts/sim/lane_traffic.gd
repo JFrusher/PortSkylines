@@ -7,6 +7,8 @@ extends RefCounted
 ## and the first cell past them before it enters: it never stops in a junction.
 
 var _lanes: LaneGraph
+## Signals and signs, asked before a vehicle goes into a junction's box.
+var junctions: Junctions
 var _holders := {}  # cell -> vehicle id
 var _held := {}  # vehicle id -> cells it holds
 ## Seconds a vehicle passing each cell waits in it, smoothed over epochs; a
@@ -17,8 +19,9 @@ var _stuck := {}  # cell -> ticks
 var _entered := {}  # cell -> vehicles
 
 
-func _init(lanes: LaneGraph) -> void:
+func _init(lanes: LaneGraph, junction_rules: Junctions) -> void:
 	_lanes = lanes
+	junctions = junction_rules
 
 
 ## Puts `vehicle` at the start of its route, if that cell is free.
@@ -112,11 +115,11 @@ func release(id: int) -> void:
 
 
 func to_dict() -> Dictionary:
-	return {"held": _held.duplicate(true), "delays": _delays.duplicate(), "stuck": _stuck.duplicate(), "entered": _entered.duplicate()}
+	return {"held": _held.duplicate(true), "delays": _delays.duplicate(), "stuck": _stuck.duplicate(), "entered": _entered.duplicate(), "junctions": junctions.to_dict()}
 
 
-static func from_dict(d: Dictionary, lanes: LaneGraph) -> LaneTraffic:
-	var traffic := LaneTraffic.new(lanes)
+static func from_dict(d: Dictionary, lanes: LaneGraph, rules: Dictionary) -> LaneTraffic:
+	var traffic := LaneTraffic.new(lanes, Junctions.from_dict(d.junctions, rules))
 	for id: int in d.held:
 		traffic._held[id] = d.held[id].duplicate()
 		for cell: Vector2i in d.held[id]:
@@ -144,6 +147,10 @@ func _enter(vehicle: Vehicle, i: int) -> bool:
 	# Most vehicles in a queue find the next cell taken: say so before building the list.
 	var cell := vehicle.path[i]
 	if _holders.get(cell, vehicle.id) != vehicle.id:
+		return false
+	# Going from a junction's approach into its box: the signals and signs there say whether it may.
+	var arm := _lanes.arm_at(vehicle.path[i - 1])
+	if not arm.is_empty() and _lanes.box_of(cell) == arm[0] and not junctions.may_enter(_lanes, self, arm[0], arm[1], vehicle):
 		return false
 	# Most cells are plain lane: hold just this one, as the general case below would.
 	if not _lanes.is_junction(cell):

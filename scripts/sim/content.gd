@@ -32,7 +32,9 @@ const SCHEMA := {
 	# How long vehicles wait in each lane cell is folded in every epoch_seconds
 	# of vehicle time, mixed in at `smoothing` (0 to 1); routes take up the
 	# delays every route_epoch_seconds, dropping every kept route.
-	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT},
+	# Signals: each phase is green signal_green_seconds by default, which the
+	# player sets between min and max; a stop sign stands stop_seconds.
+	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT, "signal_green_seconds": TYPE_FLOAT, "min_green_seconds": TYPE_FLOAT, "max_green_seconds": TYPE_FLOAT, "stop_seconds": TYPE_FLOAT},
 	# Empties: return_share of imports come back as empties return_days after
 	# leaving, the rest going to inland depots; one
 	# turned away for want of room costs its line `refused` reputation; one

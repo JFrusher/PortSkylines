@@ -17,6 +17,16 @@ var _all := AStar2D.new()
 var _lorries := AStar2D.new()
 var _at := {}  # cell -> point ids of lane cells there
 var _junction := {}  # cells where routes from different roads meet or cross
+## Junctions of three or more roads, by their grid point: the cells of the
+## box, and each arm's approach (the last APPROACH_CELLS cells of its lanes
+## before the box), by the arm's way out from the junction.
+var _box_of := {}  # junction cell -> its junction's point
+var _boxes := {}  # point -> {cell: true}
+var _approaches := {}  # point -> {arm Vector2i: [cells]}
+var _arm_at := {}  # approach cell -> [point, arm]
+## How many cells before a junction's box count as its approach, where a
+## vehicle giving way looks for traffic.
+const APPROACH_CELLS := 3
 var _flows := {}  # area id -> 1 or -1, the way traffic runs along it
 var _routes := [{}, {}]  # [for all vehicles, for lorries]: Vector4i(from, to) -> route; cleared with the graph
 ## What a route weighs each cell by: the delays set_delays was last given,
@@ -191,6 +201,10 @@ func _rebuild() -> void:
 	_lorries.clear()
 	_at.clear()
 	_junction.clear()
+	_box_of.clear()
+	_boxes.clear()
+	_approaches.clear()
+	_arm_at.clear()
 	_flows.clear()
 	_area_points.clear()
 	_area_of.clear()
@@ -247,6 +261,8 @@ func _rebuild() -> void:
 					var to := Vector2i(_all.get_point_position(turn[1]))
 					for cell: Vector2i in [from, to] + _steps(from, to):
 						_junction[cell] = true
+						_box_of[cell] = _net.nodes[node]
+						_boxes.get_or_add(_net.nodes[node], {})[cell] = true
 	# Where roads meeting at a junction overlap, crossing traffic shares the
 	# cell, so it is a junction cell too and nobody stops in the box.
 	for cell: Vector2i in covers:
@@ -257,6 +273,16 @@ func _rebuild() -> void:
 					_junction[cell] = true
 	for cell in crossings():
 		_junction[cell] = true
+	for node: int in ends:
+		if _net.degree(node) < 3:
+			continue
+		var at: Vector2i = _net.nodes[node]
+		for arriving: Array in ends[node]:
+			var arm := Vector2i((-_heading(arriving[2])).round()).sign()
+			var before: Array = arriving[2].filter(func(c: Vector2i) -> bool: return c not in _junction)
+			for cell: Vector2i in before.slice(maxi(before.size() - APPROACH_CELLS, 0)):
+				_approaches.get_or_add(at, {}).get_or_add(arm, []).append(cell)
+				_arm_at[cell] = [at, arm]
 	# No lane changes into a junction: a vehicle is in the lane its turn needs before the box.
 	for change: Vector2i in changes:
 		if Vector2i(_all.get_point_position(change.y)) in _junction:
@@ -331,6 +357,39 @@ static func _kind(heading: Vector2, leaving: Array, from: int) -> String:
 ## The way along `cells`, from its first cell to its last.
 static func _heading(cells: Array) -> Vector2:
 	return Vector2(cells[-1] - cells[0]).normalized()
+
+
+## The junction (its grid point) whose box holds `cell`, or Grid.NONE.
+func box_of(cell: Vector2i) -> Vector2i:
+	_refresh()
+	return _box_of.get(cell, Grid.NONE)
+
+
+## The cells of junction `point`'s box.
+func box(point: Vector2i) -> Array:
+	_refresh()
+	return _boxes.get(point, {}).keys()
+
+
+## Junction `point`'s arms, each the way out from it along a road, sorted so
+## they come in the same order every time; [] when it is no junction.
+func arms(point: Vector2i) -> Array:
+	_refresh()
+	var found: Array = _approaches.get(point, {}).keys()
+	found.sort()
+	return found
+
+
+## The approach cells of arm `arm` at junction `point`.
+func approach(point: Vector2i, arm: Vector2i) -> Array:
+	_refresh()
+	return _approaches.get(point, {}).get(arm, [])
+
+
+## [junction point, arm] of an approach cell, or [] for any other cell.
+func arm_at(cell: Vector2i) -> Array:
+	_refresh()
+	return _arm_at.get(cell, [])
 
 
 ## Whether segments `s` and `t` end at one node that is a junction.

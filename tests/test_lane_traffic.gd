@@ -27,7 +27,7 @@ func _initialize() -> void:
 func _test_head_on() -> void:
 	var net := _net([[Vector2i(0, 5), Vector2i(20, 5), "terminal_1_1"]])
 	var lanes := LaneGraph.new(net)
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	var vehicles := [_vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(19, 5), true)), _vehicle(traffic, lanes.route(Vector2i(19, 4), Vector2i(0, 4), true))]
 	var waited := _run(traffic, vehicles, 200)
 	_expect(vehicles.all(func(v: Vehicle) -> bool: return v.at_end()), true, "two vehicles pass head-on on a 1+1 road")
@@ -37,7 +37,7 @@ func _test_head_on() -> void:
 func _test_queue() -> void:
 	var net := _net([[Vector2i(0, 5), Vector2i(20, 5), "terminal_1_1"]])
 	var lanes := LaneGraph.new(net)
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	var front := _vehicle(traffic, lanes.route(Vector2i(5, 5), Vector2i(19, 5), true))
 	var back := _vehicle(traffic, lanes.route(Vector2i(4, 5), Vector2i(18, 5), true))
 	var closest := 99
@@ -55,7 +55,7 @@ func _test_ring_waits() -> void:
 		[Vector2i(4, 4), Vector2i(0, 4), "tractor_lane"], [Vector2i(0, 4), Vector2i(0, 0), "tractor_lane"],
 	])
 	var lanes := LaneGraph.new(net)
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	# Keeping right, the forward lanes run round the inside of the 4 by 4 cells
 	# the square's lines enclose.
 	var loop := lanes.route(Vector2i(1, 0), Vector2i(0, 0), false)
@@ -72,7 +72,7 @@ func _test_ring_waits() -> void:
 func _test_never_stops_in_a_junction() -> void:
 	var net := _net([[Vector2i(0, 10), Vector2i(20, 10), "terminal_1_1"], [Vector2i(10, 0), Vector2i(10, 20), "terminal_1_1"]])
 	var lanes := LaneGraph.new(net)
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	var crossing := lanes.route(Vector2i(2, 10), Vector2i(18, 10), true)
 	var past: Vector2i = crossing.filter(func(c: Vector2i) -> bool: return c.x > 10 and not lanes.is_junction(c))[0]
 	var parked := _vehicle(traffic, [past] as Array[Vector2i])
@@ -94,7 +94,7 @@ func _test_merge_at_45() -> void:
 		[Vector2i(4, 4), Vector2i(10, 10), "one_way"],
 	])
 	var lanes := LaneGraph.new(net)
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	var vehicles := []
 	var waiting := []
 	for i in 6:
@@ -122,7 +122,7 @@ func _test_merge_at_45() -> void:
 
 func _test_coming_back_frees_the_cell() -> void:
 	var lanes := LaneGraph.new(_net([]))
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	# A route that passes (1, 0) twice, as one turning back at a bend does.
 	var loop: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(2, 1), Vector2i(1, 1), Vector2i(1, 0), Vector2i(0, 0)]
 	var vehicle := _vehicle(traffic, loop)
@@ -134,7 +134,7 @@ func _test_coming_back_frees_the_cell() -> void:
 
 func _test_moves_at_its_speed() -> void:
 	var lanes := LaneGraph.new(_net([[Vector2i(0, 5), Vector2i(200, 5), "terminal_1_1"]]))
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	for speed: float in [10.0, 31.25, 37.5]:
 		var vehicle := _vehicle(traffic, lanes.route(Vector2i(0, 5), Vector2i(199, 5), true))
 		for i in SimClock.TICKS_PER_SECOND:
@@ -187,7 +187,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 func _test_delays_rise_and_fall() -> void:
 	var net := _net([[Vector2i(0, 5), Vector2i(40, 5), "terminal_1_1"]])
 	var lanes := LaneGraph.new(net)
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	var epoch := roundi(10.0 / SimClock.TICK_SECONDS)
 	# A broken-down lorry at x = 20, and one behind it that must wait.
 	var stuck := _vehicle(traffic, [Vector2i(20, 5)] as Array[Vector2i])

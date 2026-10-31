@@ -95,7 +95,7 @@ func _test_box_is_junction(type: String) -> void:
 
 func _test_crossing_traffic(type: String) -> void:
 	var lanes := LaneGraph.new(_net(type, true))
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	var arms := _arms(true)
 	var waiting := {}  # arm -> routes still to start there
 	for from: String in arms:
@@ -163,7 +163,7 @@ func _test_lane_rules() -> void:
 ## before the turn rules; this keeps it so.)
 func _test_both_lanes_carry() -> void:
 	var lanes := LaneGraph.new(_net("terminal_2_2", false))
-	var traffic := LaneTraffic.new(lanes)
+	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
 	var waiting := 40
 	var moving: Array[Vehicle] = []
 	var rows := {}  # row each lorry drove at x = 15 -> lorries

@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 22
+const VERSION := 23
 ## The first save with roads on grid lines. Older saves hold roads whose
 ## lanes hang to one side of their line, which can't be moved onto grid lines
 ## where roads meet, so they are refused.
@@ -77,6 +77,15 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v20(data)
 	if data.version == 21:
 		data = _migrate_v21(data)
+	if data.version == 22:
+		data = _migrate_v22(data)
+	return data
+
+
+## v23 keeps signals and priority signs at junctions: none yet.
+static func _migrate_v22(data: Dictionary) -> Dictionary:
+	data.sim.lane_traffic.junctions = {"signals": {}, "signs": {}}
+	data.version = 23
 	return data
 
 
@@ -199,8 +208,18 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 	# Trains hold level crossings under their id negated.
 	for train: Dictionary in data.trains:
 		ids[-train.id] = true
-	if not _has_fields(data.lane_traffic, {"held": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY}):
+	if not _has_fields(data.lane_traffic, {"held": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY, "junctions": TYPE_DICTIONARY}):
 		return false
+	if not _has_fields(data.lane_traffic.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY}):
+		return false
+	for point: Variant in data.lane_traffic.junctions.signals:
+		var at: Variant = data.lane_traffic.junctions.signals[point]
+		if not (point is Vector2i and at is Dictionary and _has_fields(at, {"green": TYPE_ARRAY, "phase": TYPE_INT, "left": TYPE_FLOAT})):
+			return false
+	for point: Variant in data.lane_traffic.junctions.signs:
+		var arms: Variant = data.lane_traffic.junctions.signs[point]
+		if not (point is Vector2i and arms is Dictionary and arms.keys().all(func(arm: Variant) -> bool: return arm is Vector2i) and arms.values().all(func(sign: Variant) -> bool: return sign in ["give_way", "stop"])):
+			return false
 	for id: Variant in data.lane_traffic.held:
 		if not (id in ids and data.lane_traffic.held[id] is Array and _all_cells(data.lane_traffic.held[id], true)):
 			return false

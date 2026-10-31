@@ -163,7 +163,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	lanes.rails = rails
 	areas = Areas.new(rules.area_types, roads, rules.site)
 	lanes.areas = areas
-	lane_traffic = LaneTraffic.new(lanes)
+	lane_traffic = LaneTraffic.new(lanes, Junctions.new(rules.traffic))
 	handovers = Handovers.new(areas)
 	machines = Machines.new(rules.yard_gear)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
@@ -385,7 +385,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
 		sim._add_vehicle(Vehicle.from_dict(data))
-	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes)
+	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes, sim.rules.traffic)
 	sim._weigh_routes()
 	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
@@ -440,6 +440,12 @@ func apply(command: Dictionary) -> String:
 			return remove_road(command.segment)
 		"change_road":
 			return change_road(command.segment, command.type)
+		"set_signals":
+			return lane_traffic.junctions.set_signals(lanes, command.point, command.on)
+		"set_green":
+			return lane_traffic.junctions.set_green(command.point, command.phase, command.seconds)
+		"set_sign":
+			return lane_traffic.junctions.set_sign(lanes, command.point, command.arm, command.sign)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
@@ -998,6 +1004,7 @@ func tick() -> void:
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
+	lane_traffic.junctions.tick(lanes, lane_traffic)
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
 	if clock.ticks % roundi(rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
