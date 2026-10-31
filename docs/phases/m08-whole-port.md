@@ -38,7 +38,7 @@
 - **Life cycle.** Write `docs/progression.md`: from a regional pier to an automated mega-port, which milestone unlocks what, and the late-game optimisation loop (bigger ships, denser yards, automation) that keeps the port growing. Check: every unlock in the data appears in it.
 
 ### From the developer's notes (27 Oct 2026)
-- **Terminals painted as districts.** Replace the terminal buttons with a district brush, as in Cities: Skylines: the player paints a terminal's extent over the ground, the areas inside it join that terminal, and each district shows its name and colour on the map. Test: painting over an area moves it to that terminal, and a new area built inside a district joins it.
+- **Terminals painted as districts.** Moved to M7 step F (31 Oct 2026).
 - **Better crane models.** Rework the STS, RTG and rail-crane models with more detail (legs, boom, machinery house, trolley and spreader), keeping the M4 LOD and draw-call budgets. Check: before and after screenshots, and the bench's draw calls and frame time in `docs/perf.md` do not get worse.
 
 ### Close
