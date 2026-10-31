@@ -33,6 +33,13 @@
 12. **Shore power.** A berth upgrade with power demand. The regulation requires it for ships over a size by a game year. Test: the shore-power exit criterion.
 13. **Emissions and noise** *(cuttable)*. Per-equipment emission values; neighbours' complaints scale with noise near the map edge. Test: the totals match the equipment mix.
 
+### From the developer's notes (31 Oct 2026)
+- **Decisions with consequences.** Choices that close other options, not just switches with a cost:
+  - **Negotiated contracts.** An offer comes with terms the player can push on (rate, window length, minimum moves, penalty), and a line pushed too hard walks away or offers less next time.
+  - **Competing lines.** Lines want the same berth windows; signing one line's service can lose another's, and an exclusive deal pays more but bars its rivals.
+  - **A rival port.** An off-map port competes for the same lines; its rates and reliability move the demand the player sees.
+  Test: a line pushed past its limit declines; signing an exclusive service refuses its rival's offers; a rival's lower rate cuts the offers the port gets.
+
 ### Close
 14. **Fixture and soak.** New save fixture, and events in the soak test.
 15. **Public playtest build.** Notes go in `docs/playtests/m10.md`.

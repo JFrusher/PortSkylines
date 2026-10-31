@@ -24,6 +24,9 @@
 8. **River or canal edge** *(cuttable)*. A second water body on the map edge for barges, with its own shallow channel. Test: barges route through it.
 9. **Three-way modal split.** Lines split between road, rail and barge. The player sets rail and barge discounts. The panel shows each share. Test: the barge scenario.
 
+### From the developer's notes (31 Oct 2026)
+- **Straddle carriers.** A straddle carrier stacks and carries in one machine: it lifts a box in a straddle block (stacks 1 over 3) and drives it to the quay or the gate itself, with no tractor. A new yard gear and block layout from the data. Test: a straddle block works a ship with no tractors, at the data's rate.
+
 ### Close
 10. **Fixture and soak.** New save fixture, and transhipment and barge in the soak test.
 11. **Public playtest build.** Notes go in `docs/playtests/m9.md`.

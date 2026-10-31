@@ -41,6 +41,9 @@
 - **Terminals painted as districts.** Moved to M7 step F (31 Oct 2026).
 - **Better crane models.** Rework the STS, RTG and rail-crane models with more detail (legs, boom, machinery house, trolley and spreader), keeping the M4 LOD and draw-call budgets. Check: before and after screenshots, and the bench's draw calls and frame time in `docs/perf.md` do not get worse.
 
+### From the developer's notes (31 Oct 2026)
+- **Progression pass.** Milestones gate on more than TEU: berth productivity, line reputation and on-time calls as well, from the data. Between milestones the port sets the player objectives (for example "work a Panamax inside its window three times"), each with a reward, shown in the milestone panel. The late game gets a loop of its own: lines ask for bigger ships and denser schedules once the hub milestone is reached. `docs/progression.md` (above) records all of it. Test: a milestone with a reputation threshold stays locked at enough TEU and too little reputation; an objective pays its reward once, when met.
+
 ### Close
 14. **Bench at port scale.** Set new targets in `docs/perf.md` and meet them.
 15. **Fixture and soak.** New save fixture, and multi-terminal commands in the soak test.
