@@ -28,9 +28,13 @@ static func install(sim: PortSim, profile: Object) -> void:
 	var lanes := Lanes.new(sim.roads)
 	lanes.areas = sim.areas
 	lanes.profile = profile
-	var traffic := Traffic.new(lanes)
+	var traffic := Traffic.new(lanes, sim.lane_traffic.junctions)
 	traffic.profile = profile
 	traffic._holders = sim.lane_traffic._holders
 	traffic._held = sim.lane_traffic._held
+	traffic._delays = sim.lane_traffic._delays
+	traffic._stuck = sim.lane_traffic._stuck
+	traffic._entered = sim.lane_traffic._entered
 	sim.lanes = lanes
 	sim.lane_traffic = traffic
+	sim._weigh_routes()

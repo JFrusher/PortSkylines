@@ -97,6 +97,14 @@ func _tick(sim: PortSim) -> void:
 		sim._until_export = sim.rules.export_lorry_interval_minutes
 	add("dispatch_export_lorry", start)
 	start = Time.get_ticks_usec()
+	sim._until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
+	if sim._until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(sim):
+		sim._until_empty = sim.rules.lorry_interval_minutes
+	add("dispatch_empty_lorry", start)
+	start = Time.get_ticks_usec()
+	sim.lane_traffic.junctions.tick(sim.lanes, sim.lane_traffic)
+	add("junctions (Junctions.tick)", start)
+	start = Time.get_ticks_usec()
 	AreaFlow._fit_machines(sim)
 	add("_fit_machines", start)
 	start = Time.get_ticks_usec()
@@ -104,9 +112,18 @@ func _tick(sim: PortSim) -> void:
 		AreaFlow._machine_done(sim, machine)
 	add("machines (tick, _machine_done)", start)
 	start = Time.get_ticks_usec()
+	AreaFlow._unpark(sim)
+	add("parks (AreaFlow._unpark)", start)
+	start = Time.get_ticks_usec()
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		AreaFlow._drive(sim, vehicle)
 	add("vehicles (AreaFlow._drive)", start)
 	start = Time.get_ticks_usec()
 	RailFlow.tick(sim)
 	add("trains (RailFlow.tick)", start)
+	start = Time.get_ticks_usec()
+	if sim.clock.ticks % roundi(sim.rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
+		sim.lane_traffic.settle(sim.rules.traffic.smoothing)
+	if sim.clock.ticks % roundi(sim.rules.traffic.route_epoch_seconds / SimClock.TICK_SECONDS) == 0:
+		sim._weigh_routes()
+	add("traffic epochs (settle, _weigh_routes)", start)
