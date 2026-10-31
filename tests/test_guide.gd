@@ -20,8 +20,10 @@ func _initialize() -> void:
 	# ends to turn at. The yard block sits on the east road's south side;
 	# the gate is on the east road's inbound lane near the highway.
 	# Segments: 1 the berth road north of the T, 2 south of it, 3 the east road.
+	# A ship lane runs straight in from the west edge to the berth's water.
 	var steps: Array[Array] = [
 		[{"op": "build_berth", "kind": "feeder", "cell": Vector2i(80, entry.y)}],
+		[{"op": "build_ship_lane", "from": Vector2i(0, entry.y), "to": Vector2i(68, entry.y), "type": "narrow"}],
 		[{"op": "build_road", "from": Vector2i(86, entry.y), "to": sim.site_entry_point(), "type": "terminal_1_1"}],
 		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 419, "to": 433}],
 		[{"op": "paint_terminal", "cells": AreaPort.region(sim), "terminal": -1}],

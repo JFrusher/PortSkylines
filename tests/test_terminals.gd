@@ -114,6 +114,7 @@ func _test_two_terminals() -> void:
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 50, "to": 99}), "", "a second apron down the coast")
 	var second_apron: int = sim.areas.list.keys().max()
+	AreaPort.add_lane(sim, second_apron)
 	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 200, "to": 214}), "", "a second gate along the east road")
 	var second_gate: int = sim.areas.list.keys().max()
 	var cells: Array[Vector2i] = sim.areas.cells(second_apron)

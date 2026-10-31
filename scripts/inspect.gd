@@ -12,8 +12,9 @@ const SHIP_STATES := ["Arriving", "Working", "Leaving", "At anchor"]
 const TRAIN_STATES := {"arriving": "Coming in to its siding", "working": "At its siding, being worked", "leaving": "Leaving the port"}
 
 
-## The vehicle, train, ship or crane at grid cell `cell`, else an area there as
-## {"area": id}, else null.
+## The vehicle, train, ship or crane at grid cell `cell`, else a junction
+## as {"junction"}, an area as {"area": id} or a ship lane as {"lane":
+## segment} there, else null.
 static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for vehicle in sim.vehicles:
 		if Vector2i(vehicle.position(1.0).round()) == cell:
@@ -32,7 +33,19 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	if junction != Grid.NONE:
 		return {"junction": junction}
 	var area := sim.areas.area_at(cell)
-	return {"area": area} if area else null
+	if area:
+		return {"area": area}
+	var lane := lane_at(sim, cell)
+	return {"lane": lane} if lane else null
+
+
+## The ship lane whose water covers `cell`, or 0.
+static func lane_at(sim: PortSim, cell: Vector2i) -> int:
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		if cell in sim.ship_lanes.footprint(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], lane.type):
+			return segment
+	return 0
 
 
 ## A title then lines of state for `thing` from `pick`, or [] once it is gone.
@@ -48,6 +61,8 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		return _ship(sim, thing) if thing in sim.ships else nothing
 	if thing is PortSim.Crane:
 		return _crane(sim, thing) if thing in sim.cranes else nothing
+	if thing is Dictionary and thing.has("lane"):
+		return _lane(sim, thing.lane) if thing.lane in sim.ship_lanes.segments else nothing
 	if thing is Dictionary and thing.has("junction"):
 		return _junction(sim, thing.junction) if not sim.lanes.arms(thing.junction).is_empty() else nothing
 	if thing is Dictionary:
@@ -141,6 +156,17 @@ static func _ship(sim: PortSim, ship: PortSim.Ship) -> Array[String]:
 	return lines
 
 
+static func _lane(sim: PortSim, segment: int) -> Array[String]:
+	var lane: Dictionary = sim.ship_lanes.segments[segment]
+	var spec: Dictionary = sim.rules.water.lanes[lane.type]
+	var lines: Array[String] = [spec.name]
+	lines.append("%.1f m deep at its shallowest%s" % [sim.ship_lanes.depth(segment, sim.areas.coast), ", %.0f m of it dredged" % lane.dredged if lane.dredged > 0.0 else ""])
+	lines.append("%d m long, %d m wide, %s" % [Grid.metres(RoadNet.length(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b])), Grid.metres(spec.half_width * 2 + 1), "one ship at a time" if lane.type == "narrow" else "ships pass both ways"])
+	var drafts: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return sim.ship_lanes.depth(segment, sim.areas.coast) >= sim.rules.ship_classes[kind].draft)
+	lines.append("Deep enough for %s" % (", ".join(drafts) if not drafts.is_empty() else "no ship yet"))
+	return lines
+
+
 static func _crane(sim: PortSim, crane: PortSim.Crane) -> Array[String]:
 	var spec: Dictionary = sim.rules.sts_cranes[crane.kind]
 	var lines: Array[String] = [spec.name, "Idle" if crane.tractor == 0 else "Working with tractor %d" % crane.tractor]
@@ -163,6 +189,10 @@ static func _apron(sim: PortSim, id: int) -> Array[String]:
 	var lines: Array[String] = ["%d m long, %d m deep: berths %s" % [Grid.metres(length), Grid.metres(sim.areas.depth_of(area)), ", ".join(fits) if not fits.is_empty() else "no ship yet"]]
 	var cranes := sim.cranes.filter(func(c: PortSim.Crane) -> bool: return c.apron == id).size()
 	lines.append("%d STS crane%s" % [cranes, "" if cranes == 1 else "s"])
+	var pocket := Marine.pocket_depth(sim, id)
+	lines.append("Its water: %s" % ("%.1f m deep%s" % [pocket, ", %.0f m dredged" % sim.pocket_dredged[id] if sim.pocket_dredged.get(id, 0.0) > 0.0 else ""] if pocket > 0.0 else "blocked by land or a quay"))
+	var reach: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return Marine.reaches(sim, kind, id))
+	lines.append("Ships reach it from the sea: %s" % (", ".join(reach) if not reach.is_empty() else "none yet; draw a ship lane from the open sea into its water (Water)"))
 	for ship: PortSim.Ship in sim.ships:
 		if ship.apron == id:
 			lines.append("Alongside: %s %s, %s" % [sim.contracts.name_of(ship.line), ship.kind, SHIP_STATES[ship.state].to_lower()])

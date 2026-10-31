@@ -63,7 +63,6 @@
 		"sts_crane": 1500.0,
 		"tractor": 300.0
 	},
-	"sail_seconds": 4.0,
 	"lorry_interval_minutes": 1.0,
 	"export_lorry_interval_minutes": 2.0,
 	"export_lead_hours": 48.0,

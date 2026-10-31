@@ -23,7 +23,7 @@ static func ready_aprons(sim: PortSim) -> Array[int]:
 ## if it has one, or another only if it may; false if none yet.
 static func berth(sim: PortSim, ship: PortSim.Ship) -> bool:
 	var span := ship_cells(sim, ship.kind)
-	var aprons := ready_aprons(sim)
+	var aprons := ready_aprons(sim).filter(func(apron: int) -> bool: return Marine.reaches(sim, ship.kind, apron))
 	if ship.berth != 0:
 		# A service is signed for its berth's terminal: other berths only there,
 		# or anywhere once its berth is gone.
@@ -41,6 +41,7 @@ static func berth(sim: PortSim, ship: PortSim.Ship) -> bool:
 			ship.apron = apron
 			ship.from = from
 			ship.state = PortSim.Ship.State.ARRIVING
+			Marine.set_course(sim, ship)
 			return true
 	return false
 
@@ -1106,6 +1107,7 @@ static func remove(sim: PortSim, id: int) -> void:
 		if ship.state == PortSim.Ship.State.ARRIVING:
 			ship.state = PortSim.Ship.State.ANCHORED
 			ship.apron = 0
+			ship.path.clear()
 			ship.sail = 0.0
 			ship.prev_sail = 0.0
 			continue

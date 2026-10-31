@@ -10,18 +10,18 @@ var _failures := 0
 func _initialize() -> void:
 	var base := Content.base()
 	_expect(base.start_money is int, true, "whole numbers load as ints")
-	_expect(base.sail_seconds is float, true, "float keys load as floats")
+	_expect(base.water.ship_speed is float, true, "float keys load as floats")
 	_expect(_error_for({"start_money": null}), DIR + ": missing \"start_money\"", "a missing key names the key")
 	_expect(_error_for({"site": {"width": 2400}}), "rules.json: site: missing \"height\"", "a missing nested key names the path")
 	_expect(_error_for({"start_money": "lots"}), "rules.json: start_money: must be a number", "a wrong type names the key")
 	_expect(_error_for({"start_money": 6.5}), "rules.json: start_money: must be a whole number", "an int key refuses fractions")
 	_expect(_error_for({"colour": 1}), "rules.json: colour: unknown key", "an unknown key is refused")
 	_expect(base.ship_classes.feeder.length is int, true, "records under a \"*\" key are checked and typed")
-	for key: String in ["sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds"]:
+	for key: String in ["lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds"]:
 		for value: int in [0, -1]:
 			_expect(_error_for({key: value}), "rules.json: %s: must be greater than zero" % key, "%s refuses %d" % [key, value])
 		_expect(_error_for({key: 1}), "", "%s accepts a positive whole number" % key)
-	_expect(_error_for({"sail_seconds": 0.5}), "", "a positive fractional duration is valid")
+	_expect(_error_for({"lorry_interval_minutes": 0.5}), "", "a positive fractional duration is valid")
 	_expect(_error_for({"import_dwell_minutes": 0}), "", "imports may leave at once")
 	_expect(_error_for({"site": {"width": 2402, "height": 2400}}), "site.width: must be a positive multiple of 4 m", "the site is whole grid cells")
 	_expect(_error_for({"site": {"width": 2400, "height": 0}}), "site.height: must be a positive multiple of 4 m", "the site has a size")

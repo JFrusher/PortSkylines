@@ -49,6 +49,8 @@ const AREA_COLOR := {
 	"parking": Color(0.38, 0.4, 0.42),
 }
 const AREA_TOP := 0.2
+## How high ship lanes are drawn: just over the water.
+const LANE_HEIGHT := -0.2
 ## Camera distance, in world units, past which yard boxes are drawn plain.
 const STACK_DETAIL_RANGE := 30.0
 ## A container's real size in metres, by TEU, for things drawn on areas.
@@ -105,7 +107,6 @@ const JAM_SECONDS := 2.0
 const INFO_SECONDS := 0.25
 const SEA_START := -18.0  # how far the water reaches past the site
 const LAND_COLOUR := Color(0.36, 0.42, 0.3)
-const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
 var sim: PortSim
 ## The info view drawn over the map: a key of INFO_LEGENDS, or "" for none.
@@ -155,6 +156,9 @@ var _areas := MeshInstance3D.new()
 ## The area and road versions the areas were drawn for: idle tints follow the roads.
 var _areas_drawn := []
 var _area_preview := MeshInstance3D.new()
+## The ship lanes on the water, and what they were drawn for.
+var _ship_lanes := MeshInstance3D.new()
+var _ship_lanes_drawn := []
 ## The road being dragged out, tinted by whether it can be built.
 var _road_preview := MeshInstance3D.new()
 ## A ring on each end of a road drag that joins a road, so a join is plain.
@@ -195,8 +199,12 @@ func _ready() -> void:
 	_land.set_shader_parameter("owned", _owned)
 	_land.set_shader_parameter("colour", LAND_COLOUR)
 	add_child(_hover)
-	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview]:
+	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview, _ship_lanes]:
 		add_child(node)
+	_ship_lanes.material_override = StandardMaterial3D.new()
+	_ship_lanes.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_ship_lanes.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_ship_lanes.material_override.vertex_color_use_as_albedo = true
 	add_child(_info)
 	for preview: MeshInstance3D in [_road_preview, _area_preview, _info]:
 		preview.material_override = StandardMaterial3D.new()
@@ -333,6 +341,8 @@ func _process(dt: float) -> void:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
+	if [sim.ship_lanes.version, sim.dredge_version] != _ship_lanes_drawn:
+		_draw_ship_lanes()
 	_draw_junctions()
 	if sim.areas.filled.size() != _coast_filled:
 		_coast_filled = sim.areas.filled.size()
@@ -436,6 +446,27 @@ static func info_shares(sim: PortSim, view: String) -> Dictionary:
 				var fill := sim.block_fill(id)
 				shares[sim.areas.cells(id)] = fill.x / float(maxi(fill.y, 1))
 	return shares
+
+
+## Each ship lane as a pale band over the water it covers, its line down the
+## middle: white where dredged, else pale blue.
+func _draw_ship_lanes() -> void:
+	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version]
+	_ship_lanes.visible = not sim.ship_lanes.segments.is_empty()
+	if not _ship_lanes.visible:
+		return
+	var tool := _road_tool()
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		var a: Vector2i = sim.ship_lanes.nodes[lane.a]
+		var b: Vector2i = sim.ship_lanes.nodes[lane.b]
+		tool.set_color(Color(0.75, 0.9, 1.0, 0.12))
+		for cell in sim.ship_lanes.footprint(a, b, lane.type):
+			_cell_quad(tool, cell, LANE_HEIGHT)
+		tool.set_color(Color(1, 1, 1, 0.55) if lane.dredged > 0.0 else Color(0.7, 0.85, 1.0, 0.45))
+		for cell in RoadNet.line(a, b):
+			_cell_quad(tool, cell, LANE_HEIGHT + 0.01)
+	_ship_lanes.mesh = tool.commit()
 
 
 ## One 4 m cell as a flat square `height` metres up.
@@ -649,11 +680,7 @@ func _draw_ships() -> void:
 		if ship not in _ships:
 			_ships[ship] = _ship_model(ship, length)
 		var model: Node3D = _ships[ship]
-		var sail := lerpf(ship.prev_sail, ship.sail, alpha)
-		var frame := _berth_frame(ship)
-		var alongside := Vector3(frame[0].x, 0.0, frame[0].y)
-		var at_sea := alongside + Vector3(frame[1].x, 0, frame[1].y) * SEA_DISTANCE
-		model.position = at_sea.lerp(alongside, ease(sail, -2.0))
+		_sail(model, ship, lerpf(ship.prev_sail, ship.sail, alpha))
 		var spec: Dictionary = sim.rules.ship_classes[ship.kind]
 		# Imports still aboard, plus the exports loaded so far.
 		var aboard: int = ship.boxes + spec.export_moves - ship.exports
@@ -666,6 +693,37 @@ func _draw_ships() -> void:
 			for i in slots.size():
 				deck.set_instance_transform(i, Transform3D(_deck_box, slots[i]))
 				deck.set_instance_color(i, _livery(ship.line, i))
+
+
+## Puts `model` a fraction `sail` of the way along `ship`'s course: along the
+## lanes, then in to lie alongside, its bow along its way until the last leg,
+## where it turns to lie along the quay.
+func _sail(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
+	var frame := _berth_frame(ship)
+	var quay_heading := atan2(-frame[1].y, frame[1].x)
+	if ship.path.size() < 2:
+		model.position = Vector3(frame[0].x, 0.0, frame[0].y)
+		model.rotation.y = quay_heading
+		return
+	var points: Array[Vector2] = []
+	for point: Vector2 in ship.path.slice(0, -1):
+		points.append(point * Grid.CELL / METRES_PER_UNIT)
+	points.append(frame[0])
+	var at := Marine.point_along(points, sail)
+	model.position = Vector3(at.x, 0.0, at.y)
+	# Which leg it is on, and how far along it.
+	var length := 0.0
+	for i in range(1, points.size()):
+		length += points[i - 1].distance_to(points[i])
+	var left := sail * length
+	for i in range(1, points.size()):
+		var leg := points[i - 1].distance_to(points[i])
+		if left <= leg or i == points.size() - 1:
+			var way := points[i] - points[i - 1]
+			var heading := atan2(way.x, way.y) if ship.state == PortSim.Ship.State.ARRIVING else atan2(-way.x, -way.y)
+			model.rotation.y = lerp_angle(heading, quay_heading, clampf(left / maxf(leg, 0.001), 0.0, 1.0)) if i == points.size() - 1 else heading
+			return
+		left -= leg
 
 
 ## A ship's beam in world units: its rows of boxes across, plus hull each side.
@@ -707,8 +765,6 @@ static func deck_slots(length: float, count: int, rows: int) -> Array[Vector3]:
 ## and a deck of boxes, turned so its length lies along the quay.
 func _ship_model(ship: PortSim.Ship, length: float) -> Node3D:
 	var model := Node3D.new()
-	var side := Vector2(sim.areas.list[ship.apron].out)
-	model.rotation.y = atan2(-side.y, side.x)
 	var half := length / 2.0 - 0.2
 	var side_x := beam(sim.rules.ship_classes[ship.kind].outreach) / 2.0
 	var outline := PackedVector2Array([Vector2(-side_x, -half), Vector2(side_x, -half), Vector2(side_x, half - 1.0), Vector2(0, half), Vector2(-side_x, half - 1.0)])

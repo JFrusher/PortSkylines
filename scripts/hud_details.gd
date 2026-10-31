@@ -275,7 +275,7 @@ static func container_rows(sim: PortSim) -> Array[Dictionary]:
 	]
 
 
-## Quay, cranes and channel figure cards.
+## Quay, cranes and ship lane figure cards.
 static func power_cards(sim: PortSim) -> Array[Dictionary]:
 	var anchored := 0
 	for s: PortSim.Ship in sim.ships:
@@ -283,7 +283,7 @@ static func power_cards(sim: PortSim) -> Array[Dictionary]:
 			anchored += 1
 	return [
 		card("STS Cranes", str(sim.cranes.size())),
-		card("Channel", "%.0f m" % sim.channel_depth),
+		card("Ship lanes", str(sim.ship_lanes.segments.size()), "warn" if sim.ship_lanes.segments.is_empty() else ""),
 		card("Ships", str(sim.ships.size())),
 		card("At Anchor", str(anchored), "warn" if anchored > 0 else ""),
 	]
@@ -301,7 +301,7 @@ static func power_rows(sim: PortSim) -> Array[Dictionary]:
 	return [
 		row("STS cranes operational", str(sim.cranes.size())),
 		row("Quay aprons", str(aprons)),
-		row("Channel depth", "%.1f metres" % sim.channel_depth),
+		row("Ship lanes", "%d, with %d in the open sea" % [sim.ship_lanes.segments.size(), Marine.sea_nodes(sim).size()]),
 		row("Ships at berth", str(sim.ships.size() - anchored)),
 		row("Ships at anchor waiting", str(anchored)),
 		row("Estimated power demand", "%d kW" % (sim.cranes.size() * 450)),

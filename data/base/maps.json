@@ -16,8 +16,8 @@
 				}
 			],
 			"depth": {
-				"shore": 4,
-				"per_metre": 0.05,
+				"shore": 10.5,
+				"per_metre": 0.03,
 				"max": 24
 			}
 		},
@@ -27,7 +27,7 @@
 			"islands": [],
 			"rivers": [],
 			"depth": {
-				"shore": 4,
+				"shore": 16,
 				"per_metre": 0.05,
 				"max": 24
 			}

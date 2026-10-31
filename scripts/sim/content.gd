@@ -37,7 +37,6 @@ const SCHEMA := {
 	"gate_levels": {"*": {"name": TYPE_STRING, "minutes": TYPE_FLOAT, "upkeep_per_lane": TYPE_INT}},
 	"export_lead_hours": TYPE_FLOAT,
 	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
-	"sail_seconds": TYPE_FLOAT,
 	# How long vehicles wait in each lane cell is folded in every epoch_seconds
 	# of vehicle time, mixed in at `smoothing` (0 to 1); routes take up the
 	# delays every route_epoch_seconds, dropping every kept route.
@@ -87,8 +86,15 @@ const SCHEMA := {
 		"late_per_hour": TYPE_FLOAT, "moves_per_hour_target": TYPE_FLOAT, "per_move_per_hour": TYPE_FLOAT,
 		"turn_target_minutes": TYPE_FLOAT, "per_turn_minute": TYPE_FLOAT, "missed": TYPE_FLOAT, "port_cancels": TYPE_FLOAT,
 	},
-	# shortcut: one channel depth serves every berth; give each berth its own route and depth when ports get several channels.
-	"channel": {"start_depth": TYPE_FLOAT, "max_depth": TYPE_FLOAT, "cost_per_metre": TYPE_INT, "maintenance_per_metre": TYPE_INT, "maintenance_days": TYPE_INT},
+	# Ships sail ship_speed metres a minute along ship lanes drawn on the
+	# water: narrow lanes take one ship at a time, wide ones pass both ways;
+	# each covers half_width cells either side of its line. A ship lies in its
+	# berth's pocket, `pocket` cells out from the quay. Lanes and pockets are
+	# as deep as their shallowest water plus what is dredged there, at most
+	# dredge.max_depth; dredging costs per cell and metre, then maintenance
+	# per cell and metre every maintenance_days.
+	"water": {"ship_speed": TYPE_FLOAT, "lanes": {"*": {"name": TYPE_STRING, "half_width": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}}, "pocket": TYPE_INT,
+		"dredge": {"max_depth": TYPE_FLOAT, "cost_per_cell_metre": TYPE_INT, "maintenance_per_cell_metre": TYPE_INT, "maintenance_days": TYPE_INT}},
 	# The site is split into square land tiles `metres` across; the port owns
 	# the `start` block of tiles and buys the rest at `price`, paying `upkeep` a day each.
 	"land": {"metres": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
@@ -128,7 +134,7 @@ const SCHEMA := {
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
 
 static var _base := {}
 

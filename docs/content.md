@@ -46,20 +46,24 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `storage.fair_fee`, `.satisfaction_per_dollar` | number | Each $ of fee above the fair fee changes the line's reputation by this much per call |
 | `gate_minutes` | number | Calendar minutes a lorry stops at a gate |
 | `upkeep.sts_crane`, `.tractor` | int | Paid per crane and per tractor at midnight |
-| `sail_seconds` | number >0 | Vehicle seconds to sail in or out |
+| `water.ship_speed` | number >0 | Metres a calendar minute ships sail along their lanes |
+| `water.lanes.<key>.name` | text | The lane's name in the Water menu |
+| `water.lanes.<key>.half_width` | int >0 | Cells of water either side of a lane's line; narrow lanes take one ship at a time, wide ones pass both ways |
+| `water.lanes.<key>.cost_per_cell`, `.upkeep_per_cell` | int, number | Price and daily upkeep per 4 m cell of water a lane covers |
+| `water.pocket` | int >0 | Cells out from a quay that a ship lies in (its berth's pocket); a lane ending in it reaches the berth |
+| `water.dredge.max_depth` | number | As deep as dredging takes a lane or a pocket, in metres |
+| `water.dredge.cost_per_cell_metre` | int | Dredging one cell of water one metre deeper |
+| `water.dredge.maintenance_per_cell_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged cell and metre costs this |
 | `lorry_interval_minutes` | number >0 | Calendar minutes between import lorries |
 | `export_lorry_interval_minutes` | number >0 | Calendar minutes between export lorries |
 | `import_dwell_minutes` | number | Calendar minutes an import box waits in the yard before a lorry may collect it, at a $0 storage fee |
 | `lorry_speed` | number >0 | Metres per vehicle second (one game minute) |
 | `give_up_seconds` | number >0 | Vehicle seconds stuck before a tractor replans; lorries wait twice as long |
 | `ship_classes.<name>.length` | int >0 | Metres of quay apron the ship needs |
-| `ship_classes.<name>.draft` | number | Metres; a class deeper than the channel never berths |
+| `ship_classes.<name>.draft` | number | Metres; a ship sails only through lanes and into berth pockets at least this deep |
 | `ship_classes.<name>.outreach` | int | Crane outreach (rows) the ship needs |
 | `ship_classes.<name>.import_moves`, `.export_moves` | int | Boxes off and on per call |
 | `ship_classes.<name>.window_hours` | number >0 | Length of a service's weekly berth window; sailing after it is late |
-| `channel.start_depth`, `.max_depth` | number | The channel's depth at the start, and as deep as dredging can take it (metres) |
-| `channel.cost_per_metre` | int | Cost of dredging one metre |
-| `channel.maintenance_per_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged metre costs this |
 | `land.metres` | int >0 | The site is split into square land tiles this many metres across; roads and areas are built only on land the port owns |
 | `land.price`, `.upkeep` | int | Price of a land tile, and its upkeep a day once owned |
 | `land.start.x`, `.y`, `.width`, `.height` | int | The block of land tiles the port owns at the start |

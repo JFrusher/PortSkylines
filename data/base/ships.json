@@ -25,11 +25,28 @@
 			"window_hours": 36.0
 		}
 	},
-	"channel": {
-		"start_depth": 11.0,
-		"max_depth": 16.0,
-		"cost_per_metre": 150000.0,
-		"maintenance_per_metre": 20000.0,
-		"maintenance_days": 30.0
+	"water": {
+		"ship_speed": 200.0,
+		"lanes": {
+			"narrow": {
+				"name": "Narrow channel",
+				"half_width": 10,
+				"cost_per_cell": 4,
+				"upkeep_per_cell": 0.02
+			},
+			"wide": {
+				"name": "Wide channel",
+				"half_width": 20,
+				"cost_per_cell": 6,
+				"upkeep_per_cell": 0.02
+			}
+		},
+		"pocket": 12,
+		"dredge": {
+			"max_depth": 18.0,
+			"cost_per_cell_metre": 30,
+			"maintenance_per_cell_metre": 1,
+			"maintenance_days": 30
+		}
 	}
 }
