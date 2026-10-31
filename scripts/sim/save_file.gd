@@ -6,11 +6,11 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 23
-## The first save with roads on grid lines. Older saves hold roads whose
-## lanes hang to one side of their line, which can't be moved onto grid lines
-## where roads meet, so they are refused.
-const FIRST := 20
+const VERSION := 24
+## The first save with terminals painted on the map. Older saves hold
+## terminals as groups of areas, which the developer chose to refuse rather
+## than paint in.
+const FIRST := 24
 ## Every field Vehicle.from_dict reads.
 const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
@@ -64,57 +64,15 @@ static func load_from(path: String) -> Dictionary:
 	if data.version < 1:
 		return {"error": "%s has an invalid save version %d" % [path, data.version]}
 	if data.version < FIRST:
-		return {"error": "%s was saved before roads ran on grid lines (save v%d) and can't be loaded; start a new game" % [path, data.version]}
+		return {"error": "%s was saved before terminals were painted on the map (save v%d) and can't be loaded; start a new game" % [path, data.version]}
 	data = _migrate(data)
 	if not _valid_sim(data.get("sim")):
 		return {"error": "%s is not a Port Skylines save" % path}
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time.
+## Brings an older save up to VERSION one step at a time; none yet since FIRST.
 static func _migrate(data: Dictionary) -> Dictionary:
-	if data.version == 20:
-		data = _migrate_v20(data)
-	if data.version == 21:
-		data = _migrate_v21(data)
-	if data.version == 22:
-		data = _migrate_v22(data)
-	return data
-
-
-## v23 keeps signals and priority signs at junctions: none yet.
-static func _migrate_v22(data: Dictionary) -> Dictionary:
-	data.sim.lane_traffic.junctions = {"signals": {}, "signs": {}}
-	data.version = 23
-	return data
-
-
-## v22 keeps how long vehicles wait in each lane cell: none yet.
-static func _migrate_v21(data: Dictionary) -> Dictionary:
-	data.sim.lane_traffic = {"held": data.sim.lane_traffic, "delays": {}, "stuck": {}, "entered": {}}
-	data.version = 22
-	return data
-
-
-## v21 brings empties back from the hinterland, out to exporters and onto
-## ships: none are on their way yet, and ships in port load none. It also
-## books lorries in at gates: none take bookings yet.
-static func _migrate_v20(data: Dictionary) -> Dictionary:
-	data.sim.returning = []
-	data.sim.stuffing = []
-	for ship: Variant in data.sim.ships:
-		if ship is Dictionary:
-			ship.empties = 0
-	for vehicle: Variant in data.sim.vehicles:
-		if vehicle is Dictionary:
-			vehicle.booked = -1.0
-	# Gates, the only areas with a level, take no bookings yet.
-	for area: Variant in data.sim.areas.list.values():
-		if area is Dictionary and area.settings.has("level"):
-			area.settings.slots_per_hour = 0
-	data.sim.bookings = {}
-	data.sim.until_empty = 0.0
-	data.version = 21
 	return data
 
 
@@ -129,7 +87,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
-		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "claimed": TYPE_DICTIONARY,
+		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
 		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY,
@@ -264,15 +222,17 @@ static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.
 static func _valid_areas(areas: Dictionary) -> bool:
-	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT}):
+	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY}):
 		return false
-	if not areas.terminals.keys().all(func(id: Variant) -> bool: return id is int and areas.terminals[id] is Dictionary and _has_fields(areas.terminals[id], {"name": TYPE_STRING})):
+	if not areas.terminals.keys().all(func(id: Variant) -> bool: return id is int and areas.terminals[id] is Dictionary and _has_fields(areas.terminals[id], {"name": TYPE_STRING, "colour": TYPE_INT})):
+		return false
+	if not areas.paint.keys().all(func(cell: Variant) -> bool: return cell is Vector2i and areas.paint[cell] in areas.terminals):
 		return false
 	var types: Dictionary = Content.base().area_types
 	var levels: Dictionary = Content.base().gate_levels
 	return areas.list.keys().all(func(id: Variant) -> bool:
 		var area: Variant = areas.list[id]
-		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and area.terminal in areas.terminals):
+		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
 			return false
 		return types[area.type].kind != "gate" or area.settings.get("level") in levels)
 

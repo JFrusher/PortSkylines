@@ -880,6 +880,10 @@ static func _arrived(sim: PortSim, vehicle: Vehicle) -> void:
 		vehicle.gate_in = now
 		return
 	sim.turn_times.append(now - vehicle.gate_in)
+	var by_terminal: Array = sim.terminal_turns.get_or_add(sim.areas.list[vehicle.area].terminal, [])
+	by_terminal.append(now - vehicle.gate_in)
+	if by_terminal.size() > 50:
+		by_terminal.pop_front()
 	sim.year.turns += 1
 	sim.year.turn_minutes += now - vehicle.gate_in
 	if sim.turn_times.size() > 50:

@@ -64,7 +64,6 @@ func _port(length: int, kind: String, depth := 14.0) -> PortSim:
 	sim.channel_depth = depth
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "", "the import block is built")
-	sim.apply({"op": "set_terminal", "id": 3, "terminal": 1})
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 12, "kind": kind}), "", "a %s crane is placed" % kind)
 	sim.tick()
 	return sim

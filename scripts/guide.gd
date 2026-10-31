@@ -22,9 +22,9 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 			return sim.roads.segment_at(sim.site_entry()) != 0},
 		{"text": "Drag a gate along the road near the highway, beside the lane coming in, where lorries check in (Gate, key 5).", "done": func() -> bool:
 			return not _areas(sim, "gate").is_empty()},
-		{"text": "A terminal needs its gate and quay apron. Inspect the gate (key 8) and join it to the apron's terminal.", "done": func() -> bool:
+		{"text": "A terminal needs its gate and quay apron. Open the map (Land, key 6) and paint a terminal over your berth, gate and the ground beside your roads.", "done": func() -> bool:
 			return sim.areas.terminals.keys().any(func(t: int) -> bool: return sim.areas.terminal_error(t) == "")},
-		{"text": "Drag a yard block at least %d m long along the road from the highway, and join it to the terminal too. A feeder unloads hundreds of boxes, so a short block fills and stops the cranes. It starts as an import block (Yard, key 4)." % Grid.metres(YARD_LENGTH), "done": func() -> bool:
+		{"text": "Drag a yard block at least %d m long along the road from the highway, inside your terminal's paint. A feeder unloads hundreds of boxes, so a short block fills and stops the cranes. It starts as an import block (Yard, key 4)." % Grid.metres(YARD_LENGTH), "done": func() -> bool:
 			return _areas(sim, "yard_block").any(func(id: int) -> bool:
 				var block: Dictionary = sim.areas.list[id]
 				return RoadNet.length(block.start, block.end) + 1 >= YARD_LENGTH and sim.areas.terminal_error(block.terminal) == "" and sim.areas.idle_reason(id) == "")},

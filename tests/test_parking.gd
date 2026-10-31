@@ -33,7 +33,6 @@ func _port(gate_minutes: float, park: bool) -> PortSim:
 		var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 		sim.creative = true
 		_expect(sim.apply({"op": "build_area", "type": "truck_park", "segment": east, "side": -1, "from": 330, "to": 389}), "", "a truck park is built before the gate")
-		sim.apply({"op": "set_terminal", "id": sim.areas.list.keys()[-1], "terminal": 1})
 		sim.creative = false
 	RandomPort.calls(sim, "feeder", 10, 45, 1)
 	return sim

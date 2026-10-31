@@ -121,6 +121,8 @@ var tractors := 0
 var gave_up := 0
 ## Gate-in to gate-out minutes of the latest lorries, newest last.
 var turn_times: Array[float] = []
+## The same per terminal, by the terminal of the gate a lorry left by.
+var terminal_turns := {}  # terminal -> [minutes], newest last
 ## Minutes the latest collected imports spent in the yard, newest last.
 var dwell_times: Array[float] = []
 ## The player's storage terms: free days (0-3) and the fee per box per day after them.
@@ -302,6 +304,7 @@ func to_dict() -> Dictionary:
 		"tractors": tractors,
 		"gave_up": gave_up,
 		"turn_times": turn_times.duplicate(),
+		"terminal_turns": terminal_turns.duplicate(true),
 		"dwell_times": dwell_times.duplicate(),
 		"storage": storage.duplicate(),
 		"claimed": _claimed.duplicate(),
@@ -372,6 +375,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
 	sim.turn_times.assign(d.turn_times)
+	sim.terminal_turns = d.terminal_turns.duplicate(true)
 	sim.dwell_times.assign(d.dwell_times)
 	sim.storage = d.storage.duplicate()
 	sim._claimed = d.claimed.duplicate()
@@ -458,8 +462,15 @@ func apply(command: Dictionary) -> String:
 			return remove_sts(command.apron, command.along)
 		"set_area":
 			return set_area(command.id, command.settings)
-		"set_terminal":
-			return areas.set_terminal(command.id, command.terminal)
+		"paint_terminal":
+			return areas.paint_cells(command.cells, command.terminal)
+		"fill_terminal":
+			var cells := areas.fill_cells(command.cell)
+			return areas.paint_cells(cells, command.terminal) if not cells.is_empty() else "No road closes in this ground"
+		"name_terminal":
+			return areas.name_terminal(command.terminal, command.name)
+		"colour_terminal":
+			return areas.colour_terminal(command.terminal)
 	return "Unknown command: %s" % command.get("op")
 
 
@@ -733,9 +744,7 @@ func build_two_way_gate(type: String, segment: int, from: int, to: int) -> Strin
 	var err := build_two_way_gate_error(type, segment, from, to)
 	if err == "":
 		build_area(type, segment, 1, from, to)
-		var first: int = areas.list.keys().max()
 		build_area(type, segment, -1, from, to)
-		areas.set_terminal(areas.list.keys().max(), areas.list[first].terminal)
 	return err
 
 
@@ -843,7 +852,7 @@ func _deliver_cranes() -> void:
 		crane_orders.erase(order)
 		if order.apron in areas.list:
 			cranes.append(Crane.new(order.apron, order.along, order.kind))
-			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminals[areas.list[order.apron].terminal].name], areas.list[order.apron].start)
+			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminal_name(areas.list[order.apron].terminal)], areas.list[order.apron].start)
 		else:
 			ledger.post("equipment", rules.sts_cranes[order.kind].cost)
 			_event("A crane arrived with no quay apron to stand on; it went back, refunded")
@@ -1072,6 +1081,13 @@ func kpis() -> Dictionary:
 		"import_dwell_hours": _average(dwell_times) / 60.0,
 		"upkeep_per_day": daily_upkeep(),
 	}
+
+
+## The average lorry turn at `terminal`'s gates, in minutes, or 0 before any.
+func terminal_turn_minutes(terminal: int) -> float:
+	var turns: Array[float] = []
+	turns.assign(terminal_turns.get(terminal, []))
+	return _average(turns)
 
 
 func _average(values: Array[float]) -> float:

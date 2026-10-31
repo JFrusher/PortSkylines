@@ -790,12 +790,6 @@ func _draw_inspect_actions() -> void:
 	if not (_inspected is Dictionary and _inspected.area in sim.areas.list):
 		return
 	var id: int = _inspected.area
-	var own: int = sim.areas.list[id].terminal
-	for terminal: int in sim.areas.terminals:
-		if terminal != own:
-			_action_button(_inspect_actions, "Join %s" % sim.areas.terminals[terminal].name, {"op": "set_terminal", "id": id, "terminal": terminal})
-	if sim.areas.list.values().filter(func(a: Dictionary) -> bool: return a.terminal == own).size() > 1:
-		_action_button(_inspect_actions, "New terminal", {"op": "set_terminal", "id": id, "terminal": 0})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
 		for role: String in ["import", "export", "reefer", "dangerous"]:

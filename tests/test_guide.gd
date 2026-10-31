@@ -7,6 +7,7 @@ extends SceneTree
 ## Calendar days the test waits at most for an offer and then for a ship.
 const DAYS := 7
 
+const AreaPort := preload("res://tests/area_port.gd")
 var _failures := 0
 
 
@@ -22,8 +23,8 @@ func _initialize() -> void:
 		[{"op": "build_berth", "kind": "feeder", "y": entry.y}],
 		[{"op": "build_road", "from": Vector2i(86, entry.y), "to": sim.site_entry_point(), "type": "terminal_1_1"}],
 		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 419, "to": 433}],
-		[{"op": "set_terminal", "id": 2, "terminal": 1}],
-		[{"op": "build_area", "type": "yard_block", "segment": 3, "side": 1, "from": 2, "to": 41}, {"op": "set_terminal", "id": 3, "terminal": 1}],
+		[{"op": "paint_terminal", "cells": AreaPort.region(sim), "terminal": -1}],
+		[{"op": "build_area", "type": "yard_block", "segment": 3, "side": 1, "from": 2, "to": 41}],
 		[{"op": "place_sts", "kind": "sts", "apron": 1, "along": 37}, {"op": "place_sts", "kind": "sts", "apron": 1, "along": 12}],
 		[{"op": "buy_tractors", "count": 4}],
 	]

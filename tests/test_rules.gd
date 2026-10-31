@@ -64,7 +64,7 @@ func _run(sim: PortSim, minutes: float) -> void:
 
 func _test_no_ship_without_a_terminal() -> void:
 	var sim := AreaPort.base()
-	sim.apply({"op": "set_terminal", "id": 2, "terminal": 0})
+	sim.apply({"op": "paint_terminal", "cells": sim.areas.cells(2), "terminal": -1})
 	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 0, "no ship calls at an apron whose terminal has no gate")
 	_expect(sim.last_event().contains("in a terminal with a gate"), true, "and the status says why (%s)" % sim.last_event())

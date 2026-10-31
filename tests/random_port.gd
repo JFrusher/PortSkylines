@@ -47,6 +47,7 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	rng.seed = seed_value
 	var entry := PortSim.new().site_entry()
 	var port: Array[Dictionary] = [
+		{"op": "paint_terminal", "cells": _region(), "terminal": -1},
 		{"op": "build_road", "from": Vector2i(86, 200), "to": Vector2i(86, entry.y), "type": "terminal_1_1"},
 		{"op": "build_road", "from": Vector2i(86, entry.y), "to": PortSim.new().site_entry_point(), "type": "terminal_1_1"},
 		{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 79},
@@ -55,8 +56,6 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 60, "to": 89},
 		{"op": "set_area", "id": 4, "settings": {"role": "export"}},
 	]
-	for id: int in [2, 3, 4]:
-		port.append({"op": "set_terminal", "id": id, "terminal": 1})
 	for along: int in [12, 30, 48]:
 		port.append({"op": "place_sts", "kind": "sts", "apron": 1, "along": along})
 	port.append({"op": "buy_tractors", "count": 6})
@@ -85,7 +84,12 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 		elif roll < 0.56:
 			command = {"op": "set_area", "id": rng.randi_range(5, 12), "settings": {"role": PortSim.AREA_ROLES[rng.randi() % PortSim.AREA_ROLES.size()]}}
 		elif roll < 0.6:
-			command = {"op": "set_terminal", "id": rng.randi_range(5, 12), "terminal": rng.randi_range(0, 3)}
+			var corner := Vector2i(rng.randi_range(80, 560), rng.randi_range(200, 330))
+			var patch: Array[Vector2i] = []
+			for x in rng.randi_range(1, 12):
+				for y in rng.randi_range(1, 12):
+					patch.append(corner + Vector2i(x, y))
+			command = {"op": "paint_terminal", "cells": patch, "terminal": rng.randi_range(-1, 3)}
 		elif roll < 0.75:
 			command = {"op": "place_sts", "kind": "sts", "apron": rng.randi_range(1, 6), "along": rng.randi_range(0, 80)}
 		elif roll < 0.88:
@@ -107,3 +111,12 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 	extra.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.tick < b.tick)
 	log.append_array(extra)
 	return log
+
+
+## The scripted port's ground, painted as Terminal 1 before it is built.
+static func _region() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for x in range(60, 601):
+		for y in range(180, 340):
+			cells.append(Vector2i(x, y))
+	return cells
