@@ -572,7 +572,7 @@ func _process(dt: float) -> void:
 			_inspect_name.text = lines[0]
 			_inspect_lines.text = "\n".join(lines.slice(1))
 			_inspect_lines.visible = lines.size() > 1
-		if _actions_drawn != [sim, sim.areas.version, _inspected]:
+		if _actions_drawn != _actions_key():
 			_draw_inspect_actions()
 
 	_board.sim = sim
@@ -781,9 +781,12 @@ func _show_milestone() -> void:
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 ## For an inspected area: join each other terminal, or split off into a new one.
 func _draw_inspect_actions() -> void:
-	_actions_drawn = [sim, sim.areas.version, _inspected]
+	_actions_drawn = _actions_key()
 	for child in _inspect_actions.get_children():
 		child.queue_free()
+	if _inspected is Dictionary and _inspected.has("junction"):
+		_draw_junction_actions(_inspected.junction)
+		return
 	if not (_inspected is Dictionary and _inspected.area in sim.areas.list):
 		return
 	var id: int = _inspected.area
@@ -927,6 +930,34 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 
 
 ## A plain button that issues `command` on each press.
+## What the inspect panel's buttons were drawn for; they are drawn again when it changes.
+func _actions_key() -> Array:
+	var junctions := sim.lane_traffic.junctions
+	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
+	return [sim, sim.areas.version, _inspected, settings]
+
+
+## Junction `point`'s buttons: signals on or off, each phase's green time,
+## and each arm's sign, which a press moves on: none, give way, stop.
+func _draw_junction_actions(point: Vector2i) -> void:
+	var junctions := sim.lane_traffic.junctions
+	var signalled := point in junctions.signals
+	_action_button(_inspect_actions, "Signals off" if signalled else "Signals on", {"op": "set_signals", "point": point, "on": not signalled})
+	if signalled:
+		var greens: Array = junctions.signals[point].green
+		for i in greens.size():
+			for change: int in [-5, 5]:
+				var seconds := clampf(greens[i] + change, sim.rules.traffic.min_green_seconds, sim.rules.traffic.max_green_seconds)
+				if seconds != greens[i]:
+					_action_button(_inspect_actions, "Phase %d %+d s" % [i + 1, change], {"op": "set_green", "point": point, "phase": i, "seconds": seconds})
+	var next := {"": "give_way", "give_way": "stop", "stop": ""}
+	var label := {"": "no sign", "give_way": "give way", "stop": "stop"}
+	for arm: Vector2i in sim.lanes.arms(point):
+		var sign: String = junctions.signs.get(point, {}).get(arm, "")
+		var button := _action_button(_inspect_actions, "From the %s: %s" % [Inspect.arm_name(arm), label[sign]], {"op": "set_sign", "point": point, "arm": arm, "sign": next[sign]})
+		button.tooltip_text = "Press for %s. Give way: traffic from here waits for a gap; stop: it also stops at the line first." % label[next[sign]]
+
+
 func _action_button(row: Container, text: String, command: Dictionary) -> Button:
 	var button := Button.new()
 	button.text = text

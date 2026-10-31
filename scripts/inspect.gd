@@ -28,6 +28,9 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for crane in sim.cranes:
 		if cell in _crane_cells(sim, crane):
 			return crane
+	var junction := sim.lanes.box_of(cell)
+	if junction != Grid.NONE:
+		return {"junction": junction}
 	var area := sim.areas.area_at(cell)
 	return {"area": area} if area else null
 
@@ -45,9 +48,40 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		return _ship(sim, thing) if thing in sim.ships else nothing
 	if thing is PortSim.Crane:
 		return _crane(sim, thing) if thing in sim.cranes else nothing
+	if thing is Dictionary and thing.has("junction"):
+		return _junction(sim, thing.junction) if not sim.lanes.arms(thing.junction).is_empty() else nothing
 	if thing is Dictionary:
 		return _area(sim, thing.area) if thing.area in sim.areas.list else nothing
 	return nothing
+
+
+## The name of the arm leaving a junction towards `arm`: "north", "south-east"...
+static func arm_name(arm: Vector2i) -> String:
+	var parts: Array[String] = []
+	if arm.y != 0:
+		parts.append("north" if arm.y < 0 else "south")
+	if arm.x != 0:
+		parts.append("west" if arm.x < 0 else "east")
+	return "-".join(parts)
+
+
+static func _junction(sim: PortSim, point: Vector2i) -> Array[String]:
+	var junctions := sim.lane_traffic.junctions
+	var lines: Array[String] = ["Junction of %d roads" % sim.lanes.arms(point).size()]
+	if point in junctions.signals:
+		var at: Dictionary = junctions.signals[point]
+		var phases := junctions.phases(sim.lanes, point)
+		for i in phases.size():
+			var arms: Array = phases[i].map(func(arm: Vector2i) -> String: return arm_name(arm))
+			var now := ", green now (%d s left)" % ceili(at.left) if i == at.phase and at.left > 0.0 else ""
+			lines.append("Phase %d, %s: %d s green%s" % [i + 1, " and ".join(arms), roundi(at.green[i]), now])
+	else:
+		lines.append("No signals")
+	var signs: Dictionary = junctions.signs.get(point, {})
+	for arm: Vector2i in sim.lanes.arms(point):
+		if arm in signs:
+			lines.append("From the %s: %s" % [arm_name(arm), "give way" if signs[arm] == "give_way" else "stop"])
+	return lines
 
 
 static func _train(sim: PortSim, train: Train) -> Array[String]:

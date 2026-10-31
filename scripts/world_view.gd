@@ -151,6 +151,11 @@ var _area_preview := MeshInstance3D.new()
 var _road_preview := MeshInstance3D.new()
 ## A ring on each end of a road drag that joins a road, so a join is plain.
 var _snap_marks := MeshInstance3D.new()
+## A mark at the head of each lane into a junction with signals (green or
+## red for its phase) or a sign (white give way, orange stop), and what they
+## were last drawn for.
+var _junction_signs := MeshInstance3D.new()
+var _junctions_drawn: Variant = null
 var _hover := _box(Vector3(Grid.CELL, 1.5, Grid.CELL) / METRES_PER_UNIT, Color(1, 1, 1, 0.5))
 ## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _info := MeshInstance3D.new()
@@ -173,7 +178,7 @@ func _ready() -> void:
 	land.position = Vector3((site.x - SEA_START + sea) / 2.0, -0.5, site.y / 2.0)
 	add_child(land)
 	add_child(_hover)
-	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _areas, _area_preview]:
+	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview]:
 		add_child(node)
 	add_child(_info)
 	for preview: MeshInstance3D in [_road_preview, _area_preview, _info]:
@@ -181,6 +186,9 @@ func _ready() -> void:
 		preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		preview.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_info.material_override.vertex_color_use_as_albedo = true
+	_junction_signs.material_override = StandardMaterial3D.new()
+	_junction_signs.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_junction_signs.material_override.vertex_color_use_as_albedo = true
 	_snap_marks.material_override = StandardMaterial3D.new()
 	_snap_marks.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_snap_marks.material_override.albedo_color = SNAP_COLOR
@@ -232,6 +240,40 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
+## Marks the head of each lane into a junction with signals or a sign, when
+## they or the phases showing green have changed.
+func _draw_junctions() -> void:
+	var junctions := sim.lane_traffic.junctions
+	var green := {}
+	for point: Vector2i in junctions.signals:
+		var at: Dictionary = junctions.signals[point]
+		green[point] = junctions.phases(sim.lanes, point)[at.phase] if at.left > 0.0 else []
+	var now := [sim.roads.version, green, junctions.signs.duplicate(true)]
+	if now == _junctions_drawn:
+		return
+	_junctions_drawn = now
+	var tool := _road_tool()
+	var points := {}
+	for point: Vector2i in junctions.signals.keys() + junctions.signs.keys():
+		points[point] = true
+	for point: Vector2i in points:
+		for arm: Vector2i in sim.lanes.arms(point):
+			var color := Color.TRANSPARENT
+			if point in green:
+				color = Color(0.2, 0.9, 0.3) if arm in green[point] else Color(0.95, 0.2, 0.15)
+			elif junctions.signs.get(point, {}).has(arm):
+				color = Color(0.95, 0.95, 0.95) if junctions.signs[point][arm] == "give_way" else Color(1.0, 0.55, 0.1)
+			if color.a == 0.0:
+				continue
+			tool.set_color(color)
+			# The approach lists each lane's last cells, nearest the box last.
+			var cells := sim.lanes.approach(point, arm)
+			for i in range(LaneGraph.APPROACH_CELLS - 1, cells.size(), LaneGraph.APPROACH_CELLS):
+				var middle := (Vector2(cells[i]) + Vector2(0.5, 0.5)) * Grid.CELL
+				_strip(tool, middle - Vector2(arm) * Grid.CELL * 0.3, middle + Vector2(arm) * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
+	_junction_signs.mesh = tool.commit()
+
+
 ## Rings the places where a road drag joins a road, in grid units (a road's
 ## grid point, or a track cell's middle), and dashes the guides it lines up
 ## with, as pairs of ends in `guides`; hidden when both are empty.
@@ -274,6 +316,7 @@ func _process(dt: float) -> void:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
+	_draw_junctions()
 	var channel: Dictionary = sim.rules.channel
 	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
 	if sim.land.size() != _drawn_land:
