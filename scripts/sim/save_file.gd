@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 21
+const VERSION := 22
 ## The first save with roads on grid lines. Older saves hold roads whose
 ## lanes hang to one side of their line, which can't be moved onto grid lines
 ## where roads meet, so they are refused.
@@ -75,6 +75,15 @@ static func load_from(path: String) -> Dictionary:
 static func _migrate(data: Dictionary) -> Dictionary:
 	if data.version == 20:
 		data = _migrate_v20(data)
+	if data.version == 21:
+		data = _migrate_v21(data)
+	return data
+
+
+## v22 keeps how long vehicles wait in each lane cell: none yet.
+static func _migrate_v21(data: Dictionary) -> Dictionary:
+	data.sim.lane_traffic = {"held": data.sim.lane_traffic, "delays": {}, "stuck": {}, "entered": {}}
+	data.version = 22
 	return data
 
 
@@ -190,8 +199,14 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 	# Trains hold level crossings under their id negated.
 	for train: Dictionary in data.trains:
 		ids[-train.id] = true
-	for id: Variant in data.lane_traffic:
-		if not (id in ids and data.lane_traffic[id] is Array and _all_cells(data.lane_traffic[id], true)):
+	if not _has_fields(data.lane_traffic, {"held": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY}):
+		return false
+	for id: Variant in data.lane_traffic.held:
+		if not (id in ids and data.lane_traffic.held[id] is Array and _all_cells(data.lane_traffic.held[id], true)):
+			return false
+	for counts: String in ["delays", "stuck", "entered"]:
+		var by_cell: Dictionary = data.lane_traffic[counts]
+		if not by_cell.keys().all(func(cell: Variant) -> bool: return cell is Vector2i) or not by_cell.values().all(func(n: Variant) -> bool: return n is int or n is float):
 			return false
 	for area: Variant in data.handovers:
 		var at: Variant = data.handovers[area]

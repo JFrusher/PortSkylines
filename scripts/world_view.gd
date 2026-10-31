@@ -93,10 +93,15 @@ const QUAY_GAP := 2.0
 var _deck_box := Basis()
 ## Each info view's colours and what they mean, by HudDetails group.
 const INFO_LEGENDS := {
-	HudDetails.GROUP_TRAFFIC: [["Flowing", Color(0.2, 0.8, 0.35)], ["Half stopped", Color(0.95, 0.75, 0.15)], ["Stopped", Color(0.9, 0.2, 0.15)]],
+	HudDetails.GROUP_TRAFFIC: [["Flowing", Color(0.2, 0.8, 0.35)], ["Slow", Color(0.95, 0.75, 0.15)], ["Jammed", Color(0.9, 0.2, 0.15)]],
 	HudDetails.GROUP_CONTAINERS: [["Empty", Color(0.2, 0.8, 0.35)], ["Half full", Color(0.95, 0.75, 0.15)], ["Full", Color(0.9, 0.2, 0.15)]],
 }
 const INFO_TOP := 0.6
+## Seconds of waiting per vehicle passing a cell that the Traffic view shows
+## as jammed: about a manual gate check (2 game minutes, which pass in 2 s of
+## vehicle time), in every cell of a queue. Free flow can't set the scale: a
+## lorry crosses a cell in about a hundredth of a second.
+const JAM_SECONDS := 2.0
 const INFO_SECONDS := 0.25
 const SEA_START := -18.0  # how far the water reaches past the site
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
@@ -354,32 +359,16 @@ func _draw_info() -> void:
 	_info.mesh = tool.commit()
 
 
-## For the Traffic view, each road's or area's cells -> the share of the
-## vehicles in it that are stopped; for Containers, each yard block's cells ->
-## how full it is.
-# shortcut: traffic shows this moment only, not an average over time; average once players ask where jams were.
+## For the Traffic view, each cell vehicles wait in, alone -> its smoothed
+## delay against JAM_SECONDS, from 0 (flowing) to 1 (jammed), so a queue
+## shows where it is however long its road; for Containers, each yard
+## block's cells -> how full it is.
 static func info_shares(sim: PortSim, view: String) -> Dictionary:
 	var shares := {}
 	if view == HudDetails.GROUP_TRAFFIC:
-		var places: Array[Array] = []
-		for id: int in sim.roads.segments:
-			var cells: Array[Vector2i] = []
-			for lane: Dictionary in sim.roads.lanes(id):
-				cells.append_array(lane.cells)
-			places.append(cells)
-		for id: int in sim.areas.list:
-			places.append(sim.areas.cells(id))
-		var place_of := {}
-		for cells in places:
-			for cell: Vector2i in cells:
-				place_of[cell] = cells
-		var counts := {}  # cells -> (stopped, vehicles)
-		for vehicle in sim.vehicles:
-			var cells: Variant = place_of.get(Vector2i(vehicle.position(1.0).round()))
-			if cells != null:
-				counts[cells] = counts.get(cells, Vector2i.ZERO) + Vector2i(1 if vehicle.waited > 0 else 0, 1)
-		for cells: Array in counts:
-			shares[cells] = counts[cells].x / float(counts[cells].y)
+		var delays := sim.lane_traffic.delays()
+		for cell: Vector2i in delays:
+			shares[[cell]] = minf(delays[cell] / JAM_SECONDS, 1.0)
 	else:
 		for id: int in sim.areas.list:
 			if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":

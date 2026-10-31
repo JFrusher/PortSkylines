@@ -29,6 +29,10 @@ const SCHEMA := {
 	"export_lead_hours": TYPE_FLOAT,
 	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"sail_seconds": TYPE_FLOAT,
+	# How long vehicles wait in each lane cell is folded in every epoch_seconds
+	# of vehicle time, mixed in at `smoothing` (0 to 1); routes take up the
+	# delays every route_epoch_seconds, dropping every kept route.
+	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT},
 	# Empties: return_share of imports come back as empties return_days after
 	# leaving, the rest going to inland depots; one
 	# turned away for want of room costs its line `refused` reputation; one

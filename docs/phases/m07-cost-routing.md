@@ -38,6 +38,16 @@
 Done already, on the M5 lane graph: turns join where the two lanes cross (no turn drives back over a cell), traffic turns back at junctions as well as dead ends, every cell where roads meeting at a junction overlap is a junction cell, and the road tool snaps onto nearby roads (`tests/test_junctions.gd`, `test_roads`). Step 2's turn rules (which lane may turn which way) are still to do.
 - **Gates across both directions** (M5 playtest, open 3). Done 24 Oct 2026: lorries use the terminal's gate nearest them in and out; a two-way gate builds one on each side of the road; gates come in 2, 4 and 6 lanes, at manual, OCR and automated levels, with throughput shown in Inspect.
 
+### Order and scope, with the developer (31 Oct 2026)
+Where things stand: lanes per direction, lane changes, one-way roads and gate lanes are done (steps 1, 9, most of 3); tractor lanes already bar lorries (part of 8). Routes are the shortest distance, kept until a road changes; M6's path thread was never needed. The Traffic panel colours each road by the share of its vehicles stopped this moment.
+
+Decisions: money is dropped from the cost (lorries are outside hauliers, so no tolls): cost is time plus turns and lane changes. All four of congestion routing, lane rules, signals and the overlay are in. M6 closes later (laptop bench, fixture, tag) alongside this phase. Order, so each step is measured by the one before:
+- **A. Live travel times (step 5 first).** Each lane cell keeps a smoothed time vehicles spend in it, updated on a fixed tick so replays match. Test: a jammed cell's time rises, then falls back once the jam clears.
+- **B. Traffic overlay from them (step 12).** The Traffic view colours each lane by its smoothed time against free flow, instead of who is stopped this moment. Check: screenshot of a jam.
+- **C. Routing by cost (steps 4, 6).** Routes weigh each cell by its smoothed time, with turns and lane changes costing extra; kept routes are dropped on a cost epoch. Measure the route cost on the endgame bench before keeping it. Test: the second-road shift scenario.
+- **D. Turn rules and lane choice (steps 2, 7).** Test: the turn table and the lane-use exit criterion.
+- **E. Signals and priority (steps 10, 11).** Test: no conflicting movements in a phase.
+
 ### Close
 13. **Bench and replay.** Endgame bench within budget, and the replay hash test with threads.
 14. **Fixture and soak.** New save fixture, and lane invariants in the soak test.

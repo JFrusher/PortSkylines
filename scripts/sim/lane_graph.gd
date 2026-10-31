@@ -19,6 +19,22 @@ var _at := {}  # cell -> point ids of lane cells there
 var _junction := {}  # cells where routes from different roads meet or cross
 var _flows := {}  # area id -> 1 or -1, the way traffic runs along it
 var _routes := [{}, {}]  # [for all vehicles, for lorries]: Vector4i(from, to) -> route; cleared with the graph
+## What a route weighs each cell by: the delays set_delays was last given,
+## and the speeds, in cells a second, that turn them into cells of driving.
+var _delays := {}
+var _speeds := Vector2(1.0, 1.0)  # (all vehicles, lorries)
+## Points inside areas, by area: driveways, buffers and slots. They stay
+## disabled but for the areas a search starts or ends in, so no route takes an
+## area's buffer strip as a way round a jammed road beside it.
+var _area_points := {}  # area id -> [point ids], its slots' left out
+var _area_of := {}  # point id -> area id
+## The same for handover slots, one level down: a slot runs beside its
+## area's buffer or lane, so it stays disabled but for the slots a search
+## starts or ends in, or routes would cut through slots others stand in.
+var _slot_points := {}  # Vector2i(area id, slot) -> [point ids]
+var _slot_of := {}  # point id -> Vector2i(area id, slot)
+## The cells _weigh last weighed for a delay, to set back when it clears.
+var _weighed := {}  # cell -> true
 
 
 func _init(net: RoadNet) -> void:
@@ -79,22 +95,82 @@ func route(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
 	return kept[key]
 
 
+## Routes from here on weigh each cell by `delays` (cell -> seconds a vehicle
+## waits in it, from LaneTraffic): entering it costs its length plus the
+## cells a vehicle could drive in that time, at `all_speed` cells a second on
+## the graph for every vehicle and `lorry_speed` on the lorries' graph, so
+## routes go round a jam that costs more than the way round. Kept routes go.
+func set_delays(delays: Dictionary, lorry_speed: float, all_speed: float) -> void:
+	_refresh()
+	_delays = delays.duplicate()
+	_speeds = Vector2(all_speed, lorry_speed)
+	_weigh()
+	for kept: Dictionary in _routes:
+		kept.clear()
+
+
+## Weighs each cell's points by _delays: 1 where a cell flows, plus the
+## cells its delay is worth. Only cells with a delay now or last time change.
+func _weigh() -> void:
+	for cell: Vector2i in _weighed.keys() + _delays.keys():
+		var delay: float = _delays.get(cell, 0.0)
+		for id: int in _at.get(cell, []):
+			_all.set_point_weight_scale(id, 1.0 + delay * _speeds.x)
+			if _lorries.has_point(id):
+				_lorries.set_point_weight_scale(id, 1.0 + delay * _speeds.y)
+	_weighed.clear()
+	for cell: Vector2i in _delays:
+		_weighed[cell] = true
+
+
+## Enables or disables points `ids` in both graphs.
+func _enable(ids: Array, on: bool) -> void:
+	for id: int in ids:
+		_all.set_point_disabled(id, not on)
+		if _lorries.has_point(id):
+			_lorries.set_point_disabled(id, not on)
+
+
+## The point lists a search from `from` to `to` may use besides roads: the
+## areas and the slots those two cells are in (a slot's area too).
+func _ends(from: Vector2i, to: Vector2i) -> Array[Array]:
+	var found: Array[Array] = []
+	for cell: Vector2i in [from, to]:
+		for id: int in _at.get(cell, []):
+			if id in _slot_of:
+				found.append(_slot_points[_slot_of[id]])
+				found.append(_area_points[_slot_of[id].x])
+			elif id in _area_of:
+				found.append(_area_points[_area_of[id]])
+	return found
+
+
 func _search(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
+	var ends := _ends(from, to)
+	for ids: Array in ends:
+		_enable(ids, true)
+	var cells := _find(from, to, lorry)
+	for ids: Array in ends:
+		_enable(ids, false)
+	return cells
+
+
+func _find(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
 	var graph := _lorries if lorry else _all
-	var best := PackedVector2Array()
-	var best_length := INF
+	var best := PackedInt64Array()
+	var best_cost := INF
 	for start: int in _at.get(from, []):
 		for goal: int in _at.get(to, []):
 			if not graph.has_point(start) or not graph.has_point(goal):
 				continue
-			var path := graph.get_point_path(start, goal)
-			var length := _length(path)
-			if not path.is_empty() and length < best_length:
-				best = path
-				best_length = length
+			var ids := graph.get_id_path(start, goal)
+			var cost := _cost(graph, ids)
+			if not ids.is_empty() and cost < best_cost:
+				best = ids
+				best_cost = cost
 	var cells: Array[Vector2i] = []
-	for point in best:
-		var cell := Vector2i(point)
+	for id in best:
+		var cell := Vector2i(graph.get_point_position(id))
 		if not cells.is_empty():
 			if cell == cells[-1]:
 				continue
@@ -116,6 +192,10 @@ func _rebuild() -> void:
 	_at.clear()
 	_junction.clear()
 	_flows.clear()
+	_area_points.clear()
+	_area_of.clear()
+	_slot_points.clear()
+	_slot_of.clear()
 	for kept: Dictionary in _routes:
 		kept.clear()
 	var ends := {}  # node -> [segment, first point, cells] of lanes arriving there
@@ -175,6 +255,12 @@ func _rebuild() -> void:
 	if areas:
 		for id: int in areas.list:
 			next_id = _add_area(id, next_id)
+	for area: int in _area_points:
+		_enable(_area_points[area], false)
+	for slot: Vector2i in _slot_points:
+		_enable(_slot_points[slot], false)
+	_weighed.clear()
+	_weigh()
 
 
 ## The [from, to] points a turn from lane `arriving` onto lane `leaving` joins,
@@ -223,6 +309,8 @@ func _add_area(id: int, next_id: int) -> int:
 		if c not in at:
 			at[c] = next[0]
 			_add_point(next[0], c, lorries)
+			_area_points.get_or_add(id, []).append(next[0])
+			_area_of[next[0]] = id
 			next[0] += 1
 		return at[c]
 	# The buffer strip, in from the road at its first cell and out at its last.
@@ -251,10 +339,15 @@ func _add_area(id: int, next_id: int) -> int:
 		# park's buffer, an apron's through lane) and left sideways back into
 		# it, so a parked vehicle never blocks the way to another slot.
 		var lane := 2 if area.type == "quay_apron" else 0
-		for slot: Array in layout.slots:
+		for s: int in layout.slots.size():
+			var slot: Array = layout.slots[s]
 			var ks := range(length).filter(func(k: int) -> bool: return cell.call(lane + 1, k) in slot)
 			for k: int in ks:
-				point.call(cell.call(lane + 1, k))
+				var p: int = point.call(cell.call(lane + 1, k))
+				_area_points[id].erase(p)
+				_area_of.erase(p)
+				_slot_points.get_or_add(Vector2i(id, s), []).append(p)
+				_slot_of[p] = Vector2i(id, s)
 				if k > ks[0]:
 					_connect(at[cell.call(lane + 1, k - 1)], at[cell.call(lane + 1, k)], lorries)
 			_connect(at[cell.call(lane, ks[0])], at[cell.call(lane + 1, ks[0])], lorries)
@@ -303,8 +396,11 @@ static func _steps(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	return found
 
 
-static func _length(path: PackedVector2Array) -> float:
+## What A* weighs route `ids` at on `graph`: each step's length times the
+## weight of the point it enters.
+static func _cost(graph: AStar2D, ids: PackedInt64Array) -> float:
 	var total := 0.0
-	for i in path.size() - 1:
-		total += path[i].distance_to(path[i + 1])
+	for i in range(1, ids.size()):
+		total += graph.get_point_position(ids[i - 1]).distance_to(graph.get_point_position(ids[i])) * graph.get_point_weight_scale(ids[i])
 	return total
+
