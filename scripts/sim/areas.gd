@@ -18,6 +18,9 @@ var list := {}
 var terminals := {}
 ## Painted cells: cell -> terminal id.
 var paint := {}
+## How many cells each terminal has painted, kept as they are painted, so a
+## brush stroke needn't count them all again; not saved, counted on load.
+var _counts := {}  # terminal -> cells
 ## How many colours a terminal's colour index runs through.
 const TERMINAL_COLOURS := 8
 ## The most cells a fill paints; more means no road closes the ground in.
@@ -97,14 +100,20 @@ func paint_cells(cells: Array, terminal: int) -> String:
 		return "No such terminal"
 	if terminal == -1:
 		terminal = _new_terminal()
+	var touched := Rect2i()
 	for cell: Vector2i in cells:
 		if cell.x < 0 or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
 			continue
+		var was: int = paint.get(cell, 0)
+		if was:
+			_counts[was] -= 1
 		if terminal == 0:
 			paint.erase(cell)
 		else:
 			paint[cell] = terminal
-	_repaint()
+			_counts[terminal] = _counts.get(terminal, 0) + 1
+		touched = Rect2i(cell, Vector2i.ONE) if touched.size == Vector2i.ZERO else touched.expand(cell).expand(cell + Vector2i.ONE)
+	_repaint(touched)
 	return ""
 
 
@@ -208,7 +217,7 @@ func _keep_for(now: Vector2i) -> void:
 func _idle_reason(id: int) -> String:
 	var area: Dictionary = list[id]
 	if area.terminal == 0:
-		return "Paint this %s into a terminal on the map (Land, key 6)" % types[area.type].name.to_lower()
+		return "Paint this %s into a terminal on the map (Map, key 6)" % types[area.type].name.to_lower()
 	if _lanes_for != _roads.version:
 		_lanes_for = _roads.version
 		_lane_cells.clear()
@@ -304,6 +313,8 @@ static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, sit
 	areas.terminals = d.terminals.duplicate(true)
 	areas._next_terminal = d.next_terminal
 	areas.paint = d.paint.duplicate()
+	for terminal: int in areas.paint.values():
+		areas._counts[terminal] = areas._counts.get(terminal, 0) + 1
 	return areas
 
 
@@ -321,18 +332,26 @@ func _terminal_of(cells: Array[Vector2i]) -> int:
 	return best
 
 
-## After painting: every area to the terminal holding most of it, and
-## terminals with no painted cell left gone.
-func _repaint() -> void:
-	var used := {}
-	for terminal: int in paint.values():
-		used[terminal] = true
+## After painting within `touched`: the areas over it to the terminal now
+## holding most of them, and terminals with no painted cell left gone.
+func _repaint(touched: Rect2i) -> void:
 	for terminal: int in terminals.keys():
-		if terminal not in used:
+		if _counts.get(terminal, 0) == 0:
 			terminals.erase(terminal)
+			_counts.erase(terminal)
 	for id: int in list:
-		list[id].terminal = _terminal_of(_cells(list[id]))
+		if _bounds(list[id]).intersects(touched):
+			list[id].terminal = _terminal_of(_cells(list[id]))
 	version += 1
+
+
+## The cells `area` spans, from its corners.
+func _bounds(area: Dictionary) -> Rect2i:
+	var back: Vector2i = area.out * (depth_of(area) - 1)
+	var rect := Rect2i(area.start, Vector2i.ONE)
+	for corner: Vector2i in [area.end, area.start + back, area.end + back]:
+		rect = rect.expand(corner).expand(corner + Vector2i.ONE)
+	return rect
 
 
 func _new_terminal() -> int:

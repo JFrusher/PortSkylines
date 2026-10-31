@@ -18,7 +18,6 @@ signal event_picked(cell: Vector2i)
 
 const BULLDOZE := -1
 const CRANE := -2
-const BUY_LAND := -6
 const INSPECT := -7
 ## Draws a road of road_type on the 4 m grid by dragging.
 const DRAW_ROAD := -8
@@ -30,7 +29,7 @@ const BUILD_BERTH := -10
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
-const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Land", "Bulldoze", "Inspect"]
+const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Bulldoze", "Inspect"]
 const FLASH_SECONDS := 2.5
 ## UI scales the settings button steps through, and where the choice is kept.
 const UI_SCALES: Array[float] = [1.0, 1.25, 1.5]
@@ -72,6 +71,8 @@ var _borrow := HBoxContainer.new()
 var _gated := {}
 ## The berth board, opened by the Contracts button.
 var _board := BerthBoard.new()
+## The port map, where terminals are painted and land bought, opened by Map.
+var _map := PortMap.new()
 var _contracts_button: Button
 var _flash_left := 0.0
 var _refresh_left := 0.0
@@ -248,6 +249,9 @@ func _ready() -> void:
 		var open := _button(cat_row, "%s\n%d" % [category, _category_buttons.size() + 1], categories, false, func() -> void:
 			for other: HBoxContainer in rows.values():
 				other.visible = other == row
+			if category == "Map":
+				_map.visible = true
+				return
 			var first: Button = row.get_children().filter(func(b: Node) -> bool: return b is Button and b.visible and b.toggle_mode).front()
 			if first:
 				first.button_pressed = true)
@@ -330,8 +334,6 @@ func _ready() -> void:
 			tool = CRANE
 			crane_kind = key))).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
-	_gate("land", _category_buttons[CATEGORIES.find("Land")])
-	_item(_button(rows.Land, "Land tile\n" + HudDetails.dollars(sim.rules.land.price), tools, false, func() -> void: tool = BUY_LAND)).tooltip_text = "Buys an %d m square of land to build on.\n%s, upkeep $%d a day." % [sim.rules.land.metres, HudDetails.dollars(sim.rules.land.price), sim.rules.land.upkeep]
 	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane or area to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
@@ -342,6 +344,13 @@ func _ready() -> void:
 	_board.command_issued.connect(func(command: Dictionary) -> void: command_issued.emit(command))
 	_board.closed.connect(func() -> void: _contracts_button.button_pressed = false)
 	add_child(_board)
+	_map.visible = false
+	_map.sim = sim
+	_map.command_issued.connect(func(command: Dictionary) -> void: command_issued.emit(command))
+	_map.closed.connect(func() -> void:
+		_map.visible = false
+		_category_buttons[0].button_pressed = true)
+	add_child(_map)
 
 
 func _build_kpi_cards(row: HBoxContainer) -> void:
@@ -576,6 +585,7 @@ func _process(dt: float) -> void:
 			_draw_inspect_actions()
 
 	_board.sim = sim
+	_map.sim = sim
 
 	# Throttled refresh of the info bar and the open drawer
 	_refresh_left -= dt
