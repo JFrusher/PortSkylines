@@ -239,7 +239,8 @@ func _command(cell: Vector2i) -> Dictionary:
 			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell), "kind": hud.crane_kind}
 		Hud.BUILD_BERTH:
 			return {"op": "build_berth", "kind": hud.berth, "y": cell.y}
-	return {"op": "buy_land", "tile": sim.land_tile(cell)}
+	assert(false, "no command for tool %d" % hud.tool)
+	return {}
 
 
 ## The quay apron covering grid cell `cell`, or 0.
@@ -294,7 +295,8 @@ func _order_error(cell: Vector2i) -> String:
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
 		Hud.BUILD_BERTH:
 			return sim.build_berth_error(hud.berth, cell.y)
-	return sim.buy_land_error(sim.land_tile(cell))
+	assert(false, "no error check for tool %d" % hud.tool)
+	return ""
 
 
 ## The 4 m grid cell under the mouse, or NONE.

@@ -70,7 +70,6 @@ func _block(sim: PortSim, from: int) -> int:
 	sim.creative = true
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": from, "to": from + 29}), "", "a block at %d is built" % from)
 	var id: int = sim.areas.list.keys()[-1]
-	sim.apply({"op": "set_terminal", "id": id, "terminal": 1})
 	return id
 
 

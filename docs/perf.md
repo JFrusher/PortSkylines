@@ -474,3 +474,50 @@ busy most of their window instead of 4% of it. The CI sim bench rises from
 **0.728 to 1.453 ms a tick** because it runs 2.3× the vehicles (62.8 → 143.7
 on average); the cost per vehicle-tick is unchanged within noise (11.59 →
 10.11 µs). The endgame save keeps its own counts and was not re-measured.
+
+### Routing by cost (M7 step C, 2026-10-31)
+
+Routes now weigh each lane cell by its smoothed delay, refreshed every
+`traffic.route_epoch_seconds` (60 s), which drops the route cache. Measured on
+the endgame save, 200-tick windows from tick 200, against the code before:
+
+| Window | Before | First try | As committed |
+|---|---|---|---|
+| 0 (1,128 vehicles) | 20.7 ms | 22.3 ms | 20.2 ms |
+| 1 | 18.0 | 20.9 | 19.1 |
+| 2 | 14.8 | 16.7 | 16.9 |
+| 3 | 9.1 | 13.1 | 11.5 |
+
+The first try kept area cells out of routes with a weight of 10,000. That made
+A*'s estimate useless for routes into areas: a search took 1.35 ms, against
+0.31 ms before. Area cells, and handover slots, are now disabled except in the
+areas and slots a search starts or ends in: 0.24 ms a search. Re-weighting only
+the cells whose delay changed, rather than every point, took the epoch tick
+from 42 to 27 ms. The busy windows now total 77.3 ms against 72.0 ms before
+(+7%), within single-run noise.
+
+## M7 close: the endgame bench (2026-10-31)
+
+`bench/endgame.bin` rebuilt with the painted terminal (1,164 lorries, 1,236
+vehicles, 20,772 boxes, 6 ships, 2 trains). `profile_sim.gd -- 200`: **34.4 ms
+a tick** untimed. Routing is 20% of it (1,121 routes at 1.36 ms each), moves
+35%. The sim bench: 1.28 ms a tick.
+
+200-tick windows from tick 200, against step C's (an older save, so this
+compares ports, not code):
+
+| Window | Step C | M7 close |
+|---|---|---|
+| 0 | 20.2 ms, 1,128 vehicles | 27.0 ms, 934 vehicles |
+| 1 | 19.1, 866 | 25.1, 622 |
+| 2 | 16.9, 605 | 15.4, 444 |
+| 3 | 11.5, 296 | 7.8, 279 |
+
+The port drains faster and 96 lorries gave up against 149, but the busy
+windows cost more a vehicle. **Open:** which step (turn rules, signals,
+painting) costs it has not been measured; bisect on one save before acting.
+
+Replaying a hash with threads doesn't apply: the sim has no threads.
+`profile_sim.gd` and `timed_lanes.gd` had fallen behind the tick (empties,
+parks, junctions, traffic epochs) and the two-argument `LaneTraffic`; CI
+doesn't compile bench scripts, so neither failed until now.

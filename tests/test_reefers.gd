@@ -94,7 +94,6 @@ func _reefer_port(plugs: bool, imports := 40, exports := 0) -> PortSim:
 		_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 92 if exports else 61, "to": 121 if exports else 90}), "", "the reefer block is built")
 		var id: int = sim.areas.list.keys()[-1]
 		_expect(sim.apply({"op": "set_area", "id": id, "settings": {"role": "reefer"}}), "", "it is set to reefers")
-		_expect(sim.apply({"op": "set_terminal", "id": id, "terminal": 1}), "", "it joins the terminal")
 	return sim
 
 

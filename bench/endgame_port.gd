@@ -58,10 +58,7 @@ static func build(rules: Dictionary) -> PortSim:
 		var coast := sim.roads.segment_at(Vector2i(COAST_X, ROWS[i] + 48))
 		aprons.append(_area(sim, {"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 85}))
 		var spine := sim.roads.segment_at(Vector2i(SPINE_X, ROWS[i] + 48))
-		var before := sim.areas.list.keys()
 		_do(sim, {"op": "build_two_way_gate", "type": "gate_large", "segment": spine, "from": 30, "to": 44})
-		for gate: int in sim.areas.list.keys().filter(func(id: int) -> bool: return id not in before):
-			_do(sim, {"op": "set_terminal", "id": gate, "terminal": sim.areas.list[aprons[0]].terminal})
 	var blocks: Array[int] = []
 	for y in ROWS:
 		var row := sim.roads.segment_at(Vector2i(COAST_X + 200, y))
@@ -82,8 +79,11 @@ static func build(rules: Dictionary) -> PortSim:
 	var bend := Vector2i(entry.x - 9, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
 		_do(sim, {"op": "build_rail", "from": leg[0], "to": leg[1]})
-	for id: int in aprons.slice(1) + blocks + rail:
-		_do(sim, {"op": "set_terminal", "id": id, "terminal": sim.areas.list[aprons[0]].terminal})
+	# One terminal, painted over exactly the areas built.
+	var cells: Array[Vector2i] = []
+	for id: int in sim.areas.list:
+		cells.append_array(sim.areas.cells(id))
+	_do(sim, {"op": "paint_terminal", "cells": cells, "terminal": -1})
 	for apron in aprons:
 		for along: int in [10, 35, 60]:
 			_do(sim, {"op": "place_sts", "kind": "sts", "apron": apron, "along": along})

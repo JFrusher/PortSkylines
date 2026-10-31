@@ -58,7 +58,7 @@ func _test_every_fixture_loads_or_is_refused() -> void:
 	for name: String in fixtures:
 		var loaded := SaveFile.load_from("res://tests/fixtures/" + name)
 		if name.trim_prefix("save_v").to_int() < SaveFile.FIRST:
-			_expect(loaded.get("error", "").contains("saved before roads ran on grid lines"), true, "%s is refused with the reason (%s)" % [name, loaded.get("error", "")])
+			_expect(loaded.get("error", "").contains("saved before terminals were painted on the map"), true, "%s is refused with the reason (%s)" % [name, loaded.get("error", "")])
 			continue
 		_expect(loaded.has("sim"), true, "%s loads (%s)" % [name, loaded.get("error", "")])
 		if loaded.has("sim"):

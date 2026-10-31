@@ -11,10 +11,20 @@ extends RefCounted
 ## "settings": the player's rules for it, checked by PortSim.set_area,
 ## "terminal": the terminal it belongs to}.
 var list := {}
-## Terminal id -> {"name"}. A terminal is a named group of areas: a new area
-## joins the terminal of an area it touches, or starts its own. Roads belong
-## to no terminal, so terminals can share them.
+## Terminal id -> {"name", "colour": an index into TERMINAL_COLOURS}. The
+## player paints terminals on the map: each area belongs to the terminal
+## holding most of its painted cells, or to none (0), and then it is idle.
+## Roads belong to no terminal, so terminals can share them.
 var terminals := {}
+## Painted cells: cell -> terminal id.
+var paint := {}
+## How many cells each terminal has painted, kept as they are painted, so a
+## brush stroke needn't count them all again; not saved, counted on load.
+var _counts := {}  # terminal -> cells
+## How many colours a terminal's colour index runs through.
+const TERMINAL_COLOURS := 8
+## The most cells a fill paints; more means no road closes the ground in.
+const FILL_LIMIT := 20000
 var types: Dictionary
 ## Bumped on every change, so the view knows to redraw.
 var version := 0
@@ -47,8 +57,7 @@ func add(type: String, segment: int, side: int, from: int, to: int, settings := 
 	if err == "":
 		list[_next_id] = _placed(type, segment, side, from, to)
 		list[_next_id].settings = settings.duplicate(true)
-		var touching := _terminals_touching(_cells(list[_next_id]))
-		list[_next_id].terminal = touching.min() if not touching.is_empty() else _new_terminal()
+		list[_next_id].terminal = _terminal_of(_cells(list[_next_id]))
 		_next_id += 1
 		version += 1
 	return err
@@ -80,20 +89,82 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 
 func remove(id: int) -> void:
 	list.erase(id)
-	_forget_empty_terminals()
 	version += 1
 
 
-## Moves area `id` into `terminal`, or into a new terminal when it is 0.
-func set_terminal(id: int, terminal: int) -> String:
-	if id not in list:
-		return "No area there"
-	if terminal != 0 and terminal not in terminals:
+## Paints `cells` as `terminal`: an existing one, -1 for a new one, or 0 to
+## erase. Cells off the site are left out. Areas move to the terminal now
+## holding most of their cells, and a terminal left with no cells goes.
+func paint_cells(cells: Array, terminal: int) -> String:
+	if terminal > 0 and terminal not in terminals:
 		return "No such terminal"
-	list[id].terminal = terminal if terminal != 0 else _new_terminal()
-	_forget_empty_terminals()
+	if terminal == -1:
+		terminal = _new_terminal()
+	var touched := Rect2i()
+	for cell: Vector2i in cells:
+		if cell.x < 0 or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
+			continue
+		var was: int = paint.get(cell, 0)
+		if was:
+			_counts[was] -= 1
+		if terminal == 0:
+			paint.erase(cell)
+		else:
+			paint[cell] = terminal
+			_counts[terminal] = _counts.get(terminal, 0) + 1
+		touched = Rect2i(cell, Vector2i.ONE) if touched.size == Vector2i.ZERO else touched.expand(cell).expand(cell + Vector2i.ONE)
+	_repaint(touched)
+	return ""
+
+
+## The cells a fill from `start` paints: those reached from it in steps along
+## and across, stopping at road lanes, the sea and the site's edge; [] when
+## `start` is on a road or more than FILL_LIMIT cells are reached.
+func fill_cells(start: Vector2i) -> Array[Vector2i]:
+	var lanes := {}
+	for segment: int in _roads.segments:
+		for lane in _roads.lanes(segment):
+			for cell: Vector2i in lane.cells:
+				lanes[cell] = true
+	var found: Array[Vector2i] = []
+	var seen := {start: true}
+	var todo: Array[Vector2i] = [start]
+	while not todo.is_empty():
+		var cell: Vector2i = todo.pop_back()
+		if cell in lanes or cell.x < _sea or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
+			continue
+		found.append(cell)
+		if found.size() > FILL_LIMIT:
+			return [] as Array[Vector2i]
+		for step: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if cell + step not in seen:
+				seen[cell + step] = true
+				todo.append(cell + step)
+	return found
+
+
+func name_terminal(terminal: int, name: String) -> String:
+	if terminal not in terminals:
+		return "No such terminal"
+	if name.strip_edges() == "":
+		return "A terminal needs a name"
+	terminals[terminal].name = name.strip_edges()
 	version += 1
 	return ""
+
+
+## Moves `terminal`'s colour on to the next.
+func colour_terminal(terminal: int) -> String:
+	if terminal not in terminals:
+		return "No such terminal"
+	terminals[terminal].colour = (terminals[terminal].colour + 1) % TERMINAL_COLOURS
+	version += 1
+	return ""
+
+
+## `terminal`'s name, or "no terminal" for an area on unpainted ground (0).
+func terminal_name(terminal: int) -> String:
+	return terminals[terminal].name if terminal else "no terminal"
 
 
 ## Why `terminal` can't take contracts yet, or "": it needs a gate for lorries
@@ -145,6 +216,8 @@ func _keep_for(now: Vector2i) -> void:
 
 func _idle_reason(id: int) -> String:
 	var area: Dictionary = list[id]
+	if area.terminal == 0:
+		return "Paint this %s into a terminal on the map (Map, key 6)" % types[area.type].name.to_lower()
 	if _lanes_for != _roads.version:
 		_lanes_for = _roads.version
 		_lane_cells.clear()
@@ -230,7 +303,7 @@ func index_near(segment: int, cell: Vector2i) -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal}
+	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal, "paint": paint.duplicate()}
 
 
 static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, site: Dictionary) -> Areas:
@@ -239,32 +312,52 @@ static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, sit
 	areas._next_id = d.next_id
 	areas.terminals = d.terminals.duplicate(true)
 	areas._next_terminal = d.next_terminal
+	areas.paint = d.paint.duplicate()
+	for terminal: int in areas.paint.values():
+		areas._counts[terminal] = areas._counts.get(terminal, 0) + 1
 	return areas
 
 
-## The terminals of areas sharing an edge with any of `cells`.
-func _terminals_touching(cells: Array[Vector2i]) -> Array:
-	var near := {}
+## The terminal holding most of `cells`, the lowest id on a tie; 0 when none
+## of them is painted.
+func _terminal_of(cells: Array[Vector2i]) -> int:
+	var counts := {}
 	for cell in cells:
-		for side: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-			near[cell + side] = true
-	var found := {}
+		if cell in paint:
+			counts[paint[cell]] = counts.get(paint[cell], 0) + 1
+	var best := 0
+	for terminal: int in counts:
+		if best == 0 or counts[terminal] > counts[best] or (counts[terminal] == counts[best] and terminal < best):
+			best = terminal
+	return best
+
+
+## After painting within `touched`: the areas over it to the terminal now
+## holding most of them, and terminals with no painted cell left gone.
+func _repaint(touched: Rect2i) -> void:
+	for terminal: int in terminals.keys():
+		if _counts.get(terminal, 0) == 0:
+			terminals.erase(terminal)
+			_counts.erase(terminal)
 	for id: int in list:
-		if list[id].has("terminal") and _cells(list[id]).any(func(c: Vector2i) -> bool: return c in near):
-			found[list[id].terminal] = true
-	return found.keys()
+		if _bounds(list[id]).intersects(touched):
+			list[id].terminal = _terminal_of(_cells(list[id]))
+	version += 1
+
+
+## The cells `area` spans, from its corners.
+func _bounds(area: Dictionary) -> Rect2i:
+	var back: Vector2i = area.out * (depth_of(area) - 1)
+	var rect := Rect2i(area.start, Vector2i.ONE)
+	for corner: Vector2i in [area.end, area.start + back, area.end + back]:
+		rect = rect.expand(corner).expand(corner + Vector2i.ONE)
+	return rect
 
 
 func _new_terminal() -> int:
-	terminals[_next_terminal] = {"name": "Terminal %d" % _next_terminal}
+	terminals[_next_terminal] = {"name": "Terminal %d" % _next_terminal, "colour": (_next_terminal - 1) % TERMINAL_COLOURS}
 	_next_terminal += 1
 	return _next_terminal - 1
-
-
-func _forget_empty_terminals() -> void:
-	for terminal: int in terminals.keys():
-		if not list.values().any(func(a: Dictionary) -> bool: return a.terminal == terminal):
-			terminals.erase(terminal)
 
 
 ## An area's own geometry beside `segment`, from index `from` to `to`.

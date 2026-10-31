@@ -97,7 +97,6 @@ func _test_exporters_collect_empties() -> void:
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 91, "to": 120}), "", "an empty block is built")
 	sim.creative = false
 	var block: int = sim.areas.list.keys()[-1]
-	sim.apply({"op": "set_terminal", "id": block, "terminal": 1})
 	sim.apply({"op": "set_area", "id": block, "settings": {"role": "empty"}})
 	for i in 10:
 		sim.returning.append({"at": 0.0, "line": sim.rules.lines.keys()[0], "teu": 1})

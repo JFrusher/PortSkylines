@@ -57,7 +57,6 @@ func _add_rail(sim: PortSim) -> void:
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": -1, "from": 92, "to": 121}), "", "the rail block is built")
 	var block: int = sim.areas.list.keys().max()
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
-	sim.apply({"op": "set_terminal", "id": block, "terminal": 1})
 	var area: Dictionary = sim.areas.list[block]
 	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
 	var entry := sim.site_rail_entry()
@@ -115,6 +114,9 @@ func _check(sim: PortSim) -> void:
 			_expect(seen.has(vehicle.box), true, "%s %d's box %d waits in a stack %s" % [vehicle.kind, vehicle.id, vehicle.box, at])
 		var cell := vehicle.path[int(vehicle.t)]
 		_expect(sim.lane_traffic.holder(cell), vehicle.id, "%s %d holds the cell it is on %s" % [vehicle.kind, vehicle.id, at])
+		# M7's routes (by cost, round areas and slots, keeping to turn lanes) still step cell to cell.
+		var jumps := range(1, vehicle.path.size()).filter(func(i: int) -> bool: return RoadNet.length(vehicle.path[i - 1], vehicle.path[i]) > 1)
+		_expect(jumps, [], "%s %d's route steps cell to cell %s" % [vehicle.kind, vehicle.id, at])
 		_expect(cells.has(cell), false, "vehicles %d and %d share cell %s %s" % [vehicle.id, cells.get(cell, 0), cell, at])
 		cells[cell] = vehicle.id
 	for train: Train in sim.trains:

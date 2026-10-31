@@ -200,7 +200,6 @@ func _test_trains_book_crossings() -> void:
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": -1, "from": 92, "to": 121}), "", "a rail block north of the road")
 	var block: int = sim.areas.list.keys().max()
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
-	sim.apply({"op": "set_terminal", "id": block, "terminal": 1})
 	var area: Dictionary = sim.areas.list[block]
 	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
 	var entry := sim.site_rail_entry()

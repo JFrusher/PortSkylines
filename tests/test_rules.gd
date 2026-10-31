@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_crane_timing()
 	_test_outreach()
 	_test_yard_machines_set_the_pace()
+	_test_a_full_block_takes_no_more()
 	_test_changing_gear_replaces_machines()
 	_test_import_dwell()
 	_test_gate()
@@ -63,7 +64,7 @@ func _run(sim: PortSim, minutes: float) -> void:
 
 func _test_no_ship_without_a_terminal() -> void:
 	var sim := AreaPort.base()
-	sim.apply({"op": "set_terminal", "id": 2, "terminal": 0})
+	sim.apply({"op": "paint_terminal", "cells": sim.areas.cells(2), "terminal": -1})
 	_run(sim, FIRST_SHIP + 1)
 	_expect(sim.ships.size(), 0, "no ship calls at an apron whose terminal has no gate")
 	_expect(sim.last_event().contains("in a terminal with a gate"), true, "and the status says why (%s)" % sim.last_event())
@@ -192,6 +193,34 @@ func _test_changing_gear_replaces_machines() -> void:
 	var count := sim.machines.count_for("rtg", sim.areas.layout(3).slots.size())
 	_expect(gears.call(), range(count).map(func(_i: int) -> String: return "rtg"), "its machines are RTGs now")
 	_expect(sim.area_stacks[3].to_dict().tiers, sim.rules.yard_gear.rtg.tiers, "and its stacks go RTG high")
+
+
+## A ship worked by four cranes into an import block with room for only a
+## few more boxes: the block never takes more than it holds, as the tractors
+## waiting under the cranes count against its room as well as those
+## carrying a box to it. (Counting only the loaded ones overfilled it.)
+func _test_a_full_block_takes_no_more() -> void:
+	var rules := RandomPort.quick()
+	# One tier, so the block's slack is a single box and four tractors overrun it.
+	rules.yard_gear.reach_stacker.tiers = 1
+	var sim := AreaPort.base(rules, "feeder")
+	sim.creative = true
+	for along: int in [10, 30]:
+		_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": 1, "along": along}), "", "a crane is placed")
+	sim.apply({"op": "buy_tractors", "count": 6})
+	var stacks := AreaFlow._stacks(sim, 3)
+	var id := 900000
+	while stacks.room() > 1:
+		sim.boxes[id] = {"kind": "import", "due": 1e9, "teu": 1, "reefer": false, "dg": false, "rush": false, "in": 0.0, "line": sim.rules.lines.keys()[0], "rail": false, "place": sim.rules.hinterland.places.keys()[0]}
+		stacks.place(id, 1)
+		id += 1
+	var most := -INF
+	for i in roundi(3 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		most = maxf(most, stacks.room())
+		_expect(stacks.room() >= -sim.rules.yard_gear.reach_stacker.tiers, true, "the block never holds more than its stacks (room %d)" % stacks.room())
+		if stacks.room() < -sim.rules.yard_gear.reach_stacker.tiers:
+			break
 
 
 func _stacked(sim: PortSim) -> int:
