@@ -13,6 +13,7 @@ func _initialize() -> void:
 	_test_empties_come_back()
 	_test_empties_turned_away()
 	_test_exporters_collect_empties()
+	_test_lines_ship_surplus_empties()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -115,3 +116,32 @@ func _test_exporters_collect_empties() -> void:
 	_expect(collected >= 0.0, true, "an exporter's lorry left with an empty")
 	_expect(first_export >= collected + 60.0, true, "and the first export came in after it was packed (collected %.0f, export %.0f)" % [collected, first_export])
 	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "each of the 5 exports took out an empty")
+
+
+## A ship loads its line's empties after its exports, while the port holds
+## more than keep of them, up to max_per_call, at price_factor of a move.
+func _test_lines_ship_surplus_empties() -> void:
+	var rules := RandomPort.rules()
+	rules.empties.keep = 5
+	rules.empties.max_per_call = 10
+	rules.empties.return_days = 30.0  # none of this ship's imports come back in the run
+	rules.ship_classes.feeder.import_moves = 4
+	rules.ship_classes.feeder.export_moves = 0
+	var sim := AreaPort.base(rules, "")
+	var block := AreaPort.add_export_block(sim)
+	sim.apply({"op": "set_area", "id": block, "settings": {"role": "empty"}})
+	var line: String = sim.rules.lines.keys()[0]
+	for i in 12:
+		sim.returning.append({"at": 0.0, "line": line, "teu": 1})
+	while AreaFlow._stacks(sim, block).boxes().size() < 12:
+		sim.tick()
+	RandomPort.calls(sim, "feeder", roundi(sim.clock.calendar_minutes()) + 10, 45, 1)
+	for i in roundi(12 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		if not sim.ship_log.is_empty():
+			break
+	_expect(sim.ship_log.size(), 1, "the ship sailed")
+	_expect(sim.ship_log[0].moves if not sim.ship_log.is_empty() else -1, 4 + 7, "it took its 4 imports off and the 7 empties above keep aboard")
+	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "keep empties stay in the port")
+	var empty := {"kind": "empty", "teu": 1, "reefer": false}
+	_expect(sim.move_price(empty), roundi(rules.move_price.per_20ft * rules.empties.price_factor), "an empty earns price_factor of a move")

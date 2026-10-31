@@ -78,11 +78,14 @@ static func _migrate(data: Dictionary) -> Dictionary:
 	return data
 
 
-## v21 brings empties back from the hinterland and out to exporters: none
-## are on their way yet.
+## v21 brings empties back from the hinterland, out to exporters and onto
+## ships: none are on their way yet, and ships in port load none.
 static func _migrate_v20(data: Dictionary) -> Dictionary:
 	data.sim.returning = []
 	data.sim.stuffing = []
+	for ship: Variant in data.sim.ships:
+		if ship is Dictionary:
+			ship.empties = 0
 	data.sim.until_empty = 0.0
 	data.version = 21
 	return data
@@ -136,7 +139,7 @@ static func _valid_sim(data: Variant) -> bool:
 	for ship: Variant in data.ships:
 		if not ship is Dictionary or not _has_fields(ship, {
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT,
-			"boxes": TYPE_INT, "exports": TYPE_INT, "state": TYPE_INT,
+			"boxes": TYPE_INT, "exports": TYPE_INT, "empties": TYPE_INT, "state": TYPE_INT,
 			"sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
 			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL,
 		}):

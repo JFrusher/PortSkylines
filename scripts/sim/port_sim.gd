@@ -195,6 +195,8 @@ class Ship:
 	## Import boxes still on board, and exports it still has room for.
 	var boxes: int
 	var exports: int
+	## Room left for its line's empties, loaded after its exports.
+	var empties := 0
 	var state := State.ARRIVING
 	## 0 out at sea, 1 alongside the quay.
 	var sail := 0.0
@@ -213,10 +215,11 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
+		ship.empties = d.empties
 		ship.state = d.state
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
@@ -953,6 +956,8 @@ func set_storage(free_days: int, fee: int) -> String:
 ## What a crane move of `box` earns from the line: by size, plus a reefer premium.
 func move_price(box: Dictionary) -> int:
 	var price: float = rules.move_price.per_20ft * (rules.move_price.forty_factor if box.teu == 2 else 1.0)
+	if box.kind == "empty":
+		price *= rules.empties.price_factor
 	return roundi(price) + (rules.move_price.reefer_premium if box.reefer else 0)
 
 
@@ -1147,6 +1152,7 @@ func _call(service: Dictionary) -> void:
 	var ship := Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves)
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
+	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
 	ships.append(ship)
 	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
 	_event("%s's %s has arrived" % [who, service.kind])

@@ -177,8 +177,9 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		_load(sim, crane, ship, move_minutes)
 	if ship.boxes == 0 and working.all(func(c: PortSim.Crane) -> bool: return c.tractor == 0) and _fetchers(sim, ship).is_empty():
 		if ship.exports == 0:
-			sim._sail(ship, working.size())
-			sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.list[ship.apron].start)
+			if ship.empties == 0 or _surplus_empty(sim, ship) == 0:
+				sim._sail(ship, working.size())
+				sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.list[ship.apron].start)
 		elif _export_box(sim, sim.areas.list[ship.apron].terminal) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
 			sim._sail(ship, working.size())
 			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.list[ship.apron].start)
@@ -234,7 +235,8 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	var fetchers := _fetchers(sim, ship)
 	var slot := _crane_slot(sim, crane, ship)
 	var mine := fetchers.filter(func(v: Vehicle) -> bool: return v.home == slot)
-	if ship.exports > fetchers.size() and mine.size() < sim.rules.sts_cranes[crane.kind].max_fetchers:
+	var wanted := ship.exports if ship.exports > 0 else ship.empties
+	if wanted > fetchers.size() and mine.size() < sim.rules.sts_cranes[crane.kind].max_fetchers:
 		_send_fetcher(sim, crane, ship)
 	if crane.tractor == 0:
 		var back := mine.filter(func(v: Vehicle) -> bool: return v.state == "under_crane")
@@ -250,8 +252,11 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	crane.timer = 0.0
 	crane.tractor = 0
 	sim._moved(sim.boxes[tractor.box], ship.line, sim.areas.list[ship.apron].terminal)
+	if sim.boxes[tractor.box].kind == "empty":
+		ship.empties -= 1
+	else:
+		ship.exports -= 1
 	sim._drop_box(tractor.box)
-	ship.exports -= 1
 	ship.moves += 1
 	_gone(sim, tractor)
 
@@ -261,7 +266,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> void:
 	if sim._tractors_out() >= sim.tractors:
 		return
-	var box := _export_box(sim, sim.areas.list[ship.apron].terminal)
+	var box := _export_box(sim, sim.areas.list[ship.apron].terminal) if ship.exports > 0 else _surplus_empty(sim, ship)
 	if box == 0:
 		return
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
@@ -298,6 +303,22 @@ static func _export_box(sim: PortSim, terminal: int) -> int:
 				best = box
 				fewest = stacks.above(box)
 	return best
+
+
+## An empty of `ship`'s line in its terminal's working empty blocks that no
+## vehicle is coming for, while they hold more than empties.keep of that
+## line not yet claimed; else 0.
+static func _surplus_empty(sim: PortSim, ship: PortSim.Ship) -> int:
+	var terminal: int = sim.areas.list[ship.apron].terminal
+	var free: Array[int] = []
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != "empty" or sim.areas.idle_reason(id) != "" or id not in sim.area_stacks:
+			continue
+		for box: int in sim.area_stacks[id].of_kind("empty", sim.boxes):
+			if box not in sim._claimed and sim.boxes[box].line == ship.line:
+				free.append(box)
+	return free[0] if free.size() > sim.rules.empties.keep else 0
 
 
 ## The middle cell of the apron slot under `crane`, in the lane nearest the road.
