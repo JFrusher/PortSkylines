@@ -535,7 +535,7 @@ func _test_milestones_unlock_content() -> void:
 	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"gear": "rtg"}}), "Unlocked at milestone 2: %d TEU across the quay" % terminal.teu, "RTGs wait for milestone 2")
 	_expect(sim.apply({"op": "take_loan", "kind": "small"}).begins_with("Unlocked at milestone 2"), true, "so do loans")
 	_expect(sim.apply({"op": "dredge", "metres": 1}).begins_with("Unlocked at milestone 3"), true, "dredging waits for milestone 3")
-	var box := {"teu": 2, "reefer": false}
+	var box := {"kind": "import", "teu": 2, "reefer": false}
 	while sim.teu_handled < terminal.teu - 2:
 		sim._moved(box, "aurora", 1)
 	_expect(sim.unlocked("rtg"), false, "still locked 2 TEU short")

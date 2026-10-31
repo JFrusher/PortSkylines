@@ -177,8 +177,9 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		_load(sim, crane, ship, move_minutes)
 	if ship.boxes == 0 and working.all(func(c: PortSim.Crane) -> bool: return c.tractor == 0) and _fetchers(sim, ship).is_empty():
 		if ship.exports == 0:
-			sim._sail(ship, working.size())
-			sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.list[ship.apron].start)
+			if ship.empties == 0 or _surplus_empty(sim, ship) == 0:
+				sim._sail(ship, working.size())
+				sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.list[ship.apron].start)
 		elif _export_box(sim, sim.areas.list[ship.apron].terminal) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
 			sim._sail(ship, working.size())
 			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.list[ship.apron].start)
@@ -234,7 +235,8 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	var fetchers := _fetchers(sim, ship)
 	var slot := _crane_slot(sim, crane, ship)
 	var mine := fetchers.filter(func(v: Vehicle) -> bool: return v.home == slot)
-	if ship.exports > fetchers.size() and mine.size() < sim.rules.sts_cranes[crane.kind].max_fetchers:
+	var wanted := ship.exports if ship.exports > 0 else ship.empties
+	if wanted > fetchers.size() and mine.size() < sim.rules.sts_cranes[crane.kind].max_fetchers:
 		_send_fetcher(sim, crane, ship)
 	if crane.tractor == 0:
 		var back := mine.filter(func(v: Vehicle) -> bool: return v.state == "under_crane")
@@ -250,8 +252,11 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	crane.timer = 0.0
 	crane.tractor = 0
 	sim._moved(sim.boxes[tractor.box], ship.line, sim.areas.list[ship.apron].terminal)
+	if sim.boxes[tractor.box].kind == "empty":
+		ship.empties -= 1
+	else:
+		ship.exports -= 1
 	sim._drop_box(tractor.box)
-	ship.exports -= 1
 	ship.moves += 1
 	_gone(sim, tractor)
 
@@ -261,7 +266,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> void:
 	if sim._tractors_out() >= sim.tractors:
 		return
-	var box := _export_box(sim, sim.areas.list[ship.apron].terminal)
+	var box := _export_box(sim, sim.areas.list[ship.apron].terminal) if ship.exports > 0 else _surplus_empty(sim, ship)
 	if box == 0:
 		return
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
@@ -298,6 +303,22 @@ static func _export_box(sim: PortSim, terminal: int) -> int:
 				best = box
 				fewest = stacks.above(box)
 	return best
+
+
+## An empty of `ship`'s line in its terminal's working empty blocks that no
+## vehicle is coming for, while they hold more than empties.keep of that
+## line not yet claimed; else 0.
+static func _surplus_empty(sim: PortSim, ship: PortSim.Ship) -> int:
+	var terminal: int = sim.areas.list[ship.apron].terminal
+	var free: Array[int] = []
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != "empty" or sim.areas.idle_reason(id) != "" or id not in sim.area_stacks:
+			continue
+		for box: int in sim.area_stacks[id].of_kind("empty", sim.boxes):
+			if box not in sim._claimed and sim.boxes[box].line == ship.line:
+				free.append(box)
+	return free[0] if free.size() > sim.rules.empties.keep else 0
 
 
 ## The middle cell of the apron slot under `crane`, in the lane nearest the road.
@@ -431,12 +452,41 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	return true
 
 
-## Sends a lorry in from the site entry with an export box, while calls want
-## more exports than the port holds, to a terminal with a gate whose export
-## blocks have room for more than the export lorries already on their way;
-## false when none is wanted, there is no room, or the way in is busy.
+## Sends a lorry in with the empty due back soonest, to a terminal with room
+## in its empty blocks, else to any terminal with a gate, where it is turned
+## away; false when none is due, no terminal has a gate, or the way in is busy.
+static func dispatch_empty_lorry(sim: PortSim) -> bool:
+	if sim.returning.is_empty() or sim.returning[0].at > sim.clock.calendar_minutes():
+		return false
+	var gated: Array = sim.areas.terminals.keys().filter(func(t: int) -> bool: return _has_gate(sim, t))
+	if gated.is_empty():
+		return false
+	var roomy: Array = gated.filter(func(t: int) -> bool: return _block_for(sim, "empty", t) != 0)
+	var terminal: int = roomy[0] if not roomy.is_empty() else gated[0]
+	var entry := _entry_cell(sim)
+	if entry == Grid.NONE:
+		return false
+	var back: Dictionary = sim.returning.pop_front()
+	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
+	sim.lane_traffic.place(lorry)
+	sim._next_vehicle += 1
+	lorry.box = sim._new_empty(back.line, back.teu)
+	lorry.loaded = true
+	sim._add_vehicle(lorry)
+	_go_to(sim, lorry, _gate_of(sim, terminal, entry))
+	return true
+
+
+## Sends a lorry in from the site entry to a terminal with a gate whose
+## export blocks have room for more than the export lorries already on their
+## way: with an export packed in an empty it took out, once one is due back;
+## else, while calls want more exports than the port holds, to take out an
+## empty to pack, or with an export packed in its own empty when the port
+## has none. False when nothing is due or wanted, there is no room, or the
+## way in is busy.
 static func dispatch_export_lorry(sim: PortSim) -> bool:
-	if export_demand(sim) <= 0:
+	var packed: bool = not sim.stuffing.is_empty() and sim.stuffing[0].at <= sim.clock.calendar_minutes()
+	if not packed and export_demand(sim) <= 0:
 		return false
 	for terminal: int in sim.areas.terminals:
 		if not _has_gate(sim, terminal) or _export_room(sim, terminal) <= 0:
@@ -448,18 +498,39 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
 		sim.lane_traffic.place(lorry)
 		sim._next_vehicle += 1
-		# shortcut: an export is booked on no line until a ship loads it, as on tiles.
-		lorry.box = sim._new_box("export", 0.0, "")
-		lorry.loaded = true
+		var empty := 0 if packed else _free_empty(sim, terminal)
+		if empty:
+			lorry.box = empty
+			sim._claimed[empty] = true
+		else:
+			if packed:
+				sim.stuffing.pop_front()
+			# shortcut: an export is booked on no line until a ship loads it, as on tiles.
+			lorry.box = sim._new_box("export", 0.0, "")
+			lorry.loaded = true
 		sim._add_vehicle(lorry)
 		_go_to(sim, lorry, gate)
 		return true
 	return false
 
 
+## An empty in `terminal`'s working empty blocks that no vehicle is coming
+## for, or 0.
+static func _free_empty(sim: PortSim, terminal: int) -> int:
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != "empty" or sim.areas.idle_reason(id) != "" or id not in sim.area_stacks:
+			continue
+		for box: int in sim.area_stacks[id].of_kind("empty", sim.boxes):
+			if box not in sim._claimed:
+				return box
+	return 0
+
+
 ## Exports wanted and not yet in the port: room on ships in port, and on the
 ## calls of agreed services due within export_lead_hours, less every export
-## box already in a yard, on a vehicle or on its way.
+## box already in a yard, on a vehicle or on its way, and every empty being
+## packed or a lorry is coming to take out.
 # shortcut: demand is port-wide; split it per terminal when contracts belong to one (M8 step 3).
 static func export_demand(sim: PortSim) -> int:
 	var week_now := fposmod(sim.clock.calendar_minutes(), Contracts.MINUTES_PER_WEEK)
@@ -471,7 +542,9 @@ static func export_demand(sim: PortSim) -> int:
 		var until := fposmod(service.start - week_now, Contracts.MINUTES_PER_WEEK)
 		if until > 0.0 and until <= sim.rules.export_lead_hours * 60.0:
 			wanted += sim.rules.ship_classes[service.kind].export_moves
-	return wanted - sim.exports
+	# Lorries with an empty from the yard, on their way to it or out with it; one never stacked was turned away.
+	var collecting := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry" and sim.boxes.has(v.box) and sim.boxes[v.box].kind == "empty" and sim.boxes[v.box].in >= 0.0).size()
+	return wanted - sim.exports - sim.stuffing.size() - collecting
 
 
 ## Whether exports are on their way into `terminal`, or can still be sent:
@@ -658,7 +731,12 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 			vehicle.state = "under_crane"
 		"leaving":
 			if vehicle.loaded:
-				sim.delivered += 1 if sim.boxes[vehicle.box].kind == "import" else 0
+				if sim.boxes[vehicle.box].kind == "import":
+					sim.delivered += 1
+					sim._import_left(vehicle.box)
+				# An empty that was stacked left with an exporter; one never stacked was turned away.
+				elif sim.boxes[vehicle.box].kind == "empty" and sim.boxes[vehicle.box].in >= 0.0:
+					sim._empty_collected(vehicle.box)
 				sim._drop_box(vehicle.box)
 			_gone(sim, vehicle)
 
@@ -723,14 +801,19 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 		var box: Dictionary = sim.boxes[vehicle.box]
 		var terminal: int = sim.areas.list[gate].terminal
 		var block := _block_for(sim, "reefer", terminal) if box.reefer else 0
-		if box.dg:
+		if box.kind == "empty":
+			block = _block_for(sim, "empty", terminal)
+		elif box.dg:
 			block = _block_for(sim, "dangerous", terminal)
 		elif block == 0:
 			block = _block_for(sim, "export", terminal)
 		if block:
 			_go_to(sim, vehicle, block)
 		else:
-			# The export blocks filled while it queued: it takes its box away.
+			# Its blocks filled while it queued, or it has none: it takes its box away.
+			if box.kind == "empty":
+				sim._event("An empty of %s was turned away: no room in an empty block in %s" % [sim.contracts.name_of(box.line), sim.areas.terminals[terminal].name], sim.areas.list[gate].start)
+				sim._event_if(sim.contracts.penalise(box.line, sim.rules.empties.refused))
 			vehicle.gate_in = -1.0
 			_go_out(sim, vehicle, 0)
 	else:
@@ -805,9 +888,10 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 		vehicle.slot = -1
 		_head(sim, vehicle, vehicle.home, "to_crane")
 	else:
-		sim.dwell_times.append(sim.clock.calendar_minutes() - sim.boxes[vehicle.box].in)
-		if sim.dwell_times.size() > 50:
-			sim.dwell_times.pop_front()
+		if sim.boxes[vehicle.box].kind == "import":
+			sim.dwell_times.append(sim.clock.calendar_minutes() - sim.boxes[vehicle.box].in)
+			if sim.dwell_times.size() > 50:
+				sim.dwell_times.pop_front()
 		sim._claimed.erase(vehicle.box)
 		vehicle.loaded = true
 		_go_out(sim, vehicle, sim.areas.list[block].terminal)

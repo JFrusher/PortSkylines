@@ -29,6 +29,13 @@ const SCHEMA := {
 	"export_lead_hours": TYPE_FLOAT,
 	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"sail_seconds": TYPE_FLOAT,
+	# Empties: return_share of imports come back as empties return_days after
+	# leaving, the rest going to inland depots; one
+	# turned away for want of room costs its line `refused` reputation; one
+	# taken out by an exporter comes back full stuffing_hours later. Ships take
+	# up to max_per_call of their line's empties above `keep`, each earning
+	# price_factor of a move.
+	"empties": {"return_share": TYPE_FLOAT, "return_days": TYPE_FLOAT, "refused": TYPE_FLOAT, "stuffing_hours": TYPE_FLOAT, "keep": TYPE_INT, "max_per_call": TYPE_INT, "price_factor": TYPE_FLOAT},
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"export_lorry_interval_minutes": TYPE_FLOAT,
 	"import_dwell_minutes": TYPE_FLOAT,
@@ -99,7 +106,7 @@ const SCHEMA := {
 	"berths": {"*": {"name": TYPE_STRING, "length": TYPE_INT, "crane_spots": TYPE_INT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
-	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT}},
+	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL}},
 }
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.

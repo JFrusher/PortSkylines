@@ -103,7 +103,7 @@ var rails: RoadNet
 var lanes: LaneGraph
 ## The areas dragged along those roads.
 var areas: Areas
-## Every box in the port by id: {"kind": "import" or "export", "due": the
+## Every box in the port by id: {"kind": "import", "export" or "empty", "due": the
 ## calendar minute an import may leave, "teu": 1 or 2 (20 or 40 ft),
 ## "reefer": bool, "in": the calendar minute it was stacked, or -1, "line":
 ## the line that owns it, a key of rules.lines, or "" for an export not yet
@@ -123,12 +123,19 @@ var turn_times: Array[float] = []
 var dwell_times: Array[float] = []
 ## The player's storage terms: free days (0-3) and the fee per box per day after them.
 var storage := {}
+## Empties on their way back from the hinterland, soonest first: {"at": the
+## calendar minute one comes, "line", "teu"}.
+var returning: Array[Dictionary] = []
+## Empties out with exporters being packed, soonest back first: {"at": the
+## calendar minute each comes back full}.
+var stuffing: Array[Dictionary] = []
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
+var _until_empty := 0.0
 var _next_vehicle := 1
 var _next_box := 1
 var _delivered_at_midnight := 0
@@ -188,6 +195,8 @@ class Ship:
 	## Import boxes still on board, and exports it still has room for.
 	var boxes: int
 	var exports: int
+	## Room left for its line's empties, loaded after its exports.
+	var empties := 0
 	var state := State.ARRIVING
 	## 0 out at sea, 1 alongside the quay.
 	var sail := 0.0
@@ -206,10 +215,11 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
+		ship.empties = d.empties
 		ship.state = d.state
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
@@ -292,6 +302,9 @@ func to_dict() -> Dictionary:
 		"claimed": _claimed.duplicate(),
 		"until_lorry": _until_lorry,
 		"until_export": _until_export,
+		"until_empty": _until_empty,
+		"returning": returning.duplicate(true),
+		"stuffing": stuffing.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"lane_traffic": lane_traffic.to_dict(),
@@ -358,6 +371,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._claimed = d.claimed.duplicate()
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
+	sim._until_empty = d.until_empty
+	sim.returning.assign(d.returning)
+	sim.stuffing.assign(d.stuffing)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
@@ -739,6 +755,11 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		var locked := lock_error(settings.gear)
 		if locked:
 			return locked
+	var role: String = settings.get("role", areas.list[id].settings.get("role", ""))
+	var gear: String = settings.get("gear", areas.list[id].settings.get("gear", ""))
+	if gear != "" and rules.yard_gear[gear].empties_only and role != "empty":
+		var name: String = rules.yard_gear[gear].name
+		return "%s only work empty blocks" % (name[0].to_upper() + name.substr(1))
 	if settings.has("lines"):
 		if not settings.lines is Array or not settings.lines.all(func(line: Variant) -> bool: return line is String and rules.lines.has(line)):
 			return "Line priority lists known shipping lines"
@@ -935,6 +956,8 @@ func set_storage(free_days: int, fee: int) -> String:
 ## What a crane move of `box` earns from the line: by size, plus a reefer premium.
 func move_price(box: Dictionary) -> int:
 	var price: float = rules.move_price.per_20ft * (rules.move_price.forty_factor if box.teu == 2 else 1.0)
+	if box.kind == "empty":
+		price *= rules.empties.price_factor
 	return roundi(price) + (rules.move_price.reefer_premium if box.reefer else 0)
 
 
@@ -962,6 +985,9 @@ func tick() -> void:
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
+	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
+	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
+		_until_empty = rules.lorry_interval_minutes
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
 
@@ -1126,6 +1152,7 @@ func _call(service: Dictionary) -> void:
 	var ship := Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves)
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
+	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
 	ships.append(ship)
 	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
 	_event("%s's %s has arrived" % [who, service.kind])
@@ -1282,6 +1309,28 @@ func hinterland_demand() -> float:
 ## Whether box `id` can go by rail: its hinterland place has a rail link.
 func by_rail_to(id: int) -> bool:
 	return rules.hinterland.places[boxes[id].place].rail_km > 0.0
+
+
+## Import `id` has left for the hinterland: once empties are unlocked, it
+## comes back as an empty of its line and size return_days later, with the
+## chance return_share; the rest go back to inland depots.
+func _import_left(id: int) -> void:
+	if lock_error("empties") == "" and rng.randf() < rules.empties.return_share:
+		returning.append({"at": clock.calendar_minutes() + rules.empties.return_days * SimClock.MINUTES_PER_DAY, "line": boxes[id].line, "teu": boxes[id].teu})
+
+
+## Empty `id`, stacked here, has left with an exporter, who brings it back
+## full stuffing_hours later.
+func _empty_collected(id: int) -> void:
+	stuffing.append({"at": clock.calendar_minutes() + rules.empties.stuffing_hours * 60.0})
+
+
+## A new empty box of `line` and `teu`, coming back from the hinterland.
+func _new_empty(line: String, teu: int) -> int:
+	var id := _next_box
+	_next_box += 1
+	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
+	return id
 
 
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.

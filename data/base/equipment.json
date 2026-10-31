@@ -32,7 +32,8 @@
 			"lift_seconds": 20.0,
 			"set_down_seconds": 20.0,
 			"bays_per_machine": 4.0,
-			"tiers": 4.0
+			"tiers": 4.0,
+			"empties_only": false
 		},
 		"rtg": {
 			"name": "RTGs",
@@ -41,7 +42,8 @@
 			"lift_seconds": 30.0,
 			"set_down_seconds": 25.0,
 			"bays_per_machine": 10.0,
-			"tiers": 5.0
+			"tiers": 5.0,
+			"empties_only": false
 		},
 		"rmg": {
 			"name": "RMGs",
@@ -50,7 +52,18 @@
 			"lift_seconds": 25.0,
 			"set_down_seconds": 20.0,
 			"bays_per_machine": 8.0,
-			"tiers": 5.0
+			"tiers": 5.0,
+			"empties_only": false
+		},
+		"empty_handler": {
+			"name": "empty handlers",
+			"upkeep_per_machine": 300.0,
+			"speed": 7.0,
+			"lift_seconds": 15.0,
+			"set_down_seconds": 15.0,
+			"bays_per_machine": 4.0,
+			"tiers": 7.0,
+			"empties_only": true
 		}
 	}
 }

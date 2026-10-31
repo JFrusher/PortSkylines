@@ -801,7 +801,7 @@ func _draw_inspect_actions() -> void:
 					make.disabled = sim.lock_error("reefers") != ""
 					make.tooltip_text = sim.lock_error("reefers")
 		for gear: String in sim.rules.yard_gear:
-			if gear != settings.gear:
+			if gear != settings.gear and (settings.role == "empty" or not sim.rules.yard_gear[gear].empties_only):
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
 				button.disabled = sim.lock_error(gear) != ""
 				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]
