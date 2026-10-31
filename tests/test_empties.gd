@@ -12,6 +12,7 @@ func _initialize() -> void:
 	_test_empty_blocks()
 	_test_empties_come_back()
 	_test_empties_turned_away()
+	_test_exporters_collect_empties()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -78,3 +79,39 @@ func _test_empties_turned_away() -> void:
 	_expect(sim.boxes.values().any(func(b: Dictionary) -> bool: return b.kind == "empty" and b.in >= 0.0), false, "no empty is stacked")
 	_expect(sim.contracts.reputation[line] < before, true, "the line's reputation fell (%.1f -> %.1f)" % [before, sim.contracts.reputation[line]])
 	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.contains("turned away")), true, "the status says an empty was turned away")
+
+
+## With empties in the port, export demand first sends lorries to collect
+## them; each comes back full stuffing_hours later.
+func _test_exporters_collect_empties() -> void:
+	var rules := RandomPort.rules()
+	rules.empties.stuffing_hours = 1.0
+	rules.ship_classes.feeder.export_moves = 5  # fewer than the empties in the port
+	var sim := AreaPort.base(rules, "")
+	AreaPort.add_export_block(sim)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.creative = true
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 91, "to": 120}), "", "an empty block is built")
+	sim.creative = false
+	var block: int = sim.areas.list.keys()[-1]
+	sim.apply({"op": "set_terminal", "id": block, "terminal": 1})
+	sim.apply({"op": "set_area", "id": block, "settings": {"role": "empty"}})
+	for i in 10:
+		sim.returning.append({"at": 0.0, "line": sim.rules.lines.keys()[0], "teu": 1})
+	# The empties come in first, before any export is wanted.
+	while AreaFlow._stacks(sim, block).boxes().size() < 10:
+		sim.tick()
+	# Due in 10 h, within export_lead_hours, so exports are wanted now; no ship arrives in the run.
+	RandomPort.calls(sim, "feeder", roundi(sim.clock.calendar_minutes()) + 600, 45, 1)
+	var collected := -1.0
+	var first_export := -1.0
+	for i in roundi(4 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		for vehicle: Vehicle in sim.vehicles:
+			if collected < 0.0 and vehicle.state == "leaving" and vehicle.loaded and sim.boxes[vehicle.box].kind == "empty":
+				collected = sim.clock.calendar_minutes()
+		if first_export < 0.0 and sim.boxes.values().any(func(b: Dictionary) -> bool: return b.kind == "export"):
+			first_export = sim.clock.calendar_minutes()
+	_expect(collected >= 0.0, true, "an exporter's lorry left with an empty")
+	_expect(first_export >= collected + 60.0, true, "and the first export came in after it was packed (collected %.0f, export %.0f)" % [collected, first_export])
+	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "each of the 5 exports took out an empty")

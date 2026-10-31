@@ -126,6 +126,9 @@ var storage := {}
 ## Empties on their way back from the hinterland, soonest first: {"at": the
 ## calendar minute one comes, "line", "teu"}.
 var returning: Array[Dictionary] = []
+## Empties out with exporters being packed, soonest back first: {"at": the
+## calendar minute each comes back full}.
+var stuffing: Array[Dictionary] = []
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
@@ -298,6 +301,7 @@ func to_dict() -> Dictionary:
 		"until_export": _until_export,
 		"until_empty": _until_empty,
 		"returning": returning.duplicate(true),
+		"stuffing": stuffing.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"lane_traffic": lane_traffic.to_dict(),
@@ -366,6 +370,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._until_export = d.until_export
 	sim._until_empty = d.until_empty
 	sim.returning.assign(d.returning)
+	sim.stuffing.assign(d.stuffing)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
@@ -1305,6 +1310,12 @@ func by_rail_to(id: int) -> bool:
 func _import_left(id: int) -> void:
 	if lock_error("empties") == "":
 		returning.append({"at": clock.calendar_minutes() + rules.empties.return_days * SimClock.MINUTES_PER_DAY, "line": boxes[id].line, "teu": boxes[id].teu})
+
+
+## Empty `id`, stacked here, has left with an exporter, who brings it back
+## full stuffing_hours later.
+func _empty_collected(id: int) -> void:
+	stuffing.append({"at": clock.calendar_minutes() + rules.empties.stuffing_hours * 60.0})
 
 
 ## A new empty box of `line` and `teu`, coming back from the hinterland.

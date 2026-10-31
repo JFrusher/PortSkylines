@@ -30,8 +30,9 @@ const SCHEMA := {
 	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
 	"sail_seconds": TYPE_FLOAT,
 	# Empties: imports come back as empties return_days after leaving; one
-	# turned away for want of room costs its line `refused` reputation.
-	"empties": {"return_days": TYPE_FLOAT, "refused": TYPE_FLOAT},
+	# turned away for want of room costs its line `refused` reputation; one
+	# taken out by an exporter comes back full stuffing_hours later.
+	"empties": {"return_days": TYPE_FLOAT, "refused": TYPE_FLOAT, "stuffing_hours": TYPE_FLOAT},
 	"lorry_interval_minutes": TYPE_FLOAT,
 	"export_lorry_interval_minutes": TYPE_FLOAT,
 	"import_dwell_minutes": TYPE_FLOAT,
