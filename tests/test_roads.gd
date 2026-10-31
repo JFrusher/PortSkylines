@@ -430,7 +430,7 @@ func _test_apron_and_gate_layouts() -> void:
 	_expect(sim.areas.layout(4).lanes.size(), 6, "a large gate has 6 lanes, each with its booth")
 	_expect(sim.areas.layout(4).slots.size(), 6, "so 6 lorries are checked at once")
 	_expect(sim.areas.kind_of(sim.areas.list[4]), "gate", "every size is a gate")
-	_expect(sim.areas.list[2].settings, {"level": "manual"}, "a new gate has manual booths")
+	_expect(sim.areas.list[2].settings, {"level": "manual", "slots_per_hour": 0}, "a new gate has manual booths and takes no bookings")
 	_expect(AreaFlow.gate_throughput(sim, 2), 4 * 60.0 / sim.rules.gate_levels.manual.minutes, "throughput is lanes times lorries a booth checks an hour")
 	var upkeep := sim.daily_upkeep()
 	sim.teu_handled = int(sim.rules.milestones.terminal.teu)

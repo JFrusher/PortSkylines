@@ -10,6 +10,7 @@ var _failures := 0
 
 func _initialize() -> void:
 	_test_a_full_gate_sends_lorries_to_the_park()
+	_test_booked_slots()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -67,3 +68,22 @@ func _test_a_full_gate_sends_lorries_to_the_park() -> void:
 	_expect(jams[1][1] > 0 and jams[1][2], true, "with one, lorries wait in its slots (%d at once)" % jams[1][1])
 	_expect(jams[1][0] <= jams[0][0] - slots / 2, true, "and fewer wait on the road (%d, from %d)" % [jams[1][0], jams[0][0]])
 	_expect(jams[1][3], 0, "every parked lorry has gone on to the gate by the end")
+
+
+## A gate taking `slots_per_hour` bookings lets each lorry through no sooner
+## than its booked hour, and books no more lorries into an hour than that.
+func _test_booked_slots() -> void:
+	var sim := _port(2.0, true)
+	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"slots_per_hour": 6}}), "", "the gate takes 6 bookings an hour")
+	var checked := {}  # booked hour -> lorries checked in for it
+	var early := 0
+	for i in roundi(6 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		for lorry: Vehicle in sim.vehicles:
+			if lorry.kind == "lorry" and lorry.state == "at_gate" and lorry.gate_in == sim.clock.calendar_minutes():
+				var hour := floori(lorry.booked / 60.0)
+				checked[hour] = checked.get(hour, 0) + 1
+				early += 1 if sim.clock.calendar_minutes() < lorry.booked else 0
+	_expect(not checked.is_empty(), true, "lorries came through on their bookings")
+	_expect(early, 0, "none was checked in before its hour")
+	_expect(checked.values().max() if not checked.is_empty() else 0, 6, "an hour holds at most 6, and the rush fills them")

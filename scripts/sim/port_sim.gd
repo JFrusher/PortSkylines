@@ -92,9 +92,11 @@ const BERTH_ROAD := "terminal_1_1"
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
 	"quay_apron": {"lines": []},
-	"gate": {"level": "manual"},
+	"gate": {"level": "manual", "slots_per_hour": 0},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous"]
+## The most lorries a gate can book in an hour.
+const MAX_SLOTS_PER_HOUR := 120
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
 var roads: RoadNet
 ## Rail track, a graph of its own: where it crosses a road straight across,
@@ -129,6 +131,9 @@ var returning: Array[Dictionary] = []
 ## Empties out with exporters being packed, soonest back first: {"at": the
 ## calendar minute each comes back full}.
 var stuffing: Array[Dictionary] = []
+## Lorries booked in at gates taking bookings: gate id -> {hour of the
+## calendar: lorries booked}, for this hour and those ahead.
+var bookings := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
@@ -305,6 +310,7 @@ func to_dict() -> Dictionary:
 		"until_empty": _until_empty,
 		"returning": returning.duplicate(true),
 		"stuffing": stuffing.duplicate(true),
+		"bookings": bookings.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"lane_traffic": lane_traffic.to_dict(),
@@ -374,6 +380,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._until_empty = d.until_empty
 	sim.returning.assign(d.returning)
 	sim.stuffing.assign(d.stuffing)
+	sim.bookings = d.bookings.duplicate(true)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
@@ -737,6 +744,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 	for key: String in settings:
 		if key not in AREA_SETTINGS.get(areas.kind_of(areas.list[id]), {}):
 			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
+	if settings.has("slots_per_hour") and (not settings.slots_per_hour is int or settings.slots_per_hour < 0 or settings.slots_per_hour > MAX_SLOTS_PER_HOUR):
+		return "Bookings run from 0 (none) to %d an hour" % MAX_SLOTS_PER_HOUR
 	if settings.has("level"):
 		if not rules.gate_levels.has(settings.level):
 			return "Unknown gate level: %s" % settings.level

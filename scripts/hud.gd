@@ -810,6 +810,12 @@ func _draw_inspect_actions() -> void:
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
 				_action_button(_inspect_actions, "Make %s" % sim.rules.gate_levels[level].name, {"op": "set_area", "id": id, "settings": {"level": level}})
+		var slots: int = sim.areas.list[id].settings.slots_per_hour
+		for change: int in [-5, 5]:
+			var to := clampi(slots + change, 0, PortSim.MAX_SLOTS_PER_HOUR)
+			if to != slots:
+				var button := _action_button(_inspect_actions, "%+d bookings" % change, {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}})
+				button.tooltip_text = "Lorries book an hour and are let in no sooner, %d an hour (0: no bookings, lorries come in as they arrive). Early lorries wait in a truck park, else in a booth." % to
 
 
 func _label(text: String) -> Label:
