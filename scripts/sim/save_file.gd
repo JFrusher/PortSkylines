@@ -6,11 +6,11 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 25
-## The first save with terminals painted on the map. Older saves hold
-## terminals as groups of areas, which the developer chose to refuse rather
-## than paint in.
-const FIRST := 24
+const VERSION := 26
+## The first save on a map's natural coastline. Older saves were built on a
+## straight sea strip that no map keeps, so they are refused, as the
+## developer chose for the coastline (and before it for painted terminals).
+const FIRST := 26
 ## Every field Vehicle.from_dict reads.
 const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
@@ -64,29 +64,15 @@ static func load_from(path: String) -> Dictionary:
 	if data.version < 1:
 		return {"error": "%s has an invalid save version %d" % [path, data.version]}
 	if data.version < FIRST:
-		return {"error": "%s was saved before terminals were painted on the map (save v%d) and can't be loaded; start a new game" % [path, data.version]}
+		return {"error": "%s was saved before the natural coastline (save v%d) and can't be loaded; start a new game" % [path, data.version]}
 	data = _migrate(data)
 	if not _valid_sim(data.get("sim")):
 		return {"error": "%s is not a Port Skylines save" % path}
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time.
+## Brings an older save up to VERSION one step at a time; none yet since FIRST.
 static func _migrate(data: Dictionary) -> Dictionary:
-	if data.version < 25:
-		data = _migrate_v25(data)
-	return data
-
-
-## v25 splits the ledger and the ship log by terminal; older lines are all the port's.
-static func _migrate_v25(data: Dictionary) -> Dictionary:
-	var ledger: Dictionary = data.sim.ledger
-	ledger.terminals = {0: ledger.today.duplicate()} if not ledger.today.is_empty() else {}
-	for day: Dictionary in ledger.days:
-		day.terminals = {0: day.lines.duplicate()} if not day.lines.is_empty() else {}
-	for entry: Dictionary in data.sim.ship_log:
-		entry.terminal = 0
-	data.version = 25
 	return data
 
 
@@ -104,7 +90,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
 		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
-		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY,
+		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
 	}):
 		return false
@@ -125,6 +111,8 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	# Roads and areas first: ships and cranes are checked against the aprons.
+	if data.map not in Content.base().maps:
+		return false
 	if not (_valid_roads(data.roads, Content.base().road_types) and _valid_roads(data.rails, {"track": true}) and _valid_areas(data.areas)):
 		return false
 	for train: Variant in data.trains:
@@ -236,7 +224,9 @@ static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.
 static func _valid_areas(areas: Dictionary) -> bool:
-	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY}):
+	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY}):
+		return false
+	if not areas.filled.keys().all(func(cell: Variant) -> bool: return cell is Vector2i):
 		return false
 	if not areas.terminals.keys().all(func(id: Variant) -> bool: return id is int and areas.terminals[id] is Dictionary and _has_fields(areas.terminals[id], {"name": TYPE_STRING, "colour": TYPE_INT})):
 		return false
@@ -247,6 +237,8 @@ static func _valid_areas(areas: Dictionary) -> bool:
 	return areas.list.keys().all(func(id: Variant) -> bool:
 		var area: Variant = areas.list[id]
 		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
+			return false
+		if types[area.type].kind == "quay_apron" and not area.get("depth") is int:
 			return false
 		return types[area.type].kind != "gate" or area.settings.get("level") in levels)
 

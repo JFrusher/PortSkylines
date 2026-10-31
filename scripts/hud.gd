@@ -325,7 +325,7 @@ func _ready() -> void:
 		var apron: Dictionary = sim.rules.area_types.quay_apron
 		_gate(key, _item(_button(rows.Quay, "%s\n%d m, %d crane spots" % [spec.name, Grid.metres(spec.length), spec.crane_spots], tools, false, func() -> void:
 			tool = BUILD_BERTH
-			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Cranes stand at its %d spots.\n%s with its road." % [Grid.metres(spec.length), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
+			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
 	var dredge := _gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n" + HudDetails.dollars(sim.rules.channel.cost_per_metre), {"op": "dredge", "metres": 1})))
 	dredge.tooltip_text = "Deepens the channel 1 m, so ships with a deeper draft can call.\n%s a metre, then %s a metre every %d days to keep it." % [HudDetails.dollars(sim.rules.channel.cost_per_metre), HudDetails.dollars(sim.rules.channel.maintenance_per_metre), sim.rules.channel.maintenance_days]
 	for key: String in sim.rules.sts_cranes:

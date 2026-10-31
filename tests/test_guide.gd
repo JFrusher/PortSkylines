@@ -5,6 +5,7 @@ extends SceneTree
 ## godot --headless --script res://tests/test_guide.gd
 
 ## Calendar days the test waits at most for an offer and then for a ship.
+const RandomPort := preload("res://tests/random_port.gd")
 const DAYS := 7
 
 const AreaPort := preload("res://tests/area_port.gd")
@@ -12,7 +13,7 @@ var _failures := 0
 
 
 func _initialize() -> void:
-	var sim := PortSim.new(1)
+	var sim := PortSim.new(1, RandomPort.strait())
 	var entry := sim.site_entry()
 	# A feeder berth on the coast, centred on the highway's row, and the east
 	# road from the highway meets its road in a T, so both its ends are dead
@@ -20,7 +21,7 @@ func _initialize() -> void:
 	# the gate is on the east road's inbound lane near the highway.
 	# Segments: 1 the berth road north of the T, 2 south of it, 3 the east road.
 	var steps: Array[Array] = [
-		[{"op": "build_berth", "kind": "feeder", "y": entry.y}],
+		[{"op": "build_berth", "kind": "feeder", "cell": Vector2i(80, entry.y)}],
 		[{"op": "build_road", "from": Vector2i(86, entry.y), "to": sim.site_entry_point(), "type": "terminal_1_1"}],
 		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 419, "to": 433}],
 		[{"op": "paint_terminal", "cells": AreaPort.region(sim), "terminal": -1}],

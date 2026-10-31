@@ -1,13 +1,19 @@
 # Game data
 
-Every tunable number lives in `data/base/*.json`: `rules.json` (site, money, timing), `ships.json` (ship classes), `equipment.json` (cranes, tractors, yard gear) and `lines.json` (shipping lines, contracts, reputation). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated key stops the game with an error that names the file and key.
+Every tunable number lives in `data/base/*.json`: `rules.json` (site, money, timing), `ships.json` (ship classes), `equipment.json` (cranes, tractors, yard gear) and `lines.json` (shipping lines, contracts, reputation) and `maps.json` (coastlines). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated key stops the game with an error that names the file and key.
 
 Whole numbers are allowed where a key is a number; keys marked *int* must be whole. Keys marked *>0* must be greater than zero.
 
 | Key | Type | Meaning |
 |---|---|---|
 | `site.width`, `site.height` | int | Site size in metres for roads and areas, a multiple of the 4 m grid cell |
-| `site.sea_width` | int | Metres of sea along the west edge, a multiple of 4 |
+| `map` | text | The map a new game is played on, a key of `maps` |
+| `maps.<key>.name` | text | The map's name |
+| `maps.<key>.land` | list | The mainland's outline: a polygon of `[x, y]` points in metres on the site; a cell is land when its centre is inside. Land tiles must divide the site exactly, and the highway's entry (middle of the east edge) must be land |
+| `maps.<key>.islands` | list | Islands, each a polygon like `land` |
+| `maps.<key>.rivers` | list | Rivers carved through the land: each `{"points": [[x, y], ...], "width": metres, "depth": metres}` |
+| `maps.<key>.depth.shore`, `.per_metre`, `.max` | number | The sea's depth: `shore` metres beside land, `per_metre` more for each metre further out, at most `max` |
+| `reclaim.cost_per_cell` | int | Filling one 4 m cell of water behind a quay wall |
 | `road_types.<key>.name` | text | The road's name in the build menu |
 | `road_types.<key>.forward`, `.backward` | int | Lanes along and against the drawn direction; forward at least backward, and at least one lane |
 | `road_types.<key>.lorries` | true/false | Whether lorries may use it; tractors and AGVs always may |

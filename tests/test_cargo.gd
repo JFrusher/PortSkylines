@@ -45,7 +45,7 @@ func _test_box_mix_over_ten_days() -> void:
 
 ## Lines offer services more often as the port reaches milestones.
 func _test_demand_grows_with_milestones() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	_expect(sim.hinterland_demand(), 1.0, "the port starts at the first milestone's demand")
 	var quick := PortSim.new(0, RandomPort.quick())
 	_expect(quick.hinterland_demand(), quick.milestones()[-1].demand, "every milestone reached gives the last's")

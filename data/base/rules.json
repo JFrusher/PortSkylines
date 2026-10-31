@@ -1,8 +1,7 @@
 {
 	"site": {
 		"width": 2400.0,
-		"height": 2400.0,
-		"sea_width": 300.0
+		"height": 2400.0
 	},
 	"land": {
 		"metres": 800.0,
@@ -14,6 +13,9 @@
 			"width": 3.0,
 			"height": 1.0
 		}
+	},
+	"reclaim": {
+		"cost_per_cell": 60.0
 	},
 	"start_money": 200000.0,
 	"move_price": {

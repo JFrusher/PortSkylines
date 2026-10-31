@@ -5,11 +5,19 @@ extends RefCounted
 ## of the log. Also test rules that make a port work at once, and services.
 
 
-## A copy of `game_rules` for a port that works at once: cranes stand the
+## A copy of `game_rules` on the "strait" map: a straight coast down the
+## west edge, the sea 300 m wide, which the tests' ports are drawn against.
+static func strait(game_rules := Content.base()) -> Dictionary:
+	var copy := game_rules.duplicate(true)
+	copy.map = "strait"
+	return copy
+
+
+## strait() for a port that works at once: cranes stand the
 ## moment they are ordered, the channel is M2's 14 m, deep enough for
 ## feeders and Panamaxes, and every milestone is already reached.
 static func quick(game_rules := Content.base()) -> Dictionary:
-	var copy := game_rules.duplicate(true)
+	var copy := strait(game_rules)
 	for crane: Dictionary in copy.sts_cranes.values():
 		crane.lead_days = 0.0
 	copy.channel.start_depth = 14.0
@@ -45,11 +53,11 @@ static func calls(sim: PortSim, kind := "feeder", first := 10, every := 45, coun
 static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var entry := PortSim.new().site_entry()
+	var entry := PortSim.new(0, strait()).site_entry()
 	var port: Array[Dictionary] = [
 		{"op": "paint_terminal", "cells": _region(), "terminal": -1},
 		{"op": "build_road", "from": Vector2i(86, 200), "to": Vector2i(86, entry.y), "type": "terminal_1_1"},
-		{"op": "build_road", "from": Vector2i(86, entry.y), "to": PortSim.new().site_entry_point(), "type": "terminal_1_1"},
+		{"op": "build_road", "from": Vector2i(86, entry.y), "to": PortSim.new(0, strait()).site_entry_point(), "type": "terminal_1_1"},
 		{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 79},
 		{"op": "build_area", "type": "gate", "segment": 2, "side": -1, "from": 299, "to": 313},
 		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 29, "to": 58},

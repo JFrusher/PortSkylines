@@ -7,7 +7,16 @@ extends RefCounted
 const BASE_DIR := "res://data/base"
 const SCHEMA := {
 	# The site for roads and areas, in metres, each a whole number of Grid cells.
-	"site": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
+	"site": {"width": TYPE_INT, "height": TYPE_INT},
+	# The coast a new game is played on, a key of maps. Each map is in metres
+	# on the site: the mainland's outline and each island as a polygon of
+	# [x, y] points, rivers as lines of points with a width and a depth that
+	# carve water through the land, and the sea's depth: shore metres beside
+	# land, per_metre more for each metre out, up to max.
+	"map": TYPE_STRING,
+	"maps": {"*": {"name": TYPE_STRING, "land": TYPE_ARRAY, "islands": TYPE_ARRAY, "rivers": TYPE_ARRAY, "depth": {"shore": TYPE_FLOAT, "per_metre": TYPE_FLOAT, "max": TYPE_FLOAT}}},
+	# Filling water to make land behind a quay wall, per 4 m cell.
+	"reclaim": {"cost_per_cell": TYPE_INT},
 	"start_money": TYPE_INT,
 	# What a line pays per crane move: by box size, plus a reefer premium.
 	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
@@ -168,6 +177,14 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 	for key: String in rules.site:
 		if rules.site[key] <= 0 or rules.site[key] % Grid.CELL != 0:
 			return {"error": "site.%s: must be a positive multiple of %d m" % [key, Grid.CELL]}
+	if rules.site.width % rules.land.metres != 0 or rules.site.height % rules.land.metres != 0:
+		return {"error": "land.metres: land tiles must divide the site exactly"}
+	if rules.map not in rules.maps:
+		return {"error": "map: unknown map \"%s\"" % rules.map}
+	for key: String in rules.maps:
+		var err := _map_error(rules.maps[key], rules.site)
+		if err:
+			return {"error": "maps.%s.%s" % [key, err]}
 	for kind: String in rules.road_types:
 		var road: Dictionary = rules.road_types[kind]
 		if road.forward < 0 or road.backward < 0 or road.forward + road.backward == 0 or road.forward < road.backward:
@@ -187,6 +204,36 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 	if not is_equal_approx(shares, 1.0):
 		return {"error": "hinterland.places: shares must add up to 1"}
 	return {"rules": rules}
+
+
+## Why `map` isn't a coast on `site`, or "": polygons of at least three
+## points, rivers of at least two, every point an [x, y] pair on the site,
+## and land where the highway comes in on the east edge.
+static func _map_error(map: Dictionary, site: Dictionary) -> String:
+	var shapes: Array = [["land", map.land]]
+	for island: Variant in map.islands:
+		shapes.append(["islands", island])
+	for shape: Array in shapes:
+		if not shape[1] is Array or shape[1].size() < 3:
+			return "%s: a polygon needs at least 3 points" % shape[0]
+		for point: Variant in shape[1]:
+			if not _on_site(point, site):
+				return "%s: %s is not an [x, y] point on the site" % [shape[0], point]
+	for river: Variant in map.rivers:
+		if not (river is Dictionary and river.get("points") is Array and river.points.size() >= 2 and river.get("width") is float and river.get("depth") is float and river.width > 0.0 and river.depth > 0.0):
+			return "rivers: each needs points (at least 2), a width and a depth above zero"
+		for point: Variant in river.points:
+			if not _on_site(point, site):
+				return "rivers: %s is not an [x, y] point on the site" % [point]
+	var size := Grid.size(site)
+	var coast := Coast.of(map, site)
+	if coast.is_water(Vector2i(size.x - 1, size.y / 2)):
+		return "land: the highway's entry on the east edge must be land"
+	return ""
+
+
+static func _on_site(point: Variant, site: Dictionary) -> bool:
+	return point is Array and point.size() == 2 and point.all(func(v: Variant) -> bool: return v is float or v is int) and point[0] >= 0 and point[1] >= 0 and point[0] <= site.width and point[1] <= site.height
 
 
 ## Checks `parent[key]` against `want` (a TYPE_* or a nested schema), turning
@@ -218,6 +265,8 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 		return "" if got is String else "%s: must be text" % where
 	if want == TYPE_BOOL:
 		return "" if got is bool else "%s: must be true or false" % where
+	if want == TYPE_ARRAY:
+		return "" if got is Array else "%s: must be a list" % where
 	if not (got is float or got is int):
 		return "%s: must be a number" % where
 	if want == TYPE_INT:

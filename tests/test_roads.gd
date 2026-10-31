@@ -214,16 +214,16 @@ func _test_editing() -> void:
 		found.sort()
 		return found
 	for type: String in ["terminal_1_1", "terminal_2_2"]:
-		var east := AreaPort.owned(PortSim.new())
-		east.apply({"op": "build_road", "from": Vector2i(0, 90), "to": Vector2i(10, 90), "type": type})
-		var west := AreaPort.owned(PortSim.new())
-		west.apply({"op": "build_road", "from": Vector2i(10, 90), "to": Vector2i(0, 90), "type": type})
+		var east := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
+		east.apply({"op": "build_road", "from": Vector2i(200, 90), "to": Vector2i(210, 90), "type": type})
+		var west := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
+		west.apply({"op": "build_road", "from": Vector2i(210, 90), "to": Vector2i(200, 90), "type": type})
 		_expect(cells_of.call(west, 1), cells_of.call(east, 1), "a %s road covers the same cells dragged either way" % type)
 		var columns := []
-		for start: Vector2i in [Vector2i(5, 80), Vector2i(5, 100)]:
-			var stubs := AreaPort.owned(PortSim.new())
-			stubs.apply({"op": "build_road", "from": Vector2i(0, 90), "to": Vector2i(10, 90), "type": type})
-			stubs.apply({"op": "build_road", "from": start, "to": stubs.roads.snap_end(start, Vector2i(5, 90)), "type": type})
+		for start: Vector2i in [Vector2i(205, 80), Vector2i(205, 100)]:
+			var stubs := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
+			stubs.apply({"op": "build_road", "from": Vector2i(200, 90), "to": Vector2i(210, 90), "type": type})
+			stubs.apply({"op": "build_road", "from": start, "to": stubs.roads.snap_end(start, Vector2i(205, 90)), "type": type})
 			var cols := {}
 			for cell: Vector2i in stubs.roads.footprint(stubs.roads.nodes[stubs.roads.segments[3].a], stubs.roads.nodes[stubs.roads.segments[3].b], type):
 				cols[cell.x] = true
@@ -231,21 +231,21 @@ func _test_editing() -> void:
 			columns[-1].sort()
 		_expect(columns[0], columns[1], "%s stubs snapped onto a road from either side line up" % type)
 		# Drawn back to a road's free end, a road carries on that road's way.
-		var on := AreaPort.owned(PortSim.new())
-		on.apply({"op": "build_road", "from": Vector2i(0, 90), "to": Vector2i(10, 90), "type": type})
-		on.apply({"op": "build_road", "from": Vector2i(20, 90), "to": Vector2i(10, 90), "type": type})
+		var on := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
+		on.apply({"op": "build_road", "from": Vector2i(200, 90), "to": Vector2i(210, 90), "type": type})
+		on.apply({"op": "build_road", "from": Vector2i(220, 90), "to": Vector2i(210, 90), "type": type})
 		var in_line := {}
 		for segment: int in on.roads.segments:
 			for lane: Array in lanes_of.call(on, segment):
 				in_line[lane[0].y] = true
 		_expect(in_line.size(), on.rules.road_types[type].forward + on.rules.road_types[type].backward, "a %s road drawn back to a road's end runs on in line" % type)
-		var bend := AreaPort.owned(PortSim.new())
-		bend.apply({"op": "build_road", "from": Vector2i(0, 90), "to": Vector2i(10, 90), "type": type})
-		bend.apply({"op": "build_road", "from": Vector2i(10, 80), "to": Vector2i(10, 90), "type": type})
-		_expect(bend.lanes.route(Vector2i(0, 90), Vector2i(10, 80), true).is_empty() or bend.lanes.route(Vector2i(10, 80), Vector2i(0, 90), true).is_empty(), false, "a %s road drawn back to a road's end turns there both ways" % type)
-	var one_way := AreaPort.owned(PortSim.new())
-	one_way.apply({"op": "build_road", "from": Vector2i(10, 90), "to": Vector2i(0, 90), "type": "one_way"})
-	_expect(one_way.roads.nodes[one_way.roads.segments[1].a], Vector2i(10, 90), "a one-way road runs the way it was dragged")
+		var bend := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
+		bend.apply({"op": "build_road", "from": Vector2i(200, 90), "to": Vector2i(210, 90), "type": type})
+		bend.apply({"op": "build_road", "from": Vector2i(210, 80), "to": Vector2i(210, 90), "type": type})
+		_expect(bend.lanes.route(Vector2i(200, 90), Vector2i(210, 80), true).is_empty() or bend.lanes.route(Vector2i(210, 80), Vector2i(200, 90), true).is_empty(), false, "a %s road drawn back to a road's end turns there both ways" % type)
+	var one_way := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
+	one_way.apply({"op": "build_road", "from": Vector2i(210, 90), "to": Vector2i(200, 90), "type": "one_way"})
+	_expect(one_way.roads.nodes[one_way.roads.segments[1].a], Vector2i(210, 90), "a one-way road runs the way it was dragged")
 	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
 	var net := RoadNet.new(Content.base().road_types)
 	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
@@ -265,19 +265,20 @@ func _test_editing() -> void:
 
 
 func _test_sim_commands() -> void:
-	var sim := AreaPort.owned(PortSim.new())
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	var money := sim.money
 	var upkeep := sim.daily_upkeep()
 	var cost: int = sim.rules.road_types.terminal_2_2.cost_per_cell
-	_expect(sim.apply({"op": "build_road", "from": Vector2i(10, 10), "to": Vector2i(30, 10), "type": "terminal_2_2"}), "", "a road is built by command")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(110, 10), "to": Vector2i(130, 10), "type": "terminal_2_2"}), "", "a road is built by command")
 	_expect(money - sim.money, 20 * cost, "a road costs its length in cells")
 	_expect(sim.daily_upkeep() - upkeep, roundi(20 * sim.rules.road_types.terminal_2_2.upkeep_per_cell), "roads add their upkeep")
-	_expect(sim.apply({"op": "build_road", "from": Vector2i(15, 10), "to": Vector2i(25, 10), "type": "terminal_1_1"}), "A road already runs here", "a refused road")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(115, 10), "to": Vector2i(125, 10), "type": "terminal_1_1"}), "A road already runs here", "a refused road")
 	_expect(money - sim.money, 20 * cost, "costs nothing")
-	_expect(sim.lanes.route(Vector2i(10, 10), Vector2i(29, 10), true).size(), 20, "the sim routes on its roads")
-	var poor := AreaPort.owned(PortSim.new())
+	_expect(sim.lanes.route(Vector2i(110, 10), Vector2i(129, 10), true).size(), 20, "the sim routes on its roads")
+	var poor := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	poor.ledger.post("construction", -poor.money)
-	_expect(poor.apply({"op": "build_road", "from": Vector2i(10, 10), "to": Vector2i(30, 10), "type": "terminal_2_2"}), "Not enough money", "roads need the money")
+	_expect(poor.apply({"op": "build_road", "from": Vector2i(110, 10), "to": Vector2i(130, 10), "type": "terminal_2_2"}), "Not enough money", "roads need the money")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(60, 40), "to": Vector2i(90, 40), "type": "terminal_1_1"}), "Roads can't be built on water", "a road can't run out into the sea")
 	_expect(sim.apply({"op": "remove_road", "segment": 99}), "No road there", "removing a missing road is refused")
 	_expect(sim.apply({"op": "remove_road", "segment": 1}), "", "a road is removed by command")
 	_expect(sim.roads.segments.is_empty(), true, "and is gone")
@@ -285,10 +286,10 @@ func _test_sim_commands() -> void:
 
 
 func _test_change_road() -> void:
-	var sim := AreaPort.owned(PortSim.new())
-	sim.apply({"op": "build_road", "from": Vector2i(10, 10), "to": Vector2i(30, 10), "type": "terminal_1_1"})
-	sim.apply({"op": "build_road", "from": Vector2i(20, 0), "to": Vector2i(20, 10), "type": "terminal_1_1"})
-	var segment := sim.roads.segment_at(Vector2i(12, 10))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
+	sim.apply({"op": "build_road", "from": Vector2i(110, 10), "to": Vector2i(130, 10), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(120, 0), "to": Vector2i(120, 10), "type": "terminal_1_1"})
+	var segment := sim.roads.segment_at(Vector2i(112, 10))
 	var before := sim.state_hash()
 	_expect(sim.change_road_error(segment, "terminal_2_2"), "", "a road can change to a wider type")
 	_expect(sim.state_hash(), before, "checking a change changes nothing")
@@ -298,17 +299,17 @@ func _test_change_road() -> void:
 	_expect(sim.apply({"op": "change_road", "segment": segment, "type": "terminal_2_2"}), "", "a road changes type by command")
 	_expect(sim.roads.segments[segment].type, "terminal_2_2", "it keeps its segment and takes the new type")
 	_expect(money - sim.money, 10 * sim.rules.road_types.terminal_2_2.cost_per_cell, "and costs the new type's price for its length")
-	_expect(sim.roads.footprint(Vector2i(10, 10), Vector2i(20, 10), "terminal_2_2").all(func(c: Vector2i) -> bool: return sim.roads.segment_at(c) != 0), true, "its lanes are the new type's")
-	_expect(sim.lanes.route(Vector2i(10, 10), Vector2i(20, 0), true).is_empty(), false, "the junction still joins")
-	sim.apply({"op": "build_road", "from": Vector2i(40, 12), "to": Vector2i(60, 12), "type": "terminal_1_1"})
-	sim.apply({"op": "build_road", "from": Vector2i(40, 10), "to": Vector2i(60, 10), "type": "terminal_1_1"})
-	_expect(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(Vector2i(50, 10)), "type": "terminal_2_2"}), "A road already runs here", "a change that would run into a road beside it is refused")
+	_expect(sim.roads.footprint(Vector2i(110, 10), Vector2i(120, 10), "terminal_2_2").all(func(c: Vector2i) -> bool: return sim.roads.segment_at(c) != 0), true, "its lanes are the new type's")
+	_expect(sim.lanes.route(Vector2i(110, 10), Vector2i(120, 0), true).is_empty(), false, "the junction still joins")
+	sim.apply({"op": "build_road", "from": Vector2i(140, 12), "to": Vector2i(160, 12), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(140, 10), "to": Vector2i(160, 10), "type": "terminal_1_1"})
+	_expect(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(Vector2i(150, 10)), "type": "terminal_2_2"}), "A road already runs here", "a change that would run into a road beside it is refused")
 
 
 func _test_areas() -> void:
-	var rules := Content.base()
+	var rules := RandomPort.strait()
 	var net := RoadNet.new(rules.road_types)
-	var areas := Areas.new(rules.area_types, net, rules.site)
+	var areas := Areas.new(rules.area_types, net, Coast.of(rules.maps[rules.map], rules.site))
 	# Drawn south down grid line x = 86, so its right is west, towards the sea
 	# (x < 75). The 1+1 lanes are x = 85 and 86.
 	net.add(Vector2i(86, 100), Vector2i(86, 201), "terminal_1_1")
@@ -333,18 +334,18 @@ func _test_areas() -> void:
 	var north := net.segment_at(Vector2i(85, 150))
 	_expect(areas.add("depot", north, -1, 60, net.cells(north).size() - 1), "Something is already built here", "an area can't cover a road")
 	var inland := RoadNet.new(rules.road_types)
-	var inland_areas := Areas.new(rules.area_types, inland, rules.site)
+	var inland_areas := Areas.new(rules.area_types, inland, Coast.of(rules.maps[rules.map], rules.site))
 	inland.add(Vector2i(96, 100), Vector2i(96, 201), "terminal_1_1")
-	_expect(inland_areas.add("quay_apron", 1, 1, 0, 40), "A quay apron runs along the water's edge", "an apron must reach the water")
+	_expect(inland_areas.add("quay_apron", 1, 1, 0, 40), "A quay apron reaches at most 64 m from its road to the water", "an apron must reach the water")
 	var wide := RoadNet.new(rules.road_types)
-	var wide_areas := Areas.new(rules.area_types, wide, rules.site)
+	var wide_areas := Areas.new(rules.area_types, wide, Coast.of(rules.maps[rules.map], rules.site))
 	# The sea ends at x = 75 and the area starts at x = 89, so the apron is 15 rows deep.
 	wide.add(Vector2i(91, 100), Vector2i(91, 201), "terminal_1_1")
 	_expect(wide_areas.add("quay_apron", 1, 1, 0, 40), "", "an apron reaches out to the water from a road further in")
 	_expect(wide_areas.depth_of(wide_areas.list[1]), 15, "it is as deep as the gap to the water")
 	_expect(wide_areas.layout(1).edge.all(func(c: Vector2i) -> bool: return c.x == 75), true, "its quay edge is at the water")
 	var coast := RoadNet.new(rules.road_types)
-	var coast_areas := Areas.new(rules.area_types, coast, rules.site)
+	var coast_areas := Areas.new(rules.area_types, coast, Coast.of(rules.maps[rules.map], rules.site))
 	coast.add(Vector2i(79, 100), Vector2i(79, 201), "terminal_1_1")
 	_expect(coast_areas.add("yard_block", 1, 1, 0, 40), "Areas can't be built on water", "areas stay out of the sea")
 	coast.add(Vector2i(596, 100), Vector2i(596, 201), "terminal_1_1")
@@ -352,7 +353,7 @@ func _test_areas() -> void:
 
 
 func _test_area_tool() -> void:
-	var sim := AreaPort.owned(PortSim.new())
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	sim.apply({"op": "build_road", "from": Vector2i(101, 100), "to": Vector2i(101, 161), "type": "terminal_2_2"})
 	# Drawn south down grid line x = 101: right is west. Forward lanes are x = 100 and 99,
 	# backward 101 and 102 (left, east), so areas start at x = 98 to the west and x = 103 to the east.
@@ -372,7 +373,7 @@ func _test_area_tool() -> void:
 	_expect(sim.areas.cells(1).size(), 20 * block.depth, "a road joining later doesn't move the area")
 	_expect(sim.apply({"op": "remove_area", "id": 7}), "No area there", "removing a missing area is refused")
 	_expect(sim.apply({"op": "remove_area", "id": 1}), "", "an area is removed by command")
-	var diagonal := AreaPort.owned(PortSim.new())
+	var diagonal := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	diagonal.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(130, 130), "type": "terminal_1_1"})
 	_expect(diagonal.apply({"op": "build_area", "type": "depot", "segment": 1, "side": -1, "from": 0, "to": 10}), "", "an area is built along a 45° road")
 	var rows := diagonal.areas.cells(1)
@@ -380,7 +381,7 @@ func _test_area_tool() -> void:
 
 
 func _test_yard_layout() -> void:
-	var sim := AreaPort.owned(PortSim.new())
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(161, 100), "type": "terminal_1_1"})
 	# Drawn east, right is south: the block starts on row 101 and runs 31 cells east.
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": 1, "from": 0, "to": 30})
@@ -403,7 +404,7 @@ func _test_yard_layout() -> void:
 
 
 func _test_apron_and_gate_layouts() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	# Drawn south down grid line x = 86, lanes at x = 85 and 86, its right (west)
 	# side reaches the sea: the apron covers x = 84 down to 75.
 	sim.apply({"op": "build_road", "from": Vector2i(86, 100), "to": Vector2i(86, 161), "type": "terminal_1_1"})
@@ -444,7 +445,7 @@ func _test_apron_and_gate_layouts() -> void:
 
 
 func _test_area_settings() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(86, 100), "to": Vector2i(86, 161), "type": "terminal_1_1"})
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
@@ -463,14 +464,14 @@ func _test_area_settings() -> void:
 	_expect(sim.apply({"op": "set_area", "id": 1, "settings": {"lines": [line]}}), "", "an apron favours lines")
 	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"lines": [line]}}), "A gate has no lines setting", "a gate has no rules")
 	_expect(sim.apply({"op": "set_area", "id": 9, "settings": {}}), "No area there", "a missing area is refused")
-	var locked := AreaPort.owned(PortSim.new())
+	var locked := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	locked.apply({"op": "build_road", "from": Vector2i(101, 100), "to": Vector2i(101, 161), "type": "terminal_1_1"})
 	locked.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 15})
 	_expect(locked.apply({"op": "set_area", "id": 1, "settings": {"gear": "rtg"}}), locked.lock_error("rtg"), "RTGs wait for their milestone")
 
 
 func _test_terminals() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(86, 100), "to": Vector2i(86, 201), "type": "terminal_1_1"})
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
 	_expect(sim.areas.list[1].terminal, 0, "an area on unpainted ground is in no terminal")
@@ -486,7 +487,7 @@ func _test_terminals() -> void:
 
 
 func _test_unconnected_areas() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(101, 100), "to": Vector2i(101, 141), "type": "terminal_1_1"})
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
 	sim.apply({"op": "paint_terminal", "cells": sim.areas.cells(1), "terminal": -1})
@@ -508,7 +509,7 @@ func _test_unconnected_areas() -> void:
 ## A road may meet or cross another, but its lanes may not lie over another
 ## road's lanes along the way, nor over an area.
 func _test_roads_keep_apart() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(141, 100), "type": "terminal_1_1"}), "", "a road")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 101), "to": Vector2i(141, 101), "type": "terminal_1_1"}), "A road already runs here", "a road one row over would share a lane")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 102), "to": Vector2i(141, 102), "type": "terminal_1_1"}), "", "a road whose lanes run beside it is built")
@@ -524,7 +525,7 @@ func _test_roads_keep_apart() -> void:
 
 
 func _test_handovers() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(101, 100), "to": Vector2i(101, 141), "type": "terminal_1_1"})
 	# 12 cells: 4 bays, so 4 slots and room for 4 in the buffer strip.
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 11}), "", "a 4-bay yard block is built")
@@ -638,7 +639,7 @@ func _test_area_stacks() -> void:
 
 
 func _test_driveways() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	var entry := sim.site_entry()
 	# A 1+1 road from the site entry west to the coast, along grid line y = 301.
 	# Drawn west, its right is north: the westbound lane is row 300 and the
@@ -815,7 +816,7 @@ func _test_lorries_use_the_gate_on_their_side() -> void:
 
 
 func _test_two_way_gate() -> void:
-	var sim := AreaPort.owned(PortSim.new())
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	var entry := sim.site_entry()
 	sim.apply({"op": "build_road", "from": Vector2i(400, entry.y), "to": entry, "type": "terminal_1_1"})
 	var money := sim.money

@@ -33,6 +33,8 @@ var finance: Finance
 ## Land tiles (rules.land.metres square) the port owns, as tile coordinates;
 ## roads and areas are built only on land it owns.
 var land := {}
+## The map the port is on, a key of rules.maps; its coast is areas.coast.
+var map: String
 ## Depth of the channel from the sea to the berths, in metres.
 var channel_depth := 0.0
 ## STS cranes ordered and not yet delivered: {"cell", "due" (calendar minute)}.
@@ -88,6 +90,8 @@ func _dg_refusal() -> String:
 
 ## The road a berth brings along its back.
 const BERTH_ROAD := "terminal_1_1"
+## How far past an apron's deepest reach a berth click looks for the water, in cells.
+const BERTH_SEARCH := 30
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
@@ -163,7 +167,8 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	rails.anchors = [site_rail_entry()]
 	lanes = LaneGraph.new(roads)
 	lanes.rails = rails
-	areas = Areas.new(rules.area_types, roads, rules.site)
+	map = rules.map
+	areas = Areas.new(rules.area_types, roads, Coast.of(rules.maps[map], rules.site))
 	lanes.areas = areas
 	lane_traffic = LaneTraffic.new(lanes, Junctions.new(rules.traffic))
 	handovers = Handovers.new(areas)
@@ -273,6 +278,7 @@ func to_dict() -> Dictionary:
 		"roads": roads.to_dict(),
 		"rails": rails.to_dict(),
 		"areas": areas.to_dict(),
+		"map": map,
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
@@ -339,7 +345,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.rails.anchors = [sim.site_rail_entry()]
 	sim.lanes = LaneGraph.new(sim.roads)
 	sim.lanes.rails = sim.rails
-	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
+	sim.map = d.map
+	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(sim.rules.maps[sim.map], sim.rules.site))
 	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
@@ -453,7 +460,7 @@ func apply(command: Dictionary) -> String:
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
-			return build_berth(command.kind, command.y)
+			return build_berth(command.kind, command.cell)
 		"build_two_way_gate":
 			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
@@ -491,6 +498,8 @@ func site_entry_point() -> Vector2i:
 ## Why a road can't be built, or "": as though segment `skip` weren't built.
 func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
 	var err := roads.add_error(from, to, type, skip)
+	if err == "" and roads.footprint(from, to, type).any(areas.is_water):
+		err = "Roads can't be built on water"
 	if err == "" and not roads.footprint(from, to, type).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -556,6 +565,8 @@ func build_rail_error(from: Vector2i, to: Vector2i) -> String:
 	var err := lock_error("rmg")
 	if err == "":
 		err = rails.add_error(from, to, "track")
+	if err == "" and RoadNet.line(from, to).any(areas.is_water):
+		err = "Track can't be laid on water"
 	if err == "" and not RoadNet.line(from, to).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -671,69 +682,96 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 	return ""
 
 
-## The road line, top to bottom, of a berth of `kind` centred on row `y`:
-## grid points down the grid line one cell east of where its apron reaches
-## the water exactly (its road's lanes lie either side), as long as the
-## apron, so a berth placed end to end with another shares its road's end.
-func berth_line(kind: String, y: int) -> Array[Vector2i]:
+## Where a berth of `kind` clicked at `cell` goes: {"line": its road's two
+## grid points, "out": the way its quay faces, "cells": its apron's cells},
+## or {"error"}. It faces the nearest water in the four directions; its quay
+## is one straight wall at the most seaward land along it, and the apron
+## reaches back from it to the road, filling the water behind the wall. The
+## road runs so its right side faces the water, as long as the apron, so a
+## berth placed end to end with another shares its road's end.
+func berth_plan(kind: String, cell: Vector2i) -> Dictionary:
 	var length: int = rules.berths[kind].length
-	var x: int = Grid.cells(rules.site.sea_width) + rules.area_types.quay_apron.depth + 1
-	var top := y - length / 2
-	return [Vector2i(x, top), Vector2i(x, top + length)] as Array[Vector2i]
+	var depth: int = rules.area_types.quay_apron.depth
+	var reach: int = rules.area_types.quay_apron.max_depth + BERTH_SEARCH
+	var out := Vector2i.ZERO
+	var nearest := reach + 1
+	for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		var steps := _to_water(cell, d, reach)
+		if steps < nearest:
+			nearest = steps
+			out = d
+	if out == Vector2i.ZERO:
+		return {"error": "Click the coast: there's no water within %d m" % Grid.metres(reach)}
+	var along := Vector2i(out.y, -out.x)
+	var first := cell - along * (length / 2)
+	var quay := 0
+	for k in length:
+		var steps := _to_water(first + along * k, out, reach * 2)
+		if steps > reach * 2:
+			return {"error": "The water isn't straight out from the whole berth here"}
+		quay = maxi(quay, steps)
+	var line := first + out * (quay - depth - 2)
+	var cells: Array[Vector2i] = []
+	for k in length:
+		for r in range(quay - depth, quay):
+			cells.append(first + along * k + out * r)
+	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells}
 
 
-## The cells a berth of `kind` centred on row `y` would cover: its apron,
-## from the water to its road.
-func berth_cells(kind: String, y: int) -> Array[Vector2i]:
-	var line := berth_line(kind, y)
-	var found: Array[Vector2i] = []
-	for row in range(line[0].y, line[1].y):
-		for x in range(Grid.cells(rules.site.sea_width), line[0].x - 1):
-			found.append(Vector2i(x, row))
-	return found
+## Steps from `cell` along `step` to the first water, or more than `limit`.
+func _to_water(cell: Vector2i, step: Vector2i, limit: int) -> int:
+	var steps := 0
+	while steps <= limit and not areas.is_water(cell + step * steps):
+		steps += 1
+	return steps
 
 
-func build_berth_error(kind: String, y: int) -> String:
+func build_berth_error(kind: String, cell: Vector2i) -> String:
 	if kind not in rules.berths:
 		return "Unknown berth: %s" % kind
 	var locked := lock_error(kind)
 	if locked:
 		return locked
-	var line := berth_line(kind, y)
-	var cells := berth_cells(kind, y)
+	var plan := berth_plan(kind, cell)
+	if plan.has("error"):
+		return plan.error
+	var line: Array[Vector2i] = plan.line
+	var cells: Array[Vector2i] = plan.cells
 	if not cells.all(owns):
 		return "Buy this land first"
 	var built := {}
 	for id: int in areas.list:
-		for cell in areas.cells(id):
-			built[cell] = true
+		for c in areas.cells(id):
+			built[c] = true
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		for cell in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
-			built[cell] = true
+		for c in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
+			built[c] = true
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
 	# A road meeting the berth's road part-way would split it under the apron.
-	if roads.footprint(line[0] + Vector2i(0, 1), line[1] - Vector2i(0, 1), BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
+	var step: Vector2i = (line[1] - line[0]).sign()
+	if roads.footprint(line[0] + step, line[1] - step, BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
 		return "A road already runs here: place the berth clear of it, it brings its own"
 	var err := build_road_error(line[0], line[1], BERTH_ROAD)
 	if err:
 		return err
-	if not _afford(road_price(line[0], line[1], BERTH_ROAD) + cells.size() * rules.area_types.quay_apron.cost_per_cell):
+	var water := cells.filter(areas.is_water).size()
+	if not _afford(road_price(line[0], line[1], BERTH_ROAD) + cells.size() * rules.area_types.quay_apron.cost_per_cell + water * rules.reclaim.cost_per_cell):
 		return "Not enough money"
 	return ""
 
 
-## Places a berth of `kind` on the coast centred on row `y`: its road, then
-## its apron along the road's sea side.
-func build_berth(kind: String, y: int) -> String:
-	var err := build_berth_error(kind, y)
+## Places a berth of `kind` clicked at `cell` (see berth_plan): its road,
+## then its apron along the road's water side.
+func build_berth(kind: String, cell: Vector2i) -> String:
+	var err := build_berth_error(kind, cell)
 	if err:
 		return err
-	var line := berth_line(kind, y)
+	var line: Array[Vector2i] = berth_plan(kind, cell).line
 	build_road(line[0], line[1], BERTH_ROAD)
-	# The road runs south from line[0], so its right, side 1, faces the sea.
-	err = build_area("quay_apron", roads.segment_at(Vector2i(line[0].x, y)), 1, 0, rules.berths[kind].length - 1)
+	# The road runs so its right, side 1, faces the water.
+	err = build_area("quay_apron", roads.segment_at((line[0] + line[1]) / 2), 1, 0, rules.berths[kind].length - 1)
 	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
 	return ""
 
@@ -749,8 +787,10 @@ func build_two_way_gate(type: String, segment: int, from: int, to: int) -> Strin
 	return err
 
 
+## An area's cells at its type's price, plus the water a quay apron fills.
 func area_price(type: String, segment: int, side: int, from: int, to: int) -> int:
-	return areas.cells_of(type, segment, side, from, to).size() * rules.area_types[type].cost_per_cell
+	var cells := areas.cells_of(type, segment, side, from, to)
+	return cells.size() * rules.area_types[type].cost_per_cell + cells.filter(areas.is_water).size() * rules.reclaim.cost_per_cell
 
 
 ## shortcut: changing gear is free; machines are bought per area in M5 step 17.

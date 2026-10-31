@@ -12,7 +12,7 @@ const RandomPort := preload("res://tests/random_port.gd")
 ## side of the east road, fed by the westbound lane lorries come in on.
 ## Traffic only turns back at dead ends, so areas sit beside the lane that
 ## reaches them. Along the east road, index i is column 86 + i.
-static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
+static func terminal(apron_length: int, rules := RandomPort.strait()) -> PortSim:
 	var sim := PortSim.new(0, rules, true)
 	var entry := sim.site_entry()
 	_built(sim.apply({"op": "paint_terminal", "cells": region(sim), "terminal": -1}), "Terminal 1 is painted over the test port")
@@ -28,7 +28,7 @@ static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
 ## `terminal` with an import yard block, a crane, tractors, and a feeder
 ## alongside carrying `imports` boxes with room for `exports`; with exports
 ## there is an export block too, filled by export lorries while the crane comes.
-static func working_terminal(imports: int, exports := 0, rules := Content.base()) -> PortSim:
+static func working_terminal(imports: int, exports := 0, rules := RandomPort.strait()) -> PortSim:
 	var sim := terminal(60, rules)
 	# South of the east road, fed by the eastbound lane tractors come off the coast road on.
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))

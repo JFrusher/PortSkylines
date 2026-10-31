@@ -101,7 +101,7 @@ func _test_ships_unload_and_lorries_pay() -> void:
 
 
 func _test_commands() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(150, 300), "to": Vector2i(160, 300), "type": "terminal_1_1"}), "", "a build command")
 	_expect(sim.roads.segments.size(), 1, "builds")
 	_expect(sim.apply({"op": "fly"}), "Unknown command: fly", "unknown command is refused")
@@ -303,7 +303,7 @@ func _test_upkeep_at_midnight() -> void:
 
 
 func _test_events_do_not_repeat() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	var before := sim.events.size()
 	sim._event("A crane is waiting for a free tractor")
 	sim._event("A crane is waiting for a free tractor")
@@ -371,7 +371,7 @@ func _test_offers_accept_and_decline() -> void:
 ## Services agreed one after another call on different days: each new offer
 ## takes the hour of the week furthest from the calls already agreed or offered.
 func _test_services_spread_across_the_week() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.strait()
 	rules.contracts.offer_chance = 1.0
 	rules.contracts.max_offers = 1
 	var contracts := Contracts.new(rules)
@@ -393,7 +393,7 @@ func _test_services_spread_across_the_week() -> void:
 ## Late calls cost a line's reputation until it cancels a service; good calls
 ## win it back until it offers services again.
 func _test_reputation_cancels_and_recovers() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.strait()
 	rules.contracts.offer_chance = 1.0
 	var contracts := Contracts.new(rules)
 	for id: int in [1, 2]:
@@ -480,7 +480,7 @@ func _test_loans_are_paid_back_with_interest() -> void:
 ## Three midnights below zero bring one bailout: debt cleared, every line's
 ## reputation knocked, no loans for a while.
 func _test_bailout_fires_once() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	sim.ledger.cash = -5000
 	sim.finance.loans.append({"kind": "small", "owed": 3000, "payment": 100, "days_left": 30})
 	var said: Array[String] = []
@@ -499,7 +499,7 @@ func _test_bailout_fires_once() -> void:
 ## A save from before a line was added to the data keeps its reputations, and
 ## the new line starts where every line does.
 func _test_saved_reputation_meets_a_new_line() -> void:
-	var rules := Content.base()
+	var rules := RandomPort.strait()
 	var saved := Contracts.new(rules).to_dict()
 	saved.reputation.aurora = 90.0
 	saved.reputation.erase("kestrel")
@@ -509,10 +509,10 @@ func _test_saved_reputation_meets_a_new_line() -> void:
 
 func _test_creative_mode_builds_without_cash() -> void:
 	for creative: bool in [false, true]:
-		var sim := PortSim.new(0, Content.base(), creative)
+		var sim := PortSim.new(0, RandomPort.strait(), creative)
 		sim.ledger.cash = 0
 		_expect(sim.apply({"op": "build_road", "from": Vector2i(150, 300), "to": Vector2i(160, 300), "type": "terminal_1_1"}), "" if creative else "Not enough money", "building at $0 in %s mode" % ("creative" if creative else "normal"))
-	var copy := PortSim.from_dict(PortSim.new(0, Content.base(), true).to_dict())
+	var copy := PortSim.from_dict(PortSim.new(0, RandomPort.strait(), true).to_dict())
 	_expect(copy.creative, true, "creative mode survives a save")
 
 
@@ -538,7 +538,7 @@ func _test_land_must_be_bought() -> void:
 
 ## An STS crane ordered now stands on its apron exactly when its lead time ends.
 func _test_cranes_arrive_after_their_lead_time() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.strait()
 	rules.sts_cranes.sts.lead_days = 0.5
 	var sim := AreaPort.terminal(60, rules)
 	sim.creative = false
@@ -572,7 +572,7 @@ func _test_dredging() -> void:
 
 ## Below a milestone its content stays locked; crossing it unlocks it all.
 func _test_milestones_unlock_content() -> void:
-	var sim := AreaPort.base(Content.base(), "")
+	var sim := AreaPort.base(RandomPort.strait(), "")
 	sim.ledger.cash = 1000000
 	var terminal: Dictionary = sim.milestones()[1]
 	var gateway: Dictionary = sim.milestones()[2]

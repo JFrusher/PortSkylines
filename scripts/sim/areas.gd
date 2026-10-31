@@ -3,13 +3,15 @@ extends RefCounted
 ## The areas the player drags along road edges: a yard block, quay apron,
 ## gate or depot covers the cells beside one side of a road segment, from one
 ## cell along it to another, reaching back `depth` cells from the road's edge.
-## An area never covers a road, another area, the sea or ground off the site.
+## An area never covers a road, another area, water or ground off the site,
+## except a quay apron, which fills the water behind its straight quay.
 ## It keeps its own cells once built, so later road edits never move it.
 
 ## Area id -> {"type": a key of area_types, "start" and "end": the ends of
 ## its front row, beside the road, "out": one cell away from the road,
 ## "settings": the player's rules for it, checked by PortSim.set_area,
-## "terminal": the terminal it belongs to}.
+## "terminal": the terminal it belongs to}; a quay apron also has "depth",
+## the rows from its road to its quay, fixed when it is built.
 var list := {}
 ## Terminal id -> {"name", "colour": an index into TERMINAL_COLOURS}. The
 ## player paints terminals on the map: each area belongs to the terminal
@@ -18,6 +20,11 @@ var list := {}
 var terminals := {}
 ## Painted cells: cell -> terminal id.
 var paint := {}
+## Water filled in to make land behind quay walls: cell -> true. It stays
+## land when its apron is taken out.
+var filled := {}
+## The site's land and water before any of it was filled.
+var coast: Coast
 ## How many cells each terminal has painted, kept as they are painted, so a
 ## brush stroke needn't count them all again; not saved, counted on load.
 var _counts := {}  # terminal -> cells
@@ -30,7 +37,6 @@ var types: Dictionary
 var version := 0
 var _roads: RoadNet
 var _size: Vector2i
-var _sea: int
 var _next_id := 1
 var _next_terminal := 1
 ## Every road lane cell, rebuilt when the roads change; layouts by area id,
@@ -44,11 +50,16 @@ var _layouts := {}
 var _layouts_for := -1
 
 
-func _init(area_types: Dictionary, roads: RoadNet, site: Dictionary) -> void:
+func _init(area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> void:
 	types = area_types
 	_roads = roads
-	_size = Grid.size(site)
-	_sea = Grid.cells(site.sea_width)
+	coast = site_coast
+	_size = coast.size
+
+
+## Whether `cell` is water now: on the coast's water and not filled in.
+func is_water(cell: Vector2i) -> bool:
+	return coast.is_water(cell) and cell not in filled
 
 
 ## Adds an area with `settings`; returns "" or why it can't be built.
@@ -58,6 +69,9 @@ func add(type: String, segment: int, side: int, from: int, to: int, settings := 
 		list[_next_id] = _placed(type, segment, side, from, to)
 		list[_next_id].settings = settings.duplicate(true)
 		list[_next_id].terminal = _terminal_of(_cells(list[_next_id]))
+		for cell in _cells(list[_next_id]):
+			if is_water(cell):
+				filled[cell] = true
 		_next_id += 1
 		version += 1
 	return err
@@ -73,17 +87,20 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 		return "Areas are built along a road's edge"
 	if to - from + 1 < types[type].min_length:
 		return "A %s is at least %d m long" % [types[type].name.to_lower(), Grid.metres(types[type].min_length)]
-	var cells := cells_of(type, segment, side, from, to)
+	var placed := _placed(type, segment, side, from, to)
+	if types[type].kind == "quay_apron" and placed.depth > types[type].max_depth:
+		return "A quay apron reaches at most %d m from its road to the water" % Grid.metres(types[type].max_depth)
+	var cells := _cells(placed)
 	var taken := _taken()
 	for cell in cells:
 		if cell.x < 0 or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
 			return "Areas must stay on the site"
-		if cell.x < _sea:
+		if is_water(cell) and types[type].kind != "quay_apron":
 			return "Areas can't be built on water"
 		if cell in taken:
 			return "Something is already built here"
-	if type == "quay_apron" and not _on_the_water(cells, segment, side):
-		return "A quay apron runs along the water's edge"
+	if types[type].kind == "quay_apron" and not _on_the_water(placed):
+		return "A quay apron's quay must face open water along its whole length"
 	return ""
 
 
@@ -131,7 +148,7 @@ func fill_cells(start: Vector2i) -> Array[Vector2i]:
 	var todo: Array[Vector2i] = [start]
 	while not todo.is_empty():
 		var cell: Vector2i = todo.pop_back()
-		if cell in lanes or cell.x < _sea or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
+		if cell in lanes or cell.x < 0 or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y or is_water(cell):
 			continue
 		found.append(cell)
 		if found.size() > FILL_LIMIT:
@@ -303,11 +320,12 @@ func index_near(segment: int, cell: Vector2i) -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal, "paint": paint.duplicate()}
+	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal, "paint": paint.duplicate(), "filled": filled.duplicate()}
 
 
-static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, site: Dictionary) -> Areas:
-	var areas := Areas.new(area_types, roads, site)
+static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> Areas:
+	var areas := Areas.new(area_types, roads, site_coast)
+	areas.filled = d.filled.duplicate()
 	areas.list = d.list.duplicate(true)
 	areas._next_id = d.next_id
 	areas.terminals = d.terminals.duplicate(true)
@@ -372,7 +390,25 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	# left one more.
 	var half: int = (road.forward + road.backward) / 2
 	var edge: int = half if side == 1 else half + 1
-	return {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
+	var placed := {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
+	if types[type].kind == "quay_apron":
+		placed.depth = _reach(placed)
+	return placed
+
+
+## How many rows a quay apron placed as `placed` takes to reach the water: at
+## least its type's depth, out to the row beyond the furthest land along
+## it, so its quay is one straight wall and the water behind it is filled.
+## More than max_depth when the water is further off than that.
+func _reach(placed: Dictionary) -> int:
+	var type: Dictionary = types[placed.type]
+	var rows: int = type.depth
+	for cell in RoadNet.line(placed.start, placed.end):
+		var d := 0
+		while d <= type.max_depth and not is_water(cell + placed.out * d):
+			d += 1
+		rows = maxi(rows, d)
+	return rows
 
 
 ## What `area` does, from its type: a gate of any size is a "gate".
@@ -381,13 +417,10 @@ func kind_of(area: Dictionary) -> String:
 
 
 ## How many rows deep `area` is: its type's depth, except that a quay apron
-## facing the sea reaches out to the water, up to its type's max_depth, so
-## its road needn't be an exact distance from the water.
+## reaches out to the water (see _reach), so its road needn't be an exact
+## distance from the water.
 func depth_of(area: Dictionary) -> int:
-	var type: Dictionary = types[area.type]
-	if area.type == "quay_apron" and area.out == Vector2i(-1, 0):
-		return clampi(area.start.x - _sea + 1, type.depth, type.max_depth)
-	return type.depth
+	return area.depth if kind_of(area) == "quay_apron" else types[area.type].depth
 
 
 static func _step(area: Dictionary) -> Vector2i:
@@ -415,7 +448,6 @@ func _taken() -> Dictionary:
 	return taken
 
 
-## Whether the far edge of an apron's cells, away from its road, meets the sea.
-func _on_the_water(cells: Array[Vector2i], segment: int, side: int) -> bool:
-	var outward: Vector2i = _placed("quay_apron", segment, side, 0, 0).out
-	return cells.all(func(c: Vector2i) -> bool: return c + outward in cells or (c + outward).x < _sea)
+## Whether the row just past an apron's quay is water all along it.
+func _on_the_water(placed: Dictionary) -> bool:
+	return RoadNet.line(placed.start, placed.end).all(func(c: Vector2i) -> bool: return is_water(c + placed.out * placed.depth))

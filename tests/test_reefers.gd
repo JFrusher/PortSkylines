@@ -63,7 +63,7 @@ func _test_reefer_exports_plug_in() -> void:
 ## A new port gets no reefers before the terminal milestone, so it is never
 ## fined for plugs it can't build yet; past it, reefers come.
 func _test_reefers_wait_for_their_milestone() -> void:
-	var rules := Content.base()
+	var rules := RandomPort.strait()
 	rules.box_mix.reefer_share = 1.0
 	var sim := PortSim.new(1, rules)
 	var before := sim._new_box("import", 0.0, rules.lines.keys()[0])
@@ -74,7 +74,7 @@ func _test_reefers_wait_for_their_milestone() -> void:
 
 
 func _test_hot_days_draw_more() -> void:
-	var sim := PortSim.new(1)
+	var sim := PortSim.new(1, RandomPort.strait())
 	_expect(sim.reefer_kw(), sim.rules.reefers.kw, "an ordinary day draws kw a plug")
 	sim.clock.ticks = sim.rules.reefers.hot_from * SimClock.TICKS_PER_DAY
 	_expect(sim.reefer_kw(), sim.rules.reefers.hot_kw, "a hot day draws hot_kw a plug")

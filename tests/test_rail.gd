@@ -88,7 +88,7 @@ func _test_rmg_siding() -> void:
 
 ## Track comes with RMGs, at the milestone that unlocks them.
 func _test_track_is_locked() -> void:
-	var sim := AreaPort.owned(PortSim.new(0, Content.base(), true))
+	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)}).begins_with("Unlocked at milestone"), true, "track waits for its milestone")
 
 

@@ -104,6 +104,7 @@ const INFO_TOP := 0.6
 const JAM_SECONDS := 2.0
 const INFO_SECONDS := 0.25
 const SEA_START := -18.0  # how far the water reaches past the site
+const LAND_COLOUR := Color(0.36, 0.42, 0.3)
 const SEA_DISTANCE := 30.0  # how far out to sea ships appear
 
 var sim: PortSim
@@ -113,6 +114,13 @@ var info_view := ""
 var alpha := 1.0
 
 var _water := ShaderMaterial.new()
+var _land := ShaderMaterial.new()
+## The coast as a texture a pixel a cell: red is land, green the water's depth
+## against its map's deepest; redrawn when water is filled.
+var _coast := ImageTexture.new()
+var _coast_filled := -1
+## Each land tile a pixel, red where the port owns it.
+var _owned := ImageTexture.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
 # shortcut: ships are one node each, fine at the handful a port works at once; MultiMesh them if berths grow past ~20.
 var _ships := {}  # PortSim.Ship -> Node3D
@@ -157,26 +165,35 @@ var _snap_marks := MeshInstance3D.new()
 var _junction_signs := MeshInstance3D.new()
 var _junctions_drawn: Variant = null
 var _hover := _box(Vector3(Grid.CELL, 1.5, Grid.CELL) / METRES_PER_UNIT, Color(1, 1, 1, 0.5))
-## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _info := MeshInstance3D.new()
 var _info_left := 0.0
-var _unowned := {}  # land tile -> Node3D
 var _drawn_land := -1
 
 
 func _ready() -> void:
 	var site := site_size(sim)
-	var sea: float = sim.rules.site.sea_width / METRES_PER_UNIT
 	var water := _box(Vector3(site.x - SEA_START * 2, 0.1, site.y - SEA_START * 2), Color.WHITE)
 	water.position = Vector3(site.x / 2.0, -0.35, site.y / 2.0)
 	_water.shader = load("res://shaders/water.gdshader")
-	_water.set_shader_parameter("coast_x", sea)
 	water.material_override = _water
 	add_child(water)
-	# The land runs on past the east edge, where the highway comes in from the hinterland.
-	var land := _box(Vector3(site.x - sea - SEA_START, 1, site.y), Color(0.36, 0.42, 0.3))
-	land.position = Vector3((site.x - SEA_START + sea) / 2.0, -0.5, site.y / 2.0)
+	# The site's land is a plane cut to the coast; past the east edge, where
+	# the highway comes in from the hinterland, the land runs on.
+	var land := MeshInstance3D.new()
+	land.mesh = PlaneMesh.new()
+	(land.mesh as PlaneMesh).size = site
+	land.position = Vector3(site.x / 2.0, 0.0, site.y / 2.0)
+	_land.shader = load("res://shaders/land.gdshader")
+	land.material_override = _land
 	add_child(land)
+	var hinterland := _box(Vector3(-SEA_START, 1, site.y - SEA_START * 2), LAND_COLOUR)
+	hinterland.position = Vector3(site.x - SEA_START / 2.0, -0.5, site.y / 2.0)
+	add_child(hinterland)
+	for material: ShaderMaterial in [_water, _land]:
+		material.set_shader_parameter("coast", _coast)
+		material.set_shader_parameter("site", site)
+	_land.set_shader_parameter("owned", _owned)
+	_land.set_shader_parameter("colour", LAND_COLOUR)
 	add_child(_hover)
 	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview]:
 		add_child(node)
@@ -317,8 +334,9 @@ func _process(dt: float) -> void:
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
 	_draw_junctions()
-	var channel: Dictionary = sim.rules.channel
-	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
+	if sim.areas.filled.size() != _coast_filled:
+		_coast_filled = sim.areas.filled.size()
+		_coast.set_image(coast_image(sim))
 	if sim.land.size() != _drawn_land:
 		_draw_land()
 	_draw_ships()
@@ -560,27 +578,32 @@ static func _world(metres: Vector2, height: float) -> Vector3:
 	return Vector3(metres.x, height, metres.y) / METRES_PER_UNIT
 
 
+## Marks the land tiles the port owns; the land shader shades the rest.
 func _draw_land() -> void:
 	_drawn_land = sim.land.size()
-	var site := site_size(sim)
-	var size: float = sim.rules.land.metres / METRES_PER_UNIT
-	var sea: float = sim.rules.site.sea_width / METRES_PER_UNIT
-	for y in ceili(site.y / size):
-		for x in ceili(site.x / size):
-			var tile := Vector2i(x, y)
-			if sim.land.has(tile) and _unowned.has(tile):
-				_unowned[tile].queue_free()
-				_unowned.erase(tile)
-			elif not sim.land.has(tile) and not _unowned.has(tile):
-				# Only the land part of the tile: the sea is nobody's to buy.
-				var from := maxf(x * size, sea)
-				var width := minf((x + 1) * size, site.x) - from
-				if width <= 0.0:
-					continue
-				var shade := _box(Vector3(width, 0.02, size), Color(0, 0, 0, 0.3))
-				shade.position = Vector3(from + width / 2.0, 0.02, (y + 0.5) * size)
-				add_child(shade)
-				_unowned[tile] = shade
+	var tiles := Vector2i((site_size(sim) * METRES_PER_UNIT / sim.rules.land.metres).ceil())
+	var image := Image.create(tiles.x, tiles.y, false, Image.FORMAT_R8)
+	for tile: Vector2i in sim.land:
+		image.set_pixelv(tile, Color.RED)
+	_owned.set_image(image)
+
+
+## The coast a pixel a cell (see _coast): red 1 on land, green the water's
+## depth against max_depth metres.
+static func coast_image(sim: PortSim) -> Image:
+	var size := sim.areas.coast.size
+	var deepest: float = sim.rules.maps[sim.map].depth.max
+	var bytes := PackedByteArray()
+	bytes.resize(size.x * size.y * 2)
+	for y: int in size.y:
+		for x: int in size.x:
+			var cell := Vector2i(x, y)
+			var i := (y * size.x + x) * 2
+			if sim.areas.is_water(cell):
+				bytes[i + 1] = roundi(clampf(sim.areas.coast.depth(cell) / deepest, 0.0, 1.0) * 255.0)
+			else:
+				bytes[i] = 255
+	return Image.create_from_data(size.x, size.y, false, Image.FORMAT_RG8, bytes)
 
 
 ## The 4 m grid cell at world point `at`.

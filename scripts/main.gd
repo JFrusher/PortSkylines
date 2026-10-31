@@ -34,7 +34,11 @@ func _ready() -> void:
 	view.sim = sim
 	add_child(view)
 	rig.bounds = Rect2(Vector2.ZERO, WorldView.site_size(sim))
-	rig.position = Vector3(sim.rules.site.sea_width / WorldView.METRES_PER_UNIT + 10, 0, WorldView.site_size(sim).y / 2.0)
+	# Start looking at the coast on the middle row, where the start land runs to the water.
+	var shore := Vector2i(0, sim.areas.coast.size.y / 2)
+	while sim.areas.is_water(shore):
+		shore.x += 1
+	rig.position = Vector3(Grid.metres(shore.x) / WorldView.METRES_PER_UNIT + 10, 0, WorldView.site_size(sim).y / 2.0)
 	add_child(rig)
 	hud.sim = sim
 	hud.save_pressed.connect(_save)
@@ -105,8 +109,9 @@ func _process(dt: float) -> void:
 		var area := _area_command()
 		for side: int in ([1, -1] if hud.both_sides() else [area.side]):
 			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
-	if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
-		dragged = sim.berth_cells(hud.berth, cell.y)
+	var berth: Dictionary = sim.berth_plan(hud.berth, cell) if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE else {}
+	if berth.has("cells"):
+		dragged = berth.cells
 	view.show_area_preview(dragged, _order_error(cell) == "")
 	var ends: Array[Vector2i] = [Grid.NONE, Grid.NONE]
 	var road_type := hud.road_type
@@ -125,8 +130,8 @@ func _process(dt: float) -> void:
 			road_type = hud.road_type
 		else:
 			ok = false
-	elif hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
-		ends = sim.berth_line(hud.berth, cell.y)
+	elif berth.has("line"):
+		ends = berth.line
 		road_type = PortSim.BERTH_ROAD
 	view.show_road_preview(ends[0], ends[1], road_type, ok)
 	if _painting:
@@ -238,7 +243,7 @@ func _command(cell: Vector2i) -> Dictionary:
 			var apron := _apron_at(cell)
 			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell), "kind": hud.crane_kind}
 		Hud.BUILD_BERTH:
-			return {"op": "build_berth", "kind": hud.berth, "y": cell.y}
+			return {"op": "build_berth", "kind": hud.berth, "cell": cell}
 	assert(false, "no command for tool %d" % hud.tool)
 	return {}
 
@@ -294,7 +299,7 @@ func _order_error(cell: Vector2i) -> String:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
 		Hud.BUILD_BERTH:
-			return sim.build_berth_error(hud.berth, cell.y)
+			return sim.build_berth_error(hud.berth, cell)
 	assert(false, "no error check for tool %d" % hud.tool)
 	return ""
 

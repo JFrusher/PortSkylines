@@ -343,7 +343,18 @@ class MapCanvas extends Control:
 		var cells: int = sim.rules.land.metres / Grid.CELL
 		for tile: Vector2i in sim.land:
 			image.fill_rect(Rect2i(tile * cells, Vector2i.ONE * cells), Color(0.33, 0.4, 0.3))
-		image.fill_rect(Rect2i(0, 0, Grid.cells(sim.rules.site.sea_width), site.y), Color(0.12, 0.3, 0.45))
+		# Water over that, darker the deeper it is.
+		var coast := WorldView.coast_image(sim).get_data()
+		var pixels := image.get_data()
+		var shallow := Color(0.2, 0.42, 0.52)
+		var deep := Color(0.08, 0.2, 0.34)
+		for i: int in site.x * site.y:
+			if coast[i * 2] == 0:
+				var water := shallow.lerp(deep, coast[i * 2 + 1] / 255.0)
+				pixels[i * 4] = water.r8
+				pixels[i * 4 + 1] = water.g8
+				pixels[i * 4 + 2] = water.b8
+		image.set_data(site.x, site.y, false, Image.FORMAT_RGBA8, pixels)
 		var kinds := {"yard_block": Color(0.62, 0.62, 0.58), "quay_apron": Color(0.75, 0.74, 0.68), "gate": Color(0.48, 0.56, 0.64), "parking": Color(0.42, 0.44, 0.47), "depot": Color(0.6, 0.55, 0.45)}
 		for id: int in sim.areas.list:
 			var colour: Color = kinds[sim.areas.kind_of(sim.areas.list[id])]
