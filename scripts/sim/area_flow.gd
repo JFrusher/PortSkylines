@@ -601,9 +601,33 @@ static func export_demand(sim: PortSim) -> int:
 		var until := fposmod(service.start - week_now, Contracts.MINUTES_PER_WEEK)
 		if until > 0.0 and until <= sim.rules.export_lead_hours * 60.0:
 			wanted += sim.rules.ship_classes[service.kind].export_moves
-	# Lorries with an empty from the yard, on their way to it or out with it; one never stacked was turned away.
-	var collecting := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry" and sim.boxes.has(v.box) and sim.boxes[v.box].kind == "empty" and sim.boxes[v.box].in >= 0.0).size()
-	return wanted - sim.exports - sim.stuffing.size() - collecting
+	return wanted - sim.exports - sim.stuffing.size() - _lorries(sim).collecting
+
+
+## The lorries export demand and room count, in one pass over the vehicles:
+## {"collecting": lorries with an empty from the yard, on their way to it or
+## out with it (one never stacked was turned away), "exports": terminal ->
+## loaded export lorries bound for it}. Kept until the tick, or the vehicles,
+## change: both are asked for every tick and scanning was most of a tick's
+## export dispatch (docs/perf.md).
+static func _lorries(sim: PortSim) -> Dictionary:
+	var key := [sim.clock.ticks, sim._next_vehicle, sim.vehicles.size()]
+	if sim._lorries_for == key:
+		return sim._lorries
+	var collecting := 0
+	var exports := {}
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.kind != "lorry" or vehicle.box not in sim.boxes:
+			continue
+		var box: Dictionary = sim.boxes[vehicle.box]
+		if box.kind == "empty" and box.in >= 0.0:
+			collecting += 1
+		elif vehicle.loaded and box.kind == "export" and vehicle.area in sim.areas.list:
+			var terminal: int = sim.areas.list[vehicle.area].terminal
+			exports[terminal] = exports.get(terminal, 0) + 1
+	sim._lorries = {"collecting": collecting, "exports": exports}
+	sim._lorries_for = key
+	return sim._lorries
 
 
 ## Whether exports are on their way into `terminal`, or can still be sent:
@@ -622,10 +646,7 @@ static func _export_room(sim: PortSim, terminal: int) -> int:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type == "yard_block" and area.terminal == terminal and area.settings.role == "export" and sim.areas.idle_reason(id) == "":
 			room += _stacks(sim, id).room()
-	for vehicle: Vehicle in sim.vehicles:
-		if vehicle.kind == "lorry" and vehicle.loaded and sim.boxes[vehicle.box].kind == "export" and vehicle.area in sim.areas.list and sim.areas.list[vehicle.area].terminal == terminal:
-			room -= 1
-	return room
+	return room - _lorries(sim).exports.get(terminal, 0)
 
 
 ## A free lane cell at the site entry heading into the site, or NONE.
