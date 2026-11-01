@@ -69,6 +69,7 @@ func _test_reefers_wait_for_their_milestone() -> void:
 	var before := sim._new_box("import", 0.0, rules.lines.keys()[0])
 	_expect(sim.boxes[before].reefer, false, "no reefer before the terminal milestone")
 	sim.teu_handled = int(rules.milestones.terminal.teu)
+	sim._check_milestones()
 	var after := sim._new_box("import", 0.0, rules.lines.keys()[0])
 	_expect(sim.boxes[after].reefer, true, "reefers once it is reached")
 

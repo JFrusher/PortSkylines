@@ -29,6 +29,9 @@ static func quick(game_rules := Content.base()) -> Dictionary:
 		crane.lead_days = 0.0
 	for milestone: Dictionary in copy.milestones.values():
 		milestone.teu = 0
+		milestone.reputation = 0.0
+		milestone.on_time = 0.0
+		milestone.productivity = 0.0
 	for spec: Dictionary in copy.ship_classes.values():
 		spec.pilot = false
 		spec.tugs = 0

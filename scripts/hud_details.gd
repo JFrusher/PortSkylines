@@ -151,6 +151,15 @@ static func port_rows(sim: PortSim) -> Array[Dictionary]:
 		row("    Yard use", percent(k.yard_use)),
 		row("    Upkeep", dollars(k.upkeep_per_day) + " / day"),
 	]
+	var milestones := sim.milestones()
+	if sim.milestones_reached() < milestones.size():
+		rows.append(row("Milestone %d needs" % (sim.milestones_reached() + 1), ""))
+		for need: String in sim.milestone_needs(milestones[sim.milestones_reached()]):
+			rows.append(row("    " + need, ""))
+	for key: String in sim.rules.objectives:
+		var objective: Dictionary = sim.rules.objectives[key]
+		if sim.milestones_reached() >= objective.after:
+			rows.append(row(("Done: " if key in sim.objectives_done else "Objective: ") + objective.text, dollars(objective.cash)))
 	for terminal: int in sim.areas.terminals:
 		var t := sim.terminal_kpis(terminal)
 		var lacks := sim.areas.terminal_error(terminal)

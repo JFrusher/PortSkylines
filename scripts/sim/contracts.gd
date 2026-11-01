@@ -271,6 +271,13 @@ static func from_dict(d: Dictionary, game_rules: Dictionary) -> Contracts:
 	return contracts
 
 
+## Lifts every line's reputation of the port by `points` (an objective met).
+func lift(points: float) -> void:
+	for line: String in reputation:
+		reputation[line] = clampf(reputation[line] + points, 0.0, 100.0)
+	version += 1
+
+
 func _change(line: String, change: float) -> String:
 	reputation[line] = clampf(reputation[line] + change * rules.lines[line].sensitivity, 0.0, 100.0)
 	version += 1

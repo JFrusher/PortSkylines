@@ -602,13 +602,18 @@ func _test_milestones_unlock_content() -> void:
 	_expect(sim.unlocked("land"), false, "land waits for milestone 3")
 	while sim.teu_handled < gateway.teu:
 		sim._moved(box, "aurora", 1)
-	_expect(["land", "dredging", "panamax"].all(sim.unlocked), true, "milestone 3 unlocks land, dredging and Panamax services")
+	_expect(sim.unlocked("land"), false, "milestone 3 also needs calls on time: TEU alone don't reach it")
+	for i in 5:
+		sim.ship_log.append({"kind": "feeder", "line": "aurora", "terminal": 1, "moves": 100, "hours": 4.0, "cranes": 2, "late": 0.0})
+	sim._moved(box, "aurora", 1)
+	_expect(["land", "dredging", "panamax"].all(sim.unlocked), true, "with them, milestone 3 unlocks land, dredging and Panamax services")
 	var rules := RandomPort.quick()
 	rules.contracts.offer_chance = 1.0
 	rules.contracts.max_offers = 100
 	var offering := AreaPort.base(rules, "")
 	# The quick rules reach every milestone; put the real ones back.
 	offering.rules.milestones = Content.base().milestones.duplicate(true)
+	offering.milestones_passed = 1
 	_run(offering, 40 * 60)
 	_expect(offering.contracts.offers.size() >= 10, true, "lines made offers (%d)" % offering.contracts.offers.size())
 	_expect(offering.contracts.offers.any(func(o: Dictionary) -> bool: return o.kind == "panamax"), false, "no Panamax is offered before milestone 3")

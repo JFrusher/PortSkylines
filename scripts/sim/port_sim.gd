@@ -111,6 +111,9 @@ func _dg_refusal() -> String:
 const BERTH_ROAD := "terminal_1_1"
 ## How far past an apron's deepest reach a berth click looks for the water, in cells.
 const BERTH_SEARCH := 30
+## How many calls the ship log keeps, which milestones' on-time and
+## productivity gates look back over.
+const SHIP_LOG_CALLS := 20
 ## A pilot station or tug depot stands within this many cells of land, and
 ## at least MARINE_BASE_GAP cells from another.
 const MARINE_BASE_SHORE := 10
@@ -163,6 +166,12 @@ var stuffing: Array[Dictionary] = []
 ## Boxes moving between terminals, out of one and waiting for a lorry to
 ## take them in to the other: [{"box", "terminal"}], first out first in.
 var transfers: Array[Dictionary] = []
+## Milestones reached, in order (see _check_milestones); they stay reached.
+var milestones_passed := 0
+## Objectives met: key of rules.objectives -> true.
+var objectives_done := {}
+## Calls sailed inside their window, by ship class.
+var on_time_calls := {}
 ## Lorries booked in at gates taking bookings: gate id -> {hour of the
 ## calendar: lorries booked}, for this hour and those ahead.
 var bookings := {}
@@ -210,6 +219,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 			land[Vector2i(x, y)] = true
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
+	_check_milestones()
 	_event("Place a berth on the coast, then draw a road from the highway to it and add a gate and a yard block along it")
 
 
@@ -391,6 +401,9 @@ func to_dict() -> Dictionary:
 		"returning": returning.duplicate(true),
 		"stuffing": stuffing.duplicate(true),
 		"transfers": transfers.duplicate(true),
+		"milestones_passed": milestones_passed,
+		"objectives_done": objectives_done.duplicate(),
+		"on_time_calls": on_time_calls.duplicate(),
 		"bookings": bookings.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
@@ -473,6 +486,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.returning.assign(d.returning)
 	sim.stuffing.assign(d.stuffing)
 	sim.transfers.assign(d.transfers)
+	sim.milestones_passed = d.milestones_passed
+	sim.objectives_done = d.objectives_done.duplicate()
+	sim.on_time_calls = d.on_time_calls.duplicate()
 	sim.bookings = d.bookings.duplicate(true)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
@@ -1016,11 +1032,80 @@ func owns(cell: Vector2i) -> bool:
 
 ## The milestones reached so far, as indices into the data's list in TEU order.
 func milestones_reached() -> int:
-	var reached := 0
-	for milestone in milestones():
-		if teu_handled >= milestone.teu:
-			reached += 1
-	return reached
+	return milestones_passed
+
+
+## What milestone `milestone` still needs, or [] when every gate is met:
+## TEU moved, the lines' average reputation, the share of the last calls
+## sailed on time, and those calls' berth moves an hour.
+func milestone_needs(milestone: Dictionary) -> Array[String]:
+	var needs: Array[String] = []
+	if teu_handled < milestone.teu:
+		needs.append("%d TEU across the quay (%d so far)" % [milestone.teu, teu_handled])
+	var reputation := average_reputation()
+	if reputation < milestone.reputation:
+		needs.append("the lines' reputation of the port at %.0f (%.0f now)" % [milestone.reputation, reputation])
+	var calls := recent_calls()
+	if calls.on_time < milestone.on_time:
+		needs.append("%d%% of the last calls on time (%d%% now)" % [roundi(milestone.on_time * 100), roundi(calls.on_time * 100)])
+	if calls.moves_per_hour < milestone.productivity:
+		needs.append("%.0f berth moves an hour (%.0f now)" % [milestone.productivity, calls.moves_per_hour])
+	return needs
+
+
+func average_reputation() -> float:
+	var total := 0.0
+	for line: String in contracts.reputation:
+		total += contracts.reputation[line]
+	return total / maxi(contracts.reputation.size(), 1)
+
+
+## The calls in the ship log: the share that sailed on time and their
+## average berth moves an hour; both 0 with none yet.
+func recent_calls() -> Dictionary:
+	if ship_log.is_empty():
+		return {"on_time": 0.0, "moves_per_hour": 0.0}
+	var on_time := 0
+	var rate := 0.0
+	for entry: Dictionary in ship_log:
+		on_time += 1 if entry.late == 0.0 else 0
+		rate += entry.moves / entry.hours if entry.hours > 0.0 else 0.0
+	return {"on_time": float(on_time) / ship_log.size(), "moves_per_hour": rate / ship_log.size()}
+
+
+## Passes each next milestone whose gates are all met, in order.
+func _check_milestones() -> void:
+	var list := milestones()
+	while milestones_passed < list.size() and milestone_needs(list[milestones_passed]).is_empty():
+		var milestone: Dictionary = list[milestones_passed]
+		milestones_passed += 1
+		if milestones_passed > 1:
+			_event("Milestone %d: %d TEU across the quay. Unlocked: %s" % [milestones_passed, milestone.teu, ", ".join(milestone.unlocks.values())])
+
+
+## Meets each open objective whose goal is met: pays its cash and lifts every
+## line's reputation, once.
+func _check_objectives() -> void:
+	for key: String in rules.objectives:
+		var objective: Dictionary = rules.objectives[key]
+		if key in objectives_done or milestones_passed < objective.after or not _objective_met(objective):
+			continue
+		objectives_done[key] = true
+		ledger.post("objectives", objective.cash)
+		contracts.lift(objective.reputation)
+		_event("Objective met: %s. %s and %+.0f reputation with every line" % [objective.text, "$%d" % objective.cash, objective.reputation])
+
+
+func _objective_met(objective: Dictionary) -> bool:
+	match objective.kind:
+		"on_time_calls":
+			return on_time_calls.get(objective.class, 0) >= objective.count
+		"day_moves":
+			return not ledger.days.is_empty() and ledger.days[-1].moves.total >= objective.count
+		"working_terminals":
+			return areas.terminals.keys().filter(func(t: int) -> bool: return areas.terminal_error(t) == "").size() >= objective.count
+	assert(false, "unknown objective kind %s" % objective.kind)
+	return false
 
 
 ## Whether the milestones reached unlock `name` (a key of some milestone's unlocks).
@@ -1054,11 +1139,8 @@ func milestones() -> Array[Dictionary]:
 func _moved(box: Dictionary, line: String, terminal: int) -> void:
 	ledger.post("moves", move_price(box), terminal)
 	ledger.count_move(line, terminal, move_price(box))
-	var before := milestones_reached()
 	teu_handled += box.teu
-	if milestones_reached() > before:
-		var milestone: Dictionary = milestones()[before]
-		_event("Milestone %d: %d TEU across the quay. Unlocked: %s" % [before + 1, milestone.teu, ", ".join(milestone.unlocks.values())])
+	_check_milestones()
 
 
 func buy_land_error(tile: Vector2i) -> String:
@@ -1545,6 +1627,8 @@ func _end_of_day() -> void:
 			ledger.post("storage", due[terminal] * storage.fee, terminal)
 	for text in finance.end_of_day(clock.calendar_minutes(), ledger, contracts, not creative):
 		_event(text)
+	_check_milestones()
+	_check_objectives()
 	ledger.close_day(clock.game_day() - 1)
 	if clock.game_day() % rules.year_days == 0:
 		_end_of_year()
@@ -1735,7 +1819,9 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	var late := maxf(now - ship.due, 0.0) / 60.0
 	var terminal: int = areas.list[ship.apron].terminal
 	ship_log.append({"kind": ship.kind, "line": ship.line, "terminal": terminal, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
-	if ship_log.size() > 10:
+	if late == 0.0:
+		on_time_calls[ship.kind] = on_time_calls.get(ship.kind, 0) + 1
+	if ship_log.size() > SHIP_LOG_CALLS:
 		ship_log.pop_front()
 	year.calls += 1
 	year.berth_hours += hours
@@ -1743,6 +1829,8 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	# Shippers dislike storage fees above the fair rate, and the line hears it.
 	var fees: float = rules.storage.satisfaction_per_dollar * maxf(storage.fee - rules.storage.fair_fee, 0.0)
 	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, terminal_turn_minutes(terminal), fees))
+	_check_milestones()
+	_check_objectives()
 
 
 func _new_box(kind: String, due: float, line: String) -> int:

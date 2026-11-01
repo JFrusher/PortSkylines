@@ -69,8 +69,16 @@ const SCHEMA := {
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.
 	# demand: how busy the hinterland keeps lines once the milestone is reached,
-	# scaling how often they offer services (1 before the first).
-	"milestones": {"*": {"teu": TYPE_INT, "demand": TYPE_FLOAT, "unlocks": {"*": TYPE_STRING}}},
+	# scaling how often they offer services (1 before the first). A milestone
+	# also needs the lines' average reputation, the share of the last calls
+	# that sailed on time, and the berth moves an hour those calls averaged,
+	# each at least its value; once reached it stays reached.
+	"milestones": {"*": {"teu": TYPE_INT, "demand": TYPE_FLOAT, "reputation": TYPE_FLOAT, "on_time": TYPE_FLOAT, "productivity": TYPE_FLOAT, "unlocks": {"*": TYPE_STRING}}},
+	# Goals between milestones, each open once `after` milestones are reached
+	# and paying cash and reputation with every line once, when met: kind
+	# on_time_calls (`count` calls of `class` sailed on time), day_moves
+	# (`count` crane moves in one day) or working_terminals (`count` of them).
+	"objectives": {"*": {"text": TYPE_STRING, "after": TYPE_INT, "kind": TYPE_STRING, "class": TYPE_STRING, "count": TYPE_INT, "cash": TYPE_INT, "reputation": TYPE_FLOAT}},
 	# A game year, for the year-end scoreboard.
 	"year_days": TYPE_INT,
 	# After `days` midnights below zero the debt is cleared, every line's
