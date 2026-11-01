@@ -1,8 +1,8 @@
-# M11 — Policies, rules and automation
+# M12 — Policies, rules and automation
 
 **Goal.** Let the player run a big port through rules instead of clicks: global policies, rules per yard block, and an automation technology tier that pays off in the long run but has a sourced ramp-up penalty.
 
-**Depends on.** M10.
+**Depends on.** M11.
 
 **Exit criteria:**
 - Every policy and rule is a command, saved, and covered by the replay hash.

@@ -9,7 +9,7 @@ signal save_pressed
 signal load_pressed
 ## A command for PortSim.apply, such as accepting an offer.
 signal command_issued(command: Dictionary)
-## shortcut: two buttons stand in for the new-game screen until M12 builds it.
+## shortcut: two buttons stand in for the new-game screen until M13 builds it.
 ## A new game: creative or not, on the data's map or a generated coast.
 signal new_game_pressed(creative: bool, generated: bool)
 ## Debug builds only: start the big test port with every feature in use.
@@ -326,7 +326,7 @@ func _ready() -> void:
 	rows.Roads.add_child(upgrade)
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
-		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
+		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M12's AGV depot.
 		# Quay aprons come as berths, below.
 		if area.kind in ["depot", "quay_apron"]:
 			continue

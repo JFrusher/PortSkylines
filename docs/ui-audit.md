@@ -28,7 +28,7 @@ matches the style guide. The problems are structure and missing information.
    or open them on the right. Effort: small.
 3. **A depot can be built and costs upkeep, but does nothing.** No sim code
    reads the depot kind; it is drawn and charged only. *(03_menu_4_yard.)*
-   Fix: hide it until depots have a job (M11's AGV depot), or give it one.
+   Fix: hide it until depots have a job (M12's AGV depot), or give it one.
    Effort: small to hide.
 
 ## Structure against Cities: Skylines
@@ -86,7 +86,7 @@ matches the style guide. The problems are structure and missing information.
 ## Small
 
 12. The Roads menu offers an "AGV and tractor lane", but there are no AGVs
-    yet: call it a tractor lane until M11.
+    yet: call it a tractor lane until M12.
 13. Ships and cranes are drawn larger than the areas and boxes around them
     (M5 playtest, open 7), which makes the default view read as toy-like.
 

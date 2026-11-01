@@ -1,8 +1,8 @@
-# M12 — Release 1.0 on Windows
+# M13 — Release 1.0 on Windows
 
 **Goal.** Release a free, stable 1.0 on Windows with data-file mods, a sandbox mode, settings and accessibility, and a save format that will keep migrating after release.
 
-**Depends on.** M11.
+**Depends on.** M12.
 
 **Exit criteria:**
 - A 10-hour soak with no crash or desync, and every save fixture since v11 loads (older ones are refused with the reason, as M5 decided).

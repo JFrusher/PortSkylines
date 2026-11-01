@@ -10,7 +10,7 @@ var reporter := CrashReporter.new()
 
 ## Most ticks one frame may run per speed step; a slower frame drops the rest.
 const MAX_TICKS_PER_FRAME := 8
-## shortcut: one save slot, add named slots and autosave in M12.
+## shortcut: one save slot, add named slots and autosave in M13.
 const SAVE_PATH := "user://save.bin"
 
 ## Play time not yet turned into ticks, in seconds.
