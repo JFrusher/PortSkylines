@@ -11,6 +11,7 @@ func _initialize() -> void:
 	_test_the_game_plays_the_estuary()
 	_test_depth_grows_offshore()
 	_test_a_berth_fills_behind_its_quay()
+	_test_a_berth_fills_back_to_the_shore()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -78,3 +79,23 @@ func _test_a_berth_fills_behind_its_quay() -> void:
 	_expect([loaded.map, loaded.areas.filled], [sim.map, sim.areas.filled], "the map and the filled water are saved")
 	_expect(sim.apply({"op": "remove_area", "id": apron}), "", "the apron is taken out")
 	_expect(sim.areas.filled.size(), water, "and the filled land stays land")
+
+
+## Where the shore lies further back than the apron reaches, the berth fills
+## all the water back to it, so its road and the land behind meet.
+func _test_a_berth_fills_back_to_the_shore() -> void:
+	# Every milestone reached, so the land here can be bought.
+	var sim := PortSim.new(1, preload("res://bench/showcase_port.gd").rules(), true)
+	for x in 3:
+		for y in 3:
+			if not sim.land.has(Vector2i(x, y)):
+				sim.apply({"op": "buy_land", "tile": Vector2i(x, y)})
+	var click := _shore(sim, 470) + Vector2i(8, 0)
+	var plan := sim.berth_plan("feeder", click)
+	var cells: Array[Vector2i] = plan.cells
+	var fill: Array[Vector2i] = plan.fill
+	_expect(fill.size() > cells.filter(sim.areas.is_water).size(), true, "the bay here reaches back past the apron (%d cells to fill)" % fill.size())
+	_expect(sim.apply({"op": "build_berth", "kind": "feeder", "cell": click}), "", "the berth is built")
+	var road: Array[Vector2i] = plan.line
+	var behind: Array = RoadNet.line(road[0], road[1]).map(func(c: Vector2i) -> Vector2i: return c - plan.out * 2)
+	_expect(behind.any(sim.areas.is_water), false, "no water is left between its road and the land")

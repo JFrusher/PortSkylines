@@ -622,10 +622,11 @@ func site_entry_point() -> Vector2i:
 	return site_entry() + Vector2i(1, 0)
 
 
-## Why a road can't be built, or "": as though segment `skip` weren't built.
-func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
+## Why a road can't be built, or "": as though segment `skip` weren't built,
+## and (`on_fill`) as though the water under it were filled, as a berth does.
+func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0, on_fill := false) -> String:
 	var err := roads.add_error(from, to, type, skip)
-	if err == "" and roads.footprint(from, to, type).any(areas.is_water):
+	if err == "" and not on_fill and roads.footprint(from, to, type).any(areas.is_water):
 		err = "Roads can't be built on water"
 	if err == "" and roads.footprint(from, to, type).any(areas.breakwater_at):
 		err = "A breakwater is in the way"
@@ -812,7 +813,8 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 
 
 ## Where a berth of `kind` clicked at `cell` goes: {"line": its road's two
-## grid points, "out": the way its quay faces, "cells": its apron's cells},
+## grid points, "out": the way its quay faces, "cells": its apron's cells,
+## "fill": the water between its quay and the shore, filled to make land},
 ## or {"error"}. It faces the nearest water in the four directions; its quay
 ## is one straight wall at the most seaward land along it, and the apron
 ## reaches back from it to the road, filling the water behind the wall. The
@@ -841,10 +843,18 @@ func berth_plan(kind: String, cell: Vector2i) -> Dictionary:
 		quay = maxi(quay, steps)
 	var line := first + out * (quay - depth - 2)
 	var cells: Array[Vector2i] = []
+	var fill: Array[Vector2i] = []
 	for k in length:
 		for r in range(quay - depth, quay):
 			cells.append(first + along * k + out * r)
-	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells}
+		# Back from the quay to the shore, so no water is left between the berth and the land.
+		var r := quay - 1
+		while areas.is_water(first + along * k + out * r):
+			if quay - r > reach * 2:
+				return {"error": "The shore is too far behind the quay here"}
+			fill.append(first + along * k + out * r)
+			r -= 1
+	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells, "fill": fill}
 
 
 ## Steps from `cell` along `step` to the first water, or more than `limit`.
@@ -882,10 +892,10 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 	var step: Vector2i = (line[1] - line[0]).sign()
 	if roads.footprint(line[0] + step, line[1] - step, BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
 		return "A road already runs here: place the berth clear of it, it brings its own"
-	var err := build_road_error(line[0], line[1], BERTH_ROAD)
+	var err := build_road_error(line[0], line[1], BERTH_ROAD, 0, true)
 	if err:
 		return err
-	var water := cells.filter(areas.is_water).size()
+	var water: int = plan.fill.size()
 	if not _afford(road_price(line[0], line[1], BERTH_ROAD) + cells.size() * rules.area_types.quay_apron.cost_per_cell + water * rules.reclaim.cost_per_cell):
 		return "Not enough money"
 	return ""
@@ -897,7 +907,12 @@ func build_berth(kind: String, cell: Vector2i) -> String:
 	var err := build_berth_error(kind, cell)
 	if err:
 		return err
-	var line: Array[Vector2i] = berth_plan(kind, cell).line
+	var plan := berth_plan(kind, cell)
+	var line: Array[Vector2i] = plan.line
+	# All the water between the quay and the shore is filled first, so the
+	# road and apron stand on land and the berth meets the shore.
+	ledger.post("construction", -plan.fill.size() * rules.reclaim.cost_per_cell)
+	areas.fill(plan.fill)
 	build_road(line[0], line[1], BERTH_ROAD)
 	# The road runs so its right, side 1, faces the water.
 	err = build_area("quay_apron", roads.segment_at((line[0] + line[1]) / 2), 1, 0, rules.berths[kind].length - 1)

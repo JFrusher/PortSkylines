@@ -68,6 +68,13 @@ func is_water(cell: Vector2i) -> bool:
 	return coast.is_water(cell) and cell not in filled and cell not in _breakwater_cells
 
 
+## Fills `cells` of water to make land, as behind a quay wall.
+func fill(cells: Array[Vector2i]) -> void:
+	for cell in cells:
+		filled[cell] = true
+	version += 1
+
+
 ## The cells of a breakwater from `from` to `to`: its line and the cells
 ## beside it, two thick, so a 45° wall has no gaps.
 static func breakwater_cells(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
