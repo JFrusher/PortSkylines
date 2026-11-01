@@ -155,9 +155,9 @@ godot --export-release "Windows" build/windows/PortSkylines.exe
 | ✅ | [M4 Vertical slice and art](docs/phases/m04-vertical-slice.md) | Done |
 | ✅ | [M5 Roads and areas](docs/phases/m05-roads-and-areas.md): the 4 m grid, lanes and terminals | Done |
 | 🟧 | [M6 Scale and on-dock rail](docs/phases/m06-scale-and-rail.md): endgame scale, rail, reefers, Neopanamax | Features in; performance target open |
-| ⬜ | [M7 CS2-style cost routing](docs/phases/m07-cost-routing.md) | Planned |
-| ⬜ | [M8 The whole port](docs/phases/m08-whole-port.md) | Planned |
-| ⬜ | [M9 Barge and feeder transhipment](docs/phases/m09-barge-and-feeder.md) | Planned |
+| ✅ | [M7 CS2-style cost routing](docs/phases/m07-cost-routing.md): congestion routing, turn lanes, signals, painted terminals | Done |
+| ✅ | [M8 The whole port](docs/phases/m08-whole-port.md): natural coasts, ship lanes, anchorage, pilots, tugs, ULCV | Done |
+| ✅ | [M9 Barge and feeder transhipment](docs/phases/m09-barge-and-feeder.md): transhipment, barges up the river, straddle carriers | Done |
 | ⬜ | [M10 Roads like Cities: Skylines](docs/phases/m10-curved-roads.md) | Planned |
 | ⬜ | [M11 Events and regulations](docs/phases/m11-events.md) | Planned |
 | ⬜ | [M12 Policies, rules and automation](docs/phases/m12-automation.md) | Planned |
