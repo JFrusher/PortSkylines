@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 28
+const VERSION := 29
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -77,6 +77,23 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v27(data)
 	if data.version < 28:
 		data = _migrate_v28(data)
+	if data.version < 29:
+		data = _migrate_v29(data)
+	return data
+
+
+## v29 has pilot stations, tug depots and narrow-lane bookings; an older
+## port has none, and its ships have no clearance yet.
+static func _migrate_v29(data: Dictionary) -> Dictionary:
+	var sim: Dictionary = data.sim
+	sim.pilot_stations = {}
+	sim.tug_depots = {}
+	sim.next_station = 1
+	sim.passages = []
+	sim.next_ship = 1
+	for ship: Dictionary in sim.ships:
+		ship.merge({"id": 0, "cleared": false, "pilot": false, "tugs": 0, "tug_depot": 0, "tugs_at": 0.0, "hold_until": 0.0})
+	data.version = 29
 	return data
 
 
@@ -121,7 +138,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
@@ -150,6 +167,11 @@ static func _valid_sim(data: Variant) -> bool:
 		return false
 	if not data.anchorages.keys().all(func(id: Variant) -> bool: return id is int and data.anchorages[id] is Dictionary and _has_fields(data.anchorages[id], {"from": TYPE_VECTOR2I, "to": TYPE_VECTOR2I})):
 		return false
+	for bases: Array in [[data.pilot_stations, "pilots"], [data.tug_depots, "tugs"]]:
+		if not bases[0].keys().all(func(id: Variant) -> bool: return id is int and bases[0][id] is Dictionary and _has_fields(bases[0][id], {"cell": TYPE_VECTOR2I, bases[1]: TYPE_INT})):
+			return false
+	if not data.passages.all(func(p: Variant) -> bool: return p is Dictionary and _has_fields(p, {"segment": TYPE_INT, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "ship": TYPE_INT})):
+		return false
 	if not data.pocket_dredged.keys().all(func(apron: Variant) -> bool: return apron is int and data.pocket_dredged[apron] is float):
 		return false
 	if not (_valid_roads(data.roads, Content.base().road_types) and _valid_roads(data.rails, {"track": true}) and _valid_areas(data.areas)):
@@ -166,6 +188,7 @@ static func _valid_sim(data: Variant) -> bool:
 		if not ship is Dictionary or not _has_fields(ship, {
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT,
 			"boxes": TYPE_INT, "exports": TYPE_INT, "empties": TYPE_INT, "state": TYPE_INT,
+			"id": TYPE_INT, "cleared": TYPE_BOOL, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "tug_depot": TYPE_INT, "tugs_at": TYPE_FLOAT, "hold_until": TYPE_FLOAT,
 			"anchorage": TYPE_INT, "spot": TYPE_INT, "arrived": TYPE_FLOAT, "path": TYPE_ARRAY, "sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
 			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL,
 		}):

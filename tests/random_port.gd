@@ -21,13 +21,17 @@ static func water(rules: Dictionary, metres: float) -> Dictionary:
 
 
 ## strait() for a port that works at once: cranes stand the moment they
-## are ordered, and every milestone is already reached.
+## are ordered, every milestone is already reached, and no ship needs a
+## pilot or tugs (test_marine tests those).
 static func quick(game_rules := Content.base()) -> Dictionary:
 	var copy := strait(game_rules)
 	for crane: Dictionary in copy.sts_cranes.values():
 		crane.lead_days = 0.0
 	for milestone: Dictionary in copy.milestones.values():
 		milestone.teu = 0
+	for spec: Dictionary in copy.ship_classes.values():
+		spec.pilot = false
+		spec.tugs = 0
 	return copy
 
 

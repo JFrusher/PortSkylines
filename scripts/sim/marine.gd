@@ -185,19 +185,157 @@ static func set_course(sim: PortSim, ship: PortSim.Ship) -> void:
 	ship.path.append(alongside(sim, ship))
 	ship.anchorage = 0
 	ship.spot = -1
+	release(ship)
 	ship.sail = 0.0
 	ship.prev_sail = 0.0
 
 
-## Moves `ship` a tick along its course, in (`way` 1) or out (`way` -1);
-## true once it is alongside or back out at sea.
-static func sail(sim: PortSim, ship: PortSim.Ship, way: int) -> bool:
-	var length := 0.0
-	for i in range(1, ship.path.size()):
-		length += ship.path[i - 1].distance_to(ship.path[i])
+## Moves `ship` a tick along its course, in (`way` 1) or out (`way` -1),
+## going in no further than the fraction `limit`; true once it is alongside
+## or back out at sea.
+static func sail(sim: PortSim, ship: PortSim.Ship, way: int, limit := 1.0) -> bool:
 	var step: float = sim.rules.water.ship_speed / Grid.CELL * SimClock.CALENDAR_MINUTES_PER_TICK
-	ship.sail = clampf(ship.sail + way * step / maxf(length, step), 0.0, 1.0)
+	ship.sail = clampf(ship.sail + way * step / maxf(_length(ship.path), step), 0.0, limit)
 	return ship.sail == (1.0 if way == 1 else 0.0)
+
+
+static func _length(path: Array[Vector2]) -> float:
+	var length := 0.0
+	for i in range(1, path.size()):
+		length += path[i - 1].distance_to(path[i])
+	return length
+
+
+## How far in `ship` may sail now: all the way, or only to the end of the
+## lanes while the tugs it waits for are still on their way.
+static func berthing_limit(sim: PortSim, ship: PortSim.Ship) -> float:
+	if ship.tugs == 0 or sim.clock.calendar_minutes() >= ship.tugs_at:
+		return 1.0
+	return _length(ship.path.slice(0, -1)) / maxf(_length(ship.path), 0.0001)
+
+
+## Pilots on the port's stations not aboard a ship.
+static func free_pilots(sim: PortSim) -> int:
+	var total := 0
+	for station: Dictionary in sim.pilot_stations.values():
+		total += station.pilots
+	return total - sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.pilot).size()
+
+
+## Depot `id`'s tugs not out with a ship.
+static func free_tugs(sim: PortSim, id: int) -> int:
+	var out := 0
+	for ship: PortSim.Ship in sim.ships:
+		if ship.tug_depot == id:
+			out += ship.tugs
+	return sim.tug_depots[id].tugs - out
+
+
+## Whether `ship` may move along its course this tick, in (`way` 1) or out
+## (-1): once it has clearance (asked for until it gets it) and its pilot
+## has boarded and, going out, its tugs have come.
+static func under_way(sim: PortSim, ship: PortSim.Ship, way: int) -> bool:
+	if not ship.cleared:
+		var why := clear(sim, ship, way)
+		if why:
+			sim._event("A %s %s waits: %s" % [ship.kind, "coming in" if way == 1 else "leaving", why])
+			return false
+	return sim.clock.calendar_minutes() >= ship.hold_until
+
+
+## Gives `ship` clearance to sail its course in (`way` 1) or out (-1), or
+## says why not: a pilot from the station nearest where it sets off, if its
+## class takes one, boarding when the pilot boat gets there; tugs from the
+## depot nearest its berth with enough free, if its class needs them,
+## meeting it at the berth; and a booking of every narrow lane on its way
+## for the minutes it is in it, clear of every other ship's booking by
+## water.slot_margin_minutes. Nothing is taken unless all of it is free.
+static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
+	var spec: Dictionary = sim.rules.ship_classes[ship.kind]
+	var now := sim.clock.calendar_minutes()
+	var start := ship.path[0] if way == 1 else ship.path[-1]
+	var berth := ship.path[-1]
+	var sets_off := now
+	if spec.pilot:
+		if sim.pilot_stations.is_empty():
+			return "a %s needs a pilot: build a pilot station (Water)" % ship.kind
+		if free_pilots(sim) == 0:
+			return "no pilot free"
+		sets_off += _nearest(sim.pilot_stations, start) * Grid.CELL / sim.rules.water.pilots.boat_speed
+	var depot := 0
+	var tugs_at := 0.0
+	if spec.tugs > 0:
+		var near := INF
+		for id: int in sim.tug_depots:
+			var far: float = Vector2(sim.tug_depots[id].cell).distance_to(berth)
+			if free_tugs(sim, id) >= spec.tugs and far < near:
+				near = far
+				depot = id
+		if depot == 0:
+			return "it needs %d tugs free at one depot%s" % [spec.tugs, "" if not sim.tug_depots.is_empty() else ": build a tug depot (Water)"]
+		tugs_at = now + near * Grid.CELL / sim.rules.water.tugs.speed
+		if way == -1:
+			sets_off = maxf(sets_off, tugs_at)
+	sim.passages = sim.passages.filter(func(p: Dictionary) -> bool: return p.to >= now)
+	var windows := _windows(sim, ship, way, sets_off)
+	var margin: float = sim.rules.water.slot_margin_minutes
+	for w in windows:
+		for p: Dictionary in sim.passages:
+			if p.segment == w.segment and p.ship != ship.id and w.from < p.to + margin and p.from < w.to + margin:
+				return "no slot free through a narrow lane"
+	ship.pilot = spec.pilot
+	ship.tugs = spec.tugs
+	ship.tug_depot = depot
+	ship.tugs_at = tugs_at
+	ship.hold_until = sets_off
+	for w in windows:
+		w.ship = ship.id
+		sim.passages.append(w)
+	ship.cleared = true
+	return ""
+
+
+## Cells from `point` to the nearest of `bases` (id -> {"cell"}).
+static func _nearest(bases: Dictionary, point: Vector2) -> float:
+	var near := INF
+	for base: Dictionary in bases.values():
+		near = minf(near, Vector2(base.cell).distance_to(point))
+	return near
+
+
+## The narrow lanes `ship` passes on its course (in or out), each with the
+## calendar minutes it is in it when it sets off at `sets_off`.
+static func _windows(sim: PortSim, ship: PortSim.Ship, way: int, sets_off: float) -> Array[Dictionary]:
+	var points := ship.path.duplicate()
+	if way == -1:
+		points.reverse()
+	var per_cell: float = Grid.CELL / sim.rules.water.ship_speed
+	var found: Array[Dictionary] = []
+	var at := 0.0
+	for i in range(1, points.size()):
+		var leg: float = points[i - 1].distance_to(points[i])
+		var segment := sim.ship_lanes.between(_node_at(sim, points[i - 1]), _node_at(sim, points[i]))
+		if segment and sim.ship_lanes.segments[segment].type == "narrow":
+			found.append({"segment": segment, "from": sets_off + at * per_cell, "to": sets_off + (at + leg) * per_cell})
+		at += leg
+	return found
+
+
+## The lane end at `point` (a cell's middle), or 0.
+static func _node_at(sim: PortSim, point: Vector2) -> int:
+	var cell := Vector2i(point.floor())
+	for node: int in sim.ship_lanes.nodes:
+		if sim.ship_lanes.nodes[node] == cell:
+			return node
+	return 0
+
+
+## Lets `ship`'s pilot and tugs go: it is alongside, or has a new course to clear.
+static func release(ship: PortSim.Ship) -> void:
+	ship.cleared = false
+	ship.pilot = false
+	ship.tugs = 0
+	ship.tug_depot = 0
 
 
 ## The point a fraction `t` of the way along `path`, in cells.

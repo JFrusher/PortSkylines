@@ -51,6 +51,14 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `water.lanes.<key>.half_width` | int >0 | Cells of water either side of a lane's line; narrow lanes take one ship at a time, wide ones pass both ways |
 | `water.lanes.<key>.cost_per_cell`, `.upkeep_per_cell` | int, number | Price and daily upkeep per 4 m cell of water a lane covers |
 | `water.pocket` | int >0 | Cells out from a quay that a ship lies in (its berth's pocket); a lane ending in it reaches the berth |
+| `water.anchorage.cost_per_cell`, `.spacing` | int, int >0 | Price per cell of an anchorage, and the cells between ships at anchor each way |
+| `water.max_wait_hours` | number >0 | How long a ship with no berth and no room at anchor waits out at sea before going elsewhere |
+| `water.pilots.station_cost`, `.pilot_cost`, `.upkeep_per_pilot` | int | A pilot station, each pilot hired, and each pilot's daily upkeep |
+| `water.pilots.boat_speed` | number >0 | Metres a minute the pilot boat sails from its station to a ship |
+| `water.tugs.depot_cost`, `.tug_cost`, `.upkeep_per_tug` | int | A tug depot, each tug, and each tug's daily upkeep |
+| `water.tugs.speed` | number >0 | Metres a minute tugs sail from their depot to a berth |
+| `water.slot_margin_minutes` | number | The gap kept between two ships' bookings of a narrow lane |
+| `ship_classes.<name>.pilot`, `.tugs` | true/false, int | Whether the class takes a pilot in and out, and how many tugs it waits for to berth and unberth |
 | `water.dredge.max_depth` | number | As deep as dredging takes a lane or a pocket, in metres |
 | `water.dredge.cost_per_cell_metre` | int | Dredging one cell of water one metre deeper |
 | `water.dredge.maintenance_per_cell_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged cell and metre costs this |

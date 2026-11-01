@@ -35,6 +35,8 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	var area := sim.areas.area_at(cell)
 	if area:
 		return {"area": area}
+	if sim.marine_base_at(cell):
+		return {"base": sim.marine_base_at(cell)}
 	if sim.anchorage_at(cell):
 		return {"anchorage": sim.anchorage_at(cell)}
 	var lane := lane_at(sim, cell)
@@ -63,6 +65,13 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		return _ship(sim, thing) if thing in sim.ships else nothing
 	if thing is PortSim.Crane:
 		return _crane(sim, thing) if thing in sim.cranes else nothing
+	if thing is Dictionary and thing.has("base"):
+		if thing.base in sim.pilot_stations:
+			return ["Pilot station", "%d pilots, %d out with ships" % [sim.pilot_stations[thing.base].pilots, sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.pilot).size()], "Panamaxes and bigger take a pilot in and out"] as Array[String]
+		if thing.base in sim.tug_depots:
+			var depot: Dictionary = sim.tug_depots[thing.base]
+			return ["Tug depot", "%d tugs, %d out with ships" % [depot.tugs, depot.tugs - Marine.free_tugs(sim, thing.base)], "Panamaxes and bigger need tugs to berth and unberth"] as Array[String]
+		return nothing
 	if thing is Dictionary and thing.has("anchorage"):
 		return _anchorage(sim, thing.anchorage) if thing.anchorage in sim.anchorages else nothing
 	if thing is Dictionary and thing.has("lane"):

@@ -1108,6 +1108,7 @@ static func remove(sim: PortSim, id: int) -> void:
 			ship.state = PortSim.Ship.State.ANCHORED
 			ship.apron = 0
 			ship.path.clear()
+			Marine.release(ship)
 			ship.sail = 0.0
 			ship.prev_sail = 0.0
 			continue

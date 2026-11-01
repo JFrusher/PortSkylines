@@ -201,6 +201,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if hud.tool == Hud.BUILD_ANCHORAGE:
 			_anchor_from = _hovered_grid_cell()
 			return
+		if hud.tool == Hud.BUILD_MARINE:
+			_report(sim.apply({"op": "build_%s" % hud.marine_base, "cell": _hovered_grid_cell()}))
+			return
 		if _upgrading():
 			_report(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(_hovered_grid_cell()), "type": hud.road_type}))
 			return
@@ -273,6 +276,8 @@ func _command(cell: Vector2i) -> Dictionary:
 				return {"op": "remove_road", "segment": sim.roads.segment_at(cell)}
 			if sim.rails.segment_at(cell):
 				return {"op": "remove_rail", "segment": sim.rails.segment_at(cell)}
+			if sim.marine_base_at(cell):
+				return {"op": "remove_marine_base", "id": sim.marine_base_at(cell)}
 			if sim.anchorage_at(cell):
 				return {"op": "remove_anchorage", "id": sim.anchorage_at(cell)}
 			return {"op": "remove_ship_lane", "segment": Inspect.lane_at(sim, cell)}
@@ -331,7 +336,7 @@ func _order_error(cell: Vector2i) -> String:
 			var crane := AreaFlow.crane_at(sim, cell)
 			if crane:
 				return sim.remove_sts_error(crane.apron, crane.along)
-			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) or sim.anchorage_at(cell) or Inspect.lane_at(sim, cell) else "Nothing to bulldoze here"
+			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) or sim.marine_base_at(cell) or sim.anchorage_at(cell) or Inspect.lane_at(sim, cell) else "Nothing to bulldoze here"
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
@@ -341,6 +346,8 @@ func _order_error(cell: Vector2i) -> String:
 			return "" if _lane_from == Grid.NONE else sim.build_ship_lane_error(_lane_from, _lane_to(), hud.lane_type)
 		Hud.BUILD_ANCHORAGE:
 			return "" if _anchor_from == Grid.NONE else sim.build_anchorage_error(_anchor_from, cell)
+		Hud.BUILD_MARINE:
+			return sim.build_marine_base_error(hud.marine_base, cell)
 	assert(false, "no error check for tool %d" % hud.tool)
 	return ""
 

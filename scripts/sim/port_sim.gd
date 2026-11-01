@@ -41,6 +41,15 @@ var ship_lanes: ShipLanes
 ## "to": opposite corner cells}.
 var anchorages := {}
 var _next_anchorage := 1
+## Pilot stations and tug depots on the water: id -> {"cell", "pilots"} and
+## id -> {"cell", "tugs"}, numbered together.
+var pilot_stations := {}
+var tug_depots := {}
+var _next_station := 1
+## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
+## minutes), "ship" (its id)}], see Marine.clear.
+var passages: Array[Dictionary] = []
+var _next_ship := 1
 ## Metres dredged in each quay apron's pocket: apron -> metres.
 var pocket_dredged := {}
 ## Bumped by every dredge, so ship routes are found again.
@@ -102,6 +111,10 @@ func _dg_refusal() -> String:
 const BERTH_ROAD := "terminal_1_1"
 ## How far past an apron's deepest reach a berth click looks for the water, in cells.
 const BERTH_SEARCH := 30
+## A pilot station or tug depot stands within this many cells of land, and
+## at least MARINE_BASE_GAP cells from another.
+const MARINE_BASE_SHORE := 10
+const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
@@ -221,6 +234,17 @@ class Ship:
 	## Room left for its line's empties, loaded after its exports.
 	var empties := 0
 	var state := State.ARRIVING
+	## Its number, from the port's count of calls (0 for ships tests add by hand).
+	var id := 0
+	## Whether it has clearance to sail its course (see Marine.clear), with a
+	## pilot aboard and `tugs` tugs from depot `tug_depot` arriving at the
+	## calendar minute `tugs_at`; it may not move before `hold_until`.
+	var cleared := false
+	var pilot := false
+	var tugs := 0
+	var tug_depot := 0
+	var tugs_at := 0.0
+	var hold_until := 0.0
 	## The anchorage it waits at (0: none, out at sea) and its spot there, an
 	## index into Marine.spots; and the calendar minute it arrived.
 	var anchorage := 0
@@ -246,12 +270,19 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
 		ship.empties = d.empties
 		ship.state = d.state
+		ship.id = d.id
+		ship.cleared = d.cleared
+		ship.pilot = d.pilot
+		ship.tugs = d.tugs
+		ship.tug_depot = d.tug_depot
+		ship.tugs_at = d.tugs_at
+		ship.hold_until = d.hold_until
 		ship.anchorage = d.anchorage
 		ship.spot = d.spot
 		ship.arrived = d.arrived
@@ -314,6 +345,11 @@ func to_dict() -> Dictionary:
 		"scoreboard": scoreboard.duplicate(true),
 		"ship_lanes": ship_lanes.to_dict(),
 		"anchorages": anchorages.duplicate(true),
+		"pilot_stations": pilot_stations.duplicate(true),
+		"tug_depots": tug_depots.duplicate(true),
+		"next_station": _next_station,
+		"passages": passages.duplicate(true),
+		"next_ship": _next_ship,
 		"next_anchorage": _next_anchorage,
 		"pocket_dredged": pocket_dredged.duplicate(),
 		"dredge_version": dredge_version,
@@ -387,6 +423,11 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.scoreboard.assign(d.scoreboard)
 	sim.ship_lanes = ShipLanes.from_dict(d.ship_lanes, sim.rules.water.lanes)
 	sim.anchorages = d.anchorages.duplicate(true)
+	sim.pilot_stations = d.pilot_stations.duplicate(true)
+	sim.tug_depots = d.tug_depots.duplicate(true)
+	sim._next_station = d.next_station
+	sim.passages.assign(d.passages.duplicate(true))
+	sim._next_ship = d.next_ship
 	sim._next_anchorage = d.next_anchorage
 	sim.pocket_dredged = d.pocket_dredged.duplicate()
 	sim.dredge_version = d.dredge_version
@@ -482,6 +523,16 @@ func apply(command: Dictionary) -> String:
 			return build_anchorage(command.from, command.to)
 		"remove_anchorage":
 			return remove_anchorage(command.id)
+		"build_pilot_station":
+			return build_marine_base("pilot_station", command.cell)
+		"build_tug_depot":
+			return build_marine_base("tug_depot", command.cell)
+		"hire_pilots":
+			return add_marine_craft(command.station, command.count)
+		"buy_tugs":
+			return add_marine_craft(command.depot, command.count)
+		"remove_marine_base":
+			return remove_marine_base(command.id)
 		"build_road":
 			return build_road(command.from, command.to, command.type)
 		"build_rail":
@@ -1065,6 +1116,86 @@ func build_anchorage(from: Vector2i, to: Vector2i) -> String:
 	return err
 
 
+## Why a pilot station or tug depot (`kind`) can't stand at `cell`, or "":
+## on open water, near enough the shore for its boats' crews, clear of
+## another base.
+func build_marine_base_error(kind: String, cell: Vector2i) -> String:
+	if not areas.is_water(cell):
+		return "Pilot stations and tug depots stand on the water"
+	if not _near_land(cell, MARINE_BASE_SHORE):
+		return "Place it near the shore, within %d m of land" % Grid.metres(MARINE_BASE_SHORE)
+	if marine_base_at(cell, MARINE_BASE_GAP):
+		return "Too close to another pilot station or tug depot"
+	var cost: int = rules.water.pilots.station_cost if kind == "pilot_station" else rules.water.tugs.depot_cost
+	if not _afford(cost):
+		return "Not enough money"
+	return ""
+
+
+func build_marine_base(kind: String, cell: Vector2i) -> String:
+	var err := build_marine_base_error(kind, cell)
+	if err == "":
+		var pilots := kind == "pilot_station"
+		ledger.post("construction", -(rules.water.pilots.station_cost if pilots else rules.water.tugs.depot_cost))
+		if pilots:
+			pilot_stations[_next_station] = {"cell": cell, "pilots": 0}
+		else:
+			tug_depots[_next_station] = {"cell": cell, "tugs": 0}
+		_next_station += 1
+	return err
+
+
+## Hires `count` pilots at station `id`, or buys `count` tugs at depot `id`.
+func add_marine_craft(id: int, count: int) -> String:
+	if count < 1:
+		return "Add at least one"
+	var pilots := id in pilot_stations
+	if not pilots and id not in tug_depots:
+		return "No pilot station or tug depot there"
+	var cost: int = count * (rules.water.pilots.pilot_cost if pilots else rules.water.tugs.tug_cost)
+	if not _afford(cost):
+		return "Not enough money"
+	ledger.post("equipment", -cost)
+	if pilots:
+		pilot_stations[id].pilots += count
+	else:
+		tug_depots[id].tugs += count
+	return ""
+
+
+## Takes out pilot station or tug depot `id`, once none of its pilots or tugs is out with a ship.
+func remove_marine_base(id: int) -> String:
+	if id not in pilot_stations and id not in tug_depots:
+		return "No pilot station or tug depot there"
+	if id in tug_depots and ships.any(func(s: Ship) -> bool: return s.tugs > 0 and s.tug_depot == id):
+		return "Wait for its tugs to come back"
+	if id in pilot_stations and Marine.free_pilots(self) < pilot_stations[id].pilots:
+		return "Wait for its pilots to come back"
+	pilot_stations.erase(id)
+	tug_depots.erase(id)
+	return ""
+
+
+## Whether land lies within `reach` cells of `cell`, along or across.
+func _near_land(cell: Vector2i, reach: int) -> bool:
+	for dx: int in range(-reach, reach + 1):
+		for dy: int in range(-reach, reach + 1):
+			var near := cell + Vector2i(dx, dy)
+			if areas.coast.inside(near) and not areas.is_water(near):
+				return true
+	return false
+
+
+## The pilot station or tug depot within `reach` cells of `cell`, or 0.
+func marine_base_at(cell: Vector2i, reach := 2) -> int:
+	for bases: Dictionary in [pilot_stations, tug_depots]:
+		for id: int in bases:
+			var d: Vector2i = (bases[id].cell - cell).abs()
+			if d.x <= reach and d.y <= reach:
+				return id
+	return 0
+
+
 ## The anchorage covering `cell`, or 0.
 func anchorage_at(cell: Vector2i) -> int:
 	for id: int in anchorages:
@@ -1254,6 +1385,10 @@ func upkeep_parts() -> Dictionary:
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
 		parts[0] += ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size() * rules.water.lanes[lane.type].upkeep_per_cell
+	for station: Dictionary in pilot_stations.values():
+		parts[0] += station.pilots * rules.water.pilots.upkeep_per_pilot
+	for depot: Dictionary in tug_depots.values():
+		parts[0] += depot.tugs * rules.water.tugs.upkeep_per_tug
 	var add := func(terminal: int, amount: float) -> void: parts[terminal] = parts.get(terminal, 0.0) + amount
 	for id: int in areas.list:
 		var area: Dictionary = areas.list[id]
@@ -1430,6 +1565,8 @@ func _call(service: Dictionary) -> void:
 	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
 	var ship := Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves)
 	ship.arrived = clock.calendar_minutes()
+	ship.id = _next_ship
+	_next_ship += 1
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
 	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
@@ -1524,13 +1661,19 @@ func _work(ship: Ship) -> void:
 			if Marine.sail(self, ship, 1):
 				ship.state = Ship.State.ANCHORED
 		Ship.State.ARRIVING:
-			if Marine.sail(self, ship, 1):
+			if not Marine.under_way(self, ship, 1):
+				return
+			if Marine.sail(self, ship, 1, Marine.berthing_limit(self, ship)):
+				Marine.release(ship)
 				ship.state = Ship.State.WORKING
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind, areas.list[ship.apron].start)
 		Ship.State.WORKING:
 			AreaFlow.work(self, ship)
 		Ship.State.LEAVING:
+			if not Marine.under_way(self, ship, -1):
+				return
+			ship.tugs = 0  # they have pushed it off the quay
 			if Marine.sail(self, ship, -1):
 				ships.erase(ship)
 				_departures += 1

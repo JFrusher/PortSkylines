@@ -6,7 +6,9 @@
 			"outreach": 8.0,
 			"import_moves": 240.0,
 			"export_moves": 160.0,
-			"window_hours": 12.0
+			"window_hours": 12.0,
+			"pilot": false,
+			"tugs": 0
 		},
 		"panamax": {
 			"length": 300.0,
@@ -14,7 +16,9 @@
 			"outreach": 13.0,
 			"import_moves": 700.0,
 			"export_moves": 500.0,
-			"window_hours": 24.0
+			"window_hours": 24.0,
+			"pilot": true,
+			"tugs": 2
 		},
 		"neopanamax": {
 			"length": 366.0,
@@ -22,7 +26,9 @@
 			"outreach": 22.0,
 			"import_moves": 1400.0,
 			"export_moves": 1000.0,
-			"window_hours": 36.0
+			"window_hours": 36.0,
+			"pilot": true,
+			"tugs": 2
 		}
 	},
 	"water": {
@@ -47,6 +53,19 @@
 			"spacing": 50
 		},
 		"max_wait_hours": 6.0,
+		"pilots": {
+			"station_cost": 60000,
+			"pilot_cost": 25000,
+			"upkeep_per_pilot": 250,
+			"boat_speed": 600.0
+		},
+		"tugs": {
+			"depot_cost": 80000,
+			"tug_cost": 90000,
+			"upkeep_per_tug": 400,
+			"speed": 300.0
+		},
+		"slot_margin_minutes": 2.0,
 		"dredge": {
 			"max_depth": 18.0,
 			"cost_per_cell_metre": 30,
