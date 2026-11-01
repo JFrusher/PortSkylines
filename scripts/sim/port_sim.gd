@@ -127,7 +127,7 @@ const AREA_SETTINGS := {
 	"quay_apron": {"lines": []},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 }
-const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous"]
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
@@ -957,6 +957,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		return "Unknown yard role: %s" % settings.role
 	if settings.get("role") == "reefer" and lock_error("reefers"):
 		return lock_error("reefers")
+	if settings.get("role") == "tranship" and lock_error("transhipment"):
+		return lock_error("transhipment")
 	if settings.get("role") == "dangerous" and AreaFlow.near_yard(self, areas.cells(id), id, "") != 0:
 		return _dg_refusal()
 	if settings.has("gear"):

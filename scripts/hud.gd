@@ -854,12 +854,14 @@ func _draw_inspect_actions() -> void:
 		_dredge_button(Marine.pocket(sim, id).size(), {"op": "dredge_berth", "apron": id, "metres": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
-		for role: String in ["import", "export", "reefer", "dangerous"]:
+		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment"}
+		var unlocks := {"reefer": "reefers", "tranship": "transhipment"}
+		for role: String in ["import", "export", "reefer", "dangerous", "tranship"]:
 			if role != settings.role:
-				var make := _action_button(_inspect_actions, "Make %s block" % ("dangerous-goods" if role == "dangerous" else role), {"op": "set_area", "id": id, "settings": {"role": role}})
-				if role == "reefer":
-					make.disabled = sim.lock_error("reefers") != ""
-					make.tooltip_text = sim.lock_error("reefers")
+				var make := _action_button(_inspect_actions, "Make %s block" % names.get(role, role), {"op": "set_area", "id": id, "settings": {"role": role}})
+				if role in unlocks:
+					make.disabled = sim.lock_error(unlocks[role]) != ""
+					make.tooltip_text = sim.lock_error(unlocks[role])
 		for gear: String in sim.rules.yard_gear:
 			if gear != settings.gear and (settings.role == "empty" or not sim.rules.yard_gear[gear].empties_only):
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})

@@ -29,10 +29,10 @@ const BOXES := 3000
 const BLOCK := 40
 ## The yards along each berth's connector, west to east: [side, from, role, gear].
 const YARDS: Array = [
-	[[-1, 20, "import", "rtg"], [-1, 62, "import", "rtg"], [-1, 104, "export", "rtg"], [1, 20, "reefer", "rtg"], [1, 62, "import", "reach_stacker"], [1, 104, "empty", "empty_handler"]],
+	[[-1, 20, "import", "rtg"], [-1, 62, "import", "rtg"], [-1, 104, "export", "rtg"], [1, 20, "reefer", "rtg"], [1, 62, "tranship", "reach_stacker"], [1, 104, "empty", "empty_handler"]],
 	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "rtg"], [1, 62, "reefer", "rtg"]],
 	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "reach_stacker"], [1, 62, "empty", "empty_handler"]],
-	[[-1, 20, "export", "reach_stacker"], [1, 20, "import", "reach_stacker"]],
+	[[-1, 20, "export", "reach_stacker"], [1, 20, "import", "reach_stacker"], [-1, 62, "tranship", "rtg"], [1, 62, "tranship", "rtg"]],
 ]
 
 ## Each berth's yard lanes, as rows off its connector; 18 apart, so a block

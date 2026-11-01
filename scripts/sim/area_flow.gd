@@ -220,6 +220,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	# Booked to rail by its line's share, only while a rail block has room for
 	# it and its place has a rail link, so a port without rail rolls nothing.
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
+	var plugs := _block_for(sim, "reefer", sim.areas.list[ship.apron].terminal) if sim.boxes[id].reefer else 0
 	if sim.boxes[id].dg:
 		var hazard := _block_for(sim, "dangerous", sim.areas.list[ship.apron].terminal)
 		if hazard == 0:
@@ -233,10 +234,13 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	elif rail and sim.boxes[id].kind == "import" and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
-	elif sim.boxes[id].reefer:
-		var plugs := _block_for(sim, "reefer", sim.areas.list[ship.apron].terminal)
-		if plugs:
-			sim._set_area(tractor, plugs)
+	elif plugs:
+		sim._set_area(tractor, plugs)
+	# Unplugged either way, a reefer without a reefer block goes on like any box.
+	elif sim.boxes[id].kind == "tranship":
+		var block := _tranship_block(sim, ship, onward)
+		if block:
+			sim._set_area(tractor, block)
 	if sim.boxes[id].rush and sim.clock.calendar_minutes() > ship.due:
 		sim.ledger.post("rush_fines", -sim.rules.special_boxes.rush_fine, sim.areas.list[ship.apron].terminal)
 	ship.boxes -= 1
@@ -446,6 +450,13 @@ static func fine_unplugged(sim: PortSim, now: float) -> void:
 ## one more box than is already on its way to it, counting tractors waiting
 ## under a crane for a box bound for it, or 0.
 static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
+	var found := _blocks_with_room(sim, role, terminal)
+	return found[0] if not found.is_empty() else 0
+
+
+## `terminal`'s working yard blocks of `role` with room for one more box.
+static func _blocks_with_room(sim: PortSim, role: String, terminal: int) -> Array[int]:
+	var found: Array[int] = []
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != role or sim.areas.idle_reason(id) != "" or RailFlow.is_rail_block(sim, id):
@@ -453,8 +464,26 @@ static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
 		# Boxes on their way, and tractors under a crane waiting for a box bound here.
 		var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and (v.loaded or v.state == "under_crane")).size()
 		if _stacks(sim, id).room() > coming:
-			return id
-	return 0
+			found.append(id)
+	return found
+
+
+## The transhipment block with room in `ship`'s terminal nearest the berths
+## of its line's `onward` services, where the box goes on; or 0.
+static func _tranship_block(sim: PortSim, ship: PortSim.Ship, onward: String) -> int:
+	var berths: Array[Vector2i] = []
+	for service: Dictionary in sim.contracts.services:
+		if service.line == ship.line and (service.kind == "feeder") == (onward == "feeder") and service.apron in sim.areas.list:
+			berths.append(sim.areas.list[service.apron].start)
+	var best := 0
+	var nearest := 0
+	for id in _blocks_with_room(sim, "tranship", sim.areas.list[ship.apron].terminal):
+		var start: Vector2i = sim.areas.list[id].start
+		var distance: int = berths.map(func(b: Vector2i) -> int: return absi(b.x - start.x) + absi(b.y - start.y)).min() if not berths.is_empty() else 0
+		if best == 0 or distance < nearest:
+			best = id
+			nearest = distance
+	return best
 
 
 ## Sends a lorry in from the site entry for the import box due out longest,

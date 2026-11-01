@@ -80,6 +80,7 @@ Lines offer **weekly services** for berth windows, and the week is planned berth
 | **Hinterland** | Every box has an off-map origin or destination, reached by road or by rail, with demand that grows with each milestone |
 | **Reefers** | Plugged in reefer blocks, drawing 4 kW (7 kW on hot days), billed on the day's peak, and fined when left unplugged |
 | **Special cargo** | Rush imports fined when their call is late; dangerous goods only in their own blocks, kept apart from the rest |
+| **Transhipment** | A share of each line's boxes go on from its big ships to its feeders and back within a connection window, at a lower move price, stacked in the transhipment block nearest the berth they leave from |
 | **Economy** | Move prices, storage fees past free days, upkeep by terminal, loans, a bailout, and an end-of-year scoreboard |
 | **Ships** | Feeder, Panamax and Neopanamax, gated by channel depth, berth length and crane outreach; dredging deepens the channel |
 | **Saves** | Versioned save files that migrate every older version, each one kept as a test fixture |
