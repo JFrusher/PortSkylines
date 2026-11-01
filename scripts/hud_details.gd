@@ -281,6 +281,7 @@ static func container_rows(sim: PortSim) -> Array[Dictionary]:
 		row("Total TEU handled", str(sim.teu_handled)),
 		row("Total boxes delivered", str(sim.delivered)),
 		row("Of those, by rail", str(sim.by_rail)),
+		row("Of those, by barge", str(sim.by_barge)),
 	]
 
 
@@ -310,7 +311,7 @@ static func power_rows(sim: PortSim) -> Array[Dictionary]:
 	return [
 		row("STS cranes operational", str(sim.cranes.size())),
 		row("Quay aprons", str(aprons)),
-		row("Ship lanes", "%d, with %d in the open sea" % [sim.ship_lanes.segments.size(), Marine.sea_nodes(sim).size()]),
+		row("Ship lanes", "%d, with %d in the open sea" % [sim.ship_lanes.segments.size(), Marine.edge_nodes(sim, false).size()]),
 		row("Ships at berth", str(sim.ships.size() - anchored)),
 		row("Ships at anchor waiting", str(anchored)),
 		row("Estimated power demand", "%d kW" % (sim.cranes.size() * 450)),

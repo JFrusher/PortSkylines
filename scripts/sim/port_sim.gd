@@ -24,6 +24,10 @@ var delivered := 0
 var by_rail := 0
 ## Dollars off each box carried by train, to shift lines' boxes onto rail.
 var rail_discount := 0
+## Of the boxes delivered, the ones that left by barge.
+var by_barge := 0
+## Dollars off each box carried by barge, to shift boxes onto barges.
+var barge_discount := 0
 ## Today's reefer power: the peak kW and the kWh drawn so far, billed at midnight.
 var power := {"peak_kw": 0.0, "kwh": 0.0}
 ## Shipping lines, their services and offers, and their reputation of the port.
@@ -56,6 +60,8 @@ var pocket_dredged := {}
 ## Bumped by every dredge, so ship routes are found again.
 var dredge_version := 0
 var _ship_routes := {}  # [kind, apron] -> lane ends in cells, see Marine.route
+var _lorries := {}  # see AreaFlow._lorries
+var _lorries_for := []
 var _ship_routes_for := []
 ## STS cranes ordered and not yet delivered: {"cell", "due" (calendar minute)}.
 var crane_orders: Array[Dictionary] = []
@@ -85,6 +91,7 @@ var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
 var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
+var _straddles_out := {}  # straddle block id -> its carriers on the road
 ## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
 var trains: Array[Train] = []
 var _next_train := 1
@@ -122,10 +129,10 @@ const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
-	"quay_apron": {"lines": []},
+	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 }
-const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous"]
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
 ## The roads drawn on the 4 m grid, and the lanes routed over them.
@@ -377,6 +384,8 @@ func to_dict() -> Dictionary:
 		"delivered": delivered,
 		"by_rail": by_rail,
 		"rail_discount": rail_discount,
+		"by_barge": by_barge,
+		"barge_discount": barge_discount,
 		"power": power.duplicate(),
 		"trains": trains.map(func(train: Train) -> Dictionary: return train.to_dict()),
 		"next_train": _next_train,
@@ -459,6 +468,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.delivered = d.delivered
 	sim.by_rail = d.by_rail
 	sim.rail_discount = d.rail_discount
+	sim.by_barge = d.by_barge
+	sim.barge_discount = d.barge_discount
 	sim.power = d.power.duplicate()
 	for train: Dictionary in d.trains:
 		sim.trains.append(Train.from_dict(train))
@@ -533,6 +544,8 @@ func apply(command: Dictionary) -> String:
 			return set_storage(command.free_days, command.fee)
 		"set_rail_discount":
 			return set_rail_discount(command.dollars)
+		"set_barge_discount":
+			return set_barge_discount(command.dollars)
 		"take_loan":
 			var locked := lock_error("loans")
 			return locked if locked else finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
@@ -620,10 +633,11 @@ func site_entry_point() -> Vector2i:
 	return site_entry() + Vector2i(1, 0)
 
 
-## Why a road can't be built, or "": as though segment `skip` weren't built.
-func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
+## Why a road can't be built, or "": as though segment `skip` weren't built,
+## and (`on_fill`) as though the water under it were filled, as a berth does.
+func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0, on_fill := false) -> String:
 	var err := roads.add_error(from, to, type, skip)
-	if err == "" and roads.footprint(from, to, type).any(areas.is_water):
+	if err == "" and not on_fill and roads.footprint(from, to, type).any(areas.is_water):
 		err = "Roads can't be built on water"
 	if err == "" and roads.footprint(from, to, type).any(areas.breakwater_at):
 		err = "A breakwater is in the way"
@@ -729,6 +743,16 @@ func set_rail_discount(dollars: int) -> String:
 	return ""
 
 
+func set_barge_discount(dollars: int) -> String:
+	var locked := lock_error("barge")
+	if locked:
+		return locked
+	if dollars < 0 or dollars > rules.barge.discount.max:
+		return "The barge discount runs from $0 to $%d a box" % rules.barge.discount.max
+	barge_discount = dollars
+	return ""
+
+
 ## The share of `line`'s boxes booked to rail where a rail block can take
 ## them: its own share, plus what the rail discount buys, capped.
 func rail_share(line: String) -> float:
@@ -810,7 +834,8 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 
 
 ## Where a berth of `kind` clicked at `cell` goes: {"line": its road's two
-## grid points, "out": the way its quay faces, "cells": its apron's cells},
+## grid points, "out": the way its quay faces, "cells": its apron's cells,
+## "fill": the water between its quay and the shore, filled to make land},
 ## or {"error"}. It faces the nearest water in the four directions; its quay
 ## is one straight wall at the most seaward land along it, and the apron
 ## reaches back from it to the road, filling the water behind the wall. The
@@ -839,10 +864,20 @@ func berth_plan(kind: String, cell: Vector2i) -> Dictionary:
 		quay = maxi(quay, steps)
 	var line := first + out * (quay - depth - 2)
 	var cells: Array[Vector2i] = []
+	var fill: Array[Vector2i] = []
 	for k in length:
 		for r in range(quay - depth, quay):
 			cells.append(first + along * k + out * r)
-	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells}
+	# Back from the quay to the shore, so no water is left between the berth
+	# and the land, along the road's whole span: one cell past the apron.
+	for k in length + 1:
+		var r := quay - 1
+		while areas.is_water(first + along * k + out * r):
+			if quay - r > reach * 2:
+				return {"error": "The shore is too far behind the quay here"}
+			fill.append(first + along * k + out * r)
+			r -= 1
+	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells, "fill": fill}
 
 
 ## Steps from `cell` along `step` to the first water, or more than `limit`.
@@ -880,10 +915,10 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 	var step: Vector2i = (line[1] - line[0]).sign()
 	if roads.footprint(line[0] + step, line[1] - step, BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
 		return "A road already runs here: place the berth clear of it, it brings its own"
-	var err := build_road_error(line[0], line[1], BERTH_ROAD)
+	var err := build_road_error(line[0], line[1], BERTH_ROAD, 0, true)
 	if err:
 		return err
-	var water := cells.filter(areas.is_water).size()
+	var water: int = plan.fill.size()
 	if not _afford(road_price(line[0], line[1], BERTH_ROAD) + cells.size() * rules.area_types.quay_apron.cost_per_cell + water * rules.reclaim.cost_per_cell):
 		return "Not enough money"
 	return ""
@@ -895,11 +930,18 @@ func build_berth(kind: String, cell: Vector2i) -> String:
 	var err := build_berth_error(kind, cell)
 	if err:
 		return err
-	var line: Array[Vector2i] = berth_plan(kind, cell).line
+	var plan := berth_plan(kind, cell)
+	var line: Array[Vector2i] = plan.line
+	# All the water between the quay and the shore is filled first, so the
+	# road and apron stand on land and the berth meets the shore.
+	ledger.post("construction", -plan.fill.size() * rules.reclaim.cost_per_cell)
+	areas.fill(plan.fill)
 	build_road(line[0], line[1], BERTH_ROAD)
 	# The road runs so its right, side 1, faces the water.
 	err = build_area("quay_apron", roads.segment_at((line[0] + line[1]) / 2), 1, 0, rules.berths[kind].length - 1)
 	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
+	# A barge berth takes only barges, and a barge only a barge berth.
+	areas.list[areas.list.keys().max()].settings.barge = rules.ship_classes[kind].inland
 	return ""
 
 
@@ -940,6 +982,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		return "Unknown yard role: %s" % settings.role
 	if settings.get("role") == "reefer" and lock_error("reefers"):
 		return lock_error("reefers")
+	if settings.get("role") == "tranship" and lock_error("transhipment"):
+		return lock_error("transhipment")
 	if settings.get("role") == "dangerous" and AreaFlow.near_yard(self, areas.cells(id), id, "") != 0:
 		return _dg_refusal()
 	if settings.has("gear"):
@@ -1483,6 +1527,8 @@ func move_price(box: Dictionary) -> int:
 	var price: float = rules.move_price.per_20ft * (rules.move_price.forty_factor if box.teu == 2 else 1.0)
 	if box.kind == "empty":
 		price *= rules.empties.price_factor
+	elif box.kind == "tranship":
+		price *= rules.transhipment.price_factor
 	return roundi(price) + (rules.move_price.reefer_premium if box.reefer else 0)
 
 
@@ -1497,6 +1543,9 @@ func tick() -> void:
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
 		AreaFlow.fine_unplugged(self, clock.calendar_minutes())
+		var missed := AreaFlow.miss_connections(self, clock.calendar_minutes())
+		if missed:
+			_event("%d transhipment %s missed %s connection and roll to the next" % [missed, "box" if missed == 1 else "boxes", "its" if missed == 1 else "their"])
 	_draw_power()
 	var berths_now := Vector2i(_departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
@@ -1884,15 +1933,16 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place(), "from": 0, "to": 0}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": ""}
 	exports += 1 if kind == "export" else 0
 	return id
 
 
-## A hinterland place, drawn by the data's shares, of those with a rail link
-## when `rail_only`: an import's destination or an export's origin.
-func _pick_place(rail_only := false) -> String:
-	var places: Array = rules.hinterland.places.keys().filter(func(p: String) -> bool: return not rail_only or rules.hinterland.places[p].rail_km > 0.0)
+## A hinterland place, drawn by the data's shares, of those with a `link`
+## ("rail_km" or "barge_km") when one is given: an import's destination or
+## an export's origin.
+func _pick_place(link := "") -> String:
+	var places: Array = rules.hinterland.places.keys().filter(func(p: String) -> bool: return link == "" or rules.hinterland.places[p][link] > 0.0)
 	var total := 0.0
 	for place: String in places:
 		total += rules.hinterland.places[place].share
@@ -1914,6 +1964,18 @@ func hinterland_demand() -> float:
 ## Whether box `id` can go by rail: its hinterland place has a rail link.
 func by_rail_to(id: int) -> bool:
 	return rules.hinterland.places[boxes[id].place].rail_km > 0.0
+
+
+## Whether box `id` can go by barge: its hinterland place is up the river.
+func by_barge_to(id: int) -> bool:
+	return rules.hinterland.places[boxes[id].place].barge_km > 0.0
+
+
+## The share of `line`'s imports for places up the river booked to barge
+## while barges call: its own share, plus what the barge discount buys, capped.
+func barge_share(line: String) -> float:
+	var discount: Dictionary = rules.barge.discount
+	return minf(rules.lines[line].barge_share + barge_discount * discount.share_per_dollar, maxf(discount.max_share, rules.lines[line].barge_share))
 
 
 ## Import `id` has left for the hinterland: once empties are unlocked, it
@@ -1946,7 +2008,7 @@ func _empty_collected(id: int) -> void:
 func _new_empty(line: String, teu: int) -> int:
 	var id := _next_box
 	_next_box += 1
-	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
+	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place()}
 	return id
 
 
@@ -1958,7 +2020,7 @@ func _weigh_routes() -> void:
 
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.
 func _drop_box(id: int) -> void:
-	exports -= 1 if boxes[id].kind == "export" else 0
+	exports -= 1 if boxes[id].kind in ["export", "tranship"] else 0
 	boxes.erase(id)
 
 
@@ -1987,7 +2049,9 @@ func _tractors_out() -> int:
 func _add_vehicle(vehicle: Vehicle) -> void:
 	vehicles.append(vehicle)
 	_by_id[vehicle.id] = vehicle
-	_tractors_on_road += 1 if vehicle.kind == "tractor" else 0
+	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	if vehicle.straddle:
+		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
 	_count_bound(vehicle, 1)
 	if vehicle.home != Grid.NONE:
 		if vehicle.home not in _fetching:
@@ -2000,7 +2064,9 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	lane_traffic.leave(vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
-	_tractors_on_road -= 1 if vehicle.kind == "tractor" else 0
+	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	if vehicle.straddle:
+		_straddles_out[vehicle.straddle] -= 1
 	_count_bound(vehicle, -1)
 	if vehicle.home != Grid.NONE:
 		_fetching[vehicle.home].erase(vehicle)

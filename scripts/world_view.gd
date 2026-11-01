@@ -12,6 +12,8 @@ const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 ## Metres in one world unit. Ships, cranes and the camera were made at this
 ## scale; roads, areas and what moves on them are drawn true to the 4 m grid in it.
 const METRES_PER_UNIT := 25.0
+## Straddle carriers, on the road and in their blocks.
+const STRADDLE_RED := Color(0.85, 0.22, 0.15)
 ## Roads on the 4 m grid, in metres: how high the surface and markings sit
 ## (lorry roads above tractor lanes, so junctions read as asphalt), the
 ## markings' width, and dashes as long as their gaps are short.
@@ -993,6 +995,7 @@ func _draw_vehicles() -> void:
 		_vehicle_parts = {
 			"cab": _vehicle_part(_merged([[Vector3(0.24, 0.2, 0.16), Vector3.ZERO, Color.WHITE]])),
 			"chassis": _vehicle_part(_merged([[Vector3(0.22, 0.04, 0.52), Vector3.ZERO, Color(0.2, 0.2, 0.22)]])),
+			"straddle": _vehicle_part(_merged(_straddle_frame(Color.WHITE))),
 			1: _vehicle_part(_stack_meshes[1]),
 			2: _vehicle_part(_stack_meshes[2]),
 		}
@@ -1008,11 +1011,17 @@ func _draw_vehicles() -> void:
 		var at: Vector2 = (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 		var basis := Basis(Vector3.UP, atan2(heading.x, heading.y)).scaled_local(AREA_VEHICLE_SCALE)
 		var placed := Transform3D(basis, Vector3(at.x, 0.04, at.y))
-		_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
-		_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
+		# A straddle carrier is a tall frame with the box slung inside it.
+		var carried := placed * _vehicle_box
+		if vehicle.straddle:
+			_put(buffers.straddle, placed, STRADDLE_RED)
+			carried = placed * Transform3D(Basis(), Vector3(0, 0.12, 0)) * _vehicle_box
+		else:
+			_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
+			_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
 		if vehicle.loaded:
 			var box: Dictionary = sim.boxes[vehicle.box]
-			_put(buffers[box.teu], placed * _vehicle_box, _livery(box.line, vehicle.box))
+			_put(buffers[box.teu], carried, _livery(box.line, vehicle.box))
 	_headings = headings
 	for part: Variant in _vehicle_parts:
 		var multimesh: MultiMesh = _vehicle_parts[part].multimesh
@@ -1150,8 +1159,23 @@ func _draw_area_machines() -> void:
 			(box.material_override as StandardMaterial3D).albedo_color = PLAIN_BOX
 
 
+## A straddle carrier's frame in `colour`: four legs and the beams joining
+## them on top, tall enough to pass over a box, standing on its origin.
+static func _straddle_frame(colour: Color) -> Array:
+	var parts := []
+	for x: float in [-0.14, 0.14]:
+		for z: float in [-0.22, 0.22]:
+			parts.append([Vector3(0.04, 0.46, 0.04), Vector3(x, 0.23, z), colour])
+		parts.append([Vector3(0.04, 0.05, 0.5), Vector3(x, 0.46, 0), colour])
+	for z: float in [-0.22, 0.22]:
+		parts.append([Vector3(0.32, 0.05, 0.04), Vector3(0, 0.46, z), colour])
+	return parts
+
+
 ## One mesh per kind of yard gear, standing on its origin.
 func _machine_mesh(gear: String) -> Mesh:
+	if gear == "straddle":
+		return _merged(_straddle_frame(STRADDLE_RED))
 	if gear not in ["rtg", "rmg"]:
 		return _merged([
 			[Vector3(0.26, 0.2, 0.4), Vector3(0, 0.12, 0), Color(0.85, 0.35, 0.15)],

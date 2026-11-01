@@ -30,15 +30,22 @@ static func pocket_depth(sim: PortSim, apron: int) -> float:
 	return shallowest + sim.pocket_dredged.get(apron, 0.0)
 
 
-## Lane ends on the site's edge, where ships come in from the open sea.
-static func sea_nodes(sim: PortSim) -> Array[int]:
-	var size := sim.areas.coast.size
+## Lane ends on the site's edge where ships come in: in a river's inland
+## end (`inland`, for barges), or in the open sea.
+static func edge_nodes(sim: PortSim, inland: bool) -> Array[int]:
+	var coast := sim.areas.coast
 	var found: Array[int] = []
 	for node: int in sim.ship_lanes.nodes:
 		var cell: Vector2i = sim.ship_lanes.nodes[node]
-		if cell.x <= 0 or cell.y <= 0 or cell.x >= size.x - 1 or cell.y >= size.y - 1:
+		var edge := cell.x <= 0 or cell.y <= 0 or cell.x >= coast.size.x - 1 or cell.y >= coast.size.y - 1
+		if edge and coast.is_inland_end(cell) == inland:
 			found.append(node)
 	return found
+
+
+## The lane ends a ship of `kind` comes in and goes out by.
+static func ways_in(sim: PortSim, kind: String) -> Array[int]:
+	return edge_nodes(sim, sim.rules.ship_classes[kind].inland)
 
 
 ## The lane ends in `apron`'s pocket.
@@ -53,15 +60,16 @@ static func berth_nodes(sim: PortSim, apron: int) -> Array[int]:
 
 ## The way in to `apron` for a ship of `kind`, from the open sea or (with
 ## `anchorage`) from that anchorage, as lane ends in cells, first to last;
-## [] when no lane deep enough for its draft reaches the berth, or the
-## pocket is too shallow. Kept until the lanes, the areas, the anchorages
+## [] when no lane deep enough for its draft reaches the berth, the pocket
+## is too shallow, or the berth isn't for its kind (barge or not). Kept until the lanes, the areas, the anchorages
 ## or the dredging change.
 static func route(sim: PortSim, kind: String, apron: int, anchorage := 0, light := false) -> Array[Vector2]:
 	var key := [kind, apron, anchorage, light]
 	if key not in _routes(sim):
 		var none: Array[Vector2] = []
-		var deep_enough: bool = apron in sim.areas.list and pocket_depth(sim, apron) >= draft(sim, kind, light)
-		sim._ship_routes[key] = _find(sim, draft(sim, kind, light), _starts(sim, anchorage), berth_nodes(sim, apron)) if deep_enough else none
+		# A barge berth takes only barges, and a barge only a barge berth.
+		var fits: bool = apron in sim.areas.list and sim.areas.list[apron].settings.barge == sim.rules.ship_classes[kind].inland and pocket_depth(sim, apron) >= draft(sim, kind, light)
+		sim._ship_routes[key] = _find(sim, kind, draft(sim, kind, light), _starts(sim, kind, anchorage), berth_nodes(sim, apron)) if fits else none
 	return sim._ship_routes[key]
 
 
@@ -75,7 +83,7 @@ static func draft(sim: PortSim, kind: String, light := false) -> float:
 static func route_to_anchorage(sim: PortSim, kind: String, id: int, light := false) -> Array[Vector2]:
 	var key := [kind, "anchorage", id, light]
 	if key not in _routes(sim):
-		sim._ship_routes[key] = _find(sim, draft(sim, kind, light), sea_nodes(sim), anchorage_nodes(sim, id))
+		sim._ship_routes[key] = _find(sim, kind, draft(sim, kind, light), ways_in(sim, kind), anchorage_nodes(sim, id))
 	return sim._ship_routes[key]
 
 
@@ -88,14 +96,18 @@ static func _routes(sim: PortSim) -> Dictionary:
 	return sim._ship_routes
 
 
-static func _starts(sim: PortSim, anchorage: int) -> Array[int]:
-	return anchorage_nodes(sim, anchorage) if anchorage else sea_nodes(sim)
+static func _starts(sim: PortSim, kind: String, anchorage: int) -> Array[int]:
+	return anchorage_nodes(sim, anchorage) if anchorage else ways_in(sim, kind)
 
 
-## Lane ends from `starts` to `ends` through lanes at least `deep` metres, in cells.
-static func _find(sim: PortSim, deep: float, starts: Array[int], ends: Array[int]) -> Array[Vector2]:
+## Lane ends from `starts` to `ends` through lanes a ship of `kind` may
+## sail at least `deep` metres deep, in cells.
+static func _find(sim: PortSim, kind: String, deep: float, starts: Array[int], ends: Array[int]) -> Array[Vector2]:
 	var coast := sim.areas.coast
-	var nodes := sim.ship_lanes.route(starts, ends, func(segment: int) -> bool: return sim.ship_lanes.depth(segment, coast) >= deep)
+	var inland: bool = sim.rules.ship_classes[kind].inland
+	var lanes: Dictionary = sim.rules.water.lanes
+	var usable := func(segment: int) -> bool: return sim.ship_lanes.depth(segment, coast) >= deep and (inland or not lanes[sim.ship_lanes.segments[segment].type].barges_only)
+	var nodes := sim.ship_lanes.route(starts, ends, usable)
 	var points: Array[Vector2] = []
 	for node in nodes:
 		points.append(Vector2(sim.ship_lanes.nodes[node]) + Vector2(0.5, 0.5))
@@ -329,7 +341,7 @@ static func _windows(sim: PortSim, ship: PortSim.Ship, way: int, sets_off: float
 	for i in range(1, points.size()):
 		var leg: float = points[i - 1].distance_to(points[i])
 		var segment := sim.ship_lanes.between(_node_at(sim, points[i - 1]), _node_at(sim, points[i]))
-		if segment and sim.ship_lanes.segments[segment].type == "narrow":
+		if segment and not sim.rules.water.lanes[sim.ship_lanes.segments[segment].type].two_way:
 			found.append({"segment": segment, "from": sets_off + at * per_cell, "to": sets_off + (at + leg) * per_cell})
 		at += leg
 	return found

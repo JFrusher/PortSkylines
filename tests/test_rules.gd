@@ -228,7 +228,7 @@ func _test_a_full_block_takes_no_more() -> void:
 	var stacks := AreaFlow._stacks(sim, 3)
 	var id := 900000
 	while stacks.room() > 1:
-		sim.boxes[id] = {"kind": "import", "due": 1e9, "teu": 1, "reefer": false, "dg": false, "rush": false, "in": 0.0, "line": sim.rules.lines.keys()[0], "rail": false, "place": sim.rules.hinterland.places.keys()[0]}
+		sim.boxes[id] = {"kind": "import", "due": 1e9, "teu": 1, "reefer": false, "dg": false, "rush": false, "in": 0.0, "line": sim.rules.lines.keys()[0], "rail": false, "barge": false, "place": sim.rules.hinterland.places.keys()[0]}
 		stacks.place(id, 1)
 		id += 1
 	var most := -INF

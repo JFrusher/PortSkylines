@@ -22,6 +22,11 @@
 		"neopanamax_on_time": {"text": "Work three Neopanamaxes inside their windows", "after": 4, "kind": "on_time_calls", "class": "neopanamax", "count": 3, "cash": 300000, "reputation": 5.0},
 		"ulcv_on_time": {"text": "Work two ULCVs inside their windows", "after": 5, "kind": "on_time_calls", "class": "ulcv", "count": 2, "cash": 600000, "reputation": 5.0}
 	},
+	"transhipment": {
+		"price_factor": 0.6,
+		"missed_fine": 150,
+		"missed_reputation": -0.25
+	},
 	"transfers": {
 		"share": 0.1,
 		"cost_per_box": 40
@@ -93,9 +98,11 @@
 		"land": "Land",
 		"dredging": "Dredging",
 		"rail": "Rail discounts",
+		"barge": "Barge discounts",
 		"power": "Reefer power",
 		"reefer_fines": "Reefer fines",
 		"rush_fines": "Rush fines",
+		"connection_fines": "Missed connections",
 		"port_dues": "Port dues",
 		"pilotage": "Pilotage",
 		"transfers": "Transfers between terminals",
@@ -143,7 +150,9 @@
 				"loans": "loans",
 				"rtg": "RTG cranes for yard blocks",
 				"ocr": "OCR gate portals",
-				"reefers": "reefer boxes and reefer blocks", "empties": "empties coming back, and empty blocks"
+				"reefers": "reefer boxes and reefer blocks", "empties": "empties coming back, and empty blocks",
+				"barge": "barges up the river, barge berths and services",
+				"barge_crane": "barge cranes for barge berths"
 			}
 		},
 		"gateway": {
@@ -157,6 +166,8 @@
 				"dredging": "dredging the channel",
 				"panamax": "Panamax services",
 				"automated": "automated gates",
+				"transhipment": "transhipment between big ships and feeders",
+				"straddle": "straddle carriers, which stack and carry boxes to the quay",
 				"rmg": "rail track and RMG rail yards"
 			}
 		},

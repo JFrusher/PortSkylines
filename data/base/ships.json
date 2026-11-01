@@ -11,7 +11,8 @@
 			"window_hours": 12.0,
 			"pilot": false,
 			"tugs": 0,
-			"port_dues": 4000
+			"port_dues": 4000,
+			"inland": false
 		},
 		"panamax": {
 			"length": 300.0,
@@ -24,7 +25,8 @@
 			"window_hours": 24.0,
 			"pilot": true,
 			"tugs": 2,
-			"port_dues": 12000
+			"port_dues": 12000,
+			"inland": false
 		},
 		"neopanamax": {
 			"length": 366.0,
@@ -37,7 +39,8 @@
 			"window_hours": 36.0,
 			"pilot": true,
 			"tugs": 2,
-			"port_dues": 20000
+			"port_dues": 20000,
+			"inland": false
 		},
 		"ulcv": {
 			"length": 400.0,
@@ -50,7 +53,22 @@
 			"window_hours": 48.0,
 			"pilot": true,
 			"tugs": 3,
-			"port_dues": 30000
+			"port_dues": 30000,
+			"inland": false
+		},
+		"barge": {
+			"length": 110.0,
+			"draft": 3.5,
+			"light_draft": 3.5,
+			"light_share": 1.0,
+			"outreach": 4.0,
+			"import_moves": 60.0,
+			"export_moves": 40.0,
+			"window_hours": 8.0,
+			"pilot": false,
+			"tugs": 0,
+			"port_dues": 500,
+			"inland": true
 		}
 	},
 	"water": {
@@ -60,13 +78,25 @@
 				"name": "Narrow channel",
 				"half_width": 10,
 				"cost_per_cell": 4,
-				"upkeep_per_cell": 0.02
+				"upkeep_per_cell": 0.02,
+				"two_way": false,
+				"barges_only": false
 			},
 			"wide": {
 				"name": "Wide channel",
 				"half_width": 20,
 				"cost_per_cell": 6,
-				"upkeep_per_cell": 0.02
+				"upkeep_per_cell": 0.02,
+				"two_way": true,
+				"barges_only": false
+			},
+			"river": {
+				"name": "River channel",
+				"half_width": 6,
+				"cost_per_cell": 2,
+				"upkeep_per_cell": 0.01,
+				"two_way": false,
+				"barges_only": true
 			}
 		},
 		"pocket": 12,

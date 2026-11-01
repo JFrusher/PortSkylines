@@ -31,6 +31,9 @@ var booked := -1.0
 ## there (-1 for none).
 var area := 0
 var slot := -1
+## The straddle block a straddle carrier belongs to, or 0 for anything
+## else: a carrier is a tractor that never counts against the pool.
+var straddle := 0
 
 
 func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector2i]) -> void:
@@ -55,7 +58,7 @@ func to_dict() -> Dictionary:
 	return {
 		"id": id, "kind": kind, "path": path.duplicate(), "t": t, "prev_t": prev_t, "waited": waited,
 		"state": state, "box": box, "loaded": loaded, "target": target, "home": home, "timer": timer,
-		"gate_in": gate_in, "booked": booked, "area": area, "slot": slot,
+		"gate_in": gate_in, "booked": booked, "area": area, "slot": slot, "straddle": straddle,
 	}
 
 
@@ -73,6 +76,7 @@ static func from_dict(d: Dictionary) -> Vehicle:
 	vehicle.home = d.home
 	vehicle.timer = d.timer
 	vehicle.gate_in = d.gate_in
+	vehicle.straddle = d.straddle
 	vehicle.booked = d.booked
 	vehicle.area = d.area
 	vehicle.slot = d.slot

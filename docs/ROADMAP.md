@@ -165,7 +165,7 @@ The developer answered most of the open questions below. These answers override 
 
 **Still open:** 33 (localisation and accessibility), 34 (public roadmap cadence) and 35 (roads, areas and assets).
 
-The step-by-step plan that follows these decisions is in [docs/phases/](phases/README.md): twelve phase files, M1 to M12 (roads and areas became M5 on 19 Oct 2026; the phases after it moved up by one, so sections below written earlier may use the old numbers).
+The step-by-step plan that follows these decisions is in [docs/phases/](phases/README.md): thirteen phase files, M1 to M13 (roads and areas became M5 on 19 Oct 2026, and curved roads M10 on 1 Nov 2026; each time the phases after it moved up by one, so sections below written earlier may use the old numbers).
 
 **What these answers change** **[Inference]**:
 - **Release phases.** A free hobby release going straight to 1.0 removes the wishlist gates, the Next Fest timing and the Early Access sections. M6 becomes public playtest builds, for example on itch.io or a free Steam page (Steam still charges its app fee). M7 becomes 1.0 readiness. There is no competitor race to win, so phases can run until their exit criteria pass rather than to a date.

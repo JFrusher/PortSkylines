@@ -2,7 +2,7 @@
 
 This folder breaks [the roadmap](../ROADMAP.md) into one file per phase. Each file lists the phase's atomic implementation steps in order.
 
-The roadmap's M1–M7 table assumed an Early Access release with a single terminal. The developer's decisions (see **Decisions so far** in the roadmap) change that: a free release, straight to 1.0, covering a whole port with road, rail and barge, CS2-style routing, events and automation. The work that would have been Early Access updates now sits before 1.0, so there are eleven phases. Roads and areas was added as M5 on 19 Oct 2026, making twelve; the phases after it moved up by one (scale and rail was M5, and so on).
+The roadmap's M1–M7 table assumed an Early Access release with a single terminal. The developer's decisions (see **Decisions so far** in the roadmap) change that: a free release, straight to 1.0, covering a whole port with road, rail and barge, CS2-style routing, events and automation. The work that would have been Early Access updates now sits before 1.0, so there are eleven phases. Roads and areas was added as M5 on 19 Oct 2026, making twelve; the phases after it moved up by one (scale and rail was M5, and so on). Roads like Cities: Skylines was added as M10 on 1 Nov 2026, making thirteen; events, automation and release moved up by one.
 
 | Phase | File | Goal | Solo estimate |
 |---|---|---|---|
@@ -15,9 +15,10 @@ The roadmap's M1–M7 table assumed an Early Access release with a single termin
 | M7 | [m07-cost-routing.md](m07-cost-routing.md) | CS2-style lane graph and cost routing | 3–5 mo |
 | M8 | [m08-whole-port.md](m08-whole-port.md) | Several terminals, shared channel, pilots, tugs, anchorage | 4–6 mo |
 | M9 | [m09-barge-and-feeder.md](m09-barge-and-feeder.md) | Barge terminal, feeder transhipment | 3–4 mo |
-| M10 | [m10-events.md](m10-events.md) | Wind and storms, strikes and congestion, regulations | 2–3 mo |
-| M11 | [m11-automation.md](m11-automation.md) | Global policies, per-block rules, automation tier | 3–4 mo |
-| M12 | [m12-release.md](m12-release.md) | Data-file mods, settings, accessibility, 1.0 on Windows | 4–6 mo |
+| M10 | [m10-curved-roads.md](m10-curved-roads.md) | Roads, rail and ship lanes as curves at any angle, CS drawing tools and snapping, areas that follow curves, continuous traffic | not estimated |
+| M11 | [m11-events.md](m11-events.md) | Wind and storms, strikes and congestion, regulations | 2–3 mo |
+| M12 | [m12-automation.md](m12-automation.md) | Global policies, per-block rules, automation tier | 3–4 mo |
+| M13 | [m13-release.md](m13-release.md) | Data-file mods, settings, accessibility, 1.0 on Windows | 4–6 mo |
 
 The total is about 33–51 months of focused solo work, plus art production that runs alongside it from M4 on. That fits the roadmap's 5–8 year solo estimate once art, polish and real-life slippage are included. All durations are estimates, not sourced figures.
 
@@ -43,10 +44,10 @@ What the port can be built from, and which phase adds what is missing. Added 31 
 
 | Kind | Now | Added by |
 |---|---|---|
-| Areas | yard block, quay apron, three gate sizes, truck park, empty depot | M8 tug depot, anchorage; M9 barge berth; M11 AGV depot, gatehouse, maintenance bay |
-| Roads | terminal 1+1 and 2+2, one-way, tractor lane | M8 ship lanes; M11 power and data lines |
+| Areas | yard block, quay apron, three gate sizes, truck park, empty depot | M8 tug depot, anchorage; M9 barge berth; M12 AGV depot, gatehouse, maintenance bay |
+| Roads | terminal 1+1 and 2+2, one-way, tractor lane | M8 ship lanes; M12 power and data lines |
 | Quay cranes | STS, wide STS | M8 ULCV crane (23+ rows) |
-| Yard gear | reach stacker, RTG, RMG, empty handler | M9 straddle carrier; M11 ASC |
-| Horizontal transport | tractors | M9 straddle carriers; M11 AGVs |
+| Yard gear | reach stacker, RTG, RMG, empty handler | M9 straddle carrier; M12 ASC |
+| Horizontal transport | tractors | M9 straddle carriers; M12 AGVs |
 | Ships | feeder, Panamax, Neopanamax | M8 ULCV, pilots, tugs; M9 barge, transhipment feeder |
 | Land side | lorries, trains | M9 barges |

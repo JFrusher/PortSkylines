@@ -185,7 +185,7 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 			if ship.empties == 0 or _surplus_empty(sim, ship) == 0:
 				sim._sail(ship, working.size())
 				sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.list[ship.apron].start)
-		elif _export_box(sim, sim.areas.list[ship.apron].terminal) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
+		elif _export_box(sim, ship) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
 			sim._sail(ship, working.size())
 			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.list[ship.apron].start)
 
@@ -201,17 +201,35 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		return
 	crane.timer = 0.0
 	crane.tractor = 0
-	var id := sim._new_box("import", sim.clock.calendar_minutes() + sim.rules.import_dwell_minutes * sim._dwell_factor(), ship.line)
+	# A barge brings exports down the river, from places it reaches.
+	var inland: bool = sim.rules.ship_classes[ship.kind].inland
+	var id := sim._new_box("export" if inland else "import", sim.clock.calendar_minutes() + sim.rules.import_dwell_minutes * sim._dwell_factor(), ship.line)
 	var here: int = sim.areas.list[ship.apron].terminal
 	sim.boxes[id].from = here
-	var other := _transfer_terminal(sim, ship.line, here)
+	if inland:
+		sim.boxes[id].place = sim._pick_place("barge_km")
+	var other := _transfer_terminal(sim, ship.line, here) if not inland else 0
 	# A share of a line's imports leave on its ship at its other terminal; they go at once.
 	if other and sim.rng.randf() < sim.rules.transfers.share:
 		sim.boxes[id].to = other
 		sim.boxes[id].due = sim.clock.calendar_minutes()
+	# A share of a line's boxes go on with it: off its big ships onto its next
+	# feeder, or off its feeders onto its next big ship, within the window.
+	var onward := tranship_onward(sim, ship) if not inland else ""
+	if sim.boxes[id].to == 0 and onward != "" and sim.rng.randf() < sim.rules.lines[ship.line].tranship_share:
+		sim.boxes[id].kind = "tranship"
+		sim.boxes[id].onward = onward
+		sim.boxes[id].due = sim.clock.calendar_minutes() + sim.rules.lines[ship.line].connection_hours * 60.0
+		sim.exports += 1
+	# Booked to barge first, by its line's share while barges call at this
+	# terminal, so a barge discount takes boxes from rail and road alike: it
+	# waits in its block for a barge, and no lorry takes it.
+	if sim.boxes[id].kind == "import" and sim.boxes[id].to == 0 and sim.by_barge_to(id) and barges_call(sim, here) and sim.rng.randf() < sim.barge_share(ship.line):
+		sim.boxes[id].barge = true
 	# Booked to rail by its line's share, only while a rail block has room for
 	# it and its place has a rail link, so a port without rail rolls nothing.
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
+	var plugs := _block_for(sim, "reefer", sim.areas.list[ship.apron].terminal) if sim.boxes[id].reefer else 0
 	if sim.boxes[id].dg:
 		var hazard := _block_for(sim, "dangerous", sim.areas.list[ship.apron].terminal)
 		if hazard == 0:
@@ -222,13 +240,20 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 			sim._event("A dangerous-goods box was shut out: no dangerous-goods block with room in %s" % sim.areas.terminals[sim.areas.list[ship.apron].terminal].name, sim.areas.list[ship.apron].start)
 			return
 		sim._set_area(tractor, hazard)
-	elif rail and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
+	elif rail and sim.boxes[id].kind == "import" and not sim.boxes[id].barge and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
-	elif sim.boxes[id].reefer:
-		var plugs := _block_for(sim, "reefer", sim.areas.list[ship.apron].terminal)
-		if plugs:
-			sim._set_area(tractor, plugs)
+	elif plugs:
+		sim._set_area(tractor, plugs)
+	# Unplugged either way, a reefer without a reefer block goes on like any box.
+	elif sim.boxes[id].kind == "tranship":
+		var block := _tranship_block(sim, ship, onward)
+		if block:
+			sim._set_area(tractor, block)
+	elif sim.boxes[id].kind == "export":
+		var block := _block_for(sim, "export", here)
+		if block:
+			sim._set_area(tractor, block)
 	if sim.boxes[id].rush and sim.clock.calendar_minutes() > ship.due:
 		sim.ledger.post("rush_fines", -sim.rules.special_boxes.rush_fine, sim.areas.list[ship.apron].terminal)
 	ship.boxes -= 1
@@ -268,6 +293,13 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 		ship.empties -= 1
 	else:
 		ship.exports -= 1
+	if sim.boxes[tractor.box].barge:
+		# An import gone up the river: delivered, at the barge discount.
+		sim._import_left(tractor.box)
+		sim.delivered += 1
+		sim.by_barge += 1
+		if sim.barge_discount > 0:
+			sim.ledger.post("barge", -sim.barge_discount, sim.areas.list[ship.apron].terminal)
 	sim._drop_box(tractor.box)
 	ship.moves += 1
 	_gone(sim, tractor)
@@ -276,12 +308,16 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 ## Sends a tractor from the pool, starting in the apron slot under `crane`,
 ## to fetch an export from its terminal's export blocks and bring it back.
 static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> void:
-	if sim._tractors_out() >= sim.tractors:
+	if not _may_send(sim, sim.areas.list[ship.apron].terminal):
 		return
-	var box := _export_box(sim, sim.areas.list[ship.apron].terminal) if ship.exports > 0 else _surplus_empty(sim, ship)
+	var box := _export_box(sim, ship) if ship.exports > 0 else _surplus_empty(sim, ship)
 	if box == 0:
 		return
+	var block := _block_of(sim, box)
+	if not _carrier_free(sim, block):
+		return
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
+	tractor.straddle = block if carries(sim, block) else 0
 	if not sim.lane_traffic.place(tractor):
 		return
 	sim._next_vehicle += 1
@@ -290,6 +326,34 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	sim._claimed[box] = true
 	sim._add_vehicle(tractor)
 	_go_to(sim, tractor, _block_of(sim, box))
+
+
+## Whether yard block `block`'s gear carries its own boxes to the quay
+## (straddle carriers), so no tractor from the pool is needed.
+static func carries(sim: PortSim, block: int) -> bool:
+	return sim.rules.yard_gear[sim.areas.list[block].settings.gear].carries
+
+
+## Whether anything could go for a box in `terminal`: a pool tractor, or a
+## straddle block's own carrier. Checked first, as finding the box is dearer.
+static func _may_send(sim: PortSim, terminal: int) -> bool:
+	if sim._tractors_out() < sim.tractors:
+		return true
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if area.type == "yard_block" and area.terminal == terminal and carries(sim, id) and _carrier_free(sim, id):
+			return true
+	return false
+
+
+## Whether a vehicle can go for a box at `block`: one of its own straddle
+## carriers (one a machine) if its gear carries, else a pool tractor.
+# shortcut: a straddle block's machines also stack for lorries while its carriers drive to the quay; split them if lorry-heavy straddle blocks look too quick.
+static func _carrier_free(sim: PortSim, block: int) -> bool:
+	if not carries(sim, block):
+		return sim._tractors_out() < sim.tractors
+	var carriers := sim.machines.count_for(sim.areas.list[block].settings.gear, sim.areas.layout(block).slots.size())
+	return sim._straddles_out.get(block, 0) < carriers
 
 
 ## The tractors out fetching exports for `ship`: each has its home in the
@@ -301,20 +365,45 @@ static func _fetchers(sim: PortSim, ship: PortSim.Ship) -> Array[Vehicle]:
 	return found
 
 
-## The least buried export box waiting in a working export block of
-## `terminal`, or 0, so loading digs out as few boxes as it can.
-static func _export_box(sim: PortSim, terminal: int) -> int:
-	var best := 0
-	var fewest := 0
-	for block: int in sim.area_stacks:
-		if block not in sim.areas.list or sim.areas.list[block].terminal != terminal or sim.areas.idle_reason(block) != "":
-			continue
-		var stacks: AreaStacks = sim.area_stacks[block]
-		for box: int in stacks.of_kind("export", sim.boxes):
-			if box not in sim._claimed and (best == 0 or stacks.above(box) < fewest):
-				best = box
-				fewest = stacks.above(box)
-	return best
+## The box `ship` loads next from its terminal's working blocks, or 0: for
+## a barge, an import booked to barge; else a transhipment box of its line
+## going on by a ship of its size first, then an export; the least buried,
+## so loading digs out as few boxes as it can.
+static func _export_box(sim: PortSim, ship: PortSim.Ship) -> int:
+	var terminal: int = sim.areas.list[ship.apron].terminal
+	var group := "feeder" if ship.kind == "feeder" else "mother"
+	var inland: bool = sim.rules.ship_classes[ship.kind].inland
+	var mine := func(box: int) -> bool: return sim.boxes[box].barge if inland else sim.boxes[box].line == ship.line and sim.boxes[box].onward == group
+	for kind: String in (["import"] if inland else ["tranship", "export"]):
+		var best := 0
+		var fewest := 0
+		for block: int in sim.area_stacks:
+			if block not in sim.areas.list or sim.areas.list[block].terminal != terminal or sim.areas.idle_reason(block) != "":
+				continue
+			var stacks: AreaStacks = sim.area_stacks[block]
+			for box: int in stacks.of_kind(kind, sim.boxes):
+				if box not in sim._claimed and (kind == "export" or mine.call(box)) and (best == 0 or stacks.above(box) < fewest):
+					best = box
+					fewest = stacks.above(box)
+		if best:
+			return best
+	return 0
+
+
+## Whether a barge service calls at a berth in `terminal`.
+static func barges_call(sim: PortSim, terminal: int) -> bool:
+	return sim.contracts.services.any(func(s: Dictionary) -> bool: return sim.rules.ship_classes[s.kind].inland and s.apron in sim.areas.list and sim.areas.list[s.apron].terminal == terminal)
+
+
+## Where `ship`'s transhipment boxes go on: "feeder" off a big ship, "mother"
+## off a feeder, while its line has a service of that size and transhipment
+## is unlocked; else "".
+static func tranship_onward(sim: PortSim, ship: PortSim.Ship) -> String:
+	if sim.lock_error("transhipment") or sim.rules.lines[ship.line].tranship_share <= 0.0:
+		return ""
+	var onward := "mother" if ship.kind == "feeder" else "feeder"
+	var any := sim.contracts.services.any(func(s: Dictionary) -> bool: return s.line == ship.line and (s.kind == "feeder") == (onward == "feeder"))
+	return onward if any else ""
 
 
 ## An empty of `ship`'s line in its terminal's working empty blocks that no
@@ -342,13 +431,16 @@ static func _crane_slot(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) 
 ## import block of the ship's terminal with room. False when there is no free
 ## tractor, slot or block yet.
 static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> bool:
-	if sim._tractors_out() >= sim.tractors:
+	if not _may_send(sim, sim.areas.list[ship.apron].terminal):
 		return false
 	var block := _block_for(sim, "import", sim.areas.list[ship.apron].terminal)
 	if block == 0:
 		sim._event("A ship is waiting: no import yard block with room and a road in its terminal")
 		return false
+	if not _carrier_free(sim, block):
+		return false
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
+	tractor.straddle = block if carries(sim, block) else 0
 	if not sim.lane_traffic.place(tractor):
 		return false
 	sim._next_vehicle += 1
@@ -416,10 +508,35 @@ static func fine_unplugged(sim: PortSim, now: float) -> void:
 			sim.ledger.post("reefer_fines", -sim.rules.reefers.fine, unplugged[box])
 
 
+## Each transhipment box whose connection window ran out by `now` misses its
+## ship: its line is fined and thinks less of the port, and the box waits a
+## further window for the next one. Returns how many missed.
+static func miss_connections(sim: PortSim, now: float) -> int:
+	var missed := 0
+	for id: int in sim.boxes:
+		var box: Dictionary = sim.boxes[id]
+		if box.kind != "tranship" or box.due > now:
+			continue
+		sim.ledger.post("connection_fines", -sim.rules.transhipment.missed_fine, box.from)
+		var cancelled := sim.contracts.penalise(box.line, sim.rules.transhipment.missed_reputation)
+		if cancelled:
+			sim._event(cancelled)
+		box.due += sim.rules.lines[box.line].connection_hours * 60.0
+		missed += 1
+	return missed
+
+
 ## The first yard block of `role` in `terminal` that works and has room for
 ## one more box than is already on its way to it, counting tractors waiting
 ## under a crane for a box bound for it, or 0.
 static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
+	var found := _blocks_with_room(sim, role, terminal)
+	return found[0] if not found.is_empty() else 0
+
+
+## `terminal`'s working yard blocks of `role` with room for one more box.
+static func _blocks_with_room(sim: PortSim, role: String, terminal: int) -> Array[int]:
+	var found: Array[int] = []
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type != "yard_block" or area.terminal != terminal or area.settings.role != role or sim.areas.idle_reason(id) != "" or RailFlow.is_rail_block(sim, id):
@@ -427,8 +544,26 @@ static func _block_for(sim: PortSim, role: String, terminal: int) -> int:
 		# Boxes on their way, and tractors under a crane waiting for a box bound here.
 		var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == id and (v.loaded or v.state == "under_crane")).size()
 		if _stacks(sim, id).room() > coming:
-			return id
-	return 0
+			found.append(id)
+	return found
+
+
+## The transhipment block with room in `ship`'s terminal nearest the berths
+## of its line's `onward` services, where the box goes on; or 0.
+static func _tranship_block(sim: PortSim, ship: PortSim.Ship, onward: String) -> int:
+	var berths: Array[Vector2i] = []
+	for service: Dictionary in sim.contracts.services:
+		if service.line == ship.line and (service.kind == "feeder") == (onward == "feeder") and service.apron in sim.areas.list:
+			berths.append(sim.areas.list[service.apron].start)
+	var best := 0
+	var nearest := 0
+	for id in _blocks_with_room(sim, "tranship", sim.areas.list[ship.apron].terminal):
+		var start: Vector2i = sim.areas.list[id].start
+		var distance: int = berths.map(func(b: Vector2i) -> int: return absi(b.x - start.x) + absi(b.y - start.y)).min() if not berths.is_empty() else 0
+		if best == 0 or distance < nearest:
+			best = id
+			nearest = distance
+	return best
 
 
 ## Sends a lorry in from the site entry for the import box due out longest,
@@ -446,7 +581,7 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 			continue
 		# Imports come soonest due first, so the block's first unclaimed one is its best.
 		for id: int in sim.area_stacks[block].of_kind("import", sim.boxes):
-			if id in sim._claimed:
+			if id in sim._claimed or sim.boxes[id].barge:
 				continue
 			if sim.boxes[id].due <= now and (box == 0 or sim.boxes[id].due < sim.boxes[box].due):
 				box = id
@@ -601,9 +736,33 @@ static func export_demand(sim: PortSim) -> int:
 		var until := fposmod(service.start - week_now, Contracts.MINUTES_PER_WEEK)
 		if until > 0.0 and until <= sim.rules.export_lead_hours * 60.0:
 			wanted += sim.rules.ship_classes[service.kind].export_moves
-	# Lorries with an empty from the yard, on their way to it or out with it; one never stacked was turned away.
-	var collecting := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "lorry" and sim.boxes.has(v.box) and sim.boxes[v.box].kind == "empty" and sim.boxes[v.box].in >= 0.0).size()
-	return wanted - sim.exports - sim.stuffing.size() - collecting
+	return wanted - sim.exports - sim.stuffing.size() - _lorries(sim).collecting
+
+
+## The lorries export demand and room count, in one pass over the vehicles:
+## {"collecting": lorries with an empty from the yard, on their way to it or
+## out with it (one never stacked was turned away), "exports": terminal ->
+## loaded export lorries bound for it}. Kept until the tick, or the vehicles,
+## change: both are asked for every tick and scanning was most of a tick's
+## export dispatch (docs/perf.md).
+static func _lorries(sim: PortSim) -> Dictionary:
+	var key := [sim.clock.ticks, sim._next_vehicle, sim.vehicles.size()]
+	if sim._lorries_for == key:
+		return sim._lorries
+	var collecting := 0
+	var exports := {}
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.kind != "lorry" or vehicle.box not in sim.boxes:
+			continue
+		var box: Dictionary = sim.boxes[vehicle.box]
+		if box.kind == "empty" and box.in >= 0.0:
+			collecting += 1
+		elif vehicle.loaded and box.kind == "export" and vehicle.area in sim.areas.list:
+			var terminal: int = sim.areas.list[vehicle.area].terminal
+			exports[terminal] = exports.get(terminal, 0) + 1
+	sim._lorries = {"collecting": collecting, "exports": exports}
+	sim._lorries_for = key
+	return sim._lorries
 
 
 ## Whether exports are on their way into `terminal`, or can still be sent:
@@ -622,10 +781,7 @@ static func _export_room(sim: PortSim, terminal: int) -> int:
 		var area: Dictionary = sim.areas.list[id]
 		if area.type == "yard_block" and area.terminal == terminal and area.settings.role == "export" and sim.areas.idle_reason(id) == "":
 			room += _stacks(sim, id).room()
-	for vehicle: Vehicle in sim.vehicles:
-		if vehicle.kind == "lorry" and vehicle.loaded and sim.boxes[vehicle.box].kind == "export" and vehicle.area in sim.areas.list and sim.areas.list[vehicle.area].terminal == terminal:
-			room -= 1
-	return room
+	return room - _lorries(sim).exports.get(terminal, 0)
 
 
 ## A free lane cell at the site entry heading into the site, or NONE.

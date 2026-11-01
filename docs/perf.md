@@ -561,3 +561,26 @@ early). Timed on this save: `export_demand` 2.1 ms and `_export_room`
 the new save's positive demand reaches them every tick. Keeping counts of
 export lorries per terminal, rather than scanning, is the likely fix; it
 waits on a decision with the rest of the speed work (M6 close).
+
+### Export dispatch: one pass over the lorries (2026-11-01)
+
+Timed on the M8 endgame save, the two vehicle scans behind export demand
+and export room cost 1.8 ms (lorries collecting empties) and 1.1 ms (export
+lorries per terminal) a call; the export blocks themselves 0.2 ms. Both
+counts now come from one pass over the vehicles, kept until the tick or
+the vehicles change. `profile_sim.gd -- 200`: export dispatch 7.0 to 4.6
+ms a tick, the tick 21.3 to 19.5 ms untimed. What is left is mostly that
+one pass and routing each new lorry to its gate; counters kept as lorries
+load and move would take the pass off too, at the cost of every place a
+lorry's load or area changes keeping them right.
+
+### Straddle carriers in the showcase port (2026-11-01)
+
+Making the North Terminal's two import blocks straddle blocks, in the
+showcase port over 6 game hours: 785 moves against 783 with RTGs and pool
+tractors, at 5.0 ms a tick against 3.4 ms. With the 150 pool tractors out,
+cranes used to skip looking for a box at once; with a straddle block's
+carriers often free, they look every tick, searching the yard for the next
+export and the import blocks for room. A port without straddle blocks
+pays only a cheap check (3.4 to 3.6 ms on the showcase without them).
+Open: let a crane look only at straddle blocks while the pool is out.

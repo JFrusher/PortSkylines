@@ -81,7 +81,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _process(_dt: float) -> void:
 	if not visible or sim == null:
 		return
-	var now := [sim, sim.contracts.version, sim.areas.version, sim.cranes.size(), sim.storage.duplicate(), sim.rail_discount, roundi(sim.clock.calendar_minutes() / 60.0)]
+	var now := [sim, sim.contracts.version, sim.areas.version, sim.cranes.size(), sim.storage.duplicate(), sim.rail_discount, sim.barge_discount, roundi(sim.clock.calendar_minutes() / 60.0)]
 	if now != _drawn:
 		_drawn = now
 		_build()
@@ -247,6 +247,35 @@ func _build_footer() -> void:
 		button.tooltip_text = locked if locked else "Each box carried by train costs the discount; each dollar moves %.1f%% more of every line's boxes onto rail, up to %d%%" % [sim.rules.rail.discount.share_per_dollar * 100, roundi(sim.rules.rail.discount.max_share * 100)]
 		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_rail_discount", "dollars": dollars}))
 		rail.add_child(button)
+	_footer.add_child(_barge_row(sim))
+
+
+## The barge discount, its buttons, and how each line's imports for places
+## up the river split between road, rail and barge: barge first while
+## barges call, rail of the rest, road the remainder.
+func _barge_row(sim: PortSim) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	var calling := sim.contracts.services.any(func(s: Dictionary) -> bool: return sim.rules.ship_classes[s.kind].inland)
+	var split := func(line: String) -> String:
+		var barge := sim.barge_share(line) if calling else 0.0
+		var rail := sim.rail_share(line) * (1.0 - barge)
+		return "%s road %d%%, rail %d%%, barge %d%%" % [sim.contracts.name_of(line), roundi((1.0 - barge - rail) * 100), roundi(rail * 100), roundi(barge * 100)]
+	var lines: Array = sim.rules.lines.keys().filter(func(line: String) -> bool: return not sim.rules.lines[line].classes.has("barge"))
+	var text := _plain("Barge discount: $%d a box by barge. Imports for places up the river: %s" % [sim.barge_discount, "; ".join(lines.map(split))])
+	# Wrapped in the room beside its buttons, so it never widens the board.
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(text)
+	var locked := sim.lock_error("barge")
+	for change: Array in [["- $10", -10], ["+ $10", 10]]:
+		var button := Button.new()
+		button.text = change[0]
+		var dollars: int = sim.barge_discount + change[1]
+		button.disabled = locked != ""
+		button.tooltip_text = locked if locked else "Each box carried by barge costs the discount; each dollar moves %.1f%% more of every line's boxes for places up the river onto barges, from road and rail alike, up to %d%%" % [sim.rules.barge.discount.share_per_dollar * 100, roundi(sim.rules.barge.discount.max_share * 100)]
+		button.pressed.connect(func() -> void: command_issued.emit({"op": "set_barge_discount", "dollars": dollars}))
+		row.add_child(button)
+	return row
 
 
 func _row(text: String, timeline: Timeline) -> HBoxContainer:

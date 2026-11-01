@@ -80,6 +80,9 @@ Lines offer **weekly services** for berth windows, and the week is planned berth
 | **Hinterland** | Every box has an off-map origin or destination, reached by road or by rail, with demand that grows with each milestone |
 | **Reefers** | Plugged in reefer blocks, drawing 4 kW (7 kW on hot days), billed on the day's peak, and fined when left unplugged |
 | **Special cargo** | Rush imports fined when their call is late; dangerous goods only in their own blocks, kept apart from the rest |
+| **Straddle carriers** | A straddle block stacks three high and drives its own boxes to the quay and back, so it needs no tractors |
+| **Barges** | Barges come down the river from inland, berth only at barge berths, land exports for the big ships and take away the imports booked to barge; a barge discount draws boxes off road and rail alike |
+| **Transhipment** | A share of each line's boxes go on from its big ships to its feeders and back within a connection window, at a lower move price, stacked in the transhipment block nearest the berth they leave from |
 | **Economy** | Move prices, storage fees past free days, upkeep by terminal, loans, a bailout, and an end-of-year scoreboard |
 | **Ships** | Feeder, Panamax and Neopanamax, gated by channel depth, berth length and crane outreach; dredging deepens the channel |
 | **Saves** | Versioned save files that migrate every older version, each one kept as a test fixture |
@@ -132,7 +135,7 @@ You need **[Godot 4.7.2](https://godotengine.org/download)** (the standard build
 | <kbd>Esc</kbd> | Game menu; also stops following a box |
 
 > [!TIP]
-> Want to see everything at once? In a debug run (from the editor), **Menu → Mega port (debug)** loads the big test port with every milestone reached, rail running and the yards full.
+> Want to see everything at once? In a debug run (from the editor), **Menu → Mega port (debug)** loads the big test port with every milestone reached, rail running and the yards full. **Menu → Showcase port (debug)** loads a smaller, dense two-terminal port with one of nearly every part: every berth and STS crane, a grid of yard lanes, reefer, empty, dangerous-goods and rail blocks, OCR and automated gates, a truck park, ship lanes, an anchorage, pilots, tugs and a breakwater. It grows with each new feature.
 
 ### Windows build
 
@@ -152,12 +155,13 @@ godot --export-release "Windows" build/windows/PortSkylines.exe
 | ✅ | [M4 Vertical slice and art](docs/phases/m04-vertical-slice.md) | Done |
 | ✅ | [M5 Roads and areas](docs/phases/m05-roads-and-areas.md): the 4 m grid, lanes and terminals | Done |
 | 🟧 | [M6 Scale and on-dock rail](docs/phases/m06-scale-and-rail.md): endgame scale, rail, reefers, Neopanamax | Features in; performance target open |
-| ⬜ | [M7 CS2-style cost routing](docs/phases/m07-cost-routing.md) | Planned |
-| ⬜ | [M8 The whole port](docs/phases/m08-whole-port.md) | Planned |
-| ⬜ | [M9 Barge and feeder transhipment](docs/phases/m09-barge-and-feeder.md) | Planned |
-| ⬜ | [M10 Events and regulations](docs/phases/m10-events.md) | Planned |
-| ⬜ | [M11 Policies, rules and automation](docs/phases/m11-automation.md) | Planned |
-| ⬜ | [M12 Release 1.0 on Windows](docs/phases/m12-release.md) | Planned |
+| ✅ | [M7 CS2-style cost routing](docs/phases/m07-cost-routing.md): congestion routing, turn lanes, signals, painted terminals | Done |
+| ✅ | [M8 The whole port](docs/phases/m08-whole-port.md): natural coasts, ship lanes, anchorage, pilots, tugs, ULCV | Done |
+| ✅ | [M9 Barge and feeder transhipment](docs/phases/m09-barge-and-feeder.md): transhipment, barges up the river, straddle carriers | Done |
+| ⬜ | [M10 Roads like Cities: Skylines](docs/phases/m10-curved-roads.md) | Planned |
+| ⬜ | [M11 Events and regulations](docs/phases/m11-events.md) | Planned |
+| ⬜ | [M12 Policies, rules and automation](docs/phases/m12-automation.md) | Planned |
+| ⬜ | [M13 Release 1.0 on Windows](docs/phases/m13-release.md) | Planned |
 
 > [!IMPORTANT]
 > M6's exit target is 60 fps at 1080p on a GTX 1660-class PC with the endgame port at 1×. Today the sim tick at that load is 32 ms on a 2.1 GHz cloud CPU, so it is not met yet. The measurements and the options are in [docs/perf.md](docs/perf.md).

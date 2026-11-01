@@ -5,10 +5,14 @@ extends SceneTree
 ## and every closed day adds up to its change in cash (loans, land and
 ## dredging included); every vehicle second, stacks stay within their tiers, every box is in
 ## exactly one place (a stack, a vehicle or a machine's spreader), every vehicle holds the cell it is on and no two share
-## one, and slots and machine jobs belong to vehicles that are there.
+## one, and slots and machine jobs belong to vehicles that are there. Then half a
+## game day of the showcase port, with M9's transhipment, barges and
+## straddle carriers, where no lorry ever takes a box booked to go on by
+## ship or barge.
 ## godot --headless --script res://tests/test_soak.gd
 
 const RandomPort := preload("res://tests/random_port.gd")
+const Showcase := preload("res://bench/showcase_port.gd")
 # Two game days and a bit, so midnight closes the books twice.
 const TICKS := SimClock.TICKS_PER_DAY * 2 + 1000
 ## Ticks between checks of every box, cell and slot, which cost more than
@@ -28,6 +32,20 @@ func _initialize() -> void:
 	congested_rules.lorry_interval_minutes = 600.0
 	var congested := _soak(congested_rules)
 	_expect(congested.area_stacks.values().any(func(stacks: AreaStacks) -> bool: return stacks.room() <= 0), true, "the congested port fills a yard block")
+	var refused: Array[String] = []
+	var show := Showcase.build(refused)
+	_expect(refused, [] as Array[String], "the showcase port builds")
+	var tranships := 0
+	var carriers := 0
+	while show.clock.ticks < SimClock.TICKS_PER_DAY / 2 and _failures == 0:
+		show.tick()
+		_check(show)
+		if show.clock.ticks % DEEP_EVERY == 0:
+			tranships = maxi(tranships, show.boxes.values().filter(func(b: Dictionary) -> bool: return b.kind == "tranship").size())
+			carriers = maxi(carriers, show.vehicles.filter(func(v: Vehicle) -> bool: return v.straddle).size())
+	_expect(tranships > 0, true, "the showcase tranships boxes (%d at most)" % tranships)
+	_expect(show.by_barge > 0, true, "and sends boxes up the river by barge (%d)" % show.by_barge)
+	_expect(carriers > 0, true, "and its straddle carriers go out (%d at most)" % carriers)
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -141,6 +159,10 @@ func _check(sim: PortSim) -> void:
 	for job: Dictionary in sim.machine_jobs.values():
 		if job.has("box"):
 			seen[job.box] = "an RMG"
+	# M8: a box moving between terminals waits for its lorry in the transfers.
+	for transfer: Dictionary in sim.transfers:
+		_expect(seen.has(transfer.box), false, "box %d in transfer is in one place only %s" % [transfer.box, at])
+		seen[transfer.box] = "a transfer"
 	_expect(seen.size(), sim.boxes.size(), "every box in the port is somewhere %s" % at)
 	_expect(sim._by_id.size(), sim.vehicles.size(), "every vehicle is indexed by id %s" % at)
 	var bound := {}
@@ -149,8 +171,14 @@ func _check(sim: PortSim) -> void:
 			bound[vehicle.area] = bound.get(vehicle.area, 0) + 1
 	for area: int in sim._lorries_bound:
 		_expect(sim._lorries_bound[area], bound.get(area, 0), "area %d's bound lorries are counted %s" % [area, at])
-	_expect(sim._tractors_out(), sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor").size(), "the tractor count matches the vehicles %s" % at)
-	_expect(sim.exports, sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size(), "the export count matches the boxes %s" % at)
+	_expect(sim._tractors_out(), sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor" and not v.straddle).size(), "the tractor count matches the pool's vehicles %s" % at)
+	for block: int in sim._straddles_out:
+		_expect(sim._straddles_out[block], sim.vehicles.filter(func(v: Vehicle) -> bool: return v.straddle == block).size(), "block %d's straddle carriers out are counted %s" % [block, at])
+	_expect(sim.exports, sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind in ["export", "tranship"]).size(), "the export count matches the boxes %s" % at)
+	# M9: a box going on by ship or barge never leaves by road.
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.kind == "lorry" and vehicle.box in sim.boxes:
+			_expect(sim.boxes[vehicle.box].kind != "tranship" and not sim.boxes[vehicle.box].barge, true, "lorry %d never takes box %d, bound for a ship or barge %s" % [vehicle.id, vehicle.box, at])
 	for area: int in sim.handovers.slots():
 		for holder: int in sim.handovers.slots()[area]:
 			_expect(holder == 0 or holder in ids, true, "area %d's slots hold vehicles that are there %s" % [area, at])

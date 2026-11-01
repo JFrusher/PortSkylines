@@ -9,11 +9,13 @@ signal save_pressed
 signal load_pressed
 ## A command for PortSim.apply, such as accepting an offer.
 signal command_issued(command: Dictionary)
-## shortcut: two buttons stand in for the new-game screen until M12 builds it.
+## shortcut: two buttons stand in for the new-game screen until M13 builds it.
 ## A new game: creative or not, on the data's map or a generated coast.
 signal new_game_pressed(creative: bool, generated: bool)
 ## Debug builds only: start the big test port with every feature in use.
 signal mega_port_pressed
+## The showcase port, from the pause menu in debug builds.
+signal showcase_port_pressed
 ## A recent event was clicked: the camera goes to grid cell `cell`.
 signal event_picked(cell: Vector2i)
 
@@ -218,6 +220,9 @@ func _ready() -> void:
 		_ask(menu, "Mega port (debug)", "Start the big test port: 6 berths, 18 STS cranes, 80 RTG blocks holding 20,000 boxes, 12 gates and ships in. The port you're playing is lost unless it is saved.", func() -> void:
 			_menu.visible = false
 			mega_port_pressed.emit())
+		_ask(menu, "Showcase port (debug)", "Start the showcase: two terminals on the Estuary with one of nearly everything (every berth and crane, yard roles and gear, rail, gates, lanes, anchorage, pilots, tugs, a breakwater) and ships coming in. The port you're playing is lost unless it is saved.", func() -> void:
+			_menu.visible = false
+			showcase_port_pressed.emit())
 
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)
@@ -321,7 +326,7 @@ func _ready() -> void:
 	rows.Roads.add_child(upgrade)
 	for key: String in sim.rules.area_types:
 		var area: Dictionary = sim.rules.area_types[key]
-		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M11's AGV depot.
+		# shortcut: a depot has no job in the sim yet, so it isn't offered; show it with M12's AGV depot.
 		# Quay aprons come as berths, below.
 		if area.kind in ["depot", "quay_apron"]:
 			continue
@@ -849,12 +854,14 @@ func _draw_inspect_actions() -> void:
 		_dredge_button(Marine.pocket(sim, id).size(), {"op": "dredge_berth", "apron": id, "metres": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
-		for role: String in ["import", "export", "reefer", "dangerous"]:
+		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment"}
+		var unlocks := {"reefer": "reefers", "tranship": "transhipment"}
+		for role: String in ["import", "export", "reefer", "dangerous", "tranship"]:
 			if role != settings.role:
-				var make := _action_button(_inspect_actions, "Make %s block" % ("dangerous-goods" if role == "dangerous" else role), {"op": "set_area", "id": id, "settings": {"role": role}})
-				if role == "reefer":
-					make.disabled = sim.lock_error("reefers") != ""
-					make.tooltip_text = sim.lock_error("reefers")
+				var make := _action_button(_inspect_actions, "Make %s block" % names.get(role, role), {"op": "set_area", "id": id, "settings": {"role": role}})
+				if role in unlocks:
+					make.disabled = sim.lock_error(unlocks[role]) != ""
+					make.tooltip_text = sim.lock_error(unlocks[role])
 		for gear: String in sim.rules.yard_gear:
 			if gear != settings.gear and (settings.role == "empty" or not sim.rules.yard_gear[gear].empties_only):
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})

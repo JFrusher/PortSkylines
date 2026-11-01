@@ -10,7 +10,7 @@ var reporter := CrashReporter.new()
 
 ## Most ticks one frame may run per speed step; a slower frame drops the rest.
 const MAX_TICKS_PER_FRAME := 8
-## shortcut: one save slot, add named slots and autosave in M12.
+## shortcut: one save slot, add named slots and autosave in M13.
 const SAVE_PATH := "user://save.bin"
 
 ## Play time not yet turned into ticks, in seconds.
@@ -55,6 +55,7 @@ func _ready() -> void:
 	hud.new_game_pressed.connect(_new_game)
 	# Loaded, not preloaded: bench/ is left out of exported builds, which have no such button.
 	hud.mega_port_pressed.connect(func() -> void: _use(load("res://bench/endgame_port.gd").debug_port()))
+	hud.showcase_port_pressed.connect(func() -> void: _use(load("res://bench/showcase_port.gd").debug_port()))
 	hud.event_picked.connect(_go_to)
 	add_child(hud)
 
