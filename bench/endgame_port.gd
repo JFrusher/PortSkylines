@@ -1,12 +1,14 @@
 extends RefCounted
 ## The endgame port on roads and areas, built by the commands the toolbar
-## sends: a coast road with six Panamax quay aprons of three STS cranes each,
+## sends: a coast road with six Panamax quay aprons of three STS cranes each
+## and a ship lane out to sea from each,
 ## seven rows of RTG yard blocks between it and a spine road, two-way gates on
 ## the spine, and the highway entry. M6's target counts are about 2,000
 ## lorries, 20,000 stacked boxes, 6 berths and 2 trains.
 # shortcut: no trains until M6's rail steps add them.
 
 const RandomPort := preload("res://tests/random_port.gd")
+const AreaPort := preload("res://tests/area_port.gd")
 ## The grid lines the coast road and the spine run south down: their 2+2
 ## lanes cover the two columns either side, and each row road meets them at
 ## a grid point.
@@ -57,6 +59,7 @@ static func build(rules: Dictionary) -> PortSim:
 	for i in ROWS.size() - 1:
 		var coast := sim.roads.segment_at(Vector2i(COAST_X, ROWS[i] + 48))
 		aprons.append(_area(sim, {"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 85}))
+		AreaPort.add_lane(sim, aprons[-1])
 		var spine := sim.roads.segment_at(Vector2i(SPINE_X, ROWS[i] + 48))
 		_do(sim, {"op": "build_two_way_gate", "type": "gate_large", "segment": spine, "from": 30, "to": 44})
 	var blocks: Array[int] = []

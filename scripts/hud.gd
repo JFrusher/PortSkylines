@@ -10,7 +10,8 @@ signal load_pressed
 ## A command for PortSim.apply, such as accepting an offer.
 signal command_issued(command: Dictionary)
 ## shortcut: two buttons stand in for the new-game screen until M12 builds it.
-signal new_game_pressed(creative: bool)
+## A new game: creative or not, on the data's map or a generated coast.
+signal new_game_pressed(creative: bool, generated: bool)
 ## Debug builds only: start the big test port with every feature in use.
 signal mega_port_pressed
 ## A recent event was clicked: the camera goes to grid cell `cell`.
@@ -25,11 +26,19 @@ const DRAW_ROAD := -8
 const DRAW_AREA := -9
 ## Places a berth of berth on the coast by clicking.
 const BUILD_BERTH := -10
+## Draws a ship lane of lane_type on the water by dragging.
+const DRAW_LANE := -11
+## Drags out an anchorage on the water.
+const BUILD_ANCHORAGE := -12
+## Places a pilot station or tug depot (marine_base) on the water by clicking.
+const BUILD_MARINE := -13
+## Drags a breakwater across the water.
+const BUILD_BREAKWATER := -14
 ## The build menu row each area type sits in.
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
-const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Bulldoze", "Inspect"]
+const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Water", "Bulldoze", "Inspect"]
 const FLASH_SECONDS := 2.5
 ## UI scales the settings button steps through, and where the choice is kept.
 const UI_SCALES: Array[float] = [1.0, 1.25, 1.5]
@@ -50,6 +59,10 @@ var two_way := false
 ## The gate tool builds on both sides of the road when this is on.
 ## The berth BUILD_BERTH places, a key of rules.berths.
 var berth := ""
+## The ship lane DRAW_LANE draws, a key of rules.water.lanes.
+var lane_type := ""
+## What BUILD_MARINE places: "pilot_station" or "tug_depot".
+var marine_base := ""
 ## The crane CRANE places, a key of rules.sts_cranes.
 var crane_kind := ""
 var speed := 1
@@ -197,7 +210,10 @@ func _ready() -> void:
 	for creative: bool in [false, true]:
 		_ask(menu, "New creative game" if creative else "New game", "Start a new %s? The port you're playing is lost unless it is saved." % ("creative game" if creative else "game"), func() -> void:
 			_menu.visible = false
-			new_game_pressed.emit(creative))
+			new_game_pressed.emit(creative, false))
+	_ask(menu, "New game, new coast", "Start a new game on a coast drawn for it: its own bays, river and islands. The port you're playing is lost unless it is saved.", func() -> void:
+		_menu.visible = false
+		new_game_pressed.emit(false, true))
 	if OS.is_debug_build():
 		_ask(menu, "Mega port (debug)", "Start the big test port: 6 berths, 18 STS cranes, 80 RTG blocks holding 20,000 boxes, 12 gates and ships in. The port you're playing is lost unless it is saved.", func() -> void:
 			_menu.visible = false
@@ -256,7 +272,7 @@ func _ready() -> void:
 			if first:
 				first.button_pressed = true)
 		open.theme_type_variation = "CategoryButton"
-		open.custom_minimum_size = Vector2(72, 48)
+		open.custom_minimum_size = Vector2(60, 48)
 		_category_buttons.append(open)
 
 	# Group 2: Figure / Info-Views Group
@@ -271,7 +287,7 @@ func _ready() -> void:
 	for group_name: String in HudDetails.GROUPS:
 		var fig_btn := Button.new()
 		fig_btn.theme_type_variation = "CategoryButton"
-		fig_btn.custom_minimum_size = Vector2(72, 48)
+		fig_btn.custom_minimum_size = Vector2(60, 48)
 		fig_btn.toggle_mode = true
 		fig_btn.text = group_name
 		fig_btn.pressed.connect(func() -> void: _toggle_drawer(group_name))
@@ -281,7 +297,7 @@ func _ready() -> void:
 	_contracts_button.text = "Contracts"
 	_contracts_button.toggle_mode = true
 	_contracts_button.theme_type_variation = "CategoryButton"
-	_contracts_button.custom_minimum_size = Vector2(72, 48)
+	_contracts_button.custom_minimum_size = Vector2(60, 48)
 	_contracts_button.toggled.connect(func(on: bool) -> void: _board.visible = on)
 	fig_row.add_child(_contracts_button)
 	_gate("contracts", _contracts_button)
@@ -325,16 +341,29 @@ func _ready() -> void:
 		var apron: Dictionary = sim.rules.area_types.quay_apron
 		_gate(key, _item(_button(rows.Quay, "%s\n%d m, %d crane spots" % [spec.name, Grid.metres(spec.length), spec.crane_spots], tools, false, func() -> void:
 			tool = BUILD_BERTH
-			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Cranes stand at its %d spots.\n%s with its road." % [Grid.metres(spec.length), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
-	var dredge := _gate("dredging", _item(_action_button(rows.Quay, "Dredge 1 m\n" + HudDetails.dollars(sim.rules.channel.cost_per_metre), {"op": "dredge", "metres": 1})))
-	dredge.tooltip_text = "Deepens the channel 1 m, so ships with a deeper draft can call.\n%s a metre, then %s a metre every %d days to keep it." % [HudDetails.dollars(sim.rules.channel.cost_per_metre), HudDetails.dollars(sim.rules.channel.maintenance_per_metre), sim.rules.channel.maintenance_days]
+			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
 	for key: String in sim.rules.sts_cranes:
 		var crane: Dictionary = sim.rules.sts_cranes[key]
 		_gate(key, _item(_button(rows.Cranes, "%s\n%s" % [crane.name, HudDetails.dollars(crane.cost)], tools, false, func() -> void:
 			tool = CRANE
 			crane_kind = key))).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
-	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane or area", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane or area to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
+	for key: String in sim.rules.water.lanes:
+		var lane: Dictionary = sim.rules.water.lanes[key]
+		_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
+			tool = DRAW_LANE
+			lane_type = key)).tooltip_text = "Drag a ship lane over open water, straight or at 45°. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % ["One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
+	var anchorage: Dictionary = sim.rules.water.anchorage
+	_item(_button(rows.Water, "Anchorage\n$%d a cell" % anchorage.cost_per_cell, tools, false, func() -> void: tool = BUILD_ANCHORAGE)).tooltip_text = "Drag out an anchorage over open water, with a ship lane ending in it. Ships that find no free berth wait here, one every %d m each way; with no room at anchor a ship waits out at sea %.0f hours, then goes elsewhere." % [Grid.metres(anchorage.spacing), sim.rules.water.max_wait_hours]
+	var water: Dictionary = sim.rules.water
+	_item(_button(rows.Water, "Pilot station\n%s" % HudDetails.dollars(water.pilots.station_cost), tools, false, func() -> void:
+		tool = BUILD_MARINE
+		marine_base = "pilot_station")).tooltip_text = "Click the water near the shore. Panamaxes and bigger take a pilot in and out; the pilot boat comes from the nearest station. Hire pilots by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.pilots.pilot_cost), HudDetails.dollars(water.pilots.upkeep_per_pilot)]
+	_item(_button(rows.Water, "Tug depot\n%s" % HudDetails.dollars(water.tugs.depot_cost), tools, false, func() -> void:
+		tool = BUILD_MARINE
+		marine_base = "tug_depot")).tooltip_text = "Click the water near the shore. Panamaxes and bigger wait for tugs to berth and unberth; tugs sail out from the nearest depot with enough free, so a depot near the berths berths ships sooner. Buy tugs by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.tugs.tug_cost), HudDetails.dollars(water.tugs.upkeep_per_tug)]
+	_item(_button(rows.Water, "Breakwater\n%s a cell" % HudDetails.dollars(water.breakwater.cost_per_cell), tools, false, func() -> void: tool = BUILD_BREAKWATER)).tooltip_text = "Drag a breakwater across open water, straight or at 45°: a rock wall 8 m thick that no ship lane crosses, to shelter berths and anchorages."
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane, area or water", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane, area, ship lane or anchorage to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
 
@@ -797,9 +826,27 @@ func _draw_inspect_actions() -> void:
 	if _inspected is Dictionary and _inspected.has("junction"):
 		_draw_junction_actions(_inspected.junction)
 		return
-	if not (_inspected is Dictionary and _inspected.area in sim.areas.list):
+	if _inspected is Dictionary and _inspected.has("base"):
+		var id: int = _inspected.base
+		if id in sim.pilot_stations:
+			_action_button(_inspect_actions, "Hire a pilot, %s" % HudDetails.dollars(sim.rules.water.pilots.pilot_cost), {"op": "hire_pilots", "station": id, "count": 1})
+		elif id in sim.tug_depots:
+			_action_button(_inspect_actions, "Buy a tug, %s" % HudDetails.dollars(sim.rules.water.tugs.tug_cost), {"op": "buy_tugs", "depot": id, "count": 1})
+		return
+	if _inspected is Dictionary and _inspected.has("lane"):
+		if _inspected.lane in sim.ship_lanes.segments:
+			var lane: Dictionary = sim.ship_lanes.segments[_inspected.lane]
+			var cells := sim.ship_lanes.footprint(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], lane.type).size()
+			_dredge_button(cells, {"op": "dredge_lane", "segment": _inspected.lane, "metres": 1})
+			if lane.type == "narrow":
+				var widen := _action_button(_inspect_actions, "Widen, %s" % HudDetails.dollars(sim.ship_lane_price(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], "wide")), {"op": "widen_ship_lane", "segment": _inspected.lane})
+				widen.tooltip_text = "Rebuilds it as a wide lane, %d m across, where ships pass both ways instead of booking it one at a time." % Grid.metres(sim.rules.water.lanes.wide.half_width * 2 + 1)
+		return
+	if not (_inspected is Dictionary and _inspected.has("area") and _inspected.area in sim.areas.list):
 		return
 	var id: int = _inspected.area
+	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
+		_dredge_button(Marine.pocket(sim, id).size(), {"op": "dredge_berth", "apron": id, "metres": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
 		for role: String in ["import", "export", "reefer", "dangerous"]:
@@ -823,6 +870,14 @@ func _draw_inspect_actions() -> void:
 			if to != slots:
 				var button := _action_button(_inspect_actions, "%+d bookings" % change, {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}})
 				button.tooltip_text = "Lorries book an hour and are let in no sooner, %d an hour (0: no bookings, lorries come in as they arrive). Early lorries wait in a truck park, else in a booth." % to
+
+
+## A Dredge 1 m button for `cells` cells of water, locked until dredging is.
+func _dredge_button(cells: int, command: Dictionary) -> void:
+	var dredge: Dictionary = sim.rules.water.dredge
+	var button := _action_button(_inspect_actions, "Dredge 1 m, %s" % HudDetails.dollars(cells * dredge.cost_per_cell_metre), command)
+	button.disabled = sim.lock_error("dredging") != ""
+	button.tooltip_text = sim.lock_error("dredging") if button.disabled else "Deepens this water 1 m, down to %.0f m, so ships of a deeper draft can use it. Then %s every %d days to keep it." % [dredge.max_depth, HudDetails.dollars(cells * dredge.maintenance_per_cell_metre), dredge.maintenance_days]
 
 
 func _label(text: String) -> Label:
@@ -938,7 +993,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 func _actions_key() -> Array:
 	var junctions := sim.lane_traffic.junctions
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
-	return [sim, sim.areas.version, _inspected, settings]
+	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,

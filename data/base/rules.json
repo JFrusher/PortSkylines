@@ -1,8 +1,7 @@
 {
 	"site": {
 		"width": 2400.0,
-		"height": 2400.0,
-		"sea_width": 300.0
+		"height": 2400.0
 	},
 	"land": {
 		"metres": 800.0,
@@ -14,6 +13,21 @@
 			"width": 3.0,
 			"height": 1.0
 		}
+	},
+	"objectives": {
+		"feeders_on_time": {"text": "Work three feeders inside their windows", "after": 1, "kind": "on_time_calls", "class": "feeder", "count": 3, "cash": 50000, "reputation": 5.0},
+		"busy_day": {"text": "Move 500 boxes across the quay in one day", "after": 2, "kind": "day_moves", "class": "", "count": 500, "cash": 80000, "reputation": 5.0},
+		"panamax_on_time": {"text": "Work three Panamaxes inside their windows", "after": 3, "kind": "on_time_calls", "class": "panamax", "count": 3, "cash": 150000, "reputation": 5.0},
+		"two_terminals": {"text": "Run two working terminals", "after": 3, "kind": "working_terminals", "class": "", "count": 2, "cash": 120000, "reputation": 5.0},
+		"neopanamax_on_time": {"text": "Work three Neopanamaxes inside their windows", "after": 4, "kind": "on_time_calls", "class": "neopanamax", "count": 3, "cash": 300000, "reputation": 5.0},
+		"ulcv_on_time": {"text": "Work two ULCVs inside their windows", "after": 5, "kind": "on_time_calls", "class": "ulcv", "count": 2, "cash": 600000, "reputation": 5.0}
+	},
+	"transfers": {
+		"share": 0.1,
+		"cost_per_box": 40
+	},
+	"reclaim": {
+		"cost_per_cell": 60.0
 	},
 	"start_money": 200000.0,
 	"move_price": {
@@ -61,7 +75,6 @@
 		"sts_crane": 1500.0,
 		"tractor": 300.0
 	},
-	"sail_seconds": 4.0,
 	"lorry_interval_minutes": 1.0,
 	"export_lorry_interval_minutes": 2.0,
 	"export_lead_hours": 48.0,
@@ -82,7 +95,11 @@
 		"rail": "Rail discounts",
 		"power": "Reefer power",
 		"reefer_fines": "Reefer fines",
-		"rush_fines": "Rush fines"
+		"rush_fines": "Rush fines",
+		"port_dues": "Port dues",
+		"pilotage": "Pilotage",
+		"transfers": "Transfers between terminals",
+		"objectives": "Objective rewards"
 	},
 	"loans": {
 		"small": {
@@ -106,6 +123,9 @@
 		"harbour": {
 			"teu": 0.0,
 			"demand": 1.0,
+			"reputation": 0.0,
+			"on_time": 0.0,
+			"productivity": 0.0,
 			"unlocks": {
 				"contracts": "contracts with shipping lines",
 				"feeder": "feeder services",
@@ -116,6 +136,9 @@
 		"terminal": {
 			"teu": 2000.0,
 			"demand": 1.25,
+			"reputation": 40.0,
+			"on_time": 0.0,
+			"productivity": 0.0,
 			"unlocks": {
 				"loans": "loans",
 				"rtg": "RTG cranes for yard blocks",
@@ -126,6 +149,9 @@
 		"gateway": {
 			"teu": 6000.0,
 			"demand": 1.5,
+			"reputation": 45.0,
+			"on_time": 0.6,
+			"productivity": 0.0,
 			"unlocks": {
 				"land": "buying land",
 				"dredging": "dredging the channel",
@@ -137,9 +163,23 @@
 		"hub": {
 			"teu": 15000.0,
 			"demand": 1.75,
+			"reputation": 50.0,
+			"on_time": 0.7,
+			"productivity": 30.0,
 			"unlocks": {
 				"neopanamax": "Neopanamax services and berths",
 				"wide_sts": "wide STS cranes that reach across a Neopanamax"
+			}
+		},
+		"mega": {
+			"teu": 40000.0,
+			"demand": 2.0,
+			"reputation": 55.0,
+			"on_time": 0.75,
+			"productivity": 45.0,
+			"unlocks": {
+				"ulcv": "ULCV services and berths",
+				"mega_sts": "mega STS cranes that reach across a ULCV"
 			}
 		}
 	},

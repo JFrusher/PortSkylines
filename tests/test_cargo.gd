@@ -16,10 +16,12 @@ func _initialize() -> void:
 	quit(1 if _failures else 0)
 
 
-## Over 10 game days of feeder calls, imports and exports go to and come from
-## the hinterland's places in the data's shares.
+## Over 10 game days of feeder calls, one every 8 hours, about as often as
+## the berth works one, imports and exports go to and come from the
+## hinterland's places in the data's shares.
 func _test_box_mix_over_ten_days() -> void:
-	var sim := AreaPort.base()
+	var sim := AreaPort.base(RandomPort.quick(), "")
+	RandomPort.calls(sim, "feeder", 10, 480, 30)
 	AreaPort.add_export_block(sim)
 	var seen := {}
 	var said := ""
@@ -45,7 +47,7 @@ func _test_box_mix_over_ten_days() -> void:
 
 ## Lines offer services more often as the port reaches milestones.
 func _test_demand_grows_with_milestones() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	_expect(sim.hinterland_demand(), 1.0, "the port starts at the first milestone's demand")
 	var quick := PortSim.new(0, RandomPort.quick())
 	_expect(quick.hinterland_demand(), quick.milestones()[-1].demand, "every milestone reached gives the last's")

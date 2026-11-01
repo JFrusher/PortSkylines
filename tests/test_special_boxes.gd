@@ -4,6 +4,7 @@ extends SceneTree
 ## godot --headless --script res://tests/test_special_boxes.gd
 
 const AreaPort := preload("res://tests/area_port.gd")
+const RandomPort := preload("res://tests/random_port.gd")
 
 var _failures := 0
 
@@ -75,7 +76,7 @@ func _block(sim: PortSim, from: int) -> int:
 
 ## Base rules with only the given special-box shares, no reefers.
 func _rules(mix: Dictionary) -> Dictionary:
-	var rules := Content.base()
+	var rules := RandomPort.strait()
 	rules.box_mix.reefer_share = 0.0
 	rules.box_mix.rush_share = 0.0
 	rules.box_mix.dg_share = 0.0

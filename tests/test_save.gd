@@ -2,6 +2,7 @@ extends SceneTree
 ## Headless tests for SaveFile and the committed save fixtures.
 ## godot --headless --script res://tests/test_save.gd
 
+const RandomPort := preload("res://tests/random_port.gd")
 const AreaPort := preload("res://tests/area_port.gd")
 
 var _failures := 0
@@ -58,7 +59,7 @@ func _test_every_fixture_loads_or_is_refused() -> void:
 	for name: String in fixtures:
 		var loaded := SaveFile.load_from("res://tests/fixtures/" + name)
 		if name.trim_prefix("save_v").to_int() < SaveFile.FIRST:
-			_expect(loaded.get("error", "").contains("saved before terminals were painted on the map"), true, "%s is refused with the reason (%s)" % [name, loaded.get("error", "")])
+			_expect(loaded.get("error", "").contains("saved before the natural coastline"), true, "%s is refused with the reason (%s)" % [name, loaded.get("error", "")])
 			continue
 		_expect(loaded.has("sim"), true, "%s loads (%s)" % [name, loaded.get("error", "")])
 		if loaded.has("sim"):
@@ -70,7 +71,7 @@ func _test_every_fixture_loads_or_is_refused() -> void:
 
 func _test_save_replaces_existing() -> void:
 	var path := "user://replace.bin"
-	var sim := PortSim.new(7)
+	var sim := PortSim.new(7, RandomPort.strait())
 	_expect(SaveFile.save(path, sim), "", "initial save")
 	sim.ledger.post("moves", 123)
 	_expect(SaveFile.save(path, sim), "", "replace an existing save")
@@ -85,7 +86,7 @@ func _test_save_replaces_existing() -> void:
 
 func _test_failed_save_preserves_destination() -> void:
 	var path := "user://preserve.bin"
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	_expect(SaveFile.save(path, sim), "", "save before a failed replacement")
 	var before := FileAccess.get_file_as_bytes(path)
 	# A directory at the temporary path prevents opening it for writing.

@@ -18,22 +18,19 @@ func _initialize() -> void:
 
 
 func _test_milestone_locks() -> void:
-	var sim := PortSim.new(1)
-	var hub: Dictionary = sim.milestones()[-1]
+	var sim := PortSim.new(1, RandomPort.strait())
+	var hub: Dictionary = sim.milestones()[3]
 	for name: String in ["neopanamax", "wide_sts"]:
-		_expect(sim.lock_error(name), "Unlocked at milestone %d: %d TEU across the quay" % [sim.milestones().size(), hub.teu], "%s waits for the last milestone" % name)
+		_expect(sim.lock_error(name), "Unlocked at milestone 4: %d TEU across the quay" % hub.teu, "%s waits for the hub milestone" % name)
 	_expect(PortSim.new(1, RandomPort.quick()).lock_error("neopanamax"), "", "every milestone reached unlocks it")
 
 
-## Lines offer a Neopanamax only with the channel dredged to its draft, a
-## berth its length, and a crane on that berth wide enough to reach across it.
+## Lines offer a Neopanamax only with water as deep as its draft, a berth
+## its length, and a crane on that berth wide enough to reach across it.
 func _test_could_berth() -> void:
-	var sim := _port(100, "wide_sts")
-	var draft: float = sim.rules.ship_classes.neopanamax.draft
-	sim.channel_depth = draft - 1.0
-	_expect(_offers(sim, "neopanamax"), false, "a channel shallower than its draft keeps it away")
-	sim.channel_depth = draft
-	_expect(_offers(sim, "neopanamax"), true, "dredged to its draft, with a long berth and a wide crane, lines offer it")
+	var draft: float = Content.base().ship_classes.neopanamax.draft
+	_expect(_offers(_port(100, "wide_sts", draft - 1.0), "neopanamax"), false, "water shallower than its draft keeps it away")
+	_expect(_offers(_port(100, "wide_sts", draft), "neopanamax"), true, "as deep as its draft, with a long berth and a wide crane, lines offer it")
 	_expect(_offers(_port(75, "wide_sts", draft), "neopanamax"), false, "a Panamax berth is too short")
 	_expect(_offers(_port(100, "sts", draft), "neopanamax"), false, "standard cranes don't reach across it")
 	_expect(_offers(_port(100, "sts", draft), "panamax"), true, "they still serve a Panamax")
@@ -58,10 +55,9 @@ func _test_wide_cranes_work_it() -> void:
 
 ## A port with every milestone reached: a coast road, an apron `length`
 ## cells long with a crane of `kind` on its first crane spot, a gate, and an import
-## block, all in one terminal; the channel at `depth`.
-func _port(length: int, kind: String, depth := 14.0) -> PortSim:
-	var sim := AreaPort.terminal(length, RandomPort.quick())
-	sim.channel_depth = depth
+## block, all in one terminal; the water `depth` metres deep.
+func _port(length: int, kind: String, depth := 16.0) -> PortSim:
+	var sim := AreaPort.terminal(length, RandomPort.water(RandomPort.quick(), depth))
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59}), "", "the import block is built")
 	_expect(sim.apply({"op": "place_sts", "apron": 1, "along": 12, "kind": kind}), "", "a %s crane is placed" % kind)

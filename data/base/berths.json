@@ -2,6 +2,11 @@
 	"berths": {
 		"feeder": {"name": "Feeder berth", "length": 50, "crane_spots": 2},
 		"panamax": {"name": "Panamax berth", "length": 75, "crane_spots": 3},
-		"neopanamax": {"name": "Neopanamax berth", "length": 100, "crane_spots": 4}
+		"neopanamax": {"name": "Neopanamax berth", "length": 100, "crane_spots": 4},
+		"ulcv": {
+			"name": "ULCV berth",
+			"length": 110,
+			"crane_spots": 5
+		}
 	}
 }

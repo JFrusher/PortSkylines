@@ -119,6 +119,20 @@ func _check(sim: PortSim) -> void:
 		_expect(jumps, [], "%s %d's route steps cell to cell %s" % [vehicle.kind, vehicle.id, at])
 		_expect(cells.has(cell), false, "vehicles %d and %d share cell %s %s" % [vehicle.id, cells.get(cell, 0), cell, at])
 		cells[cell] = vehicle.id
+	# M8's water: no two ships' bookings of a narrow lane overlap, ships at
+	# one anchorage hold their own spots, and a ship under way has a course.
+	for i in sim.passages.size():
+		for j in range(i + 1, sim.passages.size()):
+			var a: Dictionary = sim.passages[i]
+			var b: Dictionary = sim.passages[j]
+			_expect(a.segment == b.segment and a.ship != b.ship and a.from < b.to and b.from < a.to, false, "ships %d and %d both book lane %d at once %s" % [a.ship, b.ship, a.segment, at])
+	var spots := {}
+	for ship: PortSim.Ship in sim.ships:
+		if ship.anchorage:
+			_expect(spots.has([ship.anchorage, ship.spot]), false, "two ships share spot %d at anchorage %d %s" % [ship.spot, ship.anchorage, at])
+			spots[[ship.anchorage, ship.spot]] = true
+		if ship.state in [PortSim.Ship.State.ARRIVING, PortSim.Ship.State.LEAVING, PortSim.Ship.State.ANCHORING]:
+			_expect(ship.path.size() >= 2, true, "a %s under way has a course %s" % [ship.kind, at])
 	for train: Train in sim.trains:
 		for box: int in train.wagons:
 			if box != 0:

@@ -6,11 +6,11 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 24
-## The first save with terminals painted on the map. Older saves hold
-## terminals as groups of areas, which the developer chose to refuse rather
-## than paint in.
-const FIRST := 24
+const VERSION := 33
+## The first save on a map's natural coastline. Older saves were built on a
+## straight sea strip that no map keeps, so they are refused, as the
+## developer chose for the coastline (and before it for painted terminals).
+const FIRST := 26
 ## Every field Vehicle.from_dict reads.
 const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
@@ -64,15 +64,111 @@ static func load_from(path: String) -> Dictionary:
 	if data.version < 1:
 		return {"error": "%s has an invalid save version %d" % [path, data.version]}
 	if data.version < FIRST:
-		return {"error": "%s was saved before terminals were painted on the map (save v%d) and can't be loaded; start a new game" % [path, data.version]}
+		return {"error": "%s was saved before the natural coastline (save v%d) and can't be loaded; start a new game" % [path, data.version]}
 	data = _migrate(data)
 	if not _valid_sim(data.get("sim")):
 		return {"error": "%s is not a Port Skylines save" % path}
 	return {"sim": PortSim.from_dict(data.sim)}
 
 
-## Brings an older save up to VERSION one step at a time; none yet since FIRST.
+## Brings an older save up to VERSION one step at a time.
 static func _migrate(data: Dictionary) -> Dictionary:
+	if data.version < 27:
+		data = _migrate_v27(data)
+	if data.version < 28:
+		data = _migrate_v28(data)
+	if data.version < 29:
+		data = _migrate_v29(data)
+	if data.version < 30:
+		data = _migrate_v30(data)
+	if data.version < 31:
+		data = _migrate_v31(data)
+	if data.version < 32:
+		data = _migrate_v32(data)
+	if data.version < 33:
+		data = _migrate_v33(data)
+	return data
+
+
+## v33 has breakwaters; an older port has none.
+static func _migrate_v33(data: Dictionary) -> Dictionary:
+	data.sim.areas.breakwaters = {}
+	data.sim.areas.next_breakwater = 1
+	data.version = 33
+	return data
+
+
+## v32 counts milestones passed (they stay passed) and objectives met. An
+## older port keeps the milestones its TEU reached, in order.
+static func _migrate_v32(data: Dictionary) -> Dictionary:
+	var sim: Dictionary = data.sim
+	var thresholds: Array = Content.base().milestones.values().map(func(m: Dictionary) -> int: return m.teu)
+	sim.milestones_passed = thresholds.filter(func(teu: int) -> bool: return sim.teu_handled >= teu).size()
+	sim.objectives_done = {}
+	sim.on_time_calls = {}
+	data.version = 32
+	return data
+
+
+## v31 moves boxes between terminals; older boxes stay where they are.
+static func _migrate_v31(data: Dictionary) -> Dictionary:
+	data.sim.transfers = []
+	for box: Dictionary in data.sim.boxes.values():
+		box.from = 0
+		box.to = 0
+	data.version = 31
+	return data
+
+
+## v30 lets ships call light-loaded; older ships carry their full load.
+static func _migrate_v30(data: Dictionary) -> Dictionary:
+	for ship: Dictionary in data.sim.ships:
+		ship.light = false
+	data.version = 30
+	return data
+
+
+## v29 has pilot stations, tug depots and narrow-lane bookings; an older
+## port has none, and its ships have no clearance yet.
+static func _migrate_v29(data: Dictionary) -> Dictionary:
+	var sim: Dictionary = data.sim
+	sim.pilot_stations = {}
+	sim.tug_depots = {}
+	sim.next_station = 1
+	sim.passages = []
+	sim.next_ship = 1
+	for ship: Dictionary in sim.ships:
+		ship.merge({"id": 0, "cleared": false, "pilot": false, "tugs": 0, "tug_depot": 0, "tugs_at": 0.0, "hold_until": 0.0})
+	data.version = 29
+	return data
+
+
+## v28 has anchorages, where ships wait for a berth; an older port has none,
+## and its waiting ships wait out at sea from the moment it loads.
+static func _migrate_v28(data: Dictionary) -> Dictionary:
+	var sim: Dictionary = data.sim
+	sim.anchorages = {}
+	sim.next_anchorage = 1
+	for ship: Dictionary in sim.ships:
+		ship.anchorage = 0
+		ship.spot = -1
+		ship.arrived = sim.ticks * SimClock.CALENDAR_MINUTES_PER_TICK
+	data.version = 28
+	return data
+
+
+## v27 has ship lanes and dredging by lane and berth in place of one channel
+## depth. An older port has no lanes yet, so no ship reaches it until the
+## player draws them; ships under way keep going with no course.
+static func _migrate_v27(data: Dictionary) -> Dictionary:
+	var sim: Dictionary = data.sim
+	sim.erase("channel_depth")
+	sim.ship_lanes = {"nodes": {}, "segments": {}, "next_node": 1, "next_segment": 1}
+	sim.pocket_dredged = {}
+	sim.dredge_version = 0
+	for ship: Dictionary in sim.ships:
+		ship.path = []
+	data.version = 27
 	return data
 
 
@@ -88,14 +184,14 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "channel_depth": TYPE_FLOAT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
-		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY,
+		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
 	}):
 		return false
 	if not _has_fields(data.ledger, {
-		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "moves": TYPE_DICTIONARY, "days": TYPE_ARRAY,
+		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "terminals": TYPE_DICTIONARY, "moves": TYPE_DICTIONARY, "days": TYPE_ARRAY,
 	}):
 		return false
 	if not _has_fields(data.storage, {"free_days": TYPE_INT, "fee": TYPE_INT}):
@@ -111,6 +207,19 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	# Roads and areas first: ships and cranes are checked against the aprons.
+	if data.map not in Content.base().maps and not (data.map.begins_with(MapGen.PREFIX) and data.map.trim_prefix(MapGen.PREFIX).is_valid_int()):
+		return false
+	if not _valid_ship_lanes(data.ship_lanes):
+		return false
+	if not data.anchorages.keys().all(func(id: Variant) -> bool: return id is int and data.anchorages[id] is Dictionary and _has_fields(data.anchorages[id], {"from": TYPE_VECTOR2I, "to": TYPE_VECTOR2I})):
+		return false
+	for bases: Array in [[data.pilot_stations, "pilots"], [data.tug_depots, "tugs"]]:
+		if not bases[0].keys().all(func(id: Variant) -> bool: return id is int and bases[0][id] is Dictionary and _has_fields(bases[0][id], {"cell": TYPE_VECTOR2I, bases[1]: TYPE_INT})):
+			return false
+	if not data.passages.all(func(p: Variant) -> bool: return p is Dictionary and _has_fields(p, {"segment": TYPE_INT, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "ship": TYPE_INT})):
+		return false
+	if not data.pocket_dredged.keys().all(func(apron: Variant) -> bool: return apron is int and data.pocket_dredged[apron] is float):
+		return false
 	if not (_valid_roads(data.roads, Content.base().road_types) and _valid_roads(data.rails, {"track": true}) and _valid_areas(data.areas)):
 		return false
 	for train: Variant in data.trains:
@@ -125,11 +234,12 @@ static func _valid_sim(data: Variant) -> bool:
 		if not ship is Dictionary or not _has_fields(ship, {
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT,
 			"boxes": TYPE_INT, "exports": TYPE_INT, "empties": TYPE_INT, "state": TYPE_INT,
-			"sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
+			"id": TYPE_INT, "light": TYPE_BOOL, "cleared": TYPE_BOOL, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "tug_depot": TYPE_INT, "tugs_at": TYPE_FLOAT, "hold_until": TYPE_FLOAT,
+			"anchorage": TYPE_INT, "spot": TYPE_INT, "arrived": TYPE_FLOAT, "path": TYPE_ARRAY, "sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
 			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL,
 		}):
 			return false
-		if (ship.apron == 0) != (ship.state == PortSim.Ship.State.ANCHORED):
+		if (ship.apron == 0) != (ship.state in [PortSim.Ship.State.ANCHORED, PortSim.Ship.State.ANCHORING]) or (ship.anchorage != 0 and ship.anchorage not in data.anchorages) or not ship.path.all(func(p: Variant) -> bool: return p is Vector2):
 			return false
 		if ship.apron != 0 and not (ship.apron in data.areas.list and data.areas.list[ship.apron].type == "quay_apron"):
 			return false
@@ -222,7 +332,11 @@ static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.
 static func _valid_areas(areas: Dictionary) -> bool:
-	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY}):
+	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY, "breakwaters": TYPE_DICTIONARY, "next_breakwater": TYPE_INT}):
+		return false
+	if not areas.filled.keys().all(func(cell: Variant) -> bool: return cell is Vector2i):
+		return false
+	if not areas.breakwaters.keys().all(func(id: Variant) -> bool: return id is int and areas.breakwaters[id] is Dictionary and _has_fields(areas.breakwaters[id], {"from": TYPE_VECTOR2I, "to": TYPE_VECTOR2I})):
 		return false
 	if not areas.terminals.keys().all(func(id: Variant) -> bool: return id is int and areas.terminals[id] is Dictionary and _has_fields(areas.terminals[id], {"name": TYPE_STRING, "colour": TYPE_INT})):
 		return false
@@ -234,7 +348,20 @@ static func _valid_areas(areas: Dictionary) -> bool:
 		var area: Variant = areas.list[id]
 		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
 			return false
+		if types[area.type].kind == "quay_apron" and not area.get("depth") is int:
+			return false
 		return types[area.type].kind != "gate" or area.settings.get("level") in levels)
+
+
+static func _valid_ship_lanes(lanes: Dictionary) -> bool:
+	if not _has_fields(lanes, {"nodes": TYPE_DICTIONARY, "segments": TYPE_DICTIONARY, "next_node": TYPE_INT, "next_segment": TYPE_INT}):
+		return false
+	if not lanes.nodes.keys().all(func(id: Variant) -> bool: return id is int and lanes.nodes[id] is Vector2i):
+		return false
+	var types: Dictionary = Content.base().water.lanes
+	return lanes.segments.keys().all(func(id: Variant) -> bool:
+		var lane: Variant = lanes.segments[id]
+		return id is int and lane is Dictionary and _has_fields(lane, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING, "dredged": TYPE_FLOAT}) and lane.a in lanes.nodes and lane.b in lanes.nodes and lane.type in types)
 
 
 ## True when `cells` holds only Vector2i, and some unless `may_be_empty`.

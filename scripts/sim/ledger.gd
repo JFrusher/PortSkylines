@@ -13,10 +13,13 @@ var cash := 0
 var opened := 0
 ## Today's totals by category.
 var today := {}
+## Today's totals by terminal, then category; terminal 0 is the port as a
+## whole (roads, land, loans, dredging). They add up to `today`.
+var terminals := {}
 ## Today's crane moves: {"total", "lines": line -> [moves, income],
 ## "terminals": terminal -> [moves, income]}.
 var moves := _no_moves()
-## Closed days, newest last: {"day", "opened", "closed", "lines", "moves"}.
+## Closed days, newest last: {"day", "opened", "closed", "lines", "terminals", "moves"}.
 var days: Array[Dictionary] = []
 
 
@@ -26,13 +29,16 @@ func _init(category_labels: Dictionary, start_cash: int) -> void:
 	opened = start_cash
 
 
-## Adds `amount` (negative to spend) to cash under `category`.
-func post(category: String, amount: int) -> void:
+## Adds `amount` (negative to spend) to cash under `category`, in
+## `terminal`'s section (0 for the port as a whole).
+func post(category: String, amount: int, terminal := 0) -> void:
 	if not categories.has(category):
 		push_error("Unknown ledger category: %s" % category)
 		assert(false, "Unknown ledger category, see the error above")
 	cash += amount
 	today[category] = today.get(category, 0) + amount
+	var section: Dictionary = terminals.get_or_add(terminal, {})
+	section[category] = section.get(category, 0) + amount
 
 
 ## Counts a crane move for `line` in `terminal` that earned `income`.
@@ -49,10 +55,11 @@ static func _no_moves() -> Dictionary:
 
 ## Closes the day `day` and opens the next.
 func close_day(day: int) -> void:
-	days.append({"day": day, "opened": opened, "closed": cash, "lines": today, "moves": moves})
+	days.append({"day": day, "opened": opened, "closed": cash, "lines": today, "terminals": terminals, "moves": moves})
 	if days.size() > DAYS_KEPT:
 		days.pop_front()
 	today = {}
+	terminals = {}
 	moves = _no_moves()
 	opened = cash
 
@@ -66,13 +73,14 @@ func today_total() -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"cash": cash, "opened": opened, "today": today.duplicate(), "moves": moves.duplicate(true), "days": days.duplicate(true)}
+	return {"cash": cash, "opened": opened, "today": today.duplicate(), "terminals": terminals.duplicate(true), "moves": moves.duplicate(true), "days": days.duplicate(true)}
 
 
 static func from_dict(d: Dictionary, category_labels: Dictionary) -> Ledger:
 	var ledger := Ledger.new(category_labels, d.cash)
 	ledger.opened = d.opened
 	ledger.today = d.today.duplicate()
+	ledger.terminals = d.terminals.duplicate(true)
 	ledger.moves = d.moves.duplicate(true)
 	ledger.days.assign(d.days)
 	return ledger

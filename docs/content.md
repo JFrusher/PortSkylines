@@ -1,13 +1,20 @@
 # Game data
 
-Every tunable number lives in `data/base/*.json`: `rules.json` (site, money, timing), `ships.json` (ship classes), `equipment.json` (cranes, tractors, yard gear) and `lines.json` (shipping lines, contracts, reputation). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated key stops the game with an error that names the file and key.
+Every tunable number lives in `data/base/*.json`: `rules.json` (site, money, timing), `ships.json` (ship classes), `equipment.json` (cranes, tractors, yard gear) and `lines.json` (shipping lines, contracts, reputation) and `maps.json` (coastlines). A key may live in any one file. `scripts/sim/content.gd` loads every `.json` file in that folder and checks it against `Content.SCHEMA`. A missing, unknown, mistyped or duplicated key stops the game with an error that names the file and key.
 
 Whole numbers are allowed where a key is a number; keys marked *int* must be whole. Keys marked *>0* must be greater than zero.
 
 | Key | Type | Meaning |
 |---|---|---|
 | `site.width`, `site.height` | int | Site size in metres for roads and areas, a multiple of the 4 m grid cell |
-| `site.sea_width` | int | Metres of sea along the west edge, a multiple of 4 |
+| `map` | text | The map a new game is played on, a key of `maps` |
+| `maps.<key>.name` | text | The map's name |
+| `maps.<key>.land` | list | The mainland's outline: a polygon of `[x, y]` points in metres on the site; a cell is land when its centre is inside. Land tiles must divide the site exactly, and the highway's entry (middle of the east edge) must be land |
+| `maps.<key>.islands` | list | Islands, each a polygon like `land` |
+| `maps.<key>.rivers` | list | Rivers carved through the land: each `{"points": [[x, y], ...], "width": metres, "depth": metres}` |
+| `maps.<key>.depth.shore`, `.per_metre`, `.max` | number | The sea's depth: `shore` metres beside land, `per_metre` more for each metre further out, at most `max` |
+| `reclaim.cost_per_cell` | int | Filling one 4 m cell of water behind a quay wall |
+| `transfers.share`, `.cost_per_box` | number, int | Of the imports a line lands at one terminal while it has a service at another, the share that leave on its ship there; each is driven between the terminals at this cost, an internal move |
 | `road_types.<key>.name` | text | The road's name in the build menu |
 | `road_types.<key>.forward`, `.backward` | int | Lanes along and against the drawn direction; forward at least backward, and at least one lane |
 | `road_types.<key>.lorries` | true/false | Whether lorries may use it; tractors and AGVs always may |
@@ -40,20 +47,36 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `storage.fair_fee`, `.satisfaction_per_dollar` | number | Each $ of fee above the fair fee changes the line's reputation by this much per call |
 | `gate_minutes` | number | Calendar minutes a lorry stops at a gate |
 | `upkeep.sts_crane`, `.tractor` | int | Paid per crane and per tractor at midnight |
-| `sail_seconds` | number >0 | Vehicle seconds to sail in or out |
+| `water.ship_speed` | number >0 | Metres a calendar minute ships sail along their lanes |
+| `water.lanes.<key>.name` | text | The lane's name in the Water menu |
+| `water.lanes.<key>.half_width` | int >0 | Cells of water either side of a lane's line; narrow lanes take one ship at a time, wide ones pass both ways |
+| `water.lanes.<key>.cost_per_cell`, `.upkeep_per_cell` | int, number | Price and daily upkeep per 4 m cell of water a lane covers |
+| `water.pocket` | int >0 | Cells out from a quay that a ship lies in (its berth's pocket); a lane ending in it reaches the berth |
+| `water.anchorage.cost_per_cell`, `.spacing` | int, int >0 | Price per cell of an anchorage, and the cells between ships at anchor each way |
+| `water.max_wait_hours` | number >0 | How long a ship with no berth and no room at anchor waits out at sea before going elsewhere |
+| `water.pilots.station_cost`, `.pilot_cost`, `.upkeep_per_pilot` | int | A pilot station, each pilot hired, and each pilot's daily upkeep |
+| `water.pilots.boat_speed` | number >0 | Metres a minute the pilot boat sails from its station to a ship |
+| `water.tugs.depot_cost`, `.tug_cost`, `.upkeep_per_tug` | int | A tug depot, each tug, and each tug's daily upkeep |
+| `water.tugs.speed` | number >0 | Metres a minute tugs sail from their depot to a berth |
+| `water.breakwater.cost_per_cell`, `.upkeep_per_cell` | int, number | A breakwater's price and daily upkeep per cell; it is two cells thick and no lane crosses it |
+| `water.slot_margin_minutes` | number | The gap kept between two ships' bookings of a narrow lane |
+| `ship_classes.<name>.light_draft`, `.light_share` | number, number | Where no berth has water for its full draft but one has its light draft, the class calls light-loaded with this share of its moves (`light_draft` equal to `draft` means never) |
+| `ship_classes.<name>.pilot`, `.tugs` | true/false, int | Whether the class takes a pilot in and out, and how many tugs it waits for to berth and unberth |
+| `ship_classes.<name>.port_dues` | int | What each call pays the port as its authority, in the ledger's Port dues |
+| `water.pilots.fee` | int | What each piloted passage pays, in the ledger's Pilotage |
+| `water.dredge.max_depth` | number | As deep as dredging takes a lane or a pocket, in metres |
+| `water.dredge.cost_per_cell_metre` | int | Dredging one cell of water one metre deeper |
+| `water.dredge.maintenance_per_cell_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged cell and metre costs this |
 | `lorry_interval_minutes` | number >0 | Calendar minutes between import lorries |
 | `export_lorry_interval_minutes` | number >0 | Calendar minutes between export lorries |
 | `import_dwell_minutes` | number | Calendar minutes an import box waits in the yard before a lorry may collect it, at a $0 storage fee |
 | `lorry_speed` | number >0 | Metres per vehicle second (one game minute) |
 | `give_up_seconds` | number >0 | Vehicle seconds stuck before a tractor replans; lorries wait twice as long |
 | `ship_classes.<name>.length` | int >0 | Metres of quay apron the ship needs |
-| `ship_classes.<name>.draft` | number | Metres; a class deeper than the channel never berths |
+| `ship_classes.<name>.draft` | number | Metres; a ship sails only through lanes and into berth pockets at least this deep |
 | `ship_classes.<name>.outreach` | int | Crane outreach (rows) the ship needs |
 | `ship_classes.<name>.import_moves`, `.export_moves` | int | Boxes off and on per call |
 | `ship_classes.<name>.window_hours` | number >0 | Length of a service's weekly berth window; sailing after it is late |
-| `channel.start_depth`, `.max_depth` | number | The channel's depth at the start, and as deep as dredging can take it (metres) |
-| `channel.cost_per_metre` | int | Cost of dredging one metre |
-| `channel.maintenance_per_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged metre costs this |
 | `land.metres` | int >0 | The site is split into square land tiles this many metres across; roads and areas are built only on land the port owns |
 | `land.price`, `.upkeep` | int | Price of a land tile, and its upkeep a day once owned |
 | `land.start.x`, `.y`, `.width`, `.height` | int | The block of land tiles the port owns at the start |
@@ -88,6 +111,10 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `reputation.turn_target_minutes`, `.per_turn_minute` | number | Change per minute of gate turn time above (or below) the target |
 | `reputation.missed` | number | Change when a call finds no berth that could ever take it |
 | `milestones.<key>.teu` | int | TEU moved across the quay (all time) that reaches this milestone |
+| `milestones.<key>.reputation`, `.on_time`, `.productivity` | number | What the milestone also needs: the lines' average reputation, the share of the last calls sailed on time, and their average berth moves an hour. A milestone reached stays reached |
+| `objectives.<key>.text`, `.after` | text, int | A goal shown once `after` milestones are reached |
+| `objectives.<key>.kind`, `.class`, `.count` | text, text, int | `on_time_calls` (`count` calls of `class` on time), `day_moves` (`count` moves in a day) or `working_terminals` |
+| `objectives.<key>.cash`, `.reputation` | int, number | Paid once when the objective is met: cash, and reputation with every line |
 | `milestones.<key>.unlocks.<name>` | text | Content the milestone unlocks, with the words the player sees: a ship class, a yard gear, `loans`, `land`, `dredging`, `ledger` or `contracts`. Names in no milestone are never locked |
 | `year_days` | int >0 | Days in a game year, for the year-end scoreboard |
 

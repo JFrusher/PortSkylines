@@ -14,6 +14,7 @@ var _failures := 0
 
 func _initialize() -> void:
 	_test_no_ship_without_a_terminal()
+	_test_yard_use_counts_teu()
 	_test_ships_unload_and_lorries_pay()
 	_test_commands()
 	_test_round_trip()
@@ -70,6 +71,23 @@ func _test_no_ship_without_a_terminal() -> void:
 	_expect(sim.last_event().contains("in a terminal with a gate"), true, "and the status says why (%s)" % sim.last_event())
 
 
+## A tier holds one 40 ft or two 20 ft boxes, so a block full of 20s is
+## 100% full, not 200%: yard use is TEU against 2 TEU a slot.
+func _test_yard_use_counts_teu() -> void:
+	var sim := AreaPort.base()
+	var block := 3
+	var stacks: AreaStacks = sim.area_stacks.get_or_add(block, AreaStacks.new(sim.areas.layout(block).stacks.size(), sim.rules.yard_gear[sim.areas.list[block].settings.gear].tiers))
+	var line: String = sim.rules.lines.keys()[0]
+	while true:
+		var id := sim._new_box("import", 0.0, line)
+		sim.boxes[id].teu = 1
+		if stacks.place(id, 1) == -1:
+			sim.boxes.erase(id)
+			break
+	_expect(stacks.boxes().size(), 2 * stacks.stacks.size() * sim.rules.yard_gear[sim.areas.list[block].settings.gear].tiers, "a block takes two 20 ft boxes a slot")
+	_expect(sim.kpis().yard_use, 1.0, "and is 100% full")
+
+
 func _test_ships_unload_and_lorries_pay() -> void:
 	var rules := RandomPort.quick()
 	rules.import_dwell_minutes = 0.0
@@ -83,7 +101,7 @@ func _test_ships_unload_and_lorries_pay() -> void:
 
 
 func _test_commands() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(150, 300), "to": Vector2i(160, 300), "type": "terminal_1_1"}), "", "a build command")
 	_expect(sim.roads.segments.size(), 1, "builds")
 	_expect(sim.apply({"op": "fly"}), "Unknown command: fly", "unknown command is refused")
@@ -111,10 +129,9 @@ func _test_ships_fit_their_berth() -> void:
 	_run(short, FIRST_SHIP + 1)
 	_expect(short.ships.size(), 0, "a panamax does not call at a 240 m apron")
 	_expect(short.last_event().contains("no quay apron of 300 m"), true, "the status says how long a quay it needs (%s)" % short.last_event())
-	rules.channel.start_depth = 11.0
-	var shallow := AreaPort.base(rules, "panamax")
+	var shallow := AreaPort.base(RandomPort.water(RandomPort.quick(), 11.0), "panamax")
 	_run(shallow, FIRST_SHIP + 1)
-	_expect(shallow.last_event().contains("needs 13 m of channel"), true, "a panamax does not call at 11 m of water (%s)" % shallow.last_event())
+	_expect(shallow.last_event().contains("13.0 m deep all the way"), true, "a panamax does not call at 11 m of water (%s)" % shallow.last_event())
 
 
 ## A Panamax of 120 moves with 3 cranes at 25 moves an hour takes
@@ -271,10 +288,13 @@ func _test_upkeep_at_midnight() -> void:
 		cells += RoadNet.length(sim.roads.nodes[road.a], sim.roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
 	for id: int in sim.areas.list:
 		cells += sim.areas.cells(id).size() * rules.area_types[sim.areas.list[id].type].upkeep_per_cell
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		cells += sim.ship_lanes.footprint(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], lane.type).size() * rules.water.lanes[lane.type].upkeep_per_cell
 	var expected := roundi(cells)
 	expected += rules.upkeep.sts_crane * 2 + rules.upkeep.tractor * 6 + rules.land.upkeep * sim.land.size()
 	expected += rules.yard_gear.reach_stacker.upkeep_per_machine * sim.machines.list.size()
-	_expect(sim.daily_upkeep(), expected, "upkeep adds every road and area cell, crane, tractor, yard machine and land tile")
+	_expect(sim.daily_upkeep(), expected, "upkeep adds every road, area and ship lane cell, crane, tractor, yard machine and land tile")
 	var upkeep := sim.daily_upkeep()
 	for i in SimClock.TICKS_PER_DAY - 2:
 		sim.tick()
@@ -285,7 +305,7 @@ func _test_upkeep_at_midnight() -> void:
 
 
 func _test_events_do_not_repeat() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	var before := sim.events.size()
 	sim._event("A crane is waiting for a free tractor")
 	sim._event("A crane is waiting for a free tractor")
@@ -353,7 +373,7 @@ func _test_offers_accept_and_decline() -> void:
 ## Services agreed one after another call on different days: each new offer
 ## takes the hour of the week furthest from the calls already agreed or offered.
 func _test_services_spread_across_the_week() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.strait()
 	rules.contracts.offer_chance = 1.0
 	rules.contracts.max_offers = 1
 	var contracts := Contracts.new(rules)
@@ -375,7 +395,7 @@ func _test_services_spread_across_the_week() -> void:
 ## Late calls cost a line's reputation until it cancels a service; good calls
 ## win it back until it offers services again.
 func _test_reputation_cancels_and_recovers() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.strait()
 	rules.contracts.offer_chance = 1.0
 	var contracts := Contracts.new(rules)
 	for id: int in [1, 2]:
@@ -462,7 +482,7 @@ func _test_loans_are_paid_back_with_interest() -> void:
 ## Three midnights below zero bring one bailout: debt cleared, every line's
 ## reputation knocked, no loans for a while.
 func _test_bailout_fires_once() -> void:
-	var sim := PortSim.new()
+	var sim := PortSim.new(0, RandomPort.strait())
 	sim.ledger.cash = -5000
 	sim.finance.loans.append({"kind": "small", "owed": 3000, "payment": 100, "days_left": 30})
 	var said: Array[String] = []
@@ -481,7 +501,7 @@ func _test_bailout_fires_once() -> void:
 ## A save from before a line was added to the data keeps its reputations, and
 ## the new line starts where every line does.
 func _test_saved_reputation_meets_a_new_line() -> void:
-	var rules := Content.base()
+	var rules := RandomPort.strait()
 	var saved := Contracts.new(rules).to_dict()
 	saved.reputation.aurora = 90.0
 	saved.reputation.erase("kestrel")
@@ -491,10 +511,10 @@ func _test_saved_reputation_meets_a_new_line() -> void:
 
 func _test_creative_mode_builds_without_cash() -> void:
 	for creative: bool in [false, true]:
-		var sim := PortSim.new(0, Content.base(), creative)
+		var sim := PortSim.new(0, RandomPort.strait(), creative)
 		sim.ledger.cash = 0
 		_expect(sim.apply({"op": "build_road", "from": Vector2i(150, 300), "to": Vector2i(160, 300), "type": "terminal_1_1"}), "" if creative else "Not enough money", "building at $0 in %s mode" % ("creative" if creative else "normal"))
-	var copy := PortSim.from_dict(PortSim.new(0, Content.base(), true).to_dict())
+	var copy := PortSim.from_dict(PortSim.new(0, RandomPort.strait(), true).to_dict())
 	_expect(copy.creative, true, "creative mode survives a save")
 
 
@@ -520,7 +540,7 @@ func _test_land_must_be_bought() -> void:
 
 ## An STS crane ordered now stands on its apron exactly when its lead time ends.
 func _test_cranes_arrive_after_their_lead_time() -> void:
-	var rules := Content.base().duplicate(true)
+	var rules := RandomPort.strait()
 	rules.sts_cranes.sts.lead_days = 0.5
 	var sim := AreaPort.terminal(60, rules)
 	sim.creative = false
@@ -537,24 +557,32 @@ func _test_cranes_arrive_after_their_lead_time() -> void:
 	_expect(sim.cranes.size(), 1, "there exactly 12 hours after the order")
 
 
+## A lane and a berth pocket are dredged by the metre, priced by the water
+## they cover, down to the limit, then maintained.
 func _test_dredging() -> void:
-	var base := RandomPort.quick()
-	base.channel.maintenance_days = 1
-	base.channel.start_depth = Content.base().channel.start_depth
+	var base := RandomPort.water(RandomPort.quick(), 11.0)
+	base.water.dredge.maintenance_days = 1
 	var sim := AreaPort.base(base, "")
-	var channel: Dictionary = sim.rules.channel
-	sim.ledger.cash = 1000000
+	var dredge: Dictionary = sim.rules.water.dredge
+	sim.ledger.cash = 10_000_000
+	var lane: int = sim.ship_lanes.segments.keys()[0]
+	var road: Dictionary = sim.ship_lanes.segments[lane]
+	var lane_cells := sim.ship_lanes.footprint(sim.ship_lanes.nodes[road.a], sim.ship_lanes.nodes[road.b], road.type).size()
+	var pocket_cells := Marine.pocket(sim, 1).size()
 	var before := sim.money
-	_expect(sim.apply({"op": "dredge", "metres": 2}), "", "dredge two metres")
-	_expect([sim.channel_depth, before - sim.money], [channel.start_depth + 2, 2 * channel.cost_per_metre], "the channel is deeper, at a cost per metre")
-	_expect(sim.dredge(100), "The channel can't go below %.0f m" % channel.max_depth, "dredging stops at the limit")
+	_expect(sim.apply({"op": "dredge_lane", "segment": lane, "metres": 2}), "", "dredge the lane two metres")
+	_expect([sim.ship_lanes.depth(lane, sim.areas.coast), before - sim.money], [13.0, 2 * lane_cells * dredge.cost_per_cell_metre], "the lane is deeper, at a cost per cell and metre")
+	before = sim.money
+	_expect(sim.apply({"op": "dredge_berth", "apron": 1, "metres": 2}), "", "dredge the berth two metres")
+	_expect([Marine.pocket_depth(sim, 1), before - sim.money], [13.0, 2 * pocket_cells * dredge.cost_per_cell_metre], "its pocket is deeper too")
+	_expect(sim.dredge_lane(lane, 100), "Dredging goes no deeper than %.0f m" % dredge.max_depth, "dredging stops at the limit")
 	_run(sim, SimClock.MINUTES_PER_DAY)
-	_expect(sim.ledger.days[-1].lines.dredging, -2 * channel.cost_per_metre - 2 * channel.maintenance_per_metre, "the dredged metres need maintenance at midnight")
+	_expect(sim.ledger.days[-1].lines.dredging, -2 * (lane_cells + pocket_cells) * (dredge.cost_per_cell_metre + dredge.maintenance_per_cell_metre), "the day's dredging, then maintenance on the dredged metres at midnight")
 
 
 ## Below a milestone its content stays locked; crossing it unlocks it all.
 func _test_milestones_unlock_content() -> void:
-	var sim := AreaPort.base(Content.base(), "")
+	var sim := AreaPort.base(RandomPort.strait(), "")
 	sim.ledger.cash = 1000000
 	var terminal: Dictionary = sim.milestones()[1]
 	var gateway: Dictionary = sim.milestones()[2]
@@ -563,7 +591,7 @@ func _test_milestones_unlock_content() -> void:
 		_expect(sim.unlocked(name), false, "%s starts locked" % name)
 	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"gear": "rtg"}}), "Unlocked at milestone 2: %d TEU across the quay" % terminal.teu, "RTGs wait for milestone 2")
 	_expect(sim.apply({"op": "take_loan", "kind": "small"}).begins_with("Unlocked at milestone 2"), true, "so do loans")
-	_expect(sim.apply({"op": "dredge", "metres": 1}).begins_with("Unlocked at milestone 3"), true, "dredging waits for milestone 3")
+	_expect(sim.apply({"op": "dredge_berth", "apron": 1, "metres": 1}).begins_with("Unlocked at milestone 3"), true, "dredging waits for milestone 3")
 	var box := {"kind": "import", "teu": 2, "reefer": false}
 	while sim.teu_handled < terminal.teu - 2:
 		sim._moved(box, "aurora", 1)
@@ -574,13 +602,18 @@ func _test_milestones_unlock_content() -> void:
 	_expect(sim.unlocked("land"), false, "land waits for milestone 3")
 	while sim.teu_handled < gateway.teu:
 		sim._moved(box, "aurora", 1)
-	_expect(["land", "dredging", "panamax"].all(sim.unlocked), true, "milestone 3 unlocks land, dredging and Panamax services")
+	_expect(sim.unlocked("land"), false, "milestone 3 also needs calls on time: TEU alone don't reach it")
+	for i in 5:
+		sim.ship_log.append({"kind": "feeder", "line": "aurora", "terminal": 1, "moves": 100, "hours": 4.0, "cranes": 2, "late": 0.0})
+	sim._moved(box, "aurora", 1)
+	_expect(["land", "dredging", "panamax"].all(sim.unlocked), true, "with them, milestone 3 unlocks land, dredging and Panamax services")
 	var rules := RandomPort.quick()
 	rules.contracts.offer_chance = 1.0
 	rules.contracts.max_offers = 100
 	var offering := AreaPort.base(rules, "")
 	# The quick rules reach every milestone; put the real ones back.
 	offering.rules.milestones = Content.base().milestones.duplicate(true)
+	offering.milestones_passed = 1
 	_run(offering, 40 * 60)
 	_expect(offering.contracts.offers.size() >= 10, true, "lines made offers (%d)" % offering.contracts.offers.size())
 	_expect(offering.contracts.offers.any(func(o: Dictionary) -> bool: return o.kind == "panamax"), false, "no Panamax is offered before milestone 3")

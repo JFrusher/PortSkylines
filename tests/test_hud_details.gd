@@ -2,6 +2,7 @@ extends SceneTree
 ## Tests for HudDetails formatting, KPI cards and figure groups.
 ## godot --headless --script res://tests/test_hud_details.gd
 
+const RandomPort := preload("res://tests/random_port.gd")
 const HudDetails := preload("res://scripts/hud_details.gd")
 
 var _failures := 0
@@ -35,7 +36,7 @@ func _test_formatters() -> void:
 
 
 func _test_figure_groups() -> void:
-	var sim := PortSim.new(42)
+	var sim := PortSim.new(42, RandomPort.strait())
 	for group: String in HudDetails.GROUPS:
 		var cards := HudDetails.cards_for(group, sim)
 		_expect(cards.size() >= 3, true, "%s has cards (%d)" % [group, cards.size()])
@@ -46,7 +47,7 @@ func _test_figure_groups() -> void:
 
 
 func _test_port_kpis() -> void:
-	var sim := PortSim.new(42)
+	var sim := PortSim.new(42, RandomPort.strait())
 	var kpis: Array[Dictionary] = HudDetails.port_kpis(sim)
 	_expect(kpis.size(), 6, "port_kpis returns 6 cards")
 	for card: Dictionary in kpis:

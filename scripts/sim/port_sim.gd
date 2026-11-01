@@ -33,8 +33,30 @@ var finance: Finance
 ## Land tiles (rules.land.metres square) the port owns, as tile coordinates;
 ## roads and areas are built only on land it owns.
 var land := {}
-## Depth of the channel from the sea to the berths, in metres.
-var channel_depth := 0.0
+## The map the port is on: a key of rules.maps, or a generated one (see
+## MapGen.of); its coast is areas.coast.
+var map: String
+## The ship lanes drawn on the water.
+var ship_lanes: ShipLanes
+## Anchorages on the water, where ships wait for a berth: id -> {"from",
+## "to": opposite corner cells}.
+var anchorages := {}
+var _next_anchorage := 1
+## Pilot stations and tug depots on the water: id -> {"cell", "pilots"} and
+## id -> {"cell", "tugs"}, numbered together.
+var pilot_stations := {}
+var tug_depots := {}
+var _next_station := 1
+## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
+## minutes), "ship" (its id)}], see Marine.clear.
+var passages: Array[Dictionary] = []
+var _next_ship := 1
+## Metres dredged in each quay apron's pocket: apron -> metres.
+var pocket_dredged := {}
+## Bumped by every dredge, so ship routes are found again.
+var dredge_version := 0
+var _ship_routes := {}  # [kind, apron] -> lane ends in cells, see Marine.route
+var _ship_routes_for := []
 ## STS cranes ordered and not yet delivered: {"cell", "due" (calendar minute)}.
 var crane_orders: Array[Dictionary] = []
 ## TEU moved across the quay so far; milestones unlock content as it grows.
@@ -88,6 +110,15 @@ func _dg_refusal() -> String:
 
 ## The road a berth brings along its back.
 const BERTH_ROAD := "terminal_1_1"
+## How far past an apron's deepest reach a berth click looks for the water, in cells.
+const BERTH_SEARCH := 30
+## How many calls the ship log keeps, which milestones' on-time and
+## productivity gates look back over.
+const SHIP_LOG_CALLS := 20
+## A pilot station or tug depot stands within this many cells of land, and
+## at least MARINE_BASE_GAP cells from another.
+const MARINE_BASE_SHORE := 10
+const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
@@ -133,6 +164,15 @@ var returning: Array[Dictionary] = []
 ## Empties out with exporters being packed, soonest back first: {"at": the
 ## calendar minute each comes back full}.
 var stuffing: Array[Dictionary] = []
+## Boxes moving between terminals, out of one and waiting for a lorry to
+## take them in to the other: [{"box", "terminal"}], first out first in.
+var transfers: Array[Dictionary] = []
+## Milestones reached, in order (see _check_milestones); they stay reached.
+var milestones_passed := 0
+## Objectives met: key of rules.objectives -> true.
+var objectives_done := {}
+## Calls sailed inside their window, by ship class.
+var on_time_calls := {}
 ## Lorries booked in at gates taking bookings: gate id -> {hour of the
 ## calendar: lorries booked}, for this hour and those ahead.
 var bookings := {}
@@ -163,7 +203,8 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	rails.anchors = [site_rail_entry()]
 	lanes = LaneGraph.new(roads)
 	lanes.rails = rails
-	areas = Areas.new(rules.area_types, roads, rules.site)
+	map = rules.map
+	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
 	lanes.areas = areas
 	lane_traffic = LaneTraffic.new(lanes, Junctions.new(rules.traffic))
 	handovers = Handovers.new(areas)
@@ -172,19 +213,21 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	contracts = Contracts.new(rules)
 	finance = Finance.new(rules)
 	year = _new_year()
-	channel_depth = rules.channel.start_depth
+	ship_lanes = ShipLanes.new(rules.water.lanes)
 	var start: Dictionary = rules.land.start
 	for x in range(start.x, start.x + start.width):
 		for y in range(start.y, start.y + start.height):
 			land[Vector2i(x, y)] = true
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
+	_check_milestones()
 	_event("Place a berth on the coast, then draw a road from the highway to it and add a gate and a yard block along it")
 
 
 class Ship:
-	## ANCHORED: waiting off the map for a berth.
-	enum State { ARRIVING, WORKING, LEAVING, ANCHORED }
+	## ANCHORED: waiting for a berth, at an anchorage or (anchorage 0) out at
+	## sea off the map; ANCHORING: sailing in to an anchorage.
+	enum State { ARRIVING, WORKING, LEAVING, ANCHORED, ANCHORING }
 	## Its class, a key of rules.ship_classes.
 	var kind: String
 	## Its line, a key of rules.lines.
@@ -205,7 +248,30 @@ class Ship:
 	## Room left for its line's empties, loaded after its exports.
 	var empties := 0
 	var state := State.ARRIVING
-	## 0 out at sea, 1 alongside the quay.
+	## Its number, from the port's count of calls (0 for ships tests add by hand).
+	var id := 0
+	## Whether it calls light-loaded, with its class's light_share of its
+	## load, sitting at its light draft, because no berth has water for its
+	## full draft.
+	var light := false
+	## Whether it has clearance to sail its course (see Marine.clear), with a
+	## pilot aboard and `tugs` tugs from depot `tug_depot` arriving at the
+	## calendar minute `tugs_at`; it may not move before `hold_until`.
+	var cleared := false
+	var pilot := false
+	var tugs := 0
+	var tug_depot := 0
+	var tugs_at := 0.0
+	var hold_until := 0.0
+	## The anchorage it waits at (0: none, out at sea) and its spot there, an
+	## index into Marine.spots; and the calendar minute it arrived.
+	var anchorage := 0
+	var spot := -1
+	var arrived := 0.0
+	## Its course in cells, from the open sea along the lanes to alongside
+	## its berth; set when it is given a berth.
+	var path: Array[Vector2] = []
+	## How far along `path`: 0 out at sea, 1 alongside the quay.
 	var sail := 0.0
 	## `sail` at the start of this tick, for drawing between ticks.
 	var prev_sail := 0.0
@@ -222,12 +288,24 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
 		ship.empties = d.empties
 		ship.state = d.state
+		ship.id = d.id
+		ship.light = d.light
+		ship.cleared = d.cleared
+		ship.pilot = d.pilot
+		ship.tugs = d.tugs
+		ship.tug_depot = d.tug_depot
+		ship.tugs_at = d.tugs_at
+		ship.hold_until = d.hold_until
+		ship.anchorage = d.anchorage
+		ship.spot = d.spot
+		ship.arrived = d.arrived
+		ship.path.assign(d.path)
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
 		ship.moves = d.moves
@@ -273,6 +351,7 @@ func to_dict() -> Dictionary:
 		"roads": roads.to_dict(),
 		"rails": rails.to_dict(),
 		"areas": areas.to_dict(),
+		"map": map,
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
@@ -283,7 +362,16 @@ func to_dict() -> Dictionary:
 		"teu_handled": teu_handled,
 		"year": year.duplicate(),
 		"scoreboard": scoreboard.duplicate(true),
-		"channel_depth": channel_depth,
+		"ship_lanes": ship_lanes.to_dict(),
+		"anchorages": anchorages.duplicate(true),
+		"pilot_stations": pilot_stations.duplicate(true),
+		"tug_depots": tug_depots.duplicate(true),
+		"next_station": _next_station,
+		"passages": passages.duplicate(true),
+		"next_ship": _next_ship,
+		"next_anchorage": _next_anchorage,
+		"pocket_dredged": pocket_dredged.duplicate(),
+		"dredge_version": dredge_version,
 		"crane_orders": crane_orders.duplicate(true),
 		"creative": creative,
 		"delivered": delivered,
@@ -313,6 +401,10 @@ func to_dict() -> Dictionary:
 		"until_empty": _until_empty,
 		"returning": returning.duplicate(true),
 		"stuffing": stuffing.duplicate(true),
+		"transfers": transfers.duplicate(true),
+		"milestones_passed": milestones_passed,
+		"objectives_done": objectives_done.duplicate(),
+		"on_time_calls": on_time_calls.duplicate(),
 		"bookings": bookings.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
@@ -339,7 +431,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.rails.anchors = [sim.site_rail_entry()]
 	sim.lanes = LaneGraph.new(sim.roads)
 	sim.lanes.rails = sim.rails
-	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, sim.rules.site)
+	sim.map = d.map
+	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(MapGen.of(sim.rules, sim.map), sim.rules.site))
 	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
@@ -351,7 +444,16 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.teu_handled = d.teu_handled
 	sim.year = d.year.duplicate()
 	sim.scoreboard.assign(d.scoreboard)
-	sim.channel_depth = d.channel_depth
+	sim.ship_lanes = ShipLanes.from_dict(d.ship_lanes, sim.rules.water.lanes)
+	sim.anchorages = d.anchorages.duplicate(true)
+	sim.pilot_stations = d.pilot_stations.duplicate(true)
+	sim.tug_depots = d.tug_depots.duplicate(true)
+	sim._next_station = d.next_station
+	sim.passages.assign(d.passages.duplicate(true))
+	sim._next_ship = d.next_ship
+	sim._next_anchorage = d.next_anchorage
+	sim.pocket_dredged = d.pocket_dredged.duplicate()
+	sim.dredge_version = d.dredge_version
 	sim.crane_orders.assign(d.crane_orders)
 	sim.creative = d.creative
 	sim.delivered = d.delivered
@@ -384,6 +486,10 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._until_empty = d.until_empty
 	sim.returning.assign(d.returning)
 	sim.stuffing.assign(d.stuffing)
+	sim.transfers.assign(d.transfers)
+	sim.milestones_passed = d.milestones_passed
+	sim.objectives_done = d.objectives_done.duplicate()
+	sim.on_time_calls = d.on_time_calls.duplicate()
 	sim.bookings = d.bookings.duplicate(true)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
@@ -432,8 +538,34 @@ func apply(command: Dictionary) -> String:
 			return locked if locked else finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
 		"buy_land":
 			return buy_land(command.tile)
-		"dredge":
-			return dredge(command.metres)
+		"dredge_lane":
+			return dredge_lane(command.segment, command.metres)
+		"dredge_berth":
+			return dredge_berth(command.apron, command.metres)
+		"build_ship_lane":
+			return build_ship_lane(command.from, command.to, command.type)
+		"remove_ship_lane":
+			return remove_ship_lane(command.segment)
+		"widen_ship_lane":
+			return widen_ship_lane(command.segment)
+		"build_breakwater":
+			return build_breakwater(command.from, command.to)
+		"remove_breakwater":
+			return remove_breakwater(command.id)
+		"build_anchorage":
+			return build_anchorage(command.from, command.to)
+		"remove_anchorage":
+			return remove_anchorage(command.id)
+		"build_pilot_station":
+			return build_marine_base("pilot_station", command.cell)
+		"build_tug_depot":
+			return build_marine_base("tug_depot", command.cell)
+		"hire_pilots":
+			return add_marine_craft(command.station, command.count)
+		"buy_tugs":
+			return add_marine_craft(command.depot, command.count)
+		"remove_marine_base":
+			return remove_marine_base(command.id)
 		"build_road":
 			return build_road(command.from, command.to, command.type)
 		"build_rail":
@@ -453,7 +585,7 @@ func apply(command: Dictionary) -> String:
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
-			return build_berth(command.kind, command.y)
+			return build_berth(command.kind, command.cell)
 		"build_two_way_gate":
 			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
@@ -491,6 +623,10 @@ func site_entry_point() -> Vector2i:
 ## Why a road can't be built, or "": as though segment `skip` weren't built.
 func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
 	var err := roads.add_error(from, to, type, skip)
+	if err == "" and roads.footprint(from, to, type).any(areas.is_water):
+		err = "Roads can't be built on water"
+	if err == "" and roads.footprint(from, to, type).any(areas.breakwater_at):
+		err = "A breakwater is in the way"
 	if err == "" and not roads.footprint(from, to, type).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -556,6 +692,8 @@ func build_rail_error(from: Vector2i, to: Vector2i) -> String:
 	var err := lock_error("rmg")
 	if err == "":
 		err = rails.add_error(from, to, "track")
+	if err == "" and RoadNet.line(from, to).any(areas.is_water):
+		err = "Track can't be laid on water"
 	if err == "" and not RoadNet.line(from, to).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -651,8 +789,9 @@ func build_area_error(type: String, segment: int, side: int, from: int, to: int)
 func build_area(type: String, segment: int, side: int, from: int, to: int) -> String:
 	var err := build_area_error(type, segment, side, from, to)
 	if err == "":
-		ledger.post("construction", -area_price(type, segment, side, from, to))
+		var price := area_price(type, segment, side, from, to)
 		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(rules.area_types[type].kind, {}).duplicate(true))
+		ledger.post("construction", -price, areas.list[areas.list.keys().max()].terminal)
 	return err
 
 
@@ -670,69 +809,96 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 	return ""
 
 
-## The road line, top to bottom, of a berth of `kind` centred on row `y`:
-## grid points down the grid line one cell east of where its apron reaches
-## the water exactly (its road's lanes lie either side), as long as the
-## apron, so a berth placed end to end with another shares its road's end.
-func berth_line(kind: String, y: int) -> Array[Vector2i]:
+## Where a berth of `kind` clicked at `cell` goes: {"line": its road's two
+## grid points, "out": the way its quay faces, "cells": its apron's cells},
+## or {"error"}. It faces the nearest water in the four directions; its quay
+## is one straight wall at the most seaward land along it, and the apron
+## reaches back from it to the road, filling the water behind the wall. The
+## road runs so its right side faces the water, as long as the apron, so a
+## berth placed end to end with another shares its road's end.
+func berth_plan(kind: String, cell: Vector2i) -> Dictionary:
 	var length: int = rules.berths[kind].length
-	var x: int = Grid.cells(rules.site.sea_width) + rules.area_types.quay_apron.depth + 1
-	var top := y - length / 2
-	return [Vector2i(x, top), Vector2i(x, top + length)] as Array[Vector2i]
+	var depth: int = rules.area_types.quay_apron.depth
+	var reach: int = rules.area_types.quay_apron.max_depth + BERTH_SEARCH
+	var out := Vector2i.ZERO
+	var nearest := reach + 1
+	for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		var steps := _to_water(cell, d, reach)
+		if steps < nearest:
+			nearest = steps
+			out = d
+	if out == Vector2i.ZERO:
+		return {"error": "Click the coast: there's no water within %d m" % Grid.metres(reach)}
+	var along := Vector2i(out.y, -out.x)
+	var first := cell - along * (length / 2)
+	var quay := 0
+	for k in length:
+		var steps := _to_water(first + along * k, out, reach * 2)
+		if steps > reach * 2:
+			return {"error": "The water isn't straight out from the whole berth here"}
+		quay = maxi(quay, steps)
+	var line := first + out * (quay - depth - 2)
+	var cells: Array[Vector2i] = []
+	for k in length:
+		for r in range(quay - depth, quay):
+			cells.append(first + along * k + out * r)
+	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells}
 
 
-## The cells a berth of `kind` centred on row `y` would cover: its apron,
-## from the water to its road.
-func berth_cells(kind: String, y: int) -> Array[Vector2i]:
-	var line := berth_line(kind, y)
-	var found: Array[Vector2i] = []
-	for row in range(line[0].y, line[1].y):
-		for x in range(Grid.cells(rules.site.sea_width), line[0].x - 1):
-			found.append(Vector2i(x, row))
-	return found
+## Steps from `cell` along `step` to the first water, or more than `limit`.
+func _to_water(cell: Vector2i, step: Vector2i, limit: int) -> int:
+	var steps := 0
+	while steps <= limit and not areas.is_water(cell + step * steps):
+		steps += 1
+	return steps
 
 
-func build_berth_error(kind: String, y: int) -> String:
+func build_berth_error(kind: String, cell: Vector2i) -> String:
 	if kind not in rules.berths:
 		return "Unknown berth: %s" % kind
 	var locked := lock_error(kind)
 	if locked:
 		return locked
-	var line := berth_line(kind, y)
-	var cells := berth_cells(kind, y)
+	var plan := berth_plan(kind, cell)
+	if plan.has("error"):
+		return plan.error
+	var line: Array[Vector2i] = plan.line
+	var cells: Array[Vector2i] = plan.cells
 	if not cells.all(owns):
 		return "Buy this land first"
 	var built := {}
 	for id: int in areas.list:
-		for cell in areas.cells(id):
-			built[cell] = true
+		for c in areas.cells(id):
+			built[c] = true
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		for cell in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
-			built[cell] = true
+		for c in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
+			built[c] = true
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
 	# A road meeting the berth's road part-way would split it under the apron.
-	if roads.footprint(line[0] + Vector2i(0, 1), line[1] - Vector2i(0, 1), BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
+	var step: Vector2i = (line[1] - line[0]).sign()
+	if roads.footprint(line[0] + step, line[1] - step, BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
 		return "A road already runs here: place the berth clear of it, it brings its own"
 	var err := build_road_error(line[0], line[1], BERTH_ROAD)
 	if err:
 		return err
-	if not _afford(road_price(line[0], line[1], BERTH_ROAD) + cells.size() * rules.area_types.quay_apron.cost_per_cell):
+	var water := cells.filter(areas.is_water).size()
+	if not _afford(road_price(line[0], line[1], BERTH_ROAD) + cells.size() * rules.area_types.quay_apron.cost_per_cell + water * rules.reclaim.cost_per_cell):
 		return "Not enough money"
 	return ""
 
 
-## Places a berth of `kind` on the coast centred on row `y`: its road, then
-## its apron along the road's sea side.
-func build_berth(kind: String, y: int) -> String:
-	var err := build_berth_error(kind, y)
+## Places a berth of `kind` clicked at `cell` (see berth_plan): its road,
+## then its apron along the road's water side.
+func build_berth(kind: String, cell: Vector2i) -> String:
+	var err := build_berth_error(kind, cell)
 	if err:
 		return err
-	var line := berth_line(kind, y)
+	var line: Array[Vector2i] = berth_plan(kind, cell).line
 	build_road(line[0], line[1], BERTH_ROAD)
-	# The road runs south from line[0], so its right, side 1, faces the sea.
-	err = build_area("quay_apron", roads.segment_at(Vector2i(line[0].x, y)), 1, 0, rules.berths[kind].length - 1)
+	# The road runs so its right, side 1, faces the water.
+	err = build_area("quay_apron", roads.segment_at((line[0] + line[1]) / 2), 1, 0, rules.berths[kind].length - 1)
 	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
 	return ""
 
@@ -748,8 +914,10 @@ func build_two_way_gate(type: String, segment: int, from: int, to: int) -> Strin
 	return err
 
 
+## An area's cells at its type's price, plus the water a quay apron fills.
 func area_price(type: String, segment: int, side: int, from: int, to: int) -> int:
-	return areas.cells_of(type, segment, side, from, to).size() * rules.area_types[type].cost_per_cell
+	var cells := areas.cells_of(type, segment, side, from, to)
+	return cells.size() * rules.area_types[type].cost_per_cell + cells.filter(areas.is_water).size() * rules.reclaim.cost_per_cell
 
 
 ## shortcut: changing gear is free; machines are bought per area in M5 step 17.
@@ -819,7 +987,7 @@ func place_sts(apron: int, along: int, kind: String) -> String:
 	if err == "" and not _afford(spec.cost):
 		err = "Not enough money"
 	if err == "":
-		ledger.post("equipment", -spec.cost)
+		ledger.post("equipment", -spec.cost, areas.list[apron].terminal)
 		crane_orders.append({"apron": apron, "along": along, "kind": kind, "due": clock.calendar_minutes() + spec.lead_days * SimClock.MINUTES_PER_DAY})
 		_deliver_cranes()
 	return err
@@ -871,11 +1039,80 @@ func owns(cell: Vector2i) -> bool:
 
 ## The milestones reached so far, as indices into the data's list in TEU order.
 func milestones_reached() -> int:
-	var reached := 0
-	for milestone in milestones():
-		if teu_handled >= milestone.teu:
-			reached += 1
-	return reached
+	return milestones_passed
+
+
+## What milestone `milestone` still needs, or [] when every gate is met:
+## TEU moved, the lines' average reputation, the share of the last calls
+## sailed on time, and those calls' berth moves an hour.
+func milestone_needs(milestone: Dictionary) -> Array[String]:
+	var needs: Array[String] = []
+	if teu_handled < milestone.teu:
+		needs.append("%d TEU across the quay (%d so far)" % [milestone.teu, teu_handled])
+	var reputation := average_reputation()
+	if reputation < milestone.reputation:
+		needs.append("the lines' reputation of the port at %.0f (%.0f now)" % [milestone.reputation, reputation])
+	var calls := recent_calls()
+	if calls.on_time < milestone.on_time:
+		needs.append("%d%% of the last calls on time (%d%% now)" % [roundi(milestone.on_time * 100), roundi(calls.on_time * 100)])
+	if calls.moves_per_hour < milestone.productivity:
+		needs.append("%.0f berth moves an hour (%.0f now)" % [milestone.productivity, calls.moves_per_hour])
+	return needs
+
+
+func average_reputation() -> float:
+	var total := 0.0
+	for line: String in contracts.reputation:
+		total += contracts.reputation[line]
+	return total / maxi(contracts.reputation.size(), 1)
+
+
+## The calls in the ship log: the share that sailed on time and their
+## average berth moves an hour; both 0 with none yet.
+func recent_calls() -> Dictionary:
+	if ship_log.is_empty():
+		return {"on_time": 0.0, "moves_per_hour": 0.0}
+	var on_time := 0
+	var rate := 0.0
+	for entry: Dictionary in ship_log:
+		on_time += 1 if entry.late == 0.0 else 0
+		rate += entry.moves / entry.hours if entry.hours > 0.0 else 0.0
+	return {"on_time": float(on_time) / ship_log.size(), "moves_per_hour": rate / ship_log.size()}
+
+
+## Passes each next milestone whose gates are all met, in order.
+func _check_milestones() -> void:
+	var list := milestones()
+	while milestones_passed < list.size() and milestone_needs(list[milestones_passed]).is_empty():
+		var milestone: Dictionary = list[milestones_passed]
+		milestones_passed += 1
+		if milestones_passed > 1:
+			_event("Milestone %d: %d TEU across the quay. Unlocked: %s" % [milestones_passed, milestone.teu, ", ".join(milestone.unlocks.values())])
+
+
+## Meets each open objective whose goal is met: pays its cash and lifts every
+## line's reputation, once.
+func _check_objectives() -> void:
+	for key: String in rules.objectives:
+		var objective: Dictionary = rules.objectives[key]
+		if key in objectives_done or milestones_passed < objective.after or not _objective_met(objective):
+			continue
+		objectives_done[key] = true
+		ledger.post("objectives", objective.cash)
+		contracts.lift(objective.reputation)
+		_event("Objective met: %s. %s and %+.0f reputation with every line" % [objective.text, "$%d" % objective.cash, objective.reputation])
+
+
+func _objective_met(objective: Dictionary) -> bool:
+	match objective.kind:
+		"on_time_calls":
+			return on_time_calls.get(objective.class, 0) >= objective.count
+		"day_moves":
+			return not ledger.days.is_empty() and ledger.days[-1].moves.total >= objective.count
+		"working_terminals":
+			return areas.terminals.keys().filter(func(t: int) -> bool: return areas.terminal_error(t) == "").size() >= objective.count
+	assert(false, "unknown objective kind %s" % objective.kind)
+	return false
 
 
 ## Whether the milestones reached unlock `name` (a key of some milestone's unlocks).
@@ -907,13 +1144,10 @@ func milestones() -> Array[Dictionary]:
 ## Counts a crane move of `box` for `line` in `terminal`: the line pays for
 ## it, and milestones may unlock.
 func _moved(box: Dictionary, line: String, terminal: int) -> void:
-	ledger.post("moves", move_price(box))
+	ledger.post("moves", move_price(box), terminal)
 	ledger.count_move(line, terminal, move_price(box))
-	var before := milestones_reached()
 	teu_handled += box.teu
-	if milestones_reached() > before:
-		var milestone: Dictionary = milestones()[before]
-		_event("Milestone %d: %d TEU across the quay. Unlocked: %s" % [before + 1, milestone.teu, ", ".join(milestone.unlocks.values())])
+	_check_milestones()
 
 
 func buy_land_error(tile: Vector2i) -> String:
@@ -938,20 +1172,286 @@ func buy_land(tile: Vector2i) -> String:
 	return err
 
 
-## Deepens the channel by whole metres, up to rules.channel.max_depth.
-func dredge(metres: int) -> String:
+## Why a ship lane of `type` can't run from `from` to `to`, or "".
+func build_ship_lane_error(from: Vector2i, to: Vector2i, type: String) -> String:
+	var err := ship_lanes.add_error(from, to, type, areas.is_water)
+	if err == "" and not _afford(ship_lane_price(from, to, type)):
+		err = "Not enough money"
+	return err
+
+
+func build_ship_lane(from: Vector2i, to: Vector2i, type: String) -> String:
+	var err := build_ship_lane_error(from, to, type)
+	if err == "":
+		ledger.post("construction", -ship_lane_price(from, to, type))
+		ship_lanes.add(from, to, type, areas.is_water)
+	return err
+
+
+## A lane's price: the water it covers, at its type's price a cell.
+func ship_lane_price(from: Vector2i, to: Vector2i, type: String) -> int:
+	return ship_lanes.footprint(from, to, type).size() * rules.water.lanes[type].cost_per_cell
+
+
+## Why an anchorage can't cover the rectangle from `from` to `to`, or "".
+func build_anchorage_error(from: Vector2i, to: Vector2i) -> String:
+	var cells := anchorage_cells(from, to)
+	if not cells.all(areas.is_water):
+		return "An anchorage needs open water all over it"
+	if Marine.spots_in(self, from, to).is_empty():
+		return "Too small for a ship: at least %d m each way" % Grid.metres(rules.water.anchorage.spacing)
+	for id: int in anchorages:
+		if Rect2i(anchorages[id].from, anchorages[id].to - anchorages[id].from + Vector2i.ONE).intersects(Rect2i(from.min(to), (to - from).abs() + Vector2i.ONE)):
+			return "Anchorages can't overlap"
+	if not _afford(cells.size() * rules.water.anchorage.cost_per_cell):
+		return "Not enough money"
+	return ""
+
+
+func build_anchorage(from: Vector2i, to: Vector2i) -> String:
+	var err := build_anchorage_error(from, to)
+	if err == "":
+		ledger.post("construction", -anchorage_cells(from, to).size() * rules.water.anchorage.cost_per_cell)
+		anchorages[_next_anchorage] = {"from": from.min(to), "to": from.max(to)}
+		_next_anchorage += 1
+	return err
+
+
+## Why a pilot station or tug depot (`kind`) can't stand at `cell`, or "":
+## on open water, near enough the shore for its boats' crews, clear of
+## another base.
+func build_marine_base_error(kind: String, cell: Vector2i) -> String:
+	if not areas.is_water(cell):
+		return "Pilot stations and tug depots stand on the water"
+	if not _near_land(cell, MARINE_BASE_SHORE):
+		return "Place it near the shore, within %d m of land" % Grid.metres(MARINE_BASE_SHORE)
+	if marine_base_at(cell, MARINE_BASE_GAP):
+		return "Too close to another pilot station or tug depot"
+	var cost: int = rules.water.pilots.station_cost if kind == "pilot_station" else rules.water.tugs.depot_cost
+	if not _afford(cost):
+		return "Not enough money"
+	return ""
+
+
+func build_marine_base(kind: String, cell: Vector2i) -> String:
+	var err := build_marine_base_error(kind, cell)
+	if err == "":
+		var pilots := kind == "pilot_station"
+		ledger.post("construction", -(rules.water.pilots.station_cost if pilots else rules.water.tugs.depot_cost))
+		if pilots:
+			pilot_stations[_next_station] = {"cell": cell, "pilots": 0}
+		else:
+			tug_depots[_next_station] = {"cell": cell, "tugs": 0}
+		_next_station += 1
+	return err
+
+
+## Hires `count` pilots at station `id`, or buys `count` tugs at depot `id`.
+func add_marine_craft(id: int, count: int) -> String:
+	if count < 1:
+		return "Add at least one"
+	var pilots := id in pilot_stations
+	if not pilots and id not in tug_depots:
+		return "No pilot station or tug depot there"
+	var cost: int = count * (rules.water.pilots.pilot_cost if pilots else rules.water.tugs.tug_cost)
+	if not _afford(cost):
+		return "Not enough money"
+	ledger.post("equipment", -cost)
+	if pilots:
+		pilot_stations[id].pilots += count
+	else:
+		tug_depots[id].tugs += count
+	return ""
+
+
+## Takes out pilot station or tug depot `id`, once none of its pilots or tugs is out with a ship.
+func remove_marine_base(id: int) -> String:
+	if id not in pilot_stations and id not in tug_depots:
+		return "No pilot station or tug depot there"
+	if id in tug_depots and ships.any(func(s: Ship) -> bool: return s.tugs > 0 and s.tug_depot == id):
+		return "Wait for its tugs to come back"
+	if id in pilot_stations and Marine.free_pilots(self) < pilot_stations[id].pilots:
+		return "Wait for its pilots to come back"
+	pilot_stations.erase(id)
+	tug_depots.erase(id)
+	return ""
+
+
+## Whether land lies within `reach` cells of `cell`, along or across.
+func _near_land(cell: Vector2i, reach: int) -> bool:
+	for dx: int in range(-reach, reach + 1):
+		for dy: int in range(-reach, reach + 1):
+			var near := cell + Vector2i(dx, dy)
+			if areas.coast.inside(near) and not areas.is_water(near):
+				return true
+	return false
+
+
+## The pilot station or tug depot within `reach` cells of `cell`, or 0.
+func marine_base_at(cell: Vector2i, reach := 2) -> int:
+	for bases: Dictionary in [pilot_stations, tug_depots]:
+		for id: int in bases:
+			var d: Vector2i = (bases[id].cell - cell).abs()
+			if d.x <= reach and d.y <= reach:
+				return id
+	return 0
+
+
+## The anchorage covering `cell`, or 0.
+func anchorage_at(cell: Vector2i) -> int:
+	for id: int in anchorages:
+		if Rect2i(anchorages[id].from, anchorages[id].to - anchorages[id].from + Vector2i.ONE).has_point(cell):
+			return id
+	return 0
+
+
+## The cells of the rectangle from `from` to `to`, both corners included.
+func anchorage_cells(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for x: int in range(mini(from.x, to.x), maxi(from.x, to.x) + 1):
+		for y: int in range(mini(from.y, to.y), maxi(from.y, to.y) + 1):
+			cells.append(Vector2i(x, y))
+	return cells
+
+
+## Takes out anchorage `id`; ships waiting there wait out at sea instead.
+func remove_anchorage(id: int) -> String:
+	if id not in anchorages:
+		return "No anchorage there"
+	for ship: Ship in ships:
+		if ship.anchorage == id:
+			ship.anchorage = 0
+			ship.spot = -1
+			ship.state = Ship.State.ANCHORED
+			ship.path.clear()
+	anchorages.erase(id)
+	return ""
+
+
+## Why a breakwater can't run from `from` to `to`, or "": open water all
+## along it, clear of ship lanes, and the money.
+func build_breakwater_error(from: Vector2i, to: Vector2i) -> String:
+	var err := areas.breakwater_error(from, to)
+	if err:
+		return err
+	var lanes := {}
+	for segment: int in ship_lanes.segments:
+		var lane: Dictionary = ship_lanes.segments[segment]
+		for cell in ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type):
+			lanes[cell] = true
+	if Areas.breakwater_cells(from, to).any(func(c: Vector2i) -> bool: return c in lanes):
+		return "A ship lane runs here"
+	if not _afford(Areas.breakwater_cells(from, to).size() * rules.water.breakwater.cost_per_cell):
+		return "Not enough money"
+	return ""
+
+
+func build_breakwater(from: Vector2i, to: Vector2i) -> String:
+	var err := build_breakwater_error(from, to)
+	if err == "":
+		ledger.post("construction", -Areas.breakwater_cells(from, to).size() * rules.water.breakwater.cost_per_cell)
+		areas.add_breakwater(from, to)
+	return err
+
+
+func remove_breakwater(id: int) -> String:
+	if id not in areas.breakwaters:
+		return "No breakwater there"
+	areas.remove_breakwater(id)
+	return ""
+
+
+## Why narrow ship lane `segment` can't be widened, or "".
+func widen_ship_lane_error(segment: int) -> String:
+	if segment not in ship_lanes.segments:
+		return "No ship lane there"
+	var lane: Dictionary = ship_lanes.segments[segment]
+	if lane.type == "wide":
+		return "This lane is wide already"
+	var a: Vector2i = ship_lanes.nodes[lane.a]
+	var b: Vector2i = ship_lanes.nodes[lane.b]
+	if not ship_lanes.footprint(a, b, "wide").all(areas.is_water):
+		return "A wide lane needs open water %d m across all along" % Grid.metres(rules.water.lanes.wide.half_width * 2 + 1)
+	if not _afford(ship_lane_price(a, b, "wide")):
+		return "Not enough money"
+	return ""
+
+
+## Rebuilds narrow ship lane `segment` as a wide one, at the wide lane's full
+## price, keeping what was dredged.
+func widen_ship_lane(segment: int) -> String:
+	var err := widen_ship_lane_error(segment)
+	if err == "":
+		var lane: Dictionary = ship_lanes.segments[segment]
+		ledger.post("construction", -ship_lane_price(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], "wide"))
+		lane.type = "wide"
+		ship_lanes.version += 1
+	return err
+
+
+## Takes out ship lane `segment`. Ships already on their way keep their course.
+func remove_ship_lane(segment: int) -> String:
+	if segment not in ship_lanes.segments:
+		return "No ship lane there"
+	ship_lanes.remove(segment)
+	return ""
+
+
+## Deepens ship lane `segment` by whole metres, at a price for every cell of
+## water it covers, up to water.dredge.max_depth.
+func dredge_lane(segment: int, metres: int) -> String:
+	if segment not in ship_lanes.segments:
+		return "No ship lane there"
+	var lane: Dictionary = ship_lanes.segments[segment]
+	var cells := ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size()
+	var err := _dredge_error(ship_lanes.depth(segment, areas.coast), metres, cells)
+	if err == "":
+		ledger.post("dredging", -metres * cells * rules.water.dredge.cost_per_cell_metre)
+		lane.dredged += metres
+		dredge_version += 1
+	return err
+
+
+## Deepens quay apron `apron`'s pocket by whole metres, as dredge_lane.
+func dredge_berth(apron: int, metres: int) -> String:
+	if apron not in areas.list or areas.kind_of(areas.list[apron]) != "quay_apron":
+		return "No quay apron there"
+	var cells := Marine.pocket(self, apron).size()
+	var depth := Marine.pocket_depth(self, apron)
+	if depth == 0.0:
+		return "Land or a quay blocks this berth's water"
+	var err := _dredge_error(depth, metres, cells)
+	if err == "":
+		ledger.post("dredging", -metres * cells * rules.water.dredge.cost_per_cell_metre)
+		pocket_dredged[apron] = pocket_dredged.get(apron, 0.0) + metres
+		dredge_version += 1
+	return err
+
+
+func _dredge_error(depth: float, metres: int, cells: int) -> String:
 	var locked := lock_error("dredging")
 	if locked:
 		return locked
 	if metres < 1:
 		return "Dredge at least a metre"
-	if channel_depth + metres > rules.channel.max_depth:
-		return "The channel can't go below %.0f m" % rules.channel.max_depth
-	if not _afford(metres * rules.channel.cost_per_metre):
+	if depth + metres > rules.water.dredge.max_depth:
+		return "Dredging goes no deeper than %.0f m" % rules.water.dredge.max_depth
+	if not _afford(metres * cells * rules.water.dredge.cost_per_cell_metre):
 		return "Not enough money"
-	ledger.post("dredging", -metres * rules.channel.cost_per_metre)
-	channel_depth += metres
 	return ""
+
+
+## Every cell and metre dredged, in the lanes and the berth pockets: what
+## maintenance is charged on.
+func dredged_cell_metres() -> float:
+	var total := 0.0
+	for segment: int in ship_lanes.segments:
+		var lane: Dictionary = ship_lanes.segments[segment]
+		total += lane.dredged * ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size()
+	for apron: int in pocket_dredged:
+		if apron in areas.list:
+			total += pocket_dredged[apron] * Marine.pocket(self, apron).size()
+	return total
 
 
 func buy_tractors(count: int) -> String:
@@ -1001,6 +1501,7 @@ func tick() -> void:
 	var berths_now := Vector2i(_departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
 		if ship.state == Ship.State.ANCHORED and berths_now == _berths_seen:
+			Marine.wait(self, ship)
 			continue
 		_work(ship)
 	_berths_seen = berths_now
@@ -1043,6 +1544,15 @@ func upkeep_parts() -> Dictionary:
 	for segment: int in rails.segments:
 		parts[0] += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
 	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
+	for segment: int in ship_lanes.segments:
+		var lane: Dictionary = ship_lanes.segments[segment]
+		parts[0] += ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size() * rules.water.lanes[lane.type].upkeep_per_cell
+	for station: Dictionary in pilot_stations.values():
+		parts[0] += station.pilots * rules.water.pilots.upkeep_per_pilot
+	for wall: Dictionary in areas.breakwaters.values():
+		parts[0] += Areas.breakwater_cells(wall.from, wall.to).size() * rules.water.breakwater.upkeep_per_cell
+	for depot: Dictionary in tug_depots.values():
+		parts[0] += depot.tugs * rules.water.tugs.upkeep_per_tug
 	var add := func(terminal: int, amount: float) -> void: parts[terminal] = parts.get(terminal, 0.0) + amount
 	for id: int in areas.list:
 		var area: Dictionary = areas.list[id]
@@ -1057,29 +1567,53 @@ func upkeep_parts() -> Dictionary:
 
 
 ## The numbers a terminal manager watches.
-## Boxes in yard block `id` and the most it holds, as (held, room).
+## TEU in yard block `id` and the most it holds, as (held, room). A tier
+## holds one 40 ft box or two 20 ft boxes, so each stack slot is 2 TEU.
 func block_fill(id: int) -> Vector2i:
-	var room: int = areas.layout(id).stacks.size() * rules.yard_gear[areas.list[id].settings.gear].tiers
-	return Vector2i(area_stacks[id].boxes().size() if id in area_stacks else 0, room)
+	var room: int = areas.layout(id).stacks.size() * rules.yard_gear[areas.list[id].settings.gear].tiers * 2
+	var held := 0
+	if id in area_stacks:
+		for box: int in area_stacks[id].boxes():
+			held += boxes[box].teu
+	return Vector2i(held, room)
 
 
 func kpis() -> Dictionary:
 	var last: Dictionary = ship_log[-1] if not ship_log.is_empty() else {}
-	var capacity := 0
-	var held := 0
+	var fill := Vector2i.ZERO
 	for area: int in area_stacks:
 		if area in areas.list:
-			var stacks: AreaStacks = area_stacks[area]
-			capacity += stacks.stacks.size() * rules.yard_gear[areas.list[area].settings.gear].tiers
-			held += stacks.boxes().size()
+			fill += block_fill(area)
 	return {
 		"berth_moves_per_hour": last.moves / last.hours if last else 0.0,
 		"crane_moves_per_hour": last.moves / last.hours / last.cranes if last else 0.0,
 		"gate_turn_minutes": _average(turn_times),
-		"yard_use": held / float(capacity) if capacity else 0.0,
+		"yard_use": fill.x / float(fill.y) if fill.y else 0.0,
 		"boxes_per_day": delivered_yesterday,
 		"import_dwell_hours": _average(dwell_times) / 60.0,
 		"upkeep_per_day": daily_upkeep(),
+	}
+
+
+## Terminal `terminal`'s own numbers: its last ship's berth and crane
+## rates, its gate turn, its yard use, and yesterday's moves, income and its
+## part of the upkeep.
+func terminal_kpis(terminal: int) -> Dictionary:
+	var calls := ship_log.filter(func(entry: Dictionary) -> bool: return entry.terminal == terminal)
+	var last: Dictionary = calls[-1] if not calls.is_empty() else {}
+	var fill := Vector2i.ZERO
+	for area: int in area_stacks:
+		if area in areas.list and areas.list[area].terminal == terminal:
+			fill += block_fill(area)
+	var yesterday: Array = ledger.days[-1].moves.terminals.get(terminal, [0, 0]) if not ledger.days.is_empty() else [0, 0]
+	return {
+		"berth_moves_per_hour": last.moves / last.hours if last else 0.0,
+		"crane_moves_per_hour": last.moves / last.hours / last.cranes if last else 0.0,
+		"gate_turn_minutes": terminal_turn_minutes(terminal),
+		"yard_use": fill.x / float(fill.y) if fill.y else 0.0,
+		"moves_yesterday": yesterday[0],
+		"income_yesterday": yesterday[1],
+		"upkeep_per_day": roundi(upkeep_parts().get(terminal, 0.0)),
 	}
 
 
@@ -1114,20 +1648,29 @@ func _event(text: String, at := Grid.NONE) -> void:
 
 
 func _end_of_day() -> void:
+	# Each terminal's part rounded; the port's takes the rest, so the day's total is daily_upkeep().
 	var upkeep := daily_upkeep()
+	var parts := upkeep_parts()
+	for terminal: int in parts:
+		if terminal != 0:
+			ledger.post("upkeep", -roundi(parts[terminal]), terminal)
+			upkeep -= roundi(parts[terminal])
 	ledger.post("upkeep", -upkeep)
 	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
 	if bill > 0:
 		ledger.post("power", -bill)
 	power = {"peak_kw": AreaFlow.plugged_reefers(self) * reefer_kw(), "kwh": 0.0}
-	var dredged: float = channel_depth - rules.channel.start_depth
-	if dredged > 0.0 and clock.game_day() % rules.channel.maintenance_days == 0:
-		ledger.post("dredging", -roundi(dredged * rules.channel.maintenance_per_metre))
-	var storage_paid: int = _storage_due() * storage.fee
-	if storage_paid > 0:
-		ledger.post("storage", storage_paid)
+	var dredged := dredged_cell_metres()
+	if dredged > 0.0 and clock.game_day() % rules.water.dredge.maintenance_days == 0:
+		ledger.post("dredging", -roundi(dredged * rules.water.dredge.maintenance_per_cell_metre))
+	var due := _storage_due()
+	for terminal: int in due:
+		if due[terminal] * storage.fee > 0:
+			ledger.post("storage", due[terminal] * storage.fee, terminal)
 	for text in finance.end_of_day(clock.calendar_minutes(), ledger, contracts, not creative):
 		_event(text)
+	_check_milestones()
+	_check_objectives()
 	ledger.close_day(clock.game_day() - 1)
 	if clock.game_day() % rules.year_days == 0:
 		_end_of_year()
@@ -1177,16 +1720,24 @@ func _call(service: Dictionary) -> void:
 	var spec: Dictionary = rules.ship_classes[service.kind]
 	var who := contracts.name_of(service.line)
 	var why := ""
-	if channel_depth < spec.draft:
-		why = "it needs %.0f m of channel, the port has %.0f m" % [spec.draft, channel_depth]
-	elif not _could_berth(service.kind):
+	if not AreaFlow.could_berth(self, service.kind):
 		why = "no quay apron of %d m in a terminal with a gate and a road" % Grid.metres(AreaFlow.ship_cells(self, service.kind))
+	elif not _could_berth(service.kind, true):
+		why = "no ship lane from the open sea to a berth, %.1f m deep all the way, for its draft" % spec.light_draft
 	if why != "":
 		_event("%s's %s went elsewhere: %s" % [who, service.kind, why])
 		_event_if(contracts.missed(service.line))
 		return
 	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
-	var ship := Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves)
+	# With water only for its light draft, it calls light-loaded.
+	var light := not _could_berth(service.kind)
+	var share: float = spec.light_share if light else 1.0
+	var ship := Ship.new(service.kind, service.line, due, roundi(spec.import_moves * share), roundi(spec.export_moves * share))
+	ship.light = light
+	ship.arrived = clock.calendar_minutes()
+	ship.id = _next_ship
+	_next_ship += 1
+	ledger.post("port_dues", spec.port_dues)
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
 	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
@@ -1195,16 +1746,17 @@ func _call(service: Dictionary) -> void:
 	_event("%s's %s has arrived" % [who, service.kind])
 
 
-## Whether the channel is deep enough for `kind` and some apron long enough, busy or not.
 ## Whether lines may offer a service of `kind` at berth `apron`: unlocked,
-## the channel deep enough, the berth long enough and a crane on it that
-## reaches across the ship.
+## a lane deep enough from the sea to it, the berth long enough and a crane
+## on it that reaches across the ship.
 func _could_offer(kind: String, apron: int) -> bool:
-	return unlocked(kind) and channel_depth >= rules.ship_classes[kind].draft and AreaFlow.could_work_at(self, kind, apron)
+	return unlocked(kind) and Marine.reaches(self, kind, apron, 0, true) and AreaFlow.could_work_at(self, kind, apron)
 
 
-func _could_berth(kind: String) -> bool:
-	return channel_depth >= rules.ship_classes[kind].draft and AreaFlow.could_berth(self, kind)
+## Whether some apron long enough for `kind` can be reached from the sea,
+## busy or not, at its full draft or (`light`) its light draft.
+func _could_berth(kind: String, light := false) -> bool:
+	return AreaFlow.ready_aprons(self).any(func(apron: int) -> bool: return AreaFlow._length(self, apron) >= AreaFlow.ship_cells(self, kind) and Marine.reaches(self, kind, apron, 0, light))
 
 
 ## Lines may offer a new service for the berth with a crane that has the
@@ -1275,18 +1827,29 @@ func _work(ship: Ship) -> void:
 	ship.prev_sail = ship.sail
 	match ship.state:
 		Ship.State.ANCHORED:
-			AreaFlow.berth(self, ship)
+			if not AreaFlow.berth(self, ship):
+				Marine.wait(self, ship)
+		Ship.State.ANCHORING:
+			if not Marine.under_way(self, ship, 1):
+				return
+			if Marine.sail(self, ship, 1):
+				Marine.release(ship)
+				ship.state = Ship.State.ANCHORED
 		Ship.State.ARRIVING:
-			ship.sail = minf(ship.sail + SimClock.TICK_SECONDS / rules.sail_seconds, 1.0)
-			if ship.sail == 1.0:
+			if not Marine.under_way(self, ship, 1):
+				return
+			if Marine.sail(self, ship, 1, Marine.berthing_limit(self, ship)):
+				Marine.release(ship)
 				ship.state = Ship.State.WORKING
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind, areas.list[ship.apron].start)
 		Ship.State.WORKING:
 			AreaFlow.work(self, ship)
 		Ship.State.LEAVING:
-			ship.sail -= SimClock.TICK_SECONDS / rules.sail_seconds
-			if ship.sail <= 0.0:
+			if not Marine.under_way(self, ship, -1):
+				return
+			ship.tugs = 0  # they have pushed it off the quay
+			if Marine.sail(self, ship, -1):
 				ships.erase(ship)
 				_departures += 1
 
@@ -1296,15 +1859,20 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	var now := clock.calendar_minutes()
 	var hours := (now - ship.berthed) / 60.0
 	var late := maxf(now - ship.due, 0.0) / 60.0
-	ship_log.append({"kind": ship.kind, "line": ship.line, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
-	if ship_log.size() > 10:
+	var terminal: int = areas.list[ship.apron].terminal
+	ship_log.append({"kind": ship.kind, "line": ship.line, "terminal": terminal, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
+	if late == 0.0:
+		on_time_calls[ship.kind] = on_time_calls.get(ship.kind, 0) + 1
+	if ship_log.size() > SHIP_LOG_CALLS:
 		ship_log.pop_front()
 	year.calls += 1
 	year.berth_hours += hours
 	year.moves += ship.moves
 	# Shippers dislike storage fees above the fair rate, and the line hears it.
 	var fees: float = rules.storage.satisfaction_per_dollar * maxf(storage.fee - rules.storage.fair_fee, 0.0)
-	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, kpis().gate_turn_minutes, fees))
+	_event_if(contracts.called(ship.line, late, ship.moves / hours if hours > 0.0 else 0.0, terminal_turn_minutes(terminal), fees))
+	_check_milestones()
+	_check_objectives()
 
 
 func _new_box(kind: String, due: float, line: String) -> int:
@@ -1316,7 +1884,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place(), "from": 0, "to": 0}
 	exports += 1 if kind == "export" else 0
 	return id
 
@@ -1351,6 +1919,18 @@ func by_rail_to(id: int) -> bool:
 ## Import `id` has left for the hinterland: once empties are unlocked, it
 ## comes back as an empty of its line and size return_days later, with the
 ## chance return_share; the rest go back to inland depots.
+## Box `id`, a transfer, has left its terminal by road: an internal move
+## charged to that terminal; it waits to go in to the other as an export.
+func _transfer_out(id: int) -> void:
+	ledger.post("transfers", -rules.transfers.cost_per_box, boxes[id].from)
+	transfers.append({"box": id, "terminal": boxes[id].to})
+	_claimed.erase(id)
+	boxes[id].kind = "export"
+	boxes[id].to = 0
+	boxes[id].in = -1.0
+	exports += 1
+
+
 func _import_left(id: int) -> void:
 	if lock_error("empties") == "" and rng.randf() < rules.empties.return_share:
 		returning.append({"at": clock.calendar_minutes() + rules.empties.return_days * SimClock.MINUTES_PER_DAY, "line": boxes[id].line, "teu": boxes[id].teu})
@@ -1383,15 +1963,14 @@ func _drop_box(id: int) -> void:
 
 
 ## Boxes in the yard past their free days.
-func _storage_due() -> int:
+func _storage_due() -> Dictionary:
 	var now := clock.calendar_minutes()
-	var count := 0
-	var stacked: Array = []
+	var count := {}  # terminal -> boxes
 	for area: int in area_stacks:
-		stacked.append_array(area_stacks[area].boxes())
-	for id: int in stacked:
-		if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
-			count += 1
+		var terminal: int = areas.list[area].terminal if area in areas.list else 0
+		for id: int in area_stacks[area].boxes():
+			if boxes[id].in >= 0.0 and now - boxes[id].in > storage.free_days * SimClock.MINUTES_PER_DAY:
+				count[terminal] = count.get(terminal, 0) + 1
 	return count
 
 

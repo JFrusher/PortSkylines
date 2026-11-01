@@ -5,16 +5,36 @@ extends RefCounted
 ## of the log. Also test rules that make a port work at once, and services.
 
 
-## A copy of `game_rules` for a port that works at once: cranes stand the
-## moment they are ordered, the channel is M2's 14 m, deep enough for
-## feeders and Panamaxes, and every milestone is already reached.
-static func quick(game_rules := Content.base()) -> Dictionary:
+## A copy of `game_rules` on the "strait" map: a straight coast down the
+## west edge, the sea 300 m wide and 16 m deep from the shore out, which the
+## tests' ports are drawn against.
+static func strait(game_rules := Content.base()) -> Dictionary:
 	var copy := game_rules.duplicate(true)
+	copy.map = "strait"
+	return copy
+
+
+## `rules` (on the strait) with its water `metres` deep everywhere.
+static func water(rules: Dictionary, metres: float) -> Dictionary:
+	rules.maps.strait.depth = {"shore": metres, "per_metre": 0.0, "max": metres}
+	return rules
+
+
+## strait() for a port that works at once: cranes stand the moment they
+## are ordered, every milestone is already reached, and no ship needs a
+## pilot or tugs (test_marine tests those).
+static func quick(game_rules := Content.base()) -> Dictionary:
+	var copy := strait(game_rules)
 	for crane: Dictionary in copy.sts_cranes.values():
 		crane.lead_days = 0.0
-	copy.channel.start_depth = 14.0
 	for milestone: Dictionary in copy.milestones.values():
 		milestone.teu = 0
+		milestone.reputation = 0.0
+		milestone.on_time = 0.0
+		milestone.productivity = 0.0
+	for spec: Dictionary in copy.ship_classes.values():
+		spec.pilot = false
+		spec.tugs = 0
 	return copy
 
 
@@ -36,7 +56,8 @@ static func calls(sim: PortSim, kind := "feeder", first := 10, every := 45, coun
 
 
 ## A tick-tagged log: AreaPort.chain's port built by commands at tick 0 (a
-## coast road and an east road to the highway, a quay apron, a gate, an
+## coast road and an east road to the highway, a quay apron and a ship lane
+## in to it, a gate, an
 ## import and an export block in one terminal, three STS cranes and six
 ## tractors), then `extra_commands` random ones at random ticks: roads and
 ## areas south of the port, taken out again, cranes, tractors and the economy.
@@ -45,12 +66,13 @@ static func calls(sim: PortSim, kind := "feeder", first := 10, every := 45, coun
 static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	var entry := PortSim.new().site_entry()
+	var entry := PortSim.new(0, strait()).site_entry()
 	var port: Array[Dictionary] = [
 		{"op": "paint_terminal", "cells": _region(), "terminal": -1},
 		{"op": "build_road", "from": Vector2i(86, 200), "to": Vector2i(86, entry.y), "type": "terminal_1_1"},
-		{"op": "build_road", "from": Vector2i(86, entry.y), "to": PortSim.new().site_entry_point(), "type": "terminal_1_1"},
+		{"op": "build_road", "from": Vector2i(86, entry.y), "to": PortSim.new(0, strait()).site_entry_point(), "type": "terminal_1_1"},
 		{"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 79},
+		{"op": "build_ship_lane", "from": Vector2i(0, 240), "to": Vector2i(68, 240), "type": "narrow"},
 		{"op": "build_area", "type": "gate", "segment": 2, "side": -1, "from": 299, "to": 313},
 		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 29, "to": 58},
 		{"op": "build_area", "type": "yard_block", "segment": 2, "side": 1, "from": 60, "to": 89},
@@ -92,8 +114,24 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 			command = {"op": "paint_terminal", "cells": patch, "terminal": rng.randi_range(-1, 3)}
 		elif roll < 0.75:
 			command = {"op": "place_sts", "kind": "sts", "apron": rng.randi_range(1, 6), "along": rng.randi_range(0, 80)}
-		elif roll < 0.88:
+		elif roll < 0.84:
 			command = {"op": "buy_tractors", "count": rng.randi_range(1, 2)}
+		# The water south of the port: lanes, anchorages, dredging, widening,
+		# breakwaters, pilot stations and tug depots, many refused.
+		elif roll < 0.92:
+			var y := rng.randi_range(300, 390)
+			var water: Array[Dictionary] = [
+				{"op": "build_ship_lane", "from": Vector2i(0, y), "to": Vector2i(rng.randi_range(20, 70), y), "type": ["narrow", "wide"][rng.randi() % 2]},
+				{"op": "build_anchorage", "from": Vector2i(rng.randi_range(0, 20), y), "to": Vector2i(rng.randi_range(50, 70), y + rng.randi_range(50, 90))},
+				{"op": "dredge_lane", "segment": rng.randi_range(1, 6), "metres": 1},
+				{"op": "widen_ship_lane", "segment": rng.randi_range(1, 6)},
+				{"op": "build_breakwater", "from": Vector2i(rng.randi_range(30, 60), y), "to": Vector2i(rng.randi_range(30, 60), y + rng.randi_range(1, 10))},
+				{"op": "build_pilot_station", "cell": Vector2i(rng.randi_range(66, 72), y)},
+				{"op": "build_tug_depot", "cell": Vector2i(rng.randi_range(66, 72), y)},
+				{"op": "hire_pilots", "station": rng.randi_range(1, 3), "count": 1},
+				{"op": "buy_tugs", "depot": rng.randi_range(1, 3), "count": 1},
+			]
+			command = water[rng.randi() % water.size()]
 		# The economy: offers are numbered from 1, so some answers find one and
 		# some are refused; loans, land and dredging are refused without the cash.
 		else:
@@ -103,7 +141,7 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 				{"op": "cancel_service", "id": rng.randi_range(1, 10)},
 				{"op": "take_loan", "kind": ["small", "medium"][rng.randi() % 2]},
 				{"op": "buy_land", "tile": Vector2i(rng.randi_range(0, 2), rng.randi_range(0, 2))},
-				{"op": "dredge", "metres": 1},
+				{"op": "dredge_berth", "apron": rng.randi_range(1, 4), "metres": 1},
 				{"op": "set_storage", "free_days": rng.randi_range(0, 3), "fee": rng.randi_range(0, 20) * 10},
 			]
 			command = economy[rng.randi() % economy.size()]

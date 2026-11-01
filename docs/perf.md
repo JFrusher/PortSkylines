@@ -521,3 +521,43 @@ Replaying a hash with threads doesn't apply: the sim has no threads.
 `profile_sim.gd` and `timed_lanes.gd` had fallen behind the tick (empties,
 parks, junctions, traffic epochs) and the two-argument `LaneTraffic`; CI
 doesn't compile bench scripts, so neither failed until now.
+
+### Better crane models (M8 step P, 2026-11-01)
+
+The STS crane's frame (four legs on bogies, sill and portal beams, a twin
+boom with a walkway, the A-frame and the machinery house) is now one merged
+mesh, where its legs and girder were five meshes; RTGs and RMGs gain sill
+and side beams, a trolley with its spreader, and a cab, in their existing
+merged mesh. On the debug mega port (18 STS cranes, 80 RTG blocks), the
+camera over the first berth, 120 frames at 1280x720 on llvmpipe:
+
+| | Draw calls | Frame time, three runs |
+|---|---|---|
+| Before | 719 | 1027, 1040, 1115 ms |
+| After | 606 | 1078, 1040, 1156 ms |
+
+Draw calls fall by 113; frame time is within the runs' spread (means
+1061 against 1091 ms, both runs slower together the second time), so no
+worse here. llvmpipe is software GL: this says nothing about a GPU.
+
+## M8 close: the endgame bench at port scale (2026-11-01)
+
+The developer chose to record the bench at port scale rather than gate
+M8 on it. `bench/endgame.bin` rebuilt on M8's code (six berths, each with
+a ship lane out to sea): 1,462 lorries, 1,534 vehicles, 20,321 boxes, 6
+ships, 2 trains. `profile_sim.gd -- 200`: **21.3 ms a tick** untimed. The
+sim bench: 1.32 ms a tick (M7: 1.28).
+
+200-tick windows from tick 200: 14.6, 14.7, 12.4 and 11.0 ms a tick, with
+1,467 to 1,500 vehicles. Unlike M7's save the port doesn't drain in these
+windows: its Panamaxes are still sailing in along their lanes, so export
+demand stays positive (2,728 boxes) and an export lorry comes in every
+tick under the bench's rules.
+
+**Open: export dispatch.** `dispatch_export_lorry` is 30% of the profiled
+tick (7.0 ms; 0.9 ms at M7's close, when demand was met and it returned
+early). Timed on this save: `export_demand` 2.1 ms and `_export_room`
+1.8 ms a call, each scanning all 1,534 vehicles. Neither changed in M8;
+the new save's positive demand reaches them every tick. Keeping counts of
+export lorries per terminal, rather than scanning, is the likely fix; it
+waits on a decision with the rest of the speed work (M6 close).

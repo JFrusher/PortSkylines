@@ -25,7 +25,8 @@
 			"classes": {
 				"panamax": 2.0,
 				"feeder": 1.0,
-				"neopanamax": 1.0
+				"neopanamax": 1.0,
+				"ulcv": 1.0
 			},
 			"sensitivity": 0.7,
 			"rail_share": 0.15

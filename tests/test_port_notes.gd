@@ -75,6 +75,7 @@ func _two_berths() -> PortSim:
 	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 79})
+	AreaPort.add_lane(sim, sim.areas.list.keys().max())
 	return sim
 
 

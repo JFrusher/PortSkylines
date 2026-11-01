@@ -35,3 +35,18 @@ These follow the developer's working style: simple over complex, one way to do t
 8. **Evidence before fixes.** When something misbehaves, write down the theory, add the smallest logging or test that proves it, and only then change code.
 9. **Exit criteria close the phase.** A phase ends when every exit criterion in its file passes, not when its time runs out. If time runs out, cut steps marked *(cuttable)*, never exit criteria.
 10. **Tag the end of each phase:** `git tag m<N>` on the merge commit.
+11. **Check the variety in every playtest.** Each phase's playtest notes say whether there was enough to build and choose between, and what was missing.
+
+## Content list
+
+What the port can be built from, and which phase adds what is missing. Added 31 Oct 2026; a new piece of content goes here before it goes in a phase.
+
+| Kind | Now | Added by |
+|---|---|---|
+| Areas | yard block, quay apron, three gate sizes, truck park, empty depot | M8 tug depot, anchorage; M9 barge berth; M11 AGV depot, gatehouse, maintenance bay |
+| Roads | terminal 1+1 and 2+2, one-way, tractor lane | M8 ship lanes; M11 power and data lines |
+| Quay cranes | STS, wide STS | M8 ULCV crane (23+ rows) |
+| Yard gear | reach stacker, RTG, RMG, empty handler | M9 straddle carrier; M11 ASC |
+| Horizontal transport | tractors | M9 straddle carriers; M11 AGVs |
+| Ships | feeder, Panamax, Neopanamax | M8 ULCV, pilots, tugs; M9 barge, transhipment feeder |
+| Land side | lorries, trains | M9 barges |

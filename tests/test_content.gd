@@ -10,21 +10,32 @@ var _failures := 0
 func _initialize() -> void:
 	var base := Content.base()
 	_expect(base.start_money is int, true, "whole numbers load as ints")
-	_expect(base.sail_seconds is float, true, "float keys load as floats")
+	_expect(base.water.ship_speed is float, true, "float keys load as floats")
 	_expect(_error_for({"start_money": null}), DIR + ": missing \"start_money\"", "a missing key names the key")
-	_expect(_error_for({"site": {"width": 2400, "height": 2400}}), "rules.json: site: missing \"sea_width\"", "a missing nested key names the path")
+	_expect(_error_for({"site": {"width": 2400}}), "rules.json: site: missing \"height\"", "a missing nested key names the path")
 	_expect(_error_for({"start_money": "lots"}), "rules.json: start_money: must be a number", "a wrong type names the key")
 	_expect(_error_for({"start_money": 6.5}), "rules.json: start_money: must be a whole number", "an int key refuses fractions")
 	_expect(_error_for({"colour": 1}), "rules.json: colour: unknown key", "an unknown key is refused")
 	_expect(base.ship_classes.feeder.length is int, true, "records under a \"*\" key are checked and typed")
-	for key: String in ["sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds"]:
+	for key: String in ["lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds"]:
 		for value: int in [0, -1]:
 			_expect(_error_for({key: value}), "rules.json: %s: must be greater than zero" % key, "%s refuses %d" % [key, value])
 		_expect(_error_for({key: 1}), "", "%s accepts a positive whole number" % key)
-	_expect(_error_for({"sail_seconds": 0.5}), "", "a positive fractional duration is valid")
+	_expect(_error_for({"lorry_interval_minutes": 0.5}), "", "a positive fractional duration is valid")
 	_expect(_error_for({"import_dwell_minutes": 0}), "", "imports may leave at once")
-	_expect(_error_for({"site": {"width": 2402, "height": 2400, "sea_width": 300}}), "site.width: must be a positive multiple of 4 m", "the site is whole grid cells")
-	_expect(_error_for({"site": {"width": 2400, "height": 0, "sea_width": 300}}), "site.height: must be a positive multiple of 4 m", "the site has a size")
+	_expect(_error_for({"site": {"width": 2402, "height": 2400}}), "site.width: must be a positive multiple of 4 m", "the site is whole grid cells")
+	_expect(_error_for({"site": {"width": 2400, "height": 0}}), "site.height: must be a positive multiple of 4 m", "the site has a size")
+	# Maps: a known one is played, polygons are points on the site, the highway comes in on land.
+	_expect(_error_for({"map": "atlantis"}, "maps.json"), "map: unknown map \"atlantis\"", "the map played must be one of the maps")
+	var maps: Dictionary = Content.base().maps.duplicate(true)
+	maps.strait.land = [[300, 0], [2400, 0]]
+	_expect(_error_for({"maps": maps}, "maps.json"), "maps.strait.land: a polygon needs at least 3 points", "a coast needs a polygon")
+	maps = Content.base().maps.duplicate(true)
+	maps.strait.land = [[300, 0], [2000, 0], [2000, 2400], [300, 2400]]
+	_expect(_error_for({"maps": maps}, "maps.json"), "maps.strait.land: the highway's entry on the east edge must be land", "the highway comes in on land")
+	maps = Content.base().maps.duplicate(true)
+	maps.strait.islands = [[[10, 10], [20, 10], [9000, 20]]]
+	_expect(_error_for({"maps": maps}, "maps.json"), "maps.strait.islands: [9000.0, 20.0] is not an [x, y] point on the site", "map points stay on the site")
 	var roads: Dictionary = Content.base().road_types.duplicate(true)
 	roads.one_way.lorries = "yes"
 	_expect(_error_for({"road_types": roads}, "roads.json"), "roads.json: road_types.one_way.lorries: must be true or false", "a true/false key refuses text")

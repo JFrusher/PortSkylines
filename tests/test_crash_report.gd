@@ -3,6 +3,7 @@ extends SceneTree
 ## report holds the log, a loadable save and the content hash.
 ## godot --headless --script res://tests/test_crash_report.gd
 
+const RandomPort := preload("res://tests/random_port.gd")
 var _failures := 0
 
 
@@ -14,7 +15,7 @@ func _initialize() -> void:
 	_expect(reporter.errored, false, "a warning does not ask for a report")
 	reporter._log_error("f", "file.gd", 1, "code", "", false, Logger.ERROR_TYPE_SCRIPT, no_trace)
 	_expect(reporter.errored, true, "a script error asks for a report")
-	var sim := PortSim.new(3)
+	var sim := PortSim.new(3, RandomPort.strait())
 	sim.tick()
 	var dir := CrashReporter.write(sim)
 	_expect(dir.begins_with(CrashReporter.REPORTS), true, "the report goes in user://reports")

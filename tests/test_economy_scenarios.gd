@@ -1,7 +1,7 @@
 extends SceneTree
 ## The M3 economy scenarios, scripted end to end: overbooking a berth makes
 ## calls late, raising storage fees makes shippers collect sooner, and
-## dredging the channel lets a deeper class call.
+## dredging the lanes and berth lets a deeper class call.
 ## godot --headless --script res://tests/test_economy_scenarios.gd
 
 const AreaPort := preload("res://tests/area_port.gd")
@@ -71,16 +71,15 @@ func _test_higher_fees_lower_dwell() -> void:
 	_expect(dwell[1] < dwell[0] * 0.6, true, "average dwell falls from %.1f h to %.1f h" % [dwell[0], dwell[1]])
 
 
-## Panamax calls miss an 11 m channel; after dredging to 13 m the next one
-## berths.
+## Panamax calls miss 11 m of water; after dredging the lane and the berth
+## to 13 m the next one berths.
 func _test_dredging_lets_a_panamax_call() -> void:
-	var rules := RandomPort.quick()
-	rules.channel.start_depth = 11.0
-	var sim := _port(rules)
-	sim.channel_depth = 11.0
+	var sim := _port(RandomPort.water(RandomPort.quick(), 11.0))
 	RandomPort.calls(sim, "panamax", 10, 60, 3)
 	_run(sim, 30)
-	_expect([sim.ships.size(), sim.last_event().contains("needs 13 m of channel")], [0, true], "an 11 m channel turns a Panamax away (%s)" % sim.last_event())
-	_expect(sim.apply({"op": "dredge", "metres": 2}), "", "dredge to 13 m")
+	_expect([sim.ships.size(), sim.last_event().contains("13.0 m deep all the way")], [0, true], "11 m of water turns a Panamax away (%s)" % sim.last_event())
+	for lane: int in sim.ship_lanes.segments:
+		_expect(sim.apply({"op": "dredge_lane", "segment": lane, "metres": 2}), "", "dredge the lane to 13 m")
+	_expect(sim.apply({"op": "dredge_berth", "apron": 1, "metres": 2}), "", "and the berth")
 	_run(sim, 60)
 	_expect(sim.ships.size() == 1 and sim.ships[0].kind == "panamax", true, "the next Panamax calls")

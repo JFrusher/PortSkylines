@@ -266,6 +266,7 @@ Button/styles/hover_pressed = SubResource("active")
 Button/styles/normal = SubResource("card")
 Button/styles/pressed = SubResource("active")
 CategoryButton/base_type = &"Button"
+CategoryButton/font_sizes/font_size = 14
 CategoryButton/fonts/font = SubResource("semibold")
 CategoryHeader/base_type = &"Label"
 CategoryHeader/colors/font_color = Color(0.58, 0.639, 0.722, 1)

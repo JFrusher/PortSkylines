@@ -49,6 +49,8 @@ const AREA_COLOR := {
 	"parking": Color(0.38, 0.4, 0.42),
 }
 const AREA_TOP := 0.2
+## How high ship lanes are drawn: just over the water.
+const LANE_HEIGHT := -0.2
 ## Camera distance, in world units, past which yard boxes are drawn plain.
 const STACK_DETAIL_RANGE := 30.0
 ## A container's real size in metres, by TEU, for things drawn on areas.
@@ -104,7 +106,7 @@ const INFO_TOP := 0.6
 const JAM_SECONDS := 2.0
 const INFO_SECONDS := 0.25
 const SEA_START := -18.0  # how far the water reaches past the site
-const SEA_DISTANCE := 30.0  # how far out to sea ships appear
+const LAND_COLOUR := Color(0.36, 0.42, 0.3)
 
 var sim: PortSim
 ## The info view drawn over the map: a key of INFO_LEGENDS, or "" for none.
@@ -113,6 +115,13 @@ var info_view := ""
 var alpha := 1.0
 
 var _water := ShaderMaterial.new()
+var _land := ShaderMaterial.new()
+## The coast as a texture a pixel a cell: red is land, green the water's depth
+## against its map's deepest; redrawn when water is filled.
+var _coast := ImageTexture.new()
+var _coast_filled := -1
+## Each land tile a pixel, red where the port owns it.
+var _owned := ImageTexture.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
 # shortcut: ships are one node each, fine at the handful a port works at once; MultiMesh them if berths grow past ~20.
 var _ships := {}  # PortSim.Ship -> Node3D
@@ -147,6 +156,9 @@ var _areas := MeshInstance3D.new()
 ## The area and road versions the areas were drawn for: idle tints follow the roads.
 var _areas_drawn := []
 var _area_preview := MeshInstance3D.new()
+## The ship lanes on the water, and what they were drawn for.
+var _ship_lanes := MeshInstance3D.new()
+var _ship_lanes_drawn := []
 ## The road being dragged out, tinted by whether it can be built.
 var _road_preview := MeshInstance3D.new()
 ## A ring on each end of a road drag that joins a road, so a join is plain.
@@ -157,29 +169,42 @@ var _snap_marks := MeshInstance3D.new()
 var _junction_signs := MeshInstance3D.new()
 var _junctions_drawn: Variant = null
 var _hover := _box(Vector3(Grid.CELL, 1.5, Grid.CELL) / METRES_PER_UNIT, Color(1, 1, 1, 0.5))
-## Shade over each land tile the port does not own; rebuilt when it buys one.
 var _info := MeshInstance3D.new()
 var _info_left := 0.0
-var _unowned := {}  # land tile -> Node3D
 var _drawn_land := -1
 
 
 func _ready() -> void:
 	var site := site_size(sim)
-	var sea: float = sim.rules.site.sea_width / METRES_PER_UNIT
 	var water := _box(Vector3(site.x - SEA_START * 2, 0.1, site.y - SEA_START * 2), Color.WHITE)
 	water.position = Vector3(site.x / 2.0, -0.35, site.y / 2.0)
 	_water.shader = load("res://shaders/water.gdshader")
-	_water.set_shader_parameter("coast_x", sea)
 	water.material_override = _water
 	add_child(water)
-	# The land runs on past the east edge, where the highway comes in from the hinterland.
-	var land := _box(Vector3(site.x - sea - SEA_START, 1, site.y), Color(0.36, 0.42, 0.3))
-	land.position = Vector3((site.x - SEA_START + sea) / 2.0, -0.5, site.y / 2.0)
+	# The site's land is a plane cut to the coast; past the east edge, where
+	# the highway comes in from the hinterland, the land runs on.
+	var land := MeshInstance3D.new()
+	land.mesh = PlaneMesh.new()
+	(land.mesh as PlaneMesh).size = site
+	land.position = Vector3(site.x / 2.0, 0.0, site.y / 2.0)
+	_land.shader = load("res://shaders/land.gdshader")
+	land.material_override = _land
 	add_child(land)
+	var hinterland := _box(Vector3(-SEA_START, 1, site.y - SEA_START * 2), LAND_COLOUR)
+	hinterland.position = Vector3(site.x - SEA_START / 2.0, -0.5, site.y / 2.0)
+	add_child(hinterland)
+	for material: ShaderMaterial in [_water, _land]:
+		material.set_shader_parameter("coast", _coast)
+		material.set_shader_parameter("site", site)
+	_land.set_shader_parameter("owned", _owned)
+	_land.set_shader_parameter("colour", LAND_COLOUR)
 	add_child(_hover)
-	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview]:
+	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview, _ship_lanes]:
 		add_child(node)
+	_ship_lanes.material_override = StandardMaterial3D.new()
+	_ship_lanes.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_ship_lanes.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_ship_lanes.material_override.vertex_color_use_as_albedo = true
 	add_child(_info)
 	for preview: MeshInstance3D in [_road_preview, _area_preview, _info]:
 		preview.material_override = StandardMaterial3D.new()
@@ -316,9 +341,12 @@ func _process(dt: float) -> void:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
+	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys(), sim.areas.breakwaters.keys()] != _ship_lanes_drawn:
+		_draw_ship_lanes()
 	_draw_junctions()
-	var channel: Dictionary = sim.rules.channel
-	_water.set_shader_parameter("channel", inverse_lerp(channel.start_depth, channel.max_depth, sim.channel_depth))
+	if sim.areas.filled.size() != _coast_filled:
+		_coast_filled = sim.areas.filled.size()
+		_coast.set_image(coast_image(sim))
 	if sim.land.size() != _drawn_land:
 		_draw_land()
 	_draw_ships()
@@ -418,6 +446,51 @@ static func info_shares(sim: PortSim, view: String) -> Dictionary:
 				var fill := sim.block_fill(id)
 				shares[sim.areas.cells(id)] = fill.x / float(maxi(fill.y, 1))
 	return shares
+
+
+## Each ship lane as a pale band over the water it covers, its line down the
+## middle: white where dredged, else pale blue.
+func _draw_ship_lanes() -> void:
+	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys(), sim.areas.breakwaters.keys()]
+	_ship_lanes.visible = not (sim.ship_lanes.segments.is_empty() and sim.anchorages.is_empty() and sim.pilot_stations.is_empty() and sim.tug_depots.is_empty() and sim.areas.breakwaters.is_empty())
+	if not _ship_lanes.visible:
+		return
+	var tool := _road_tool()
+	# Breakwaters as grey rock.
+	tool.set_color(Color(0.55, 0.55, 0.52, 1.0))
+	for wall: Dictionary in sim.areas.breakwaters.values():
+		for cell in Areas.breakwater_cells(wall.from, wall.to):
+			_cell_quad(tool, cell, 0.05)
+	# Pilot stations white and tug depots orange, five cells across.
+	for bases: Array in [[sim.pilot_stations, Color(0.95, 0.95, 0.95, 0.9)], [sim.tug_depots, Color(1.0, 0.55, 0.15, 0.9)]]:
+		tool.set_color(bases[1])
+		for base: Dictionary in bases[0].values():
+			for dx: int in range(-2, 3):
+				for dy: int in range(-2, 3):
+					_cell_quad(tool, base.cell + Vector2i(dx, dy), LANE_HEIGHT + 0.05)
+	# Each anchorage as one pale yellow rectangle, a dot at each spot.
+	for id: int in sim.anchorages:
+		var a: Dictionary = sim.anchorages[id]
+		tool.set_color(Color(1.0, 0.9, 0.4, 0.15))
+		var low := Vector2(a.from) * Grid.CELL
+		var high := Vector2(a.to + Vector2i.ONE) * Grid.CELL
+		var corners := [Vector2(low.x, low.y), Vector2(high.x, low.y), Vector2(high.x, high.y), Vector2(low.x, high.y)]
+		for i: int in [0, 1, 2, 0, 2, 3]:
+			tool.add_vertex(_world(corners[i], LANE_HEIGHT))
+		tool.set_color(Color(1.0, 0.9, 0.4, 0.6))
+		for spot in Marine.spots(sim, id):
+			_cell_quad(tool, Vector2i(spot.floor()), LANE_HEIGHT + 0.01)
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		var a: Vector2i = sim.ship_lanes.nodes[lane.a]
+		var b: Vector2i = sim.ship_lanes.nodes[lane.b]
+		tool.set_color(Color(0.75, 0.9, 1.0, 0.12))
+		for cell in sim.ship_lanes.footprint(a, b, lane.type):
+			_cell_quad(tool, cell, LANE_HEIGHT)
+		tool.set_color(Color(1, 1, 1, 0.55) if lane.dredged > 0.0 else Color(0.7, 0.85, 1.0, 0.45))
+		for cell in RoadNet.line(a, b):
+			_cell_quad(tool, cell, LANE_HEIGHT + 0.01)
+	_ship_lanes.mesh = tool.commit()
 
 
 ## One 4 m cell as a flat square `height` metres up.
@@ -560,27 +633,32 @@ static func _world(metres: Vector2, height: float) -> Vector3:
 	return Vector3(metres.x, height, metres.y) / METRES_PER_UNIT
 
 
+## Marks the land tiles the port owns; the land shader shades the rest.
 func _draw_land() -> void:
 	_drawn_land = sim.land.size()
-	var site := site_size(sim)
-	var size: float = sim.rules.land.metres / METRES_PER_UNIT
-	var sea: float = sim.rules.site.sea_width / METRES_PER_UNIT
-	for y in ceili(site.y / size):
-		for x in ceili(site.x / size):
-			var tile := Vector2i(x, y)
-			if sim.land.has(tile) and _unowned.has(tile):
-				_unowned[tile].queue_free()
-				_unowned.erase(tile)
-			elif not sim.land.has(tile) and not _unowned.has(tile):
-				# Only the land part of the tile: the sea is nobody's to buy.
-				var from := maxf(x * size, sea)
-				var width := minf((x + 1) * size, site.x) - from
-				if width <= 0.0:
-					continue
-				var shade := _box(Vector3(width, 0.02, size), Color(0, 0, 0, 0.3))
-				shade.position = Vector3(from + width / 2.0, 0.02, (y + 0.5) * size)
-				add_child(shade)
-				_unowned[tile] = shade
+	var tiles := Vector2i((site_size(sim) * METRES_PER_UNIT / sim.rules.land.metres).ceil())
+	var image := Image.create(tiles.x, tiles.y, false, Image.FORMAT_R8)
+	for tile: Vector2i in sim.land:
+		image.set_pixelv(tile, Color.RED)
+	_owned.set_image(image)
+
+
+## The coast a pixel a cell (see _coast): red 1 on land, green the water's
+## depth against max_depth metres.
+static func coast_image(sim: PortSim) -> Image:
+	var size := sim.areas.coast.size
+	var deepest: float = MapGen.of(sim.rules, sim.map).depth.max
+	var bytes := PackedByteArray()
+	bytes.resize(size.x * size.y * 2)
+	for y: int in size.y:
+		for x: int in size.x:
+			var cell := Vector2i(x, y)
+			var i := (y * size.x + x) * 2
+			if sim.areas.is_water(cell):
+				bytes[i + 1] = roundi(clampf(sim.areas.coast.depth(cell) / deepest, 0.0, 1.0) * 255.0)
+			else:
+				bytes[i] = 255
+	return Image.create_from_data(size.x, size.y, false, Image.FORMAT_RG8, bytes)
 
 
 ## The 4 m grid cell at world point `at`.
@@ -619,18 +697,14 @@ func _livery(line: String, id: int) -> Color:
 func _draw_ships() -> void:
 	_forget_gone(_ships, sim.ships)
 	for ship: PortSim.Ship in sim.ships:
-		# shortcut: ships at anchorage are only counted in the HUD; draw them offshore if players miss them.
-		if ship.state == PortSim.Ship.State.ANCHORED:
+		# Ships waiting out at sea, off the map, are only counted in the HUD.
+		if ship.state == PortSim.Ship.State.ANCHORED and not ship.anchorage:
 			continue
 		var length: float = sim.rules.ship_classes[ship.kind].length / METRES_PER_UNIT
 		if ship not in _ships:
 			_ships[ship] = _ship_model(ship, length)
 		var model: Node3D = _ships[ship]
-		var sail := lerpf(ship.prev_sail, ship.sail, alpha)
-		var frame := _berth_frame(ship)
-		var alongside := Vector3(frame[0].x, 0.0, frame[0].y)
-		var at_sea := alongside + Vector3(frame[1].x, 0, frame[1].y) * SEA_DISTANCE
-		model.position = at_sea.lerp(alongside, ease(sail, -2.0))
+		_sail(model, ship, lerpf(ship.prev_sail, ship.sail, alpha))
 		var spec: Dictionary = sim.rules.ship_classes[ship.kind]
 		# Imports still aboard, plus the exports loaded so far.
 		var aboard: int = ship.boxes + spec.export_moves - ship.exports
@@ -643,6 +717,52 @@ func _draw_ships() -> void:
 			for i in slots.size():
 				deck.set_instance_transform(i, Transform3D(_deck_box, slots[i]))
 				deck.set_instance_color(i, _livery(ship.line, i))
+
+
+## Puts `model` a fraction `sail` of the way along `ship`'s course: along the
+## lanes, then in to lie alongside, its bow along its way until the last leg,
+## where it turns to lie along the quay.
+func _sail(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
+	if ship.anchorage:
+		_to_anchor(model, ship, sail)
+		return
+	var frame := _berth_frame(ship)
+	var quay_heading := atan2(-frame[1].y, frame[1].x)
+	if ship.path.size() < 2:
+		model.position = Vector3(frame[0].x, 0.0, frame[0].y)
+		model.rotation.y = quay_heading
+		return
+	var points: Array[Vector2] = []
+	for point: Vector2 in ship.path.slice(0, -1):
+		points.append(point * Grid.CELL / METRES_PER_UNIT)
+	points.append(frame[0])
+	var at := Marine.point_along(points, sail)
+	model.position = Vector3(at.x, 0.0, at.y)
+	# Which leg it is on, and how far along it.
+	var length := 0.0
+	for i in range(1, points.size()):
+		length += points[i - 1].distance_to(points[i])
+	var left := sail * length
+	for i in range(1, points.size()):
+		var leg := points[i - 1].distance_to(points[i])
+		if left <= leg or i == points.size() - 1:
+			var way := points[i] - points[i - 1]
+			var heading := atan2(way.x, way.y) if ship.state == PortSim.Ship.State.ARRIVING else atan2(-way.x, -way.y)
+			model.rotation.y = lerp_angle(heading, quay_heading, clampf(left / maxf(leg, 0.001), 0.0, 1.0)) if i == points.size() - 1 else heading
+			return
+		left -= leg
+
+
+## A ship sailing in to its spot at anchor, or lying there, bow along its
+## last leg in.
+func _to_anchor(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
+	var points: Array[Vector2] = []
+	for point: Vector2 in ship.path:
+		points.append(point * Grid.CELL / METRES_PER_UNIT)
+	var at := Marine.point_along(points, sail if ship.state == PortSim.Ship.State.ANCHORING else 1.0)
+	model.position = Vector3(at.x, 0.0, at.y)
+	var way := points[-1] - points[-2]
+	model.rotation.y = atan2(way.x, way.y)
 
 
 ## A ship's beam in world units: its rows of boxes across, plus hull each side.
@@ -684,8 +804,6 @@ static func deck_slots(length: float, count: int, rows: int) -> Array[Vector3]:
 ## and a deck of boxes, turned so its length lies along the quay.
 func _ship_model(ship: PortSim.Ship, length: float) -> Node3D:
 	var model := Node3D.new()
-	var side := Vector2(sim.areas.list[ship.apron].out)
-	model.rotation.y = atan2(-side.y, side.x)
 	var half := length / 2.0 - 0.2
 	var side_x := beam(sim.rules.ship_classes[ship.kind].outreach) / 2.0
 	var outline := PackedVector2Array([Vector2(-side_x, -half), Vector2(side_x, -half), Vector2(side_x, half - 1.0), Vector2(0, half), Vector2(-side_x, half - 1.0)])
@@ -761,18 +879,18 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var reach: float = CRANE_GAUGE / 2.0 + (Grid.CELL * depth / 2.0 - Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(spec.outreach)
 	model.set_meta("reach", reach)
 	var legs: float = (spec.width / 2.0 - 2.0) / METRES_PER_UNIT
-	for x: float in [-legs, legs]:
-		for z: float in [-CRANE_GAUGE / 2.0, CRANE_GAUGE / 2.0]:
-			var leg := _box(Vector3(0.06, CRANE_HEIGHT, 0.06), CRANE_COLOR)
-			leg.position = Vector3(x, CRANE_HEIGHT / 2.0, z)
-			model.add_child(leg)
-	var girder := _box(Vector3(0.24, 0.12, reach - CRANE_BACK + 0.2), CRANE_COLOR)
-	girder.position = Vector3(0, CRANE_HEIGHT, (reach + CRANE_BACK) / 2.0)
-	model.add_child(girder)
+	var body := MeshInstance3D.new()
+	body.name = "Body"
+	body.mesh = _sts_mesh(legs, reach)
+	model.add_child(body)
 	var trolley := _box(Vector3(0.24, 0.1, 0.32), Color(0.25, 0.25, 0.27))
 	trolley.name = "Trolley"
 	trolley.position.y = CRANE_HEIGHT - 0.11
 	model.add_child(trolley)
+	# The driver's cab, hung under the trolley's waterside end.
+	var cab := _box(Vector3(0.12, 0.1, 0.12), Color(0.92, 0.92, 0.9))
+	cab.position = Vector3(0.08, -0.1, 0.12)
+	trolley.add_child(cab)
 	var cable := _box(Vector3(0.02, 1.0, 0.02), Color(0.15, 0.15, 0.15))
 	cable.name = "Cable"
 	trolley.add_child(cable)
@@ -781,6 +899,45 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	trolley.add_child(spreader)
 	add_child(model)
 	return model
+
+
+## An STS crane's frame as one mesh, so it draws in one call: four legs on
+## wheeled bogies along the rails, a sill beam low and a portal beam high
+## between each pair, the twin boom from the backreach out over the water,
+## the A-frame above the landside legs with the machinery house behind it.
+## `legs` is half the leg spacing along the rails, `reach` how far the boom
+## runs out, in world units; +Z points out to the water.
+func _sts_mesh(legs: float, reach: float) -> Mesh:
+	var thick := 0.07
+	var water := CRANE_GAUGE / 2.0
+	var land := -CRANE_GAUGE / 2.0
+	var white := Color(0.92, 0.92, 0.9)
+	var grey := Color(0.25, 0.25, 0.27)
+	var parts := []
+	for x: float in [-legs, legs]:
+		for z: float in [land, water]:
+			parts.append([Vector3(thick, CRANE_HEIGHT, thick), Vector3(x, CRANE_HEIGHT / 2.0, z), CRANE_COLOR])
+			parts.append([Vector3(0.22, 0.05, 0.08), Vector3(x, 0.025, z), grey])
+		# Along each side, low and high, joining the landside and waterside legs.
+		for y: float in [CRANE_HEIGHT * 0.35, CRANE_HEIGHT * 0.95]:
+			parts.append([Vector3(thick * 0.8, thick * 0.8, CRANE_GAUGE), Vector3(x, y, 0.0), CRANE_COLOR])
+	for z: float in [land, water]:
+		# Across the rails between each pair of legs: the sill low, the portal high.
+		parts.append([Vector3(legs * 2.0, thick, thick), Vector3(0.0, CRANE_HEIGHT * 0.35, z), CRANE_COLOR])
+		parts.append([Vector3(legs * 2.0, thick * 1.4, thick * 1.4), Vector3(0.0, CRANE_HEIGHT * 0.95, z), CRANE_COLOR])
+	# The twin boom, backreach to tip, with a walkway between its girders.
+	var length := reach - CRANE_BACK + 0.2
+	for x: float in [-0.11, 0.11]:
+		parts.append([Vector3(0.06, 0.12, length), Vector3(x, CRANE_HEIGHT, (reach + CRANE_BACK) / 2.0), CRANE_COLOR])
+	parts.append([Vector3(0.16, 0.02, length), Vector3(0.0, CRANE_HEIGHT - 0.05, (reach + CRANE_BACK) / 2.0), grey])
+	# The A-frame over the landside legs, and its top beam.
+	var apex := 0.7
+	for x: float in [-0.11, 0.11]:
+		parts.append([Vector3(0.05, apex, 0.05), Vector3(x, CRANE_HEIGHT + apex / 2.0, land), CRANE_COLOR])
+	parts.append([Vector3(0.3, 0.05, 0.05), Vector3(0.0, CRANE_HEIGHT + apex, land), CRANE_COLOR])
+	# The machinery house on the backreach.
+	parts.append([Vector3(0.34, 0.22, 0.36), Vector3(0.0, CRANE_HEIGHT + 0.17, CRANE_BACK + 0.22), white])
+	return _merged(parts)
 
 
 ## The ship along crane `crane`'s stretch of quay, or null.
@@ -1007,9 +1164,20 @@ func _machine_mesh(gear: String) -> Mesh:
 		for z: float in [-0.3, 0.3]:
 			parts.append([Vector3(0.08, height, 0.08), Vector3(x, height / 2.0, z), Color(0.95, 0.95, 0.92)])
 		parts.append([Vector3(0.14, 0.1, 0.72), Vector3(x, 0.05, 0), Color(0.2, 0.2, 0.22)])
+	# RTGs in yellow, RMGs in blue, so a rail yard reads apart from the stacks.
+	var colour := Color(0.95, 0.75, 0.1) if gear == "rtg" else Color(0.15, 0.45, 0.8)
 	for z: float in [-0.3, 0.3]:
-		# RTGs in yellow, RMGs in blue, so a rail yard reads apart from the stacks.
-		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), Color(0.95, 0.75, 0.1) if gear == "rtg" else Color(0.15, 0.45, 0.8)])
+		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), colour])
+		# A sill beam low across, between each pair of legs.
+		parts.append([Vector3(1.12, 0.06, 0.06), Vector3(0, height * 0.3, z), colour])
+	for x: float in [-0.56, 0.56]:
+		# The side beams joining each side's legs at the top.
+		parts.append([Vector3(0.08, 0.08, 0.6), Vector3(x, height - 0.02, 0), colour])
+	# The trolley on the girders, its spreader hanging below, and the driver's cab.
+	parts.append([Vector3(0.2, 0.08, 0.66), Vector3(0.1, height + 0.08, 0), Color(0.3, 0.3, 0.32)])
+	parts.append([Vector3(0.12, 0.04, 0.5), Vector3(0.1, height - 0.35, 0), Color(0.95, 0.75, 0.1)])
+	parts.append([Vector3(0.02, 0.4, 0.02), Vector3(0.1, height - 0.15, 0), Color(0.15, 0.15, 0.15)])
+	parts.append([Vector3(0.14, 0.12, 0.12), Vector3(-0.42, height - 0.1, -0.3), Color(0.92, 0.92, 0.9)])
 	return _merged(parts)
 
 

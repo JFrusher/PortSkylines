@@ -7,7 +7,20 @@ extends RefCounted
 const BASE_DIR := "res://data/base"
 const SCHEMA := {
 	# The site for roads and areas, in metres, each a whole number of Grid cells.
-	"site": {"width": TYPE_INT, "height": TYPE_INT, "sea_width": TYPE_INT},
+	"site": {"width": TYPE_INT, "height": TYPE_INT},
+	# The coast a new game is played on, a key of maps. Each map is in metres
+	# on the site: the mainland's outline and each island as a polygon of
+	# [x, y] points, rivers as lines of points with a width and a depth that
+	# carve water through the land, and the sea's depth: shore metres beside
+	# land, per_metre more for each metre out, up to max.
+	"map": TYPE_STRING,
+	"maps": {"*": {"name": TYPE_STRING, "land": TYPE_ARRAY, "islands": TYPE_ARRAY, "rivers": TYPE_ARRAY, "depth": {"shore": TYPE_FLOAT, "per_metre": TYPE_FLOAT, "max": TYPE_FLOAT}}},
+	# Of the imports a line lands at one terminal while it also calls at
+	# another, `share` leave on its ship there, moved by road between the
+	# terminals at cost_per_box, an internal move.
+	"transfers": {"share": TYPE_FLOAT, "cost_per_box": TYPE_INT},
+	# Filling water to make land behind a quay wall, per 4 m cell.
+	"reclaim": {"cost_per_cell": TYPE_INT},
 	"start_money": TYPE_INT,
 	# What a line pays per crane move: by box size, plus a reefer premium.
 	"move_price": {"per_20ft": TYPE_INT, "forty_factor": TYPE_FLOAT, "reefer_premium": TYPE_INT},
@@ -28,7 +41,6 @@ const SCHEMA := {
 	"gate_levels": {"*": {"name": TYPE_STRING, "minutes": TYPE_FLOAT, "upkeep_per_lane": TYPE_INT}},
 	"export_lead_hours": TYPE_FLOAT,
 	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
-	"sail_seconds": TYPE_FLOAT,
 	# How long vehicles wait in each lane cell is folded in every epoch_seconds
 	# of vehicle time, mixed in at `smoothing` (0 to 1); routes take up the
 	# delays every route_epoch_seconds, dropping every kept route.
@@ -57,8 +69,16 @@ const SCHEMA := {
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.
 	# demand: how busy the hinterland keeps lines once the milestone is reached,
-	# scaling how often they offer services (1 before the first).
-	"milestones": {"*": {"teu": TYPE_INT, "demand": TYPE_FLOAT, "unlocks": {"*": TYPE_STRING}}},
+	# scaling how often they offer services (1 before the first). A milestone
+	# also needs the lines' average reputation, the share of the last calls
+	# that sailed on time, and the berth moves an hour those calls averaged,
+	# each at least its value; once reached it stays reached.
+	"milestones": {"*": {"teu": TYPE_INT, "demand": TYPE_FLOAT, "reputation": TYPE_FLOAT, "on_time": TYPE_FLOAT, "productivity": TYPE_FLOAT, "unlocks": {"*": TYPE_STRING}}},
+	# Goals between milestones, each open once `after` milestones are reached
+	# and paying cash and reputation with every line once, when met: kind
+	# on_time_calls (`count` calls of `class` sailed on time), day_moves
+	# (`count` crane moves in one day) or working_terminals (`count` of them).
+	"objectives": {"*": {"text": TYPE_STRING, "after": TYPE_INT, "kind": TYPE_STRING, "class": TYPE_STRING, "count": TYPE_INT, "cash": TYPE_INT, "reputation": TYPE_FLOAT}},
 	# A game year, for the year-end scoreboard.
 	"year_days": TYPE_INT,
 	# After `days` midnights below zero the debt is cleared, every line's
@@ -66,7 +86,7 @@ const SCHEMA := {
 	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
 	# "*" means any key, each holding the record that follows.
 	# Length in metres, draft in metres, outreach in box rows.
-	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT}},
+	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "light_draft": TYPE_FLOAT, "light_share": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "port_dues": TYPE_INT}},
 	# Fictional shipping lines: the classes they sail (relative weights) and how
 	# strongly their reputation of the port moves.
 	# rail_share: of a line's imports, the share booked to leave by train when
@@ -78,8 +98,28 @@ const SCHEMA := {
 		"late_per_hour": TYPE_FLOAT, "moves_per_hour_target": TYPE_FLOAT, "per_move_per_hour": TYPE_FLOAT,
 		"turn_target_minutes": TYPE_FLOAT, "per_turn_minute": TYPE_FLOAT, "missed": TYPE_FLOAT, "port_cancels": TYPE_FLOAT,
 	},
-	# shortcut: one channel depth serves every berth; give each berth its own route and depth when ports get several channels.
-	"channel": {"start_depth": TYPE_FLOAT, "max_depth": TYPE_FLOAT, "cost_per_metre": TYPE_INT, "maintenance_per_metre": TYPE_INT, "maintenance_days": TYPE_INT},
+	# Ships sail ship_speed metres a minute along ship lanes drawn on the
+	# water: narrow lanes take one ship at a time, wide ones pass both ways;
+	# each covers half_width cells either side of its line. A ship lies in its
+	# berth's pocket, `pocket` cells out from the quay. Lanes and pockets are
+	# as deep as their shallowest water plus what is dredged there, at most
+	# dredge.max_depth; dredging costs per cell and metre, then maintenance
+	# per cell and metre every maintenance_days. Ships wait for a berth at
+	# anchorages, one every `spacing` cells each way; a ship with no room at
+	# one waits out at sea max_wait_hours, then goes elsewhere. Classes with
+	# a pilot take one from a pilot station for each passage, its boat coming
+	# out at boat_speed metres a minute; classes with tugs wait for that many
+	# from a tug depot, sailing at speed metres a minute, to berth and
+	# unberth. A ship books each narrow lane it passes, slot_margin_minutes
+	# clear of the next ship's booking. Breakwaters are walls on the water,
+	# at a price and upkeep per cell, that no lane crosses. As port authority the port charges
+	# each call its class's port_dues, and each piloted passage pilots.fee.
+	"water": {"ship_speed": TYPE_FLOAT, "lanes": {"*": {"name": TYPE_STRING, "half_width": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}}, "pocket": TYPE_INT,
+		"anchorage": {"cost_per_cell": TYPE_INT, "spacing": TYPE_INT}, "max_wait_hours": TYPE_FLOAT,
+		"pilots": {"station_cost": TYPE_INT, "pilot_cost": TYPE_INT, "upkeep_per_pilot": TYPE_INT, "boat_speed": TYPE_FLOAT, "fee": TYPE_INT},
+		"tugs": {"depot_cost": TYPE_INT, "tug_cost": TYPE_INT, "upkeep_per_tug": TYPE_INT, "speed": TYPE_FLOAT}, "slot_margin_minutes": TYPE_FLOAT,
+		"breakwater": {"cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT},
+		"dredge": {"max_depth": TYPE_FLOAT, "cost_per_cell_metre": TYPE_INT, "maintenance_per_cell_metre": TYPE_INT, "maintenance_days": TYPE_INT}},
 	# The site is split into square land tiles `metres` across; the port owns
 	# the `start` block of tiles and buys the rest at `price`, paying `upkeep` a day each.
 	"land": {"metres": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
@@ -119,7 +159,7 @@ const SCHEMA := {
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "sail_seconds", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
+const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
 
 static var _base := {}
 
@@ -168,6 +208,14 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 	for key: String in rules.site:
 		if rules.site[key] <= 0 or rules.site[key] % Grid.CELL != 0:
 			return {"error": "site.%s: must be a positive multiple of %d m" % [key, Grid.CELL]}
+	if rules.site.width % rules.land.metres != 0 or rules.site.height % rules.land.metres != 0:
+		return {"error": "land.metres: land tiles must divide the site exactly"}
+	if rules.map not in rules.maps:
+		return {"error": "map: unknown map \"%s\"" % rules.map}
+	for key: String in rules.maps:
+		var err := _map_error(rules.maps[key], rules.site)
+		if err:
+			return {"error": "maps.%s.%s" % [key, err]}
 	for kind: String in rules.road_types:
 		var road: Dictionary = rules.road_types[kind]
 		if road.forward < 0 or road.backward < 0 or road.forward + road.backward == 0 or road.forward < road.backward:
@@ -187,6 +235,36 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 	if not is_equal_approx(shares, 1.0):
 		return {"error": "hinterland.places: shares must add up to 1"}
 	return {"rules": rules}
+
+
+## Why `map` isn't a coast on `site`, or "": polygons of at least three
+## points, rivers of at least two, every point an [x, y] pair on the site,
+## and land where the highway comes in on the east edge.
+static func _map_error(map: Dictionary, site: Dictionary) -> String:
+	var shapes: Array = [["land", map.land]]
+	for island: Variant in map.islands:
+		shapes.append(["islands", island])
+	for shape: Array in shapes:
+		if not shape[1] is Array or shape[1].size() < 3:
+			return "%s: a polygon needs at least 3 points" % shape[0]
+		for point: Variant in shape[1]:
+			if not _on_site(point, site):
+				return "%s: %s is not an [x, y] point on the site" % [shape[0], point]
+	for river: Variant in map.rivers:
+		if not (river is Dictionary and river.get("points") is Array and river.points.size() >= 2 and river.get("width") is float and river.get("depth") is float and river.width > 0.0 and river.depth > 0.0):
+			return "rivers: each needs points (at least 2), a width and a depth above zero"
+		for point: Variant in river.points:
+			if not _on_site(point, site):
+				return "rivers: %s is not an [x, y] point on the site" % [point]
+	var size := Grid.size(site)
+	var coast := Coast.of(map, site)
+	if coast.is_water(Vector2i(size.x - 1, size.y / 2)):
+		return "land: the highway's entry on the east edge must be land"
+	return ""
+
+
+static func _on_site(point: Variant, site: Dictionary) -> bool:
+	return point is Array and point.size() == 2 and point.all(func(v: Variant) -> bool: return v is float or v is int) and point[0] >= 0 and point[1] >= 0 and point[0] <= site.width and point[1] <= site.height
 
 
 ## Checks `parent[key]` against `want` (a TYPE_* or a nested schema), turning
@@ -218,6 +296,8 @@ static func _check(parent: Dictionary, key: String, want: Variant, where: String
 		return "" if got is String else "%s: must be text" % where
 	if want == TYPE_BOOL:
 		return "" if got is bool else "%s: must be true or false" % where
+	if want == TYPE_ARRAY:
+		return "" if got is Array else "%s: must be a list" % where
 	if not (got is float or got is int):
 		return "%s: must be a number" % where
 	if want == TYPE_INT:

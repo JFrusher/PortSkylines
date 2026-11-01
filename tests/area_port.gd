@@ -12,7 +12,7 @@ const RandomPort := preload("res://tests/random_port.gd")
 ## side of the east road, fed by the westbound lane lorries come in on.
 ## Traffic only turns back at dead ends, so areas sit beside the lane that
 ## reaches them. Along the east road, index i is column 86 + i.
-static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
+static func terminal(apron_length: int, rules := RandomPort.strait()) -> PortSim:
 	var sim := PortSim.new(0, rules, true)
 	var entry := sim.site_entry()
 	_built(sim.apply({"op": "paint_terminal", "cells": region(sim), "terminal": -1}), "Terminal 1 is painted over the test port")
@@ -21,6 +21,7 @@ static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
 	var coast := sim.roads.segment_at(Vector2i(85, 250))
 	var east := sim.roads.segment_at(Vector2i(200, entry.y))
 	_built(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 0, "to": apron_length - 1}), "the terminal's apron is built")
+	add_lane(sim, sim.areas.list.keys().max())
 	_built(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 299, "to": 313}), "the terminal's gate is built")
 	return sim
 
@@ -28,7 +29,7 @@ static func terminal(apron_length: int, rules := Content.base()) -> PortSim:
 ## `terminal` with an import yard block, a crane, tractors, and a feeder
 ## alongside carrying `imports` boxes with room for `exports`; with exports
 ## there is an export block too, filled by export lorries while the crane comes.
-static func working_terminal(imports: int, exports := 0, rules := Content.base()) -> PortSim:
+static func working_terminal(imports: int, exports := 0, rules := RandomPort.strait()) -> PortSim:
 	var sim := terminal(60, rules)
 	# South of the east road, fed by the eastbound lane tractors come off the coast road on.
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
@@ -123,6 +124,21 @@ static func region(sim: PortSim) -> Array[Vector2i]:
 		for y in range(180, sim.site_entry().y + 40):
 			cells.append(Vector2i(x, y))
 	return cells
+
+
+## A narrow ship lane straight out from the middle of apron `apron`'s pocket
+## to the site's edge, so ships reach it from the open sea.
+static func add_lane(sim: PortSim, apron: int) -> void:
+	var area: Dictionary = sim.areas.list[apron]
+	var cells := RoadNet.line(area.start, area.end)
+	var berth: Vector2i = cells[cells.size() / 2] + area.out * (sim.areas.depth_of(area) + sim.rules.water.pocket / 2)
+	var sea := berth
+	while sim.areas.coast.inside(sea + area.out):
+		sea += area.out
+	var creative := sim.creative
+	sim.creative = true
+	_built(sim.apply({"op": "build_ship_lane", "from": sea, "to": berth, "type": "narrow"}), "a ship lane out to the apron")
+	sim.creative = creative
 
 
 ## Gives `sim` every land tile of the site, for tests that build anywhere.

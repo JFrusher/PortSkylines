@@ -19,6 +19,14 @@ var _painting := false
 var _last_cell := Grid.NONE
 ## Where a road drag started on the 4 m grid, or NONE.
 var _road_from := Grid.NONE
+## How near a lane end a lane drag has to start or end to join it, in cells.
+const LANE_SNAP := 4
+## Where a ship lane drag started, or Grid.NONE.
+var _lane_from := Grid.NONE
+## Where an anchorage drag started, or Grid.NONE.
+var _anchor_from := Grid.NONE
+## Where a breakwater drag started, or Grid.NONE.
+var _wall_from := Grid.NONE
 ## The grid point, in cells, the mouse pressed at to start that drag.
 ## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
 var _area_from := {}
@@ -34,13 +42,17 @@ func _ready() -> void:
 	view.sim = sim
 	add_child(view)
 	rig.bounds = Rect2(Vector2.ZERO, WorldView.site_size(sim))
-	rig.position = Vector3(sim.rules.site.sea_width / WorldView.METRES_PER_UNIT + 10, 0, WorldView.site_size(sim).y / 2.0)
+	# Start looking at the coast on the middle row, where the start land runs to the water.
+	var shore := Vector2i(0, sim.areas.coast.size.y / 2)
+	while sim.areas.is_water(shore):
+		shore.x += 1
+	rig.position = Vector3(Grid.metres(shore.x) / WorldView.METRES_PER_UNIT + 10, 0, WorldView.site_size(sim).y / 2.0)
 	add_child(rig)
 	hud.sim = sim
 	hud.save_pressed.connect(_save)
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
-	hud.new_game_pressed.connect(func(creative: bool) -> void: _use(PortSim.new(randi(), Content.base(), creative)))
+	hud.new_game_pressed.connect(_new_game)
 	# Loaded, not preloaded: bench/ is left out of exported builds, which have no such button.
 	hud.mega_port_pressed.connect(func() -> void: _use(load("res://bench/endgame_port.gd").debug_port()))
 	hud.event_picked.connect(_go_to)
@@ -61,11 +73,25 @@ func _load() -> void:
 	hud.flash("Loaded")
 
 
+## A new game, creative or not, on the data's map or a coast generated
+## from its seed.
+func _new_game(creative: bool, generated: bool) -> void:
+	var seed_value := randi()
+	var rules := Content.base()
+	if generated:
+		rules = rules.duplicate(true)
+		rules.map = MapGen.PREFIX + str(seed_value)
+	_use(PortSim.new(seed_value, rules, creative))
+
+
 ## Swaps in `new_sim` and a fresh view of it.
 func _use(new_sim: PortSim) -> void:
 	sim = new_sim
 	_painting = false
 	_road_from = Grid.NONE
+	_lane_from = Grid.NONE
+	_anchor_from = Grid.NONE
+	_wall_from = Grid.NONE
 	_area_from = {}
 	_following = 0
 	rig.bounds = Rect2(Vector2.ZERO, WorldView.site_size(sim))
@@ -105,14 +131,24 @@ func _process(dt: float) -> void:
 		var area := _area_command()
 		for side: int in ([1, -1] if hud.both_sides() else [area.side]):
 			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
-	if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
-		dragged = sim.berth_cells(hud.berth, cell.y)
+	var berth: Dictionary = sim.berth_plan(hud.berth, cell) if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE else {}
+	if berth.has("cells"):
+		dragged = berth.cells
+	if hud.tool == Hud.BUILD_BREAKWATER and _wall_from != Grid.NONE and cell != Grid.NONE:
+		dragged = Areas.breakwater_cells(_wall_from, _wall_to())
+	if hud.tool == Hud.BUILD_ANCHORAGE and _anchor_from != Grid.NONE and cell != Grid.NONE:
+		dragged = sim.anchorage_cells(_anchor_from, cell)
+	if hud.tool == Hud.DRAW_LANE and _lane_from != Grid.NONE and cell != Grid.NONE:
+		dragged = sim.ship_lanes.footprint(_lane_from, _lane_to(), hud.lane_type)
 	view.show_area_preview(dragged, _order_error(cell) == "")
 	var ends: Array[Vector2i] = [Grid.NONE, Grid.NONE]
 	var road_type := hud.road_type
 	var ok := _order_error(cell) == ""
 	var picked := _picked_segment(cell)
-	hud.hint(_segment_hint(picked) if _road_from == Grid.NONE else "%d m" % Grid.metres(RoadNet.length(_road_from, _road_to())))
+	if hud.tool == Hud.DRAW_LANE:
+		hud.hint("%d m, %s" % [Grid.metres(RoadNet.length(_lane_from, _lane_to())), HudDetails.dollars(sim.ship_lane_price(_lane_from, _lane_to(), hud.lane_type))] if _lane_from != Grid.NONE and _lane_to() != _lane_from else "")
+	else:
+		hud.hint(_segment_hint(picked) if _road_from == Grid.NONE else "%d m" % Grid.metres(RoadNet.length(_road_from, _road_to())))
 	if _road_from != Grid.NONE:
 		ends = _road_ends()
 	elif not picked.is_empty():
@@ -125,8 +161,8 @@ func _process(dt: float) -> void:
 			road_type = hud.road_type
 		else:
 			ok = false
-	elif hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE:
-		ends = sim.berth_line(hud.berth, cell.y)
+	elif berth.has("line"):
+		ends = berth.line
 		road_type = PortSim.BERTH_ROAD
 	view.show_road_preview(ends[0], ends[1], road_type, ok)
 	if _painting:
@@ -148,6 +184,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			_report(sim.apply({"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}))
 		_road_from = Grid.NONE
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _wall_from != Grid.NONE:
+		if hud.tool == Hud.BUILD_BREAKWATER:
+			_report(sim.apply({"op": "build_breakwater", "from": _wall_from, "to": _wall_to()}))
+		_wall_from = Grid.NONE
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _anchor_from != Grid.NONE:
+		if hud.tool == Hud.BUILD_ANCHORAGE:
+			_report(sim.apply({"op": "build_anchorage", "from": _anchor_from, "to": _hovered_grid_cell()}))
+		_anchor_from = Grid.NONE
+		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _lane_from != Grid.NONE:
+		if hud.tool == Hud.DRAW_LANE:
+			_report(sim.apply({"op": "build_ship_lane", "from": _lane_from, "to": _lane_to(), "type": hud.lane_type}))
+		_lane_from = Grid.NONE
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
 		if hud.tool == Hud.DRAW_AREA:
 			var area := _area_command()
@@ -164,6 +215,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if hud.tool == Hud.BUILD_BERTH:
 			_order(_hovered_grid_cell(), true)
+			return
+		if hud.tool == Hud.DRAW_LANE:
+			_lane_from = _lane_point(_hovered_grid_cell())
+			return
+		if hud.tool == Hud.BUILD_ANCHORAGE:
+			_anchor_from = _hovered_grid_cell()
+			return
+		if hud.tool == Hud.BUILD_BREAKWATER:
+			_wall_from = _hovered_grid_cell()
+			return
+		if hud.tool == Hud.BUILD_MARINE:
+			_report(sim.apply({"op": "build_%s" % hud.marine_base, "cell": _hovered_grid_cell()}))
 			return
 		if _upgrading():
 			_report(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(_hovered_grid_cell()), "type": hud.road_type}))
@@ -233,12 +296,22 @@ func _command(cell: Vector2i) -> Dictionary:
 			var area := sim.areas.area_at(cell)
 			if area:
 				return {"op": "remove_area", "id": area}
-			return {"op": "remove_road", "segment": sim.roads.segment_at(cell)} if sim.roads.segment_at(cell) else {"op": "remove_rail", "segment": sim.rails.segment_at(cell)}
+			if sim.roads.segment_at(cell):
+				return {"op": "remove_road", "segment": sim.roads.segment_at(cell)}
+			if sim.rails.segment_at(cell):
+				return {"op": "remove_rail", "segment": sim.rails.segment_at(cell)}
+			if sim.areas.breakwater_at(cell):
+				return {"op": "remove_breakwater", "id": sim.areas.breakwater_at(cell)}
+			if sim.marine_base_at(cell):
+				return {"op": "remove_marine_base", "id": sim.marine_base_at(cell)}
+			if sim.anchorage_at(cell):
+				return {"op": "remove_anchorage", "id": sim.anchorage_at(cell)}
+			return {"op": "remove_ship_lane", "segment": Inspect.lane_at(sim, cell)}
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell), "kind": hud.crane_kind}
 		Hud.BUILD_BERTH:
-			return {"op": "build_berth", "kind": hud.berth, "y": cell.y}
+			return {"op": "build_berth", "kind": hud.berth, "cell": cell}
 	assert(false, "no command for tool %d" % hud.tool)
 	return {}
 
@@ -289,12 +362,20 @@ func _order_error(cell: Vector2i) -> String:
 			var crane := AreaFlow.crane_at(sim, cell)
 			if crane:
 				return sim.remove_sts_error(crane.apron, crane.along)
-			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) else "Nothing to bulldoze here"
+			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) or sim.areas.breakwater_at(cell) or sim.marine_base_at(cell) or sim.anchorage_at(cell) or Inspect.lane_at(sim, cell) else "Nothing to bulldoze here"
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
 		Hud.BUILD_BERTH:
-			return sim.build_berth_error(hud.berth, cell.y)
+			return sim.build_berth_error(hud.berth, cell)
+		Hud.DRAW_LANE:
+			return "" if _lane_from == Grid.NONE else sim.build_ship_lane_error(_lane_from, _lane_to(), hud.lane_type)
+		Hud.BUILD_ANCHORAGE:
+			return "" if _anchor_from == Grid.NONE else sim.build_anchorage_error(_anchor_from, cell)
+		Hud.BUILD_MARINE:
+			return sim.build_marine_base_error(hud.marine_base, cell)
+		Hud.BUILD_BREAKWATER:
+			return "" if _wall_from == Grid.NONE else sim.build_breakwater_error(_wall_from, _wall_to())
 	assert(false, "no error check for tool %d" % hud.tool)
 	return ""
 
@@ -303,6 +384,32 @@ func _order_error(cell: Vector2i) -> String:
 func _hovered_grid_cell() -> Vector2i:
 	var hit: Variant = _hovered_point()
 	return Grid.NONE if hit == null else WorldView.grid_cell(hit)
+
+
+## Where a lane drag at `cell` attaches: a lane end within LANE_SNAP cells,
+## else `cell`.
+func _lane_point(cell: Vector2i) -> Vector2i:
+	for node: int in sim.ship_lanes.nodes:
+		var point: Vector2i = sim.ship_lanes.nodes[node]
+		if (point - cell).abs().x <= LANE_SNAP and (point - cell).abs().y <= LANE_SNAP:
+			return point
+	return cell
+
+
+## Where a breakwater drag from _wall_from ends: at the mouse, kept
+## straight or at 45°.
+func _wall_to() -> Vector2i:
+	var to := _hovered_grid_cell()
+	var d := to - _wall_from
+	return to if d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y) else RoadNet.snap(_wall_from, to)
+
+
+## Where a lane drag from _lane_from ends: at the mouse or a lane end near
+## it, kept straight or at 45°.
+func _lane_to() -> Vector2i:
+	var to := _lane_point(_hovered_grid_cell())
+	var d := to - _lane_from
+	return to if d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y) else RoadNet.snap(_lane_from, to)
 
 
 ## Where a road drag from _road_from ends: snapped onto a road or guide near
