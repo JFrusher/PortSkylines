@@ -31,6 +31,8 @@ const DRAW_LANE := -11
 const BUILD_ANCHORAGE := -12
 ## Places a pilot station or tug depot (marine_base) on the water by clicking.
 const BUILD_MARINE := -13
+## Drags a breakwater across the water.
+const BUILD_BREAKWATER := -14
 ## The build menu row each area type sits in.
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
@@ -356,6 +358,7 @@ func _ready() -> void:
 	_item(_button(rows.Water, "Tug depot\n%s" % HudDetails.dollars(water.tugs.depot_cost), tools, false, func() -> void:
 		tool = BUILD_MARINE
 		marine_base = "tug_depot")).tooltip_text = "Click the water near the shore. Panamaxes and bigger wait for tugs to berth and unberth; tugs sail out from the nearest depot with enough free, so a depot near the berths berths ships sooner. Buy tugs by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.tugs.tug_cost), HudDetails.dollars(water.tugs.upkeep_per_tug)]
+	_item(_button(rows.Water, "Breakwater\n%s a cell" % HudDetails.dollars(water.breakwater.cost_per_cell), tools, false, func() -> void: tool = BUILD_BREAKWATER)).tooltip_text = "Drag a breakwater across open water, straight or at 45°: a rock wall 8 m thick that no ship lane crosses, to shelter berths and anchorages."
 	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane, area or water", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane, area, ship lane or anchorage to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true

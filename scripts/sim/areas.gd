@@ -23,6 +23,11 @@ var paint := {}
 ## Water filled in to make land behind quay walls: cell -> true. It stays
 ## land when its apron is taken out.
 var filled := {}
+## Breakwaters: id -> {"from", "to"}, walls two cells thick on the water;
+## their cells, kept as they change: cell -> id.
+var breakwaters := {}
+var _breakwater_cells := {}
+var _next_breakwater := 1
 ## The site's land and water before any of it was filled.
 var coast: Coast
 ## How many cells each terminal has painted, kept as they are painted, so a
@@ -57,9 +62,55 @@ func _init(area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> void:
 	_size = coast.size
 
 
-## Whether `cell` is water now: on the coast's water and not filled in.
+## Whether `cell` is open water now: on the coast's water, not filled in
+## and no breakwater.
 func is_water(cell: Vector2i) -> bool:
-	return coast.is_water(cell) and cell not in filled
+	return coast.is_water(cell) and cell not in filled and cell not in _breakwater_cells
+
+
+## The cells of a breakwater from `from` to `to`: its line and the cells
+## beside it, two thick, so a 45° wall has no gaps.
+static func breakwater_cells(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var step := (to - from).sign()
+	var beside := Vector2i(-step.y, step.x) if step.x == 0 or step.y == 0 else Vector2i(step.x, 0)
+	var cells: Array[Vector2i] = []
+	for cell in RoadNet.line(from, to):
+		cells.append(cell)
+		cells.append(cell + beside)
+	return cells
+
+
+## Why a breakwater can't run from `from` to `to`, or "".
+func breakwater_error(from: Vector2i, to: Vector2i) -> String:
+	var d := to - from
+	if d == Vector2i.ZERO:
+		return "A breakwater needs a length"
+	if d.x != 0 and d.y != 0 and absi(d.x) != absi(d.y):
+		return "Breakwaters run straight or at 45°"
+	if not breakwater_cells(from, to).all(is_water):
+		return "A breakwater stands on open water"
+	return ""
+
+
+func add_breakwater(from: Vector2i, to: Vector2i) -> int:
+	breakwaters[_next_breakwater] = {"from": from, "to": to}
+	for cell in breakwater_cells(from, to):
+		_breakwater_cells[cell] = _next_breakwater
+	_next_breakwater += 1
+	version += 1
+	return _next_breakwater - 1
+
+
+func remove_breakwater(id: int) -> void:
+	for cell in breakwater_cells(breakwaters[id].from, breakwaters[id].to):
+		_breakwater_cells.erase(cell)
+	breakwaters.erase(id)
+	version += 1
+
+
+## The breakwater on `cell`, or 0.
+func breakwater_at(cell: Vector2i) -> int:
+	return _breakwater_cells.get(cell, 0)
 
 
 ## Adds an area with `settings`; returns "" or why it can't be built.
@@ -320,12 +371,17 @@ func index_near(segment: int, cell: Vector2i) -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal, "paint": paint.duplicate(), "filled": filled.duplicate()}
+	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal, "paint": paint.duplicate(), "filled": filled.duplicate(), "breakwaters": breakwaters.duplicate(true), "next_breakwater": _next_breakwater}
 
 
 static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> Areas:
 	var areas := Areas.new(area_types, roads, site_coast)
 	areas.filled = d.filled.duplicate()
+	areas._next_breakwater = d.next_breakwater
+	for id: int in d.breakwaters:
+		areas.breakwaters[id] = d.breakwaters[id].duplicate()
+		for cell in breakwater_cells(d.breakwaters[id].from, d.breakwaters[id].to):
+			areas._breakwater_cells[cell] = id
 	areas.list = d.list.duplicate(true)
 	areas._next_id = d.next_id
 	areas.terminals = d.terminals.duplicate(true)
@@ -445,6 +501,7 @@ func _taken() -> Dictionary:
 	for id: int in list:
 		for cell in cells(id):
 			taken[cell] = true
+	taken.merge(_breakwater_cells)
 	return taken
 
 

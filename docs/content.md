@@ -58,6 +58,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `water.pilots.boat_speed` | number >0 | Metres a minute the pilot boat sails from its station to a ship |
 | `water.tugs.depot_cost`, `.tug_cost`, `.upkeep_per_tug` | int | A tug depot, each tug, and each tug's daily upkeep |
 | `water.tugs.speed` | number >0 | Metres a minute tugs sail from their depot to a berth |
+| `water.breakwater.cost_per_cell`, `.upkeep_per_cell` | int, number | A breakwater's price and daily upkeep per cell; it is two cells thick and no lane crosses it |
 | `water.slot_margin_minutes` | number | The gap kept between two ships' bookings of a narrow lane |
 | `ship_classes.<name>.light_draft`, `.light_share` | number, number | Where no berth has water for its full draft but one has its light draft, the class calls light-loaded with this share of its moves (`light_draft` equal to `draft` means never) |
 | `ship_classes.<name>.pilot`, `.tugs` | true/false, int | Whether the class takes a pilot in and out, and how many tugs it waits for to berth and unberth |

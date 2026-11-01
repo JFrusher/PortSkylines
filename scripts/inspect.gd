@@ -35,6 +35,8 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	var area := sim.areas.area_at(cell)
 	if area:
 		return {"area": area}
+	if sim.areas.breakwater_at(cell):
+		return {"breakwater": sim.areas.breakwater_at(cell)}
 	if sim.marine_base_at(cell):
 		return {"base": sim.marine_base_at(cell)}
 	if sim.anchorage_at(cell):
@@ -65,6 +67,11 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		return _ship(sim, thing) if thing in sim.ships else nothing
 	if thing is PortSim.Crane:
 		return _crane(sim, thing) if thing in sim.cranes else nothing
+	if thing is Dictionary and thing.has("breakwater"):
+		if thing.breakwater not in sim.areas.breakwaters:
+			return nothing
+		var wall: Dictionary = sim.areas.breakwaters[thing.breakwater]
+		return ["Breakwater", "%d m long, 8 m thick" % Grid.metres(RoadNet.length(wall.from, wall.to) + 1), "No ship lane crosses it"] as Array[String]
 	if thing is Dictionary and thing.has("base"):
 		if thing.base in sim.pilot_stations:
 			return ["Pilot station", "%d pilots, %d out with ships" % [sim.pilot_stations[thing.base].pilots, sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.pilot).size()], "Panamaxes and bigger take a pilot in and out"] as Array[String]

@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_no_lane_no_ships()
 	_test_ships_keep_to_deep_lanes()
 	_test_ships_sail_the_lanes()
+	_test_breakwaters_and_islands()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -90,3 +91,21 @@ func _test_ships_sail_the_lanes() -> void:
 			berthed = berthed or ship.state == PortSim.Ship.State.WORKING
 	_expect(berthed, true, "a ship sails in and berths")
 	_expect(off, [], "every point of its way in lies on a lane or in the pocket")
+
+
+## M8 step N: no lane crosses a breakwater or an island; a breakwater isn't
+## built over a lane.
+func _test_breakwaters_and_islands() -> void:
+	var sim := PortSim.new(0, RandomPort.strait(), true)
+	_expect(sim.apply({"op": "build_breakwater", "from": Vector2i(30, 100), "to": Vector2i(30, 160)}), "", "a breakwater across the water")
+	_expect(sim.areas.is_water(Vector2i(30, 120)), false, "its cells are no longer open water")
+	_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(0, 130), "to": Vector2i(60, 130), "type": "narrow"}).begins_with("A lane needs open water"), true, "a lane can't cross it")
+	_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(0, 200), "to": Vector2i(60, 200), "type": "narrow"}), "", "a lane clear of it is built")
+	_expect(sim.apply({"op": "build_breakwater", "from": Vector2i(40, 180), "to": Vector2i(40, 220)}), "A ship lane runs here", "a breakwater can't go over a lane")
+	_expect(sim.apply({"op": "build_breakwater", "from": Vector2i(30, 300), "to": Vector2i(37, 304)}), "Breakwaters run straight or at 45°", "breakwaters run straight or at 45°")
+	_expect(sim.apply({"op": "remove_breakwater", "id": sim.areas.breakwater_at(Vector2i(30, 120))}), "", "a breakwater is taken out")
+	_expect(sim.areas.is_water(Vector2i(30, 120)), true, "leaving open water")
+	var estuary := PortSim.new(0, Content.base(), true)
+	var island := Vector2i(50, 340)
+	_expect(estuary.areas.is_water(island), false, "the estuary has an island off the coast at %s" % island)
+	_expect(estuary.apply({"op": "build_ship_lane", "from": Vector2i(0, island.y), "to": Vector2i(island.x + 40, island.y), "type": "narrow"}).begins_with("A lane needs open water"), true, "a lane can't cross an island")

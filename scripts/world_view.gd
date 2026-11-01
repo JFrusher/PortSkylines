@@ -341,7 +341,7 @@ func _process(dt: float) -> void:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
-	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys()] != _ship_lanes_drawn:
+	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys(), sim.areas.breakwaters.keys()] != _ship_lanes_drawn:
 		_draw_ship_lanes()
 	_draw_junctions()
 	if sim.areas.filled.size() != _coast_filled:
@@ -451,11 +451,16 @@ static func info_shares(sim: PortSim, view: String) -> Dictionary:
 ## Each ship lane as a pale band over the water it covers, its line down the
 ## middle: white where dredged, else pale blue.
 func _draw_ship_lanes() -> void:
-	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys()]
-	_ship_lanes.visible = not (sim.ship_lanes.segments.is_empty() and sim.anchorages.is_empty() and sim.pilot_stations.is_empty() and sim.tug_depots.is_empty())
+	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys(), sim.areas.breakwaters.keys()]
+	_ship_lanes.visible = not (sim.ship_lanes.segments.is_empty() and sim.anchorages.is_empty() and sim.pilot_stations.is_empty() and sim.tug_depots.is_empty() and sim.areas.breakwaters.is_empty())
 	if not _ship_lanes.visible:
 		return
 	var tool := _road_tool()
+	# Breakwaters as grey rock.
+	tool.set_color(Color(0.55, 0.55, 0.52, 1.0))
+	for wall: Dictionary in sim.areas.breakwaters.values():
+		for cell in Areas.breakwater_cells(wall.from, wall.to):
+			_cell_quad(tool, cell, 0.05)
 	# Pilot stations white and tug depots orange, five cells across.
 	for bases: Array in [[sim.pilot_stations, Color(0.95, 0.95, 0.95, 0.9)], [sim.tug_depots, Color(1.0, 0.55, 0.15, 0.9)]]:
 		tool.set_color(bases[1])

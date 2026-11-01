@@ -25,6 +25,8 @@ const LANE_SNAP := 4
 var _lane_from := Grid.NONE
 ## Where an anchorage drag started, or Grid.NONE.
 var _anchor_from := Grid.NONE
+## Where a breakwater drag started, or Grid.NONE.
+var _wall_from := Grid.NONE
 ## The grid point, in cells, the mouse pressed at to start that drag.
 ## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
 var _area_from := {}
@@ -78,6 +80,7 @@ func _use(new_sim: PortSim) -> void:
 	_road_from = Grid.NONE
 	_lane_from = Grid.NONE
 	_anchor_from = Grid.NONE
+	_wall_from = Grid.NONE
 	_area_from = {}
 	_following = 0
 	rig.bounds = Rect2(Vector2.ZERO, WorldView.site_size(sim))
@@ -120,6 +123,8 @@ func _process(dt: float) -> void:
 	var berth: Dictionary = sim.berth_plan(hud.berth, cell) if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE else {}
 	if berth.has("cells"):
 		dragged = berth.cells
+	if hud.tool == Hud.BUILD_BREAKWATER and _wall_from != Grid.NONE and cell != Grid.NONE:
+		dragged = Areas.breakwater_cells(_wall_from, _wall_to())
 	if hud.tool == Hud.BUILD_ANCHORAGE and _anchor_from != Grid.NONE and cell != Grid.NONE:
 		dragged = sim.anchorage_cells(_anchor_from, cell)
 	if hud.tool == Hud.DRAW_LANE and _lane_from != Grid.NONE and cell != Grid.NONE:
@@ -168,6 +173,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_report(sim.apply({"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}))
 		_road_from = Grid.NONE
 		return
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _wall_from != Grid.NONE:
+		if hud.tool == Hud.BUILD_BREAKWATER:
+			_report(sim.apply({"op": "build_breakwater", "from": _wall_from, "to": _wall_to()}))
+		_wall_from = Grid.NONE
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _anchor_from != Grid.NONE:
 		if hud.tool == Hud.BUILD_ANCHORAGE:
 			_report(sim.apply({"op": "build_anchorage", "from": _anchor_from, "to": _hovered_grid_cell()}))
@@ -200,6 +210,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if hud.tool == Hud.BUILD_ANCHORAGE:
 			_anchor_from = _hovered_grid_cell()
+			return
+		if hud.tool == Hud.BUILD_BREAKWATER:
+			_wall_from = _hovered_grid_cell()
 			return
 		if hud.tool == Hud.BUILD_MARINE:
 			_report(sim.apply({"op": "build_%s" % hud.marine_base, "cell": _hovered_grid_cell()}))
@@ -276,6 +289,8 @@ func _command(cell: Vector2i) -> Dictionary:
 				return {"op": "remove_road", "segment": sim.roads.segment_at(cell)}
 			if sim.rails.segment_at(cell):
 				return {"op": "remove_rail", "segment": sim.rails.segment_at(cell)}
+			if sim.areas.breakwater_at(cell):
+				return {"op": "remove_breakwater", "id": sim.areas.breakwater_at(cell)}
 			if sim.marine_base_at(cell):
 				return {"op": "remove_marine_base", "id": sim.marine_base_at(cell)}
 			if sim.anchorage_at(cell):
@@ -336,7 +351,7 @@ func _order_error(cell: Vector2i) -> String:
 			var crane := AreaFlow.crane_at(sim, cell)
 			if crane:
 				return sim.remove_sts_error(crane.apron, crane.along)
-			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) or sim.marine_base_at(cell) or sim.anchorage_at(cell) or Inspect.lane_at(sim, cell) else "Nothing to bulldoze here"
+			return "" if sim.areas.area_at(cell) or sim.roads.segment_at(cell) or sim.rails.segment_at(cell) or sim.areas.breakwater_at(cell) or sim.marine_base_at(cell) or sim.anchorage_at(cell) or Inspect.lane_at(sim, cell) else "Nothing to bulldoze here"
 		Hud.CRANE:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
@@ -348,6 +363,8 @@ func _order_error(cell: Vector2i) -> String:
 			return "" if _anchor_from == Grid.NONE else sim.build_anchorage_error(_anchor_from, cell)
 		Hud.BUILD_MARINE:
 			return sim.build_marine_base_error(hud.marine_base, cell)
+		Hud.BUILD_BREAKWATER:
+			return "" if _wall_from == Grid.NONE else sim.build_breakwater_error(_wall_from, _wall_to())
 	assert(false, "no error check for tool %d" % hud.tool)
 	return ""
 
@@ -366,6 +383,14 @@ func _lane_point(cell: Vector2i) -> Vector2i:
 		if (point - cell).abs().x <= LANE_SNAP and (point - cell).abs().y <= LANE_SNAP:
 			return point
 	return cell
+
+
+## Where a breakwater drag from _wall_from ends: at the mouse, kept
+## straight or at 45°.
+func _wall_to() -> Vector2i:
+	var to := _hovered_grid_cell()
+	var d := to - _wall_from
+	return to if d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y) else RoadNet.snap(_wall_from, to)
 
 
 ## Where a lane drag from _lane_from ends: at the mouse or a lane end near

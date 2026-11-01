@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 32
+const VERSION := 33
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -85,6 +85,16 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v31(data)
 	if data.version < 32:
 		data = _migrate_v32(data)
+	if data.version < 33:
+		data = _migrate_v33(data)
+	return data
+
+
+## v33 has breakwaters; an older port has none.
+static func _migrate_v33(data: Dictionary) -> Dictionary:
+	data.sim.areas.breakwaters = {}
+	data.sim.areas.next_breakwater = 1
+	data.version = 33
 	return data
 
 
@@ -322,9 +332,11 @@ static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.
 static func _valid_areas(areas: Dictionary) -> bool:
-	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY}):
+	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY, "breakwaters": TYPE_DICTIONARY, "next_breakwater": TYPE_INT}):
 		return false
 	if not areas.filled.keys().all(func(cell: Variant) -> bool: return cell is Vector2i):
+		return false
+	if not areas.breakwaters.keys().all(func(id: Variant) -> bool: return id is int and areas.breakwaters[id] is Dictionary and _has_fields(areas.breakwaters[id], {"from": TYPE_VECTOR2I, "to": TYPE_VECTOR2I})):
 		return false
 	if not areas.terminals.keys().all(func(id: Variant) -> bool: return id is int and areas.terminals[id] is Dictionary and _has_fields(areas.terminals[id], {"name": TYPE_STRING, "colour": TYPE_INT})):
 		return false

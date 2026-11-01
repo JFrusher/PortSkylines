@@ -547,6 +547,10 @@ func apply(command: Dictionary) -> String:
 			return remove_ship_lane(command.segment)
 		"widen_ship_lane":
 			return widen_ship_lane(command.segment)
+		"build_breakwater":
+			return build_breakwater(command.from, command.to)
+		"remove_breakwater":
+			return remove_breakwater(command.id)
 		"build_anchorage":
 			return build_anchorage(command.from, command.to)
 		"remove_anchorage":
@@ -620,6 +624,8 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> 
 	var err := roads.add_error(from, to, type, skip)
 	if err == "" and roads.footprint(from, to, type).any(areas.is_water):
 		err = "Roads can't be built on water"
+	if err == "" and roads.footprint(from, to, type).any(areas.breakwater_at):
+		err = "A breakwater is in the way"
 	if err == "" and not roads.footprint(from, to, type).all(owns):
 		err = "Buy this land first"
 	if err == "":
@@ -1321,6 +1327,39 @@ func remove_anchorage(id: int) -> String:
 	return ""
 
 
+## Why a breakwater can't run from `from` to `to`, or "": open water all
+## along it, clear of ship lanes, and the money.
+func build_breakwater_error(from: Vector2i, to: Vector2i) -> String:
+	var err := areas.breakwater_error(from, to)
+	if err:
+		return err
+	var lanes := {}
+	for segment: int in ship_lanes.segments:
+		var lane: Dictionary = ship_lanes.segments[segment]
+		for cell in ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type):
+			lanes[cell] = true
+	if Areas.breakwater_cells(from, to).any(func(c: Vector2i) -> bool: return c in lanes):
+		return "A ship lane runs here"
+	if not _afford(Areas.breakwater_cells(from, to).size() * rules.water.breakwater.cost_per_cell):
+		return "Not enough money"
+	return ""
+
+
+func build_breakwater(from: Vector2i, to: Vector2i) -> String:
+	var err := build_breakwater_error(from, to)
+	if err == "":
+		ledger.post("construction", -Areas.breakwater_cells(from, to).size() * rules.water.breakwater.cost_per_cell)
+		areas.add_breakwater(from, to)
+	return err
+
+
+func remove_breakwater(id: int) -> String:
+	if id not in areas.breakwaters:
+		return "No breakwater there"
+	areas.remove_breakwater(id)
+	return ""
+
+
 ## Why narrow ship lane `segment` can't be widened, or "".
 func widen_ship_lane_error(segment: int) -> String:
 	if segment not in ship_lanes.segments:
@@ -1509,6 +1548,8 @@ func upkeep_parts() -> Dictionary:
 		parts[0] += ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size() * rules.water.lanes[lane.type].upkeep_per_cell
 	for station: Dictionary in pilot_stations.values():
 		parts[0] += station.pilots * rules.water.pilots.upkeep_per_pilot
+	for wall: Dictionary in areas.breakwaters.values():
+		parts[0] += Areas.breakwater_cells(wall.from, wall.to).size() * rules.water.breakwater.upkeep_per_cell
 	for depot: Dictionary in tug_depots.values():
 		parts[0] += depot.tugs * rules.water.tugs.upkeep_per_tug
 	var add := func(terminal: int, amount: float) -> void: parts[terminal] = parts.get(terminal, 0.0) + amount

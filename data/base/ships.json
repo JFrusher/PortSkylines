@@ -89,6 +89,10 @@
 			"speed": 300.0
 		},
 		"slot_margin_minutes": 2.0,
+		"breakwater": {
+			"cost_per_cell": 400,
+			"upkeep_per_cell": 0.5
+		},
 		"dredge": {
 			"max_depth": 18.0,
 			"cost_per_cell_metre": 30,

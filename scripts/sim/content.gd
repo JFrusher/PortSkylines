@@ -111,12 +111,14 @@ const SCHEMA := {
 	# out at boat_speed metres a minute; classes with tugs wait for that many
 	# from a tug depot, sailing at speed metres a minute, to berth and
 	# unberth. A ship books each narrow lane it passes, slot_margin_minutes
-	# clear of the next ship's booking. As port authority the port charges
+	# clear of the next ship's booking. Breakwaters are walls on the water,
+	# at a price and upkeep per cell, that no lane crosses. As port authority the port charges
 	# each call its class's port_dues, and each piloted passage pilots.fee.
 	"water": {"ship_speed": TYPE_FLOAT, "lanes": {"*": {"name": TYPE_STRING, "half_width": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}}, "pocket": TYPE_INT,
 		"anchorage": {"cost_per_cell": TYPE_INT, "spacing": TYPE_INT}, "max_wait_hours": TYPE_FLOAT,
 		"pilots": {"station_cost": TYPE_INT, "pilot_cost": TYPE_INT, "upkeep_per_pilot": TYPE_INT, "boat_speed": TYPE_FLOAT, "fee": TYPE_INT},
 		"tugs": {"depot_cost": TYPE_INT, "tug_cost": TYPE_INT, "upkeep_per_tug": TYPE_INT, "speed": TYPE_FLOAT}, "slot_margin_minutes": TYPE_FLOAT,
+		"breakwater": {"cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT},
 		"dredge": {"max_depth": TYPE_FLOAT, "cost_per_cell_metre": TYPE_INT, "maintenance_per_cell_metre": TYPE_INT, "maintenance_days": TYPE_INT}},
 	# The site is split into square land tiles `metres` across; the port owns
 	# the `start` block of tiles and buys the rest at `price`, paying `upkeep` a day each.
