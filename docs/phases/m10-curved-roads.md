@@ -45,7 +45,11 @@ tools.
 5. **Save v38 and migration.** Old grid segments become straight curves on the same lines, so every older save still loads and plays. Test: each fixture from v26 on loads with the same roads.
 
 ### Areas along curves
-6. **Area cells along a curve.** An area's cells are laid in rows following its road's side, as CS zoning is: one row of 4 m cells per depth step, spaced along the curve. Blocking and the coast use the same cells. Test: an area along a 90° bend has the same cell count as along a straight road of the same length, give or take the inner-corner loss.
+6. **Area cells along a curve**, CS-style local cells (the developer's choice, 1 Nov 2026), in four parts:
+   - **6a. Area shapes.** An area's cells are its own rows of 4 m cells along a stretch of road, turned with it; each a quad with a centre. Test: on straight grid roads they are today's cells; a bend's outer rows stretch and inner cells too small to use are dropped.
+   - **6b. Overlap by shape.** Areas and roads block each other by overlapping shapes, not shared grid cells. Test: the same refusals as today on grid layouts, and overlaps on curves.
+   - **6c. Areas store their shape (save v39).** Old saves migrate; bays, slots and stacks are laid out on the local cells. Test: every fixture loads and yards work as before.
+   - **6d. Water and terminal paint** are read at each cell's centre. Test: today's coast and terminal tests pass.
 7. **Stacks, slots and machines on curved areas.** Bays follow the area's rows; machines travel along them. Test: a yard block on a bend works a ship as one on a straight road does.
 
 ### Traffic
