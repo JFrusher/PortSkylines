@@ -114,8 +114,24 @@ static func command_log(seed_value: int, ticks: int, extra_commands: int) -> Arr
 			command = {"op": "paint_terminal", "cells": patch, "terminal": rng.randi_range(-1, 3)}
 		elif roll < 0.75:
 			command = {"op": "place_sts", "kind": "sts", "apron": rng.randi_range(1, 6), "along": rng.randi_range(0, 80)}
-		elif roll < 0.88:
+		elif roll < 0.84:
 			command = {"op": "buy_tractors", "count": rng.randi_range(1, 2)}
+		# The water south of the port: lanes, anchorages, dredging, widening,
+		# breakwaters, pilot stations and tug depots, many refused.
+		elif roll < 0.92:
+			var y := rng.randi_range(300, 390)
+			var water: Array[Dictionary] = [
+				{"op": "build_ship_lane", "from": Vector2i(0, y), "to": Vector2i(rng.randi_range(20, 70), y), "type": ["narrow", "wide"][rng.randi() % 2]},
+				{"op": "build_anchorage", "from": Vector2i(rng.randi_range(0, 20), y), "to": Vector2i(rng.randi_range(50, 70), y + rng.randi_range(50, 90))},
+				{"op": "dredge_lane", "segment": rng.randi_range(1, 6), "metres": 1},
+				{"op": "widen_ship_lane", "segment": rng.randi_range(1, 6)},
+				{"op": "build_breakwater", "from": Vector2i(rng.randi_range(30, 60), y), "to": Vector2i(rng.randi_range(30, 60), y + rng.randi_range(1, 10))},
+				{"op": "build_pilot_station", "cell": Vector2i(rng.randi_range(66, 72), y)},
+				{"op": "build_tug_depot", "cell": Vector2i(rng.randi_range(66, 72), y)},
+				{"op": "hire_pilots", "station": rng.randi_range(1, 3), "count": 1},
+				{"op": "buy_tugs", "depot": rng.randi_range(1, 3), "count": 1},
+			]
+			command = water[rng.randi() % water.size()]
 		# The economy: offers are numbered from 1, so some answers find one and
 		# some are refused; loans, land and dredging are refused without the cash.
 		else:
