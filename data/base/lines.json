@@ -10,7 +10,8 @@
 				"panamax": 1.0
 			},
 			"sensitivity": 1.0,
-			"rail_share": 0.1
+			"rail_share": 0.1,
+			"barge_share": 0.1
 		},
 		"kestrel": {
 			"tranship_share": 0.0,
@@ -21,7 +22,8 @@
 				"feeder": 1.0
 			},
 			"sensitivity": 1.5,
-			"rail_share": 0.05
+			"rail_share": 0.05,
+			"barge_share": 0.0
 		},
 		"meridian": {
 			"tranship_share": 0.3,
@@ -35,7 +37,20 @@
 				"ulcv": 1.0
 			},
 			"sensitivity": 0.7,
-			"rail_share": 0.15
+			"rail_share": 0.15,
+			"barge_share": 0.15
+		},
+		"riverline": {
+			"tranship_share": 0.0,
+			"connection_hours": 48.0,
+			"name": "Riverline Barges",
+			"livery": "#009e73",
+			"classes": {
+				"barge": 1.0
+			},
+			"sensitivity": 1.0,
+			"rail_share": 0.0,
+			"barge_share": 0.0
 		}
 	},
 	"contracts": {

@@ -28,6 +28,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `berths.<key>.name` | text | The berth's name in the Quay menu; its key also locks it by milestone |
 | `berths.<key>.length` | int | The berth's quay apron length in 4 m cells; it reaches from the water to its own road |
 | `berths.<key>.crane_spots` | int | How many STS crane spots sit evenly along it; cranes stand only there |
+| `berths.<key>` of an inland class | | A berth keyed by an inland ship class (`barge`) takes only that class, and ships of it berth nowhere else |
 | `yard_gear.<key>.speed` | float | A yard machine's travel speed on an area, in m/s |
 | `yard_gear.<key>.lift_seconds`, `.set_down_seconds` | float | Seconds to lift a box and to set one down |
 | `yard_gear.<key>.bays_per_machine` | int | One machine per so many 12 m bays of an area |
@@ -51,7 +52,8 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `upkeep.sts_crane`, `.tractor` | int | Paid per crane and per tractor at midnight |
 | `water.ship_speed` | number >0 | Metres a calendar minute ships sail along their lanes |
 | `water.lanes.<key>.name` | text | The lane's name in the Water menu |
-| `water.lanes.<key>.half_width` | int >0 | Cells of water either side of a lane's line; narrow lanes take one ship at a time, wide ones pass both ways |
+| `water.lanes.<key>.half_width` | int >0 | Cells of water either side of a lane's line |
+| `water.lanes.<key>.two_way`, `.barges_only` | true/false, true/false | Whether ships pass both ways (else one at a time); whether only inland ships may sail it, as a river channel |
 | `water.lanes.<key>.cost_per_cell`, `.upkeep_per_cell` | int, number | Price and daily upkeep per 4 m cell of water a lane covers |
 | `water.pocket` | int >0 | Cells out from a quay that a ship lies in (its berth's pocket); a lane ending in it reaches the berth |
 | `water.anchorage.cost_per_cell`, `.spacing` | int, int >0 | Price per cell of an anchorage, and the cells between ships at anchor each way |
@@ -100,6 +102,8 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `lines.<key>.name`, `.livery` | text | A fictional shipping line and its hull colour (`#rrggbb`). Base lines use the Okabe-Ito colour-blind-safe palette |
 | `lines.<key>.classes.<class>` | number | Relative weight of each ship class the line offers; classes must exist |
 | `lines.<key>.sensitivity` | number >0 | Multiplies every change in this line's reputation |
+| `hinterland.places.<key>.share`, `.road_km`, `.rail_km`, `.barge_km` | number, number, number, number | Each off-map place's share of boxes, and its distance by road, rail and barge up the river; 0 means no rail or barge link |
+| `lines.<key>.barge_share` | number 0–1 | Of the line's imports for a place up the river (`hinterland.places.<key>.barge_km` above 0), the share booked to leave by barge while a barge service calls at that terminal; such a box never leaves by lorry |
 | `contracts.offer_check_minutes` | number >0 | How often lines consider offering a service |
 | `contracts.offer_chance` | number | Chance of an offer at each check |
 | `contracts.max_offers` | int | Offers open at once |

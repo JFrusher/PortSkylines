@@ -70,7 +70,7 @@ static func _send(sim: PortSim, block: int) -> void:
 		# shortcut: an export is booked on no line until a ship loads it, as by road.
 		var box := sim._new_box("export", 0.0, "")
 		# Rail carries only boxes from places with a rail link.
-		sim.boxes[box].place = sim._pick_place(true)
+		sim.boxes[box].place = sim._pick_place("rail_km")
 		train.wagons[i] = box
 	_pay_discount(sim, exports)
 	sim.trains.append(train)

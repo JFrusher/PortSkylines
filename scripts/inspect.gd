@@ -181,7 +181,7 @@ static func _lane(sim: PortSim, segment: int) -> Array[String]:
 	var spec: Dictionary = sim.rules.water.lanes[lane.type]
 	var lines: Array[String] = [spec.name]
 	lines.append("%.1f m deep at its shallowest%s" % [sim.ship_lanes.depth(segment, sim.areas.coast), ", %.0f m of it dredged" % lane.dredged if lane.dredged > 0.0 else ""])
-	lines.append("%d m long, %d m wide, %s" % [Grid.metres(RoadNet.length(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b])), Grid.metres(spec.half_width * 2 + 1), "one ship at a time" if lane.type == "narrow" else "ships pass both ways"])
+	lines.append("%d m long, %d m wide, %s" % [Grid.metres(RoadNet.length(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b])), Grid.metres(spec.half_width * 2 + 1), "ships pass both ways" if spec.two_way else "one ship at a time"] + ("; barges only" if spec.barges_only else ""))
 	var drafts: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return sim.ship_lanes.depth(segment, sim.areas.coast) >= sim.rules.ship_classes[kind].draft)
 	lines.append("Deep enough for %s" % (", ".join(drafts) if not drafts.is_empty() else "no ship yet"))
 	return lines

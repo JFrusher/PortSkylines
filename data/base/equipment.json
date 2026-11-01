@@ -1,5 +1,6 @@
 {
 	"sts_cranes": {
+		"barge_crane": {"name": "Barge crane", "cost": 6000.0, "rate": 18.0, "outreach": 6.0, "lead_days": 0.0, "width": 20.0, "max_fetchers": 2.0},
 		"sts": {
 			"name": "STS crane",
 			"cost": 15000.0,

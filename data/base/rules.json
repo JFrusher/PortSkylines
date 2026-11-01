@@ -150,7 +150,8 @@
 				"rtg": "RTG cranes for yard blocks",
 				"ocr": "OCR gate portals",
 				"reefers": "reefer boxes and reefer blocks", "empties": "empties coming back, and empty blocks",
-				"barge": "barges up the river"
+				"barge": "barges up the river, barge berths and services",
+				"barge_crane": "barge cranes for barge berths"
 			}
 		},
 		"gateway": {

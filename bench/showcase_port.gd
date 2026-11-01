@@ -9,7 +9,8 @@ extends RefCounted
 ## spine road down x = SPINE with a connector road east from each berth to
 ## it, and the highway road from the spine to the site entry, with the
 ## gates and truck park. Yards line the connectors and the yard lanes
-## between them, parallel lanes from each quay road to the spine.
+## between them, parallel lanes from each quay road to the spine. A barge
+## berth on the river's south bank joins the spine's north end.
 
 ## The grid line the spine road runs down, and the rows it spans.
 const SPINE := 300
@@ -22,6 +23,9 @@ const BERTHS: Array[Dictionary] = [
 	{"kind": "feeder", "row": 540, "terminal": 2},
 ]
 
+
+## Where the barge berth is clicked, on the river's south bank.
+const BARGE_CLICK := Vector2i(310, 110)
 
 ## Imports stacked in the yards at the start.
 const BOXES := 3000
@@ -89,6 +93,12 @@ static func build(refused: Array[String]) -> PortSim:
 		for offset: int in [0] + LANES[berths.find(berth)]:
 			_do(sim, refused, {"op": "build_road", "from": Vector2i(berth.road_x, berth.row + offset), "to": Vector2i(SPINE, berth.row + offset), "type": "terminal_1_1"})
 	var north: Array[int] = [berths[0].apron]
+	# The barge berth, its road run on from the spine's north end.
+	var barge_road: int = sim.berth_plan("barge", BARGE_CLICK).line[0].y
+	_do(sim, refused, {"op": "build_berth", "kind": "barge", "cell": BARGE_CLICK})
+	var barge: int = sim.areas.list.keys().max()
+	north.append(barge)
+	_do(sim, refused, {"op": "build_road", "from": Vector2i(SPINE, barge_road), "to": Vector2i(SPINE, SPINE_ROWS.x), "type": "terminal_2_2"})
 	var south: Array[int] = [berths[1].apron, berths[2].apron, berths[3].apron]
 	# Yards along the connectors and yard lanes (a road east is side 1 to its
 	# south, -1 to its north).
@@ -120,6 +130,11 @@ static func build(refused: Array[String]) -> PortSim:
 	var bend := Vector2i(entry.x - 9, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
 		_do(sim, refused, {"op": "build_rail", "from": leg[0], "to": leg[1]})
+	# The North Terminal's dangerous goods, apart on the spine's run north to
+	# the barge berth.
+	var north_hazard := _area(sim, refused, {"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(SPINE, (SPINE_ROWS.x + barge_road) / 2)), "side": 1, "from": 20, "to": 20 + BLOCK - 1})
+	_do(sim, refused, {"op": "set_area", "id": north_hazard, "settings": {"role": "dangerous"}})
+	north.append(north_hazard)
 	# The North Terminal's own gate, on the spine north of the highway.
 	var spine_north := sim.roads.segment_at(Vector2i(SPINE, (berths[0].row + sim.site_entry().y) / 2))
 	north.append(_area(sim, refused, {"op": "build_area", "type": "gate", "segment": spine_north, "side": 1, "from": 20, "to": 34}))
@@ -143,21 +158,24 @@ static func build(refused: Array[String]) -> PortSim:
 		var spots := AreaFlow.crane_spots(sim, berth.apron)
 		for k in mini(spots.size(), 3):
 			_do(sim, refused, {"op": "place_sts", "apron": berth.apron, "along": spots[k], "kind": cranes[berth.kind]})
-	_do(sim, refused, {"op": "buy_tractors", "count": 72})
+	_do(sim, refused, {"op": "place_sts", "apron": barge, "along": AreaFlow.crane_spots(sim, barge)[0], "kind": "barge_crane"})
+	_do(sim, refused, {"op": "buy_tractors", "count": 150})
 	_water(sim, refused, berths)
+	_river(sim, refused)
 	_fill(sim)
 	# Weekly services at every berth, Meridian (every class) at each and Aurora
-	# at the feeder berth, so lines call at both terminals and tranship; and a
-	# ship of each berth's class sailing in now.
+	# at the feeder berth, so lines call at both terminals and tranship, and
+	# Riverline's barges; and a ship of each berth's class sailing in now.
 	var id := 800
-	for berth: Dictionary in berths:
-		for line: String in (["meridian", "aurora"] if berth.kind == "feeder" else ["meridian"]):
+	var lines := {"feeder": ["meridian", "aurora"], "barge": ["riverline"]}
+	for berth: Dictionary in berths + [{"kind": "barge", "apron": barge}]:
+		for line: String in lines.get(berth.kind, ["meridian"]):
 			var spec: Dictionary = sim.rules.ship_classes[berth.kind]
 			id += 1
 			# Spread through the week, so the port is busy but not swamped.
 			var start := (id - 800) * 1800
 			sim.contracts.services.append({"id": id, "line": line, "kind": berth.kind, "start": start, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": berth.apron, "any_berth": false, "asked": start})
-		var ship := PortSim.Ship.new(berth.kind, "meridian", sim.clock.calendar_minutes() + 60.0 * sim.rules.ship_classes[berth.kind].window_hours, sim.rules.ship_classes[berth.kind].import_moves / 4, sim.rules.ship_classes[berth.kind].export_moves / 4)
+		var ship := PortSim.Ship.new(berth.kind, lines.get(berth.kind, ["meridian"])[0], sim.clock.calendar_minutes() + 60.0 * sim.rules.ship_classes[berth.kind].window_hours, sim.rules.ship_classes[berth.kind].import_moves / 4, sim.rules.ship_classes[berth.kind].export_moves / 4)
 		ship.berth = berth.apron
 		ship.any_berth = false
 		ship.arrived = sim.clock.calendar_minutes()
@@ -225,6 +243,17 @@ static func _water(sim: PortSim, refused: Array[String], berths: Array) -> void:
 	_do(sim, refused, {"op": "build_tug_depot", "cell": depot})
 	_do(sim, refused, {"op": "buy_tugs", "depot": sim.tug_depots.keys().max(), "count": 6})
 	_do(sim, refused, {"op": "build_breakwater", "from": Vector2i(40, 420), "to": Vector2i(40, 445)})
+
+
+## River channels from the river's inland end down to the barge berth's
+## pocket: straight in from the site's edge, then at 45° down the river.
+## The river bends, so these points were found to fit inside it.
+const RIVER_LANES: Array = [[Vector2i(396, 0), Vector2i(396, 7)], [Vector2i(396, 7), Vector2i(318, 85)]]
+
+
+static func _river(sim: PortSim, refused: Array[String]) -> void:
+	for lane: Array in RIVER_LANES:
+		_do(sim, refused, {"op": "build_ship_lane", "from": lane[0], "to": lane[1], "type": "river"})
 
 
 static func _area(sim: PortSim, refused: Array[String], command: Dictionary) -> int:

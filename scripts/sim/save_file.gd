@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 34
+const VERSION := 35
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -89,6 +89,20 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v33(data)
 	if data.version < 34:
 		data = _migrate_v34(data)
+	if data.version < 35:
+		data = _migrate_v35(data)
+	return data
+
+
+## v35 has barges; older boxes aren't booked to one, and older berths are
+## for ships.
+static func _migrate_v35(data: Dictionary) -> Dictionary:
+	for box: Dictionary in data.sim.boxes.values():
+		box.barge = false
+	for area: Dictionary in data.sim.areas.list.values():
+		if area.type == "quay_apron":
+			area.settings.barge = false
+	data.version = 35
 	return data
 
 

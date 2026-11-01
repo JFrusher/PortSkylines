@@ -7,7 +7,7 @@ A port grows through five milestones. Each one needs TEU moved across the quay, 
 | Milestone | Needs | Unlocks |
 |---|---|---|
 | 1. Harbour | Nothing: the start | `contracts` with shipping lines, `feeder` services, `reach_stacker` yard gear, the `ledger` |
-| 2. Terminal | 2,000 TEU; reputation 40 | `loans`, `rtg` cranes, `ocr` gate portals, `reefers`, `empties` coming back, `barge` services up the river |
+| 2. Terminal | 2,000 TEU; reputation 40 | `loans`, `rtg` cranes, `ocr` gate portals, `reefers`, `empties` coming back, `barge` services up the river with `barge_crane`s at their berths |
 | 3. Gateway | 6,000 TEU; reputation 45; 60% of calls on time | buying `land`, `dredging`, `panamax` services, `automated` gates, `rmg` rail yards, `transhipment` |
 | 4. Hub | 15,000 TEU; reputation 50; 70% on time; 30 berth moves an hour | `neopanamax` services and berths, `wide_sts` cranes |
 | 5. Mega port | 40,000 TEU; reputation 55; 75% on time; 45 berth moves an hour | `ulcv` services and berths, `mega_sts` cranes |

@@ -124,7 +124,7 @@ const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
-	"quay_apron": {"lines": []},
+	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
@@ -847,7 +847,9 @@ func berth_plan(kind: String, cell: Vector2i) -> Dictionary:
 	for k in length:
 		for r in range(quay - depth, quay):
 			cells.append(first + along * k + out * r)
-		# Back from the quay to the shore, so no water is left between the berth and the land.
+	# Back from the quay to the shore, so no water is left between the berth
+	# and the land, along the road's whole span: one cell past the apron.
+	for k in length + 1:
 		var r := quay - 1
 		while areas.is_water(first + along * k + out * r):
 			if quay - r > reach * 2:
@@ -917,6 +919,8 @@ func build_berth(kind: String, cell: Vector2i) -> String:
 	# The road runs so its right, side 1, faces the water.
 	err = build_area("quay_apron", roads.segment_at((line[0] + line[1]) / 2), 1, 0, rules.berths[kind].length - 1)
 	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
+	# A barge berth takes only barges, and a barge only a barge berth.
+	areas.list[areas.list.keys().max()].settings.barge = rules.ship_classes[kind].inland
 	return ""
 
 
@@ -1908,15 +1912,16 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place(), "from": 0, "to": 0, "onward": ""}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": ""}
 	exports += 1 if kind == "export" else 0
 	return id
 
 
-## A hinterland place, drawn by the data's shares, of those with a rail link
-## when `rail_only`: an import's destination or an export's origin.
-func _pick_place(rail_only := false) -> String:
-	var places: Array = rules.hinterland.places.keys().filter(func(p: String) -> bool: return not rail_only or rules.hinterland.places[p].rail_km > 0.0)
+## A hinterland place, drawn by the data's shares, of those with a `link`
+## ("rail_km" or "barge_km") when one is given: an import's destination or
+## an export's origin.
+func _pick_place(link := "") -> String:
+	var places: Array = rules.hinterland.places.keys().filter(func(p: String) -> bool: return link == "" or rules.hinterland.places[p][link] > 0.0)
 	var total := 0.0
 	for place: String in places:
 		total += rules.hinterland.places[place].share
@@ -1938,6 +1943,16 @@ func hinterland_demand() -> float:
 ## Whether box `id` can go by rail: its hinterland place has a rail link.
 func by_rail_to(id: int) -> bool:
 	return rules.hinterland.places[boxes[id].place].rail_km > 0.0
+
+
+## Whether box `id` can go by barge: its hinterland place is up the river.
+func by_barge_to(id: int) -> bool:
+	return rules.hinterland.places[boxes[id].place].barge_km > 0.0
+
+
+## The share of `line`'s imports for places up the river booked to barge.
+func barge_share(line: String) -> float:
+	return rules.lines[line].barge_share
 
 
 ## Import `id` has left for the hinterland: once empties are unlocked, it
@@ -1970,7 +1985,7 @@ func _empty_collected(id: int) -> void:
 func _new_empty(line: String, teu: int) -> int:
 	var id := _next_box
 	_next_box += 1
-	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
+	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place()}
 	return id
 
 
