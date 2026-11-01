@@ -23,6 +23,12 @@ Placed after M9 and before events (now M11), as the developer chose on
 | Old saves | **Migrate them.** Each grid segment becomes a straight curve on the same line, and areas are rebuilt along it. |
 | Traffic | **CS-like.** Vehicles keep a gap behind the one ahead along their lane, slow on tight curves and at junctions, and change lane where marked. They no longer take one cell each. |
 | Performance | **No worse than today** on the mega port bench (about 19.5 ms a tick). |
+| Speed limits | **Per road type, in the data:** two-lane terminal road 30 km/h, four-lane 40, one-way 40, tractor lane 25, highway 80. A vehicle drives at the lower of the road's limit and its own top speed. Routing uses travel time. |
+| Lane changes | **Anywhere but junctions** and their approaches, as today. |
+| Areas on bends | **A minimum radius per area type, in the data** (e.g. 30 m for yard blocks). Straight areas are always fine. |
+| Following distance | **A standstill gap (2 m) plus about one second of travel** at the current speed, in the data. |
+| Grid snap default | **Off**, CS-style. The grid is a toggle. |
+| Code | **GDScript first;** only hot spots that are measured move to native code. |
 | Extras | **Length, cost and angle tooltip** while drawing; **parallel snapping**; **roundabouts**; **Move It-style editing** of built roads' nodes and control points. |
 
 ## Steps, in order

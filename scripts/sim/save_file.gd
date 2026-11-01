@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 37
+const VERSION := 38
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -95,6 +95,18 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v36(data)
 	if data.version < 37:
 		data = _migrate_v37(data)
+	if data.version < 38:
+		data = _migrate_v38(data)
+	return data
+
+
+## v38 makes every road and rail segment a curve; an older one is the
+## straight curve on its own line, its control point at its middle.
+static func _migrate_v38(data: Dictionary) -> Dictionary:
+	for net: Dictionary in [data.sim.roads, data.sim.rails]:
+		for road: Dictionary in net.segments.values():
+			road.control = Vector2(net.nodes[road.a] + net.nodes[road.b]) / 2.0
+	data.version = 38
 	return data
 
 
@@ -371,7 +383,7 @@ static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 		return false
 	return roads.segments.keys().all(func(id: Variant) -> bool:
 		var road: Variant = roads.segments[id]
-		return id is int and road is Dictionary and _has_fields(road, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING}) and road.a in roads.nodes and road.b in roads.nodes and road.type in types)
+		return id is int and road is Dictionary and _has_fields(road, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING, "control": TYPE_VECTOR2}) and road.a in roads.nodes and road.b in roads.nodes and road.type in types)
 
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.

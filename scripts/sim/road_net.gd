@@ -14,7 +14,8 @@ extends RefCounted
 
 ## Node id -> its grid point (even-width types) or cell (odd-width).
 var nodes := {}
-## Segment id -> {"a": node id, "b": node id, "type": a key of road_types}.
+## Segment id -> {"a": node id, "b": node id, "type": a key of road_types,
+## "control": its curve's control point, at its middle while it is straight}.
 var segments := {}
 ## The data's road types: lanes each way, whether lorries may use them, costs.
 var types: Dictionary
@@ -58,7 +59,7 @@ func add(from: Vector2i, to: Vector2i, type: String) -> String:
 			stops.append(cell)
 	stops.append(to)
 	for i in stops.size() - 1:
-		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type}
+		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type, "control": Vector2(stops[i] + stops[i + 1]) / 2.0}
 		_next_segment += 1
 	version += 1
 	return ""
@@ -95,6 +96,12 @@ func segment_at(cell: Vector2i) -> int:
 			if cell in lane.cells:
 				return id
 	return 0
+
+
+## `segment`'s line as a curve, in grid units.
+func curve(segment: int) -> RoadCurve:
+	var road: Dictionary = segments[segment]
+	return RoadCurve.new(Vector2(nodes[road.a]), road.control, Vector2(nodes[road.b]))
 
 
 ## A road's length in cells from `from` to `to`, which costs are counted in:
@@ -348,9 +355,10 @@ func _split(segment: int, cell: Vector2i) -> void:
 	if nodes[road.a] == cell or nodes[road.b] == cell:
 		return
 	var middle := _node_at(cell)
-	segments[_next_segment] = {"a": middle, "b": road.b, "type": road.type}
+	segments[_next_segment] = {"a": middle, "b": road.b, "type": road.type, "control": Vector2(cell + nodes[road.b]) / 2.0}
 	_next_segment += 1
 	road.b = middle
+	road.control = Vector2(nodes[road.a] + cell) / 2.0
 
 
 ## The grid points (or cells, for odd-width types) `segment`'s line runs
