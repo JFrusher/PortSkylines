@@ -1,6 +1,8 @@
 {
 	"lines": {
 		"aurora": {
+			"tranship_share": 0.2,
+			"connection_hours": 48.0,
 			"name": "Aurora Lines",
 			"livery": "#d55e00",
 			"classes": {
@@ -11,6 +13,8 @@
 			"rail_share": 0.1
 		},
 		"kestrel": {
+			"tranship_share": 0.0,
+			"connection_hours": 48.0,
 			"name": "Kestrel Shipping",
 			"livery": "#0072b2",
 			"classes": {
@@ -20,6 +24,8 @@
 			"rail_share": 0.05
 		},
 		"meridian": {
+			"tranship_share": 0.3,
+			"connection_hours": 48.0,
 			"name": "Meridian Box",
 			"livery": "#f0e442",
 			"classes": {

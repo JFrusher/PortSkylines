@@ -1485,6 +1485,8 @@ func move_price(box: Dictionary) -> int:
 	var price: float = rules.move_price.per_20ft * (rules.move_price.forty_factor if box.teu == 2 else 1.0)
 	if box.kind == "empty":
 		price *= rules.empties.price_factor
+	elif box.kind == "tranship":
+		price *= rules.transhipment.price_factor
 	return roundi(price) + (rules.move_price.reefer_premium if box.reefer else 0)
 
 
@@ -1886,7 +1888,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place(), "from": 0, "to": 0}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place(), "from": 0, "to": 0, "onward": ""}
 	exports += 1 if kind == "export" else 0
 	return id
 
@@ -1960,7 +1962,7 @@ func _weigh_routes() -> void:
 
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.
 func _drop_box(id: int) -> void:
-	exports -= 1 if boxes[id].kind == "export" else 0
+	exports -= 1 if boxes[id].kind in ["export", "tranship"] else 0
 	boxes.erase(id)
 
 

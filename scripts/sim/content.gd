@@ -91,7 +91,12 @@ const SCHEMA := {
 	# strongly their reputation of the port moves.
 	# rail_share: of a line's imports, the share booked to leave by train when
 	# the terminal has a rail block.
-	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT}},
+	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT, "tranship_share": TYPE_FLOAT, "connection_hours": TYPE_FLOAT}},
+	# Transhipment: a line's tranship_share of the boxes its big ships land
+	# leave on its next feeder within connection_hours, and the same share of
+	# its feeders' boxes on its next big ship; each such move pays the move
+	# price times price_factor, and a box that misses its ship costs missed_fine.
+	"transhipment": {"price_factor": TYPE_FLOAT, "missed_fine": TYPE_INT},
 	"contracts": {"offer_check_minutes": TYPE_FLOAT, "offer_chance": TYPE_FLOAT, "max_offers": TYPE_INT, "offer_days": TYPE_FLOAT, "max_services_per_berth": TYPE_INT, "flex_hours": TYPE_INT},
 	"reputation": {
 		"start": TYPE_FLOAT, "offer_above": TYPE_FLOAT, "cancel_below": TYPE_FLOAT, "on_time": TYPE_FLOAT,

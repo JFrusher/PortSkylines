@@ -22,6 +22,10 @@
 		"neopanamax_on_time": {"text": "Work three Neopanamaxes inside their windows", "after": 4, "kind": "on_time_calls", "class": "neopanamax", "count": 3, "cash": 300000, "reputation": 5.0},
 		"ulcv_on_time": {"text": "Work two ULCVs inside their windows", "after": 5, "kind": "on_time_calls", "class": "ulcv", "count": 2, "cash": 600000, "reputation": 5.0}
 	},
+	"transhipment": {
+		"price_factor": 0.6,
+		"missed_fine": 150
+	},
 	"transfers": {
 		"share": 0.1,
 		"cost_per_box": 40
@@ -157,6 +161,7 @@
 				"dredging": "dredging the channel",
 				"panamax": "Panamax services",
 				"automated": "automated gates",
+				"transhipment": "transhipment between big ships and feeders",
 				"rmg": "rail track and RMG rail yards"
 			}
 		},

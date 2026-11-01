@@ -1,0 +1,73 @@
+extends SceneTree
+## M9 step A: a share of the boxes a line's big ship lands go on with its
+## next feeder within the connection window, never by gate or rail; the
+## feeder loads them first; a transhipment move pays less.
+## godot --headless --script res://tests/test_transhipment.gd
+
+const AreaPort := preload("res://tests/area_port.gd")
+const RandomPort := preload("res://tests/random_port.gd")
+
+var _failures := 0
+
+
+func _initialize() -> void:
+	_test_boxes_go_on_by_feeder()
+	print("tests: %d failure(s)" % _failures)
+	quit(1 if _failures else 0)
+
+
+func _expect(actual: Variant, expected: Variant, what: String) -> void:
+	if actual != expected:
+		_failures += 1
+		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
+
+
+## Aurora (half its boxes transhipped) has a feeder service; its Panamax
+## lands 200 boxes, then its feeder comes alongside.
+func _test_boxes_go_on_by_feeder() -> void:
+	var rules := RandomPort.quick()
+	rules.lines.aurora.tranship_share = 0.5
+	var sim := AreaPort.base(rules, "")
+	AreaPort.add_export_block(sim)
+	sim.contracts.services.append({"id": 900, "line": "aurora", "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000})
+	var big := PortSim.Ship.new("panamax", "aurora", sim.clock.calendar_minutes() + 6000.0, 200, 0)
+	sim.ships.append(big)
+	_expect(AreaFlow.berth(sim, big), true, "the Panamax berths")
+	big.state = PortSim.Ship.State.WORKING
+	big.sail = 1.0
+	big.berthed = sim.clock.calendar_minutes()
+	var seen := {}  # box -> kind when first seen
+	var on_lorry := 0
+	var paid := []
+	for i in roundi(8 * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		for id: int in sim.boxes:
+			if id not in seen:
+				seen[id] = sim.boxes[id].kind
+		for vehicle: Vehicle in sim.vehicles:
+			if vehicle.kind == "lorry" and vehicle.box in sim.boxes and sim.boxes[vehicle.box].kind == "tranship":
+				on_lorry += 1
+		if big not in sim.ships:
+			break
+	var landed := seen.values().filter(func(k: String) -> bool: return k in ["import", "tranship"])
+	var transhipped := seen.values().filter(func(k: String) -> bool: return k == "tranship").size()
+	_expect(transhipped > landed.size() * 0.35 and transhipped < landed.size() * 0.65, true, "about half the boxes landed are transhipped (%d of %d)" % [transhipped, landed.size()])
+	_expect(on_lorry, 0, "a transhipment box never leaves on a lorry")
+	var waiting := sim.boxes.keys().filter(func(id: int) -> bool: return sim.boxes[id].kind == "tranship")
+	_expect(waiting.all(func(id: int) -> bool: return sim.boxes[id].onward == "feeder" and sim.boxes[id].line == "aurora"), true, "they wait for Aurora's feeder")
+	var box: Dictionary = sim.boxes[waiting[0]]
+	_expect(sim.move_price(box), roundi(sim.move_price({"kind": "import", "teu": box.teu, "reefer": false}) * rules.transhipment.price_factor) + (rules.move_price.reefer_premium if box.reefer else 0), "a transhipment move pays the price times the factor")
+	# Aurora's feeder comes alongside and loads them first.
+	var feeder := PortSim.Ship.new("feeder", "aurora", sim.clock.calendar_minutes() + 6000.0, 0, 20)
+	sim.ships.append(feeder)
+	_expect(AreaFlow.berth(sim, feeder), true, "Aurora's feeder berths")
+	feeder.state = PortSim.Ship.State.WORKING
+	feeder.sail = 1.0
+	feeder.berthed = sim.clock.calendar_minutes()
+	var before := waiting.size()
+	for i in roundi(3 * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		if feeder.exports == 0:
+			break
+	var left := sim.boxes.keys().filter(func(id: int) -> bool: return sim.boxes[id].kind == "tranship").size()
+	_expect(before - left, mini(20, before), "the feeder loads its line's transhipment boxes first (%d of %d)" % [before - left, before])
