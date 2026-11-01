@@ -27,6 +27,18 @@
 ### From the developer's notes (31 Oct 2026)
 - **Straddle carriers.** A straddle carrier stacks and carries in one machine: it lifts a box in a straddle block (stacks 1 over 3) and drives it to the quay or the gate itself, with no tractor. A new yard gear and block layout from the data. Test: a straddle block works a ship with no tractors, at the data's rate.
 
+### Order and scope, with the developer (1 Nov 2026)
+Where things stand: M8's ports have ship lanes, anchorages, pilots and tugs; the estuary has a 7 m river in the north, and generated coasts have one too. Boxes go by road or rail; the rail discount is port-wide.
+
+Decisions: feeder services connect to their line's big-ship services from the lines' data, with a connection window; a box that misses its feeder rolls to the next, with a fine and a reputation drop. Barges sail up the river: they come and go through its inland end at the map edge, and only they fit its 7 m. Straddle carriers are in. Discounts stay port-wide (rail, and now barge); each line's split follows its data shares, nudged by them, and the panel shows each line's shares. Barges unlock at milestone 2, transhipment and straddle carriers at milestone 3. Order:
+- **A. Transhipment boxes and connections (steps 1, 2, 5).** A share of a line's imports off its big ships are bound for its next feeder within the connection window, and the reverse; a transhipment move pays less. Test: the box mix matches the shares; a transhipment box never leaves by gate or rail; the ledger per box.
+- **B. Transhipment yard rules (step 3).** A transhipment block role; boxes go to the transhipment block nearest the feeder berth. Test: transhipment boxes land in transhipment blocks when there are some.
+- **C. Missed connections (step 4).** Test: overbooked feeders miss connections, rolled to the next feeder, fined.
+- **D. Barges up the river (step 8).** A barge class, shallow, entering and leaving only by the river's inland end. Test: barges route through the river; big ships can't.
+- **E. Barge berths and services (steps 6, 7).** A short barge berth with a barge crane; barges call on a schedule and carry boxes to and from inland places. Test: a barge berth takes only barges; barge-booked boxes leave only by barge.
+- **F. Three-way split (step 9).** A barge discount beside the rail discount; the panel shows each line's road, rail and barge shares. Test: the barge scenario (gate queue and rail load both fall).
+- **G. Straddle carriers (31 Oct note).** Test: a straddle block works a ship with no tractors, at the data's rate.
+
 ### Close
 10. **Fixture and soak.** New save fixture, and transhipment and barge in the soak test.
 11. **Public playtest build.** Notes go in `docs/playtests/m9.md`.
