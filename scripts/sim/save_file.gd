@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 38
+const VERSION := 39
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -97,6 +97,27 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v37(data)
 	if data.version < 38:
 		data = _migrate_v38(data)
+	if data.version < 39:
+		data = _migrate_v39(data)
+	return data
+
+
+## v39 lays each area's shape from a curve: an older one's is the straight
+## line along its front row's inner edge, so its cells start right on it.
+static func _migrate_v39(data: Dictionary) -> Dictionary:
+	for area: Dictionary in data.sim.areas.list.values():
+		var out: Vector2 = Vector2(area.out)
+		# Along its front row; a one-cell row runs the way its rows grow right of.
+		var along: Vector2 = Vector2((area.end - area.start).sign()) if area.end != area.start else Vector2(out.y, -out.x)
+		var right := Vector2(-along.y, along.x)
+		var a: Vector2 = Vector2(area.start) + Vector2(0.5, 0.5) - out * 0.5 - along * 0.5
+		var b: Vector2 = Vector2(area.end) + Vector2(0.5, 0.5) - out * 0.5 + along * 0.5
+		area.curve = [a, (a + b) / 2.0, b]
+		area.side = 1 if right.dot(out) > 0.0 else -1
+		area.from = 0.0
+		area.columns = maxi(absi(area.end.x - area.start.x), absi(area.end.y - area.start.y)) + 1
+		area.edge = 0.0
+	data.version = 39
 	return data
 
 
@@ -402,7 +423,7 @@ static func _valid_areas(areas: Dictionary) -> bool:
 	var levels: Dictionary = Content.base().gate_levels
 	return areas.list.keys().all(func(id: Variant) -> bool:
 		var area: Variant = areas.list[id]
-		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
+		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT, "curve": TYPE_ARRAY, "side": TYPE_INT, "from": TYPE_FLOAT, "columns": TYPE_INT, "edge": TYPE_FLOAT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
 			return false
 		if types[area.type].kind == "quay_apron" and not area.get("depth") is int:
 			return false

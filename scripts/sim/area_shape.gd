@@ -15,13 +15,13 @@ const MIN_SIDE := 0.5
 var cells: Array[Dictionary] = []
 
 
-## The cells beside `curve` on `side` (1 right of its way, -1 left), from
-## column `from` to `to` inclusive (one cell along the line each), starting
-## `edge` cells off the line and reaching `depth` rows out.
-static func along(curve: RoadCurve, side: int, from: int, to: int, edge: float, depth: int) -> AreaShape:
+## The cells beside `curve` on `side` (1 right of its way, -1 left):
+## `columns` of them, one cell along the line each from `from` cells along
+## it, starting `edge` cells off the line and reaching `depth` rows out.
+static func along(curve: RoadCurve, side: int, from: float, columns: int, edge: float, depth: int) -> AreaShape:
 	var shape := AreaShape.new()
-	for k in range(to - from + 1):
-		var d0 := float(from + k)
+	for k in columns:
+		var d0 := from + k
 		var d1 := d0 + 1.0
 		var direction := curve.direction_at(d0 + 0.5)
 		for r in depth:
