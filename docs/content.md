@@ -18,6 +18,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `transhipment.price_factor`, `.missed_fine`, `.missed_reputation` | number, int, number | A transhipment move pays the move price times this; a box not loaded within its connection window costs the fine and this much of its line's reputation (times the line's sensitivity), and waits a further window for the next ship |
 | `transfers.share`, `.cost_per_box` | number, int | Of the imports a line lands at one terminal while it has a service at another, the share that leave on its ship there; each is driven between the terminals at this cost, an internal move |
 | `road_types.<key>.name` | text | The road's name in the build menu |
+| `junctions.min_angle`, `.corner_cells` | number, number | Roads meeting at a node must part by at least this many degrees; each is cut back from the node far enough to clear its neighbours' edges, plus this corner radius in cells |
 | `road_types.<key>.forward`, `.backward` | int | Lanes along and against the drawn direction; forward at least backward, and at least one lane |
 | `road_types.<key>.lorries` | true/false | Whether lorries may use it; tractors and AGVs always may |
 | `road_types.<key>.cost_per_cell`, `.upkeep_per_cell` | int, number | Build cost and daily upkeep per 4 m cell of road length; upkeep may be a fraction of a dollar |

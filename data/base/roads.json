@@ -4,5 +4,6 @@
 		"terminal_2_2": {"name": "Four-lane road", "forward": 2, "backward": 2, "lorries": true, "cost_per_cell": 40, "upkeep_per_cell": 4.0},
 		"one_way": {"name": "One-way road", "forward": 2, "backward": 0, "lorries": true, "cost_per_cell": 20, "upkeep_per_cell": 2.0},
 		"tractor_lane": {"name": "Tractor lane", "forward": 1, "backward": 1, "lorries": false, "cost_per_cell": 10, "upkeep_per_cell": 1.0}
-	}
+	},
+	"junctions": {"min_angle": 30.0, "corner_cells": 1.0}
 }
