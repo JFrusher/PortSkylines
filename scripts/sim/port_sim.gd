@@ -33,7 +33,8 @@ var finance: Finance
 ## Land tiles (rules.land.metres square) the port owns, as tile coordinates;
 ## roads and areas are built only on land it owns.
 var land := {}
-## The map the port is on, a key of rules.maps; its coast is areas.coast.
+## The map the port is on: a key of rules.maps, or a generated one (see
+## MapGen.of); its coast is areas.coast.
 var map: String
 ## The ship lanes drawn on the water.
 var ship_lanes: ShipLanes
@@ -203,7 +204,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	lanes = LaneGraph.new(roads)
 	lanes.rails = rails
 	map = rules.map
-	areas = Areas.new(rules.area_types, roads, Coast.of(rules.maps[map], rules.site))
+	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
 	lanes.areas = areas
 	lane_traffic = LaneTraffic.new(lanes, Junctions.new(rules.traffic))
 	handovers = Handovers.new(areas)
@@ -431,7 +432,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.lanes = LaneGraph.new(sim.roads)
 	sim.lanes.rails = sim.rails
 	sim.map = d.map
-	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(sim.rules.maps[sim.map], sim.rules.site))
+	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(MapGen.of(sim.rules, sim.map), sim.rules.site))
 	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed

@@ -52,7 +52,7 @@ func _ready() -> void:
 	hud.save_pressed.connect(_save)
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
-	hud.new_game_pressed.connect(func(creative: bool) -> void: _use(PortSim.new(randi(), Content.base(), creative)))
+	hud.new_game_pressed.connect(_new_game)
 	# Loaded, not preloaded: bench/ is left out of exported builds, which have no such button.
 	hud.mega_port_pressed.connect(func() -> void: _use(load("res://bench/endgame_port.gd").debug_port()))
 	hud.event_picked.connect(_go_to)
@@ -71,6 +71,17 @@ func _load() -> void:
 		return
 	_use(loaded.sim)
 	hud.flash("Loaded")
+
+
+## A new game, creative or not, on the data's map or a coast generated
+## from its seed.
+func _new_game(creative: bool, generated: bool) -> void:
+	var seed_value := randi()
+	var rules := Content.base()
+	if generated:
+		rules = rules.duplicate(true)
+		rules.map = MapGen.PREFIX + str(seed_value)
+	_use(PortSim.new(seed_value, rules, creative))
 
 
 ## Swaps in `new_sim` and a fresh view of it.

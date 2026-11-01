@@ -267,7 +267,7 @@ class MapCanvas extends Control:
 	var _paint := ImageTexture.new()
 	var _paint_pixels: Image
 	var _ground_for := []
-	var _paint_for := -1
+	var _paint_for := []
 	var _stroke := -1  # mouse button held down, or -1
 
 	func _ready() -> void:
@@ -298,12 +298,13 @@ class MapCanvas extends Control:
 
 	func _draw() -> void:
 		var sim := map.sim
-		var key := [sim.roads.version, sim.areas.list.keys(), sim.land.size()]
+		# The sim itself too: a new or loaded game starts its versions again.
+		var key := [sim, sim.roads.version, sim.areas.list.keys(), sim.land.size(), sim.areas.filled.size(), sim.areas.breakwaters.keys()]
 		if key != _ground_for:
 			_ground_for = key
 			_ground.set_image(_ground_image())
-		if sim.areas.version != _paint_for:
-			_paint_for = sim.areas.version
+		if [sim, sim.areas.version] != _paint_for:
+			_paint_for = [sim, sim.areas.version]
 			_paint_pixels = _paint_image()
 			_paint.set_image(_paint_pixels)
 		var frame := _frame()
@@ -332,7 +333,7 @@ class MapCanvas extends Control:
 				var terminal: int = sim.areas.paint.get(cell, 0)
 				_paint_pixels.set_pixelv(cell, Color(COLOURS[sim.areas.terminals[terminal].colour], 0.45) if terminal else Color.TRANSPARENT)
 		_paint.update(_paint_pixels)
-		_paint_for = sim.areas.version
+		_paint_for = [sim, sim.areas.version]
 
 	## Sea, land owned or not, roads and areas, a pixel a cell.
 	func _ground_image() -> Image:

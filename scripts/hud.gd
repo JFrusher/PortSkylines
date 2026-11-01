@@ -10,7 +10,8 @@ signal load_pressed
 ## A command for PortSim.apply, such as accepting an offer.
 signal command_issued(command: Dictionary)
 ## shortcut: two buttons stand in for the new-game screen until M12 builds it.
-signal new_game_pressed(creative: bool)
+## A new game: creative or not, on the data's map or a generated coast.
+signal new_game_pressed(creative: bool, generated: bool)
 ## Debug builds only: start the big test port with every feature in use.
 signal mega_port_pressed
 ## A recent event was clicked: the camera goes to grid cell `cell`.
@@ -209,7 +210,10 @@ func _ready() -> void:
 	for creative: bool in [false, true]:
 		_ask(menu, "New creative game" if creative else "New game", "Start a new %s? The port you're playing is lost unless it is saved." % ("creative game" if creative else "game"), func() -> void:
 			_menu.visible = false
-			new_game_pressed.emit(creative))
+			new_game_pressed.emit(creative, false))
+	_ask(menu, "New game, new coast", "Start a new game on a coast drawn for it: its own bays, river and islands. The port you're playing is lost unless it is saved.", func() -> void:
+		_menu.visible = false
+		new_game_pressed.emit(false, true))
 	if OS.is_debug_build():
 		_ask(menu, "Mega port (debug)", "Start the big test port: 6 berths, 18 STS cranes, 80 RTG blocks holding 20,000 boxes, 12 gates and ships in. The port you're playing is lost unless it is saved.", func() -> void:
 			_menu.visible = false

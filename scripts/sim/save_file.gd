@@ -207,7 +207,7 @@ static func _valid_sim(data: Variant) -> bool:
 	}):
 		return false
 	# Roads and areas first: ships and cranes are checked against the aprons.
-	if data.map not in Content.base().maps:
+	if data.map not in Content.base().maps and not (data.map.begins_with(MapGen.PREFIX) and data.map.trim_prefix(MapGen.PREFIX).is_valid_int()):
 		return false
 	if not _valid_ship_lanes(data.ship_lanes):
 		return false

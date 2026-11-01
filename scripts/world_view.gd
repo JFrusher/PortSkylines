@@ -647,7 +647,7 @@ func _draw_land() -> void:
 ## depth against max_depth metres.
 static func coast_image(sim: PortSim) -> Image:
 	var size := sim.areas.coast.size
-	var deepest: float = sim.rules.maps[sim.map].depth.max
+	var deepest: float = MapGen.of(sim.rules, sim.map).depth.max
 	var bytes := PackedByteArray()
 	bytes.resize(size.x * size.y * 2)
 	for y: int in size.y:
