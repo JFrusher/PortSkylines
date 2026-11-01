@@ -84,6 +84,35 @@ func direction_at(distance: float) -> Vector2:
 	return tangent(t_at(distance))
 
 
+## The unit vector to the right of travel `distance` along the curve.
+func right_at(distance: float) -> Vector2:
+	var d := direction_at(distance)
+	return Vector2(-d.y, d.x)
+
+
+## The curve offset `offset` cells to its right (negative: left), as points
+## every `step` cells along it and at its end: one lane's line.
+func offset_points(offset: float, step := 0.5) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var count := maxi(1, ceili(length / step))
+	for i in count + 1:
+		var d := length * i / count
+		points.append(point_at(d) + right_at(d) * offset)
+	return points
+
+
+## A road of type `road`'s lanes left to right across the way from a to b,
+## as today's grid lanes are: {"offset": cells right of the line, "forward":
+## true if it runs from a to b}. The first `backward` run from b to a; they
+## lie one cell apart, evenly either side of the line.
+static func lanes(road: Dictionary) -> Array[Dictionary]:
+	var width: int = road.forward + road.backward
+	var found: Array[Dictionary] = []
+	for k in width:
+		found.append({"offset": k - (width - 1) / 2.0, "forward": k >= road.backward})
+	return found
+
+
 ## The distance along the curve of its point nearest `position`: the nearest
 ## sample, then a ternary search between its neighbours.
 func nearest(position: Vector2) -> float:

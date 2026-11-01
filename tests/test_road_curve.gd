@@ -1,6 +1,8 @@
 extends SceneTree
 ## M10 step 1: a road segment is a quadratic Bézier curve from `a` through
 ## control point `c` to `b`, measured along its length from a sampled table.
+## Step 2: its lanes are the curve offset sideways, backward lanes left of
+## the way from a to b and forward ones right, one cell apart.
 ## godot --headless --script res://tests/test_road_curve.gd
 
 var _failures := 0
@@ -11,6 +13,8 @@ func _initialize() -> void:
 	_test_lengths_match_a_fine_sum()
 	_test_points_and_directions_along_a_bend()
 	_test_nearest_distance()
+	_test_lanes_sit_where_grid_lanes_do()
+	_test_lanes_on_a_bend_stay_parallel()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -70,3 +74,34 @@ func _test_nearest_distance() -> void:
 	for d: float in [5.0, 20.0, 33.0]:
 		var beside := bend.point_at(d) + Vector2(-bend.direction_at(d).y, bend.direction_at(d).x) * 3.0
 		_near(bend.nearest(beside), d, 0.1, "3 cells off the bend at %.0f, the nearest is %.0f along" % [d, d])
+
+
+## On a straight road east, a 1+1 road's lanes run half a cell either side,
+## the backward one north, as today's grid lanes do; a 2+2's four lanes
+## run 1.5 and 0.5 cells either side.
+func _test_lanes_sit_where_grid_lanes_do() -> void:
+	var types: Dictionary = Content.base().road_types
+	var two := RoadCurve.lanes(types.terminal_1_1)
+	_expect(two.map(func(l: Dictionary) -> Array: return [l.offset, l.forward]), [[-0.5, false], [0.5, true]], "a two-lane road: backward on the left, forward on the right")
+	var four := RoadCurve.lanes(types.terminal_2_2)
+	_expect(four.map(func(l: Dictionary) -> float: return l.offset), [-1.5, -0.5, 0.5, 1.5], "a four-lane road's lanes, one cell apart")
+	var road := RoadCurve.straight(Vector2(0, 0), Vector2(10, 0))
+	var north := road.offset_points(-0.5)
+	_expect(north[0], Vector2(0, -0.5), "the backward lane of a road east runs half a cell north")
+	_expect(north[-1], Vector2(10, -0.5), "all along")
+	# Today's grid cells for the same lane have their middles on it.
+	var cells: Array = RoadNet._lanes(Vector2i(0, 0), Vector2i(10, 0), types.terminal_1_1)[0].cells
+	_expect(cells.all(func(cell: Vector2i) -> bool: return is_equal_approx(Vector2(cell).y + 0.5, -0.5)), true, "and today's grid lane has its cell middles on it")
+
+
+## A 2+2 road round a quarter turn: every lane stays its offset from the
+## road's line all along, so they never cross or pinch.
+func _test_lanes_on_a_bend_stay_parallel() -> void:
+	var bend := RoadCurve.new(Vector2(0, 0), Vector2(40, 0), Vector2(40, 40))
+	for lane: Dictionary in RoadCurve.lanes(Content.base().road_types.terminal_2_2):
+		var points := bend.offset_points(lane.offset)
+		_expect(points.size() > 50, true, "a lane is sampled finely (%d points)" % points.size())
+		var worst := 0.0
+		for p: Vector2 in points:
+			worst = maxf(worst, absf(bend.point_at(bend.nearest(p)).distance_to(p) - absf(lane.offset)))
+		_near(worst, 0.0, 0.02, "the lane %.1f cells across stays that far from the line" % lane.offset)
