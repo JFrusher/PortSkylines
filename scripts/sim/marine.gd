@@ -214,6 +214,12 @@ static func berthing_limit(sim: PortSim, ship: PortSim.Ship) -> float:
 	return _length(ship.path.slice(0, -1)) / maxf(_length(ship.path), 0.0001)
 
 
+## Whether `ship`, leaving, has sailed out of its berth's pocket onto the
+## lanes, so the next ship may have the berth.
+static func clear_of_berth(sim: PortSim, ship: PortSim.Ship) -> bool:
+	return ship.state == PortSim.Ship.State.LEAVING and ship.cleared and ship.path.size() > 1 and ship.sail < _length(ship.path.slice(0, -1)) / maxf(_length(ship.path), 0.0001)
+
+
 ## Pilots on the port's stations not aboard a ship.
 static func free_pilots(sim: PortSim) -> int:
 	var total := 0
@@ -247,7 +253,8 @@ static func under_way(sim: PortSim, ship: PortSim.Ship, way: int) -> bool:
 ## says why not: a pilot from the station nearest where it sets off, if its
 ## class takes one, boarding when the pilot boat gets there; tugs from the
 ## depot nearest its berth with enough free, if its class needs them,
-## meeting it at the berth; and a booking of every narrow lane on its way
+## meeting it at the berth (not when it sails in to anchor); and a booking
+## of every narrow lane on its way
 ## for the minutes it is in it, clear of every other ship's booking by
 ## water.slot_margin_minutes. Nothing is taken unless all of it is free.
 static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
@@ -264,7 +271,7 @@ static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
 		sets_off += _nearest(sim.pilot_stations, start) * Grid.CELL / sim.rules.water.pilots.boat_speed
 	var depot := 0
 	var tugs_at := 0.0
-	if spec.tugs > 0:
+	if spec.tugs > 0 and ship.state != PortSim.Ship.State.ANCHORING:
 		var near := INF
 		for id: int in sim.tug_depots:
 			var far: float = Vector2(sim.tug_depots[id].cell).distance_to(berth)
@@ -283,8 +290,10 @@ static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
 		for p: Dictionary in sim.passages:
 			if p.segment == w.segment and p.ship != ship.id and w.from < p.to + margin and p.from < w.to + margin:
 				return "no slot free through a narrow lane"
+	if spec.pilot:
+		sim.ledger.post("pilotage", sim.rules.water.pilots.fee)
 	ship.pilot = spec.pilot
-	ship.tugs = spec.tugs
+	ship.tugs = spec.tugs if depot else 0
 	ship.tug_depot = depot
 	ship.tugs_at = tugs_at
 	ship.hold_until = sets_off

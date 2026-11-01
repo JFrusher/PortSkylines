@@ -831,6 +831,9 @@ func _draw_inspect_actions() -> void:
 			var lane: Dictionary = sim.ship_lanes.segments[_inspected.lane]
 			var cells := sim.ship_lanes.footprint(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], lane.type).size()
 			_dredge_button(cells, {"op": "dredge_lane", "segment": _inspected.lane, "metres": 1})
+			if lane.type == "narrow":
+				var widen := _action_button(_inspect_actions, "Widen, %s" % HudDetails.dollars(sim.ship_lane_price(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], "wide")), {"op": "widen_ship_lane", "segment": _inspected.lane})
+				widen.tooltip_text = "Rebuilds it as a wide lane, %d m across, where ships pass both ways instead of booking it one at a time." % Grid.metres(sim.rules.water.lanes.wide.half_width * 2 + 1)
 		return
 	if not (_inspected is Dictionary and _inspected.has("area") and _inspected.area in sim.areas.list):
 		return

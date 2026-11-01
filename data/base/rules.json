@@ -83,7 +83,9 @@
 		"rail": "Rail discounts",
 		"power": "Reefer power",
 		"reefer_fines": "Reefer fines",
-		"rush_fines": "Rush fines"
+		"rush_fines": "Rush fines",
+		"port_dues": "Port dues",
+		"pilotage": "Pilotage"
 	},
 	"loans": {
 		"small": {

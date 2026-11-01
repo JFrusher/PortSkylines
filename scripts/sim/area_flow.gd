@@ -36,7 +36,7 @@ static func berth(sim: PortSim, ship: PortSim.Ship) -> bool:
 		aprons.append_array(others)
 	for apron: int in aprons:
 		for from in range(_length(sim, apron) - span + 1):
-			if sim.ships.any(func(other: PortSim.Ship) -> bool: return other.apron == apron and other.from < from + span and from < other.from + ship_cells(sim, other.kind)):
+			if sim.ships.any(func(other: PortSim.Ship) -> bool: return other.apron == apron and other.from < from + span and from < other.from + ship_cells(sim, other.kind) and not Marine.clear_of_berth(sim, other)):
 				continue
 			ship.apron = apron
 			ship.from = from

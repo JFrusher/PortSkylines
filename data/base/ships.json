@@ -8,7 +8,8 @@
 			"export_moves": 160.0,
 			"window_hours": 12.0,
 			"pilot": false,
-			"tugs": 0
+			"tugs": 0,
+			"port_dues": 4000
 		},
 		"panamax": {
 			"length": 300.0,
@@ -18,7 +19,8 @@
 			"export_moves": 500.0,
 			"window_hours": 24.0,
 			"pilot": true,
-			"tugs": 2
+			"tugs": 2,
+			"port_dues": 12000
 		},
 		"neopanamax": {
 			"length": 366.0,
@@ -28,7 +30,8 @@
 			"export_moves": 1000.0,
 			"window_hours": 36.0,
 			"pilot": true,
-			"tugs": 2
+			"tugs": 2,
+			"port_dues": 20000
 		}
 	},
 	"water": {
@@ -57,7 +60,8 @@
 			"station_cost": 60000,
 			"pilot_cost": 25000,
 			"upkeep_per_pilot": 250,
-			"boat_speed": 600.0
+			"boat_speed": 600.0,
+			"fee": 3000
 		},
 		"tugs": {
 			"depot_cost": 80000,

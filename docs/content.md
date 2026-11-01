@@ -59,6 +59,8 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `water.tugs.speed` | number >0 | Metres a minute tugs sail from their depot to a berth |
 | `water.slot_margin_minutes` | number | The gap kept between two ships' bookings of a narrow lane |
 | `ship_classes.<name>.pilot`, `.tugs` | true/false, int | Whether the class takes a pilot in and out, and how many tugs it waits for to berth and unberth |
+| `ship_classes.<name>.port_dues` | int | What each call pays the port as its authority, in the ledger's Port dues |
+| `water.pilots.fee` | int | What each piloted passage pays, in the ledger's Pilotage |
 | `water.dredge.max_depth` | number | As deep as dredging takes a lane or a pocket, in metres |
 | `water.dredge.cost_per_cell_metre` | int | Dredging one cell of water one metre deeper |
 | `water.dredge.maintenance_per_cell_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged cell and metre costs this |

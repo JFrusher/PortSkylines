@@ -519,6 +519,8 @@ func apply(command: Dictionary) -> String:
 			return build_ship_lane(command.from, command.to, command.type)
 		"remove_ship_lane":
 			return remove_ship_lane(command.segment)
+		"widen_ship_lane":
+			return widen_ship_lane(command.segment)
 		"build_anchorage":
 			return build_anchorage(command.from, command.to)
 		"remove_anchorage":
@@ -1227,6 +1229,34 @@ func remove_anchorage(id: int) -> String:
 	return ""
 
 
+## Why narrow ship lane `segment` can't be widened, or "".
+func widen_ship_lane_error(segment: int) -> String:
+	if segment not in ship_lanes.segments:
+		return "No ship lane there"
+	var lane: Dictionary = ship_lanes.segments[segment]
+	if lane.type == "wide":
+		return "This lane is wide already"
+	var a: Vector2i = ship_lanes.nodes[lane.a]
+	var b: Vector2i = ship_lanes.nodes[lane.b]
+	if not ship_lanes.footprint(a, b, "wide").all(areas.is_water):
+		return "A wide lane needs open water %d m across all along" % Grid.metres(rules.water.lanes.wide.half_width * 2 + 1)
+	if not _afford(ship_lane_price(a, b, "wide")):
+		return "Not enough money"
+	return ""
+
+
+## Rebuilds narrow ship lane `segment` as a wide one, at the wide lane's full
+## price, keeping what was dredged.
+func widen_ship_lane(segment: int) -> String:
+	var err := widen_ship_lane_error(segment)
+	if err == "":
+		var lane: Dictionary = ship_lanes.segments[segment]
+		ledger.post("construction", -ship_lane_price(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], "wide"))
+		lane.type = "wide"
+		ship_lanes.version += 1
+	return err
+
+
 ## Takes out ship lane `segment`. Ships already on their way keep their course.
 func remove_ship_lane(segment: int) -> String:
 	if segment not in ship_lanes.segments:
@@ -1567,6 +1597,7 @@ func _call(service: Dictionary) -> void:
 	ship.arrived = clock.calendar_minutes()
 	ship.id = _next_ship
 	_next_ship += 1
+	ledger.post("port_dues", spec.port_dues)
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
 	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
@@ -1658,7 +1689,10 @@ func _work(ship: Ship) -> void:
 			if not AreaFlow.berth(self, ship):
 				Marine.wait(self, ship)
 		Ship.State.ANCHORING:
+			if not Marine.under_way(self, ship, 1):
+				return
 			if Marine.sail(self, ship, 1):
+				Marine.release(ship)
 				ship.state = Ship.State.ANCHORED
 		Ship.State.ARRIVING:
 			if not Marine.under_way(self, ship, 1):
