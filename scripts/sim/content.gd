@@ -15,6 +15,10 @@ const SCHEMA := {
 	# land, per_metre more for each metre out, up to max.
 	"map": TYPE_STRING,
 	"maps": {"*": {"name": TYPE_STRING, "land": TYPE_ARRAY, "islands": TYPE_ARRAY, "rivers": TYPE_ARRAY, "depth": {"shore": TYPE_FLOAT, "per_metre": TYPE_FLOAT, "max": TYPE_FLOAT}}},
+	# Of the imports a line lands at one terminal while it also calls at
+	# another, `share` leave on its ship there, moved by road between the
+	# terminals at cost_per_box, an internal move.
+	"transfers": {"share": TYPE_FLOAT, "cost_per_box": TYPE_INT},
 	# Filling water to make land behind a quay wall, per 4 m cell.
 	"reclaim": {"cost_per_cell": TYPE_INT},
 	"start_money": TYPE_INT,

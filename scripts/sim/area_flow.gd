@@ -202,6 +202,13 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	crane.timer = 0.0
 	crane.tractor = 0
 	var id := sim._new_box("import", sim.clock.calendar_minutes() + sim.rules.import_dwell_minutes * sim._dwell_factor(), ship.line)
+	var here: int = sim.areas.list[ship.apron].terminal
+	sim.boxes[id].from = here
+	var other := _transfer_terminal(sim, ship.line, here)
+	# A share of a line's imports leave on its ship at its other terminal; they go at once.
+	if other and sim.rng.randf() < sim.rules.transfers.share:
+		sim.boxes[id].to = other
+		sim.boxes[id].due = sim.clock.calendar_minutes()
 	# Booked to rail by its line's share, only while a rail block has room for
 	# it and its place has a rail link, so a port without rail rolls nothing.
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
@@ -499,6 +506,8 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 ## has none. False when nothing is due or wanted, there is no room, or the
 ## way in is busy.
 static func dispatch_export_lorry(sim: PortSim) -> bool:
+	if not sim.transfers.is_empty() and _transfer_in(sim):
+		return true
 	var packed: bool = not sim.stuffing.is_empty() and sim.stuffing[0].at <= sim.clock.calendar_minutes()
 	if not packed and export_demand(sim) <= 0:
 		return false
@@ -528,6 +537,40 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		_to_gate(sim, lorry, gate)
 		return true
 	return false
+
+
+## Sends a lorry in with the first box moving between terminals, to the
+## terminal it is bound for, once that terminal's gate and export blocks
+## can take it; false when they can't yet or the way in is busy.
+static func _transfer_in(sim: PortSim) -> bool:
+	var terminal: int = sim.transfers[0].terminal
+	if terminal not in sim.areas.terminals or not _has_gate(sim, terminal) or _export_room(sim, terminal) <= 0:
+		return false
+	var entry := _entry_cell(sim)
+	if entry == Grid.NONE:
+		return false
+	var gate := _gate_of(sim, terminal, entry)
+	if not can_book(sim, gate):
+		return false
+	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
+	sim.lane_traffic.place(lorry)
+	sim._next_vehicle += 1
+	lorry.box = sim.transfers.pop_front().box
+	lorry.loaded = true
+	sim._add_vehicle(lorry)
+	_to_gate(sim, lorry, gate)
+	return true
+
+
+## The other terminal `line` has a service at, besides `here`, or 0: the
+## one of its lowest service id.
+static func _transfer_terminal(sim: PortSim, line: String, here: int) -> int:
+	for service: Dictionary in sim.contracts.services:
+		if service.line == line and service.apron in sim.areas.list:
+			var terminal: int = sim.areas.list[service.apron].terminal
+			if terminal != 0 and terminal != here:
+				return terminal
+	return 0
 
 
 ## An empty in `terminal`'s working empty blocks that no vehicle is coming
@@ -830,6 +873,10 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 			vehicle.state = "under_crane"
 		"leaving":
 			if vehicle.loaded:
+				if sim.boxes[vehicle.box].kind == "import" and sim.boxes[vehicle.box].to:
+					sim._transfer_out(vehicle.box)
+					_gone(sim, vehicle)
+					return
 				if sim.boxes[vehicle.box].kind == "import":
 					sim.delivered += 1
 					sim._import_left(vehicle.box)

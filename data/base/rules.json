@@ -14,6 +14,10 @@
 			"height": 1.0
 		}
 	},
+	"transfers": {
+		"share": 0.1,
+		"cost_per_box": 40
+	},
 	"reclaim": {
 		"cost_per_cell": 60.0
 	},
@@ -85,7 +89,8 @@
 		"reefer_fines": "Reefer fines",
 		"rush_fines": "Rush fines",
 		"port_dues": "Port dues",
-		"pilotage": "Pilotage"
+		"pilotage": "Pilotage",
+		"transfers": "Transfers between terminals"
 	},
 	"loans": {
 		"small": {

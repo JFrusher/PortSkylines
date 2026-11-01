@@ -160,6 +160,9 @@ var returning: Array[Dictionary] = []
 ## Empties out with exporters being packed, soonest back first: {"at": the
 ## calendar minute each comes back full}.
 var stuffing: Array[Dictionary] = []
+## Boxes moving between terminals, out of one and waiting for a lorry to
+## take them in to the other: [{"box", "terminal"}], first out first in.
+var transfers: Array[Dictionary] = []
 ## Lorries booked in at gates taking bookings: gate id -> {hour of the
 ## calendar: lorries booked}, for this hour and those ahead.
 var bookings := {}
@@ -387,6 +390,7 @@ func to_dict() -> Dictionary:
 		"until_empty": _until_empty,
 		"returning": returning.duplicate(true),
 		"stuffing": stuffing.duplicate(true),
+		"transfers": transfers.duplicate(true),
 		"bookings": bookings.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
@@ -468,6 +472,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._until_empty = d.until_empty
 	sim.returning.assign(d.returning)
 	sim.stuffing.assign(d.stuffing)
+	sim.transfers.assign(d.transfers)
 	sim.bookings = d.bookings.duplicate(true)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
@@ -1749,7 +1754,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place()}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "place": _pick_place(), "from": 0, "to": 0}
 	exports += 1 if kind == "export" else 0
 	return id
 
@@ -1784,6 +1789,18 @@ func by_rail_to(id: int) -> bool:
 ## Import `id` has left for the hinterland: once empties are unlocked, it
 ## comes back as an empty of its line and size return_days later, with the
 ## chance return_share; the rest go back to inland depots.
+## Box `id`, a transfer, has left its terminal by road: an internal move
+## charged to that terminal; it waits to go in to the other as an export.
+func _transfer_out(id: int) -> void:
+	ledger.post("transfers", -rules.transfers.cost_per_box, boxes[id].from)
+	transfers.append({"box": id, "terminal": boxes[id].to})
+	_claimed.erase(id)
+	boxes[id].kind = "export"
+	boxes[id].to = 0
+	boxes[id].in = -1.0
+	exports += 1
+
+
 func _import_left(id: int) -> void:
 	if lock_error("empties") == "" and rng.randf() < rules.empties.return_share:
 		returning.append({"at": clock.calendar_minutes() + rules.empties.return_days * SimClock.MINUTES_PER_DAY, "line": boxes[id].line, "teu": boxes[id].teu})

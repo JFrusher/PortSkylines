@@ -14,6 +14,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `maps.<key>.rivers` | list | Rivers carved through the land: each `{"points": [[x, y], ...], "width": metres, "depth": metres}` |
 | `maps.<key>.depth.shore`, `.per_metre`, `.max` | number | The sea's depth: `shore` metres beside land, `per_metre` more for each metre further out, at most `max` |
 | `reclaim.cost_per_cell` | int | Filling one 4 m cell of water behind a quay wall |
+| `transfers.share`, `.cost_per_box` | number, int | Of the imports a line lands at one terminal while it has a service at another, the share that leave on its ship there; each is driven between the terminals at this cost, an internal move |
 | `road_types.<key>.name` | text | The road's name in the build menu |
 | `road_types.<key>.forward`, `.backward` | int | Lanes along and against the drawn direction; forward at least backward, and at least one lane |
 | `road_types.<key>.lorries` | true/false | Whether lorries may use it; tractors and AGVs always may |
