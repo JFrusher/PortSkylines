@@ -446,6 +446,24 @@ static func fine_unplugged(sim: PortSim, now: float) -> void:
 			sim.ledger.post("reefer_fines", -sim.rules.reefers.fine, unplugged[box])
 
 
+## Each transhipment box whose connection window ran out by `now` misses its
+## ship: its line is fined and thinks less of the port, and the box waits a
+## further window for the next one. Returns how many missed.
+static func miss_connections(sim: PortSim, now: float) -> int:
+	var missed := 0
+	for id: int in sim.boxes:
+		var box: Dictionary = sim.boxes[id]
+		if box.kind != "tranship" or box.due > now:
+			continue
+		sim.ledger.post("connection_fines", -sim.rules.transhipment.missed_fine, box.from)
+		var cancelled := sim.contracts.penalise(box.line, sim.rules.transhipment.missed_reputation)
+		if cancelled:
+			sim._event(cancelled)
+		box.due += sim.rules.lines[box.line].connection_hours * 60.0
+		missed += 1
+	return missed
+
+
 ## The first yard block of `role` in `terminal` that works and has room for
 ## one more box than is already on its way to it, counting tractors waiting
 ## under a crane for a box bound for it, or 0.

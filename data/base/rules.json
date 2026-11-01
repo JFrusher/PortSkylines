@@ -24,7 +24,8 @@
 	},
 	"transhipment": {
 		"price_factor": 0.6,
-		"missed_fine": 150
+		"missed_fine": 150,
+		"missed_reputation": -0.25
 	},
 	"transfers": {
 		"share": 0.1,
@@ -100,6 +101,7 @@
 		"power": "Reefer power",
 		"reefer_fines": "Reefer fines",
 		"rush_fines": "Rush fines",
+		"connection_fines": "Missed connections",
 		"port_dues": "Port dues",
 		"pilotage": "Pilotage",
 		"transfers": "Transfers between terminals",

@@ -15,7 +15,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `maps.<key>.depth.shore`, `.per_metre`, `.max` | number | The sea's depth: `shore` metres beside land, `per_metre` more for each metre further out, at most `max` |
 | `reclaim.cost_per_cell` | int | Filling one 4 m cell of water behind a quay wall |
 | `lines.<key>.tranship_share`, `.connection_hours` | number, number | The share of the boxes a line's big ships land that go on with its next feeder within the window, and of its feeders' boxes that go on with its next big ship |
-| `transhipment.price_factor`, `.missed_fine` | number, int | A transhipment move pays the move price times this; a box that misses its ship costs the fine |
+| `transhipment.price_factor`, `.missed_fine`, `.missed_reputation` | number, int, number | A transhipment move pays the move price times this; a box not loaded within its connection window costs the fine and this much of its line's reputation (times the line's sensitivity), and waits a further window for the next ship |
 | `transfers.share`, `.cost_per_box` | number, int | Of the imports a line lands at one terminal while it has a service at another, the share that leave on its ship there; each is driven between the terminals at this cost, an internal move |
 | `road_types.<key>.name` | text | The road's name in the build menu |
 | `road_types.<key>.forward`, `.backward` | int | Lanes along and against the drawn direction; forward at least backward, and at least one lane |

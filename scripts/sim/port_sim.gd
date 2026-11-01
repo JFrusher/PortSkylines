@@ -1518,6 +1518,9 @@ func tick() -> void:
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
 		AreaFlow.fine_unplugged(self, clock.calendar_minutes())
+		var missed := AreaFlow.miss_connections(self, clock.calendar_minutes())
+		if missed:
+			_event("%d transhipment %s missed %s connection and roll to the next" % [missed, "box" if missed == 1 else "boxes", "its" if missed == 1 else "their"])
 	_draw_power()
 	var berths_now := Vector2i(_departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
