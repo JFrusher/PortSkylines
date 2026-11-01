@@ -16,10 +16,12 @@ func _initialize() -> void:
 	quit(1 if _failures else 0)
 
 
-## Over 10 game days of feeder calls, imports and exports go to and come from
-## the hinterland's places in the data's shares.
+## Over 10 game days of feeder calls, one every 8 hours, about as often as
+## the berth works one, imports and exports go to and come from the
+## hinterland's places in the data's shares.
 func _test_box_mix_over_ten_days() -> void:
-	var sim := AreaPort.base()
+	var sim := AreaPort.base(RandomPort.quick(), "")
+	RandomPort.calls(sim, "feeder", 10, 480, 30)
 	AreaPort.add_export_block(sim)
 	var seen := {}
 	var said := ""

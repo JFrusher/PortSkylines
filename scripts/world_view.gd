@@ -341,7 +341,7 @@ func _process(dt: float) -> void:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
-	if [sim.ship_lanes.version, sim.dredge_version] != _ship_lanes_drawn:
+	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys()] != _ship_lanes_drawn:
 		_draw_ship_lanes()
 	_draw_junctions()
 	if sim.areas.filled.size() != _coast_filled:
@@ -451,11 +451,23 @@ static func info_shares(sim: PortSim, view: String) -> Dictionary:
 ## Each ship lane as a pale band over the water it covers, its line down the
 ## middle: white where dredged, else pale blue.
 func _draw_ship_lanes() -> void:
-	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version]
-	_ship_lanes.visible = not sim.ship_lanes.segments.is_empty()
+	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys()]
+	_ship_lanes.visible = not sim.ship_lanes.segments.is_empty() or not sim.anchorages.is_empty()
 	if not _ship_lanes.visible:
 		return
 	var tool := _road_tool()
+	# Each anchorage as one pale yellow rectangle, a dot at each spot.
+	for id: int in sim.anchorages:
+		var a: Dictionary = sim.anchorages[id]
+		tool.set_color(Color(1.0, 0.9, 0.4, 0.15))
+		var low := Vector2(a.from) * Grid.CELL
+		var high := Vector2(a.to + Vector2i.ONE) * Grid.CELL
+		var corners := [Vector2(low.x, low.y), Vector2(high.x, low.y), Vector2(high.x, high.y), Vector2(low.x, high.y)]
+		for i: int in [0, 1, 2, 0, 2, 3]:
+			tool.add_vertex(_world(corners[i], LANE_HEIGHT))
+		tool.set_color(Color(1.0, 0.9, 0.4, 0.6))
+		for spot in Marine.spots(sim, id):
+			_cell_quad(tool, Vector2i(spot.floor()), LANE_HEIGHT + 0.01)
 	for segment: int in sim.ship_lanes.segments:
 		var lane: Dictionary = sim.ship_lanes.segments[segment]
 		var a: Vector2i = sim.ship_lanes.nodes[lane.a]
@@ -673,8 +685,8 @@ func _livery(line: String, id: int) -> Color:
 func _draw_ships() -> void:
 	_forget_gone(_ships, sim.ships)
 	for ship: PortSim.Ship in sim.ships:
-		# shortcut: ships at anchorage are only counted in the HUD; draw them offshore if players miss them.
-		if ship.state == PortSim.Ship.State.ANCHORED:
+		# Ships waiting out at sea, off the map, are only counted in the HUD.
+		if ship.state == PortSim.Ship.State.ANCHORED and not ship.anchorage:
 			continue
 		var length: float = sim.rules.ship_classes[ship.kind].length / METRES_PER_UNIT
 		if ship not in _ships:
@@ -699,6 +711,9 @@ func _draw_ships() -> void:
 ## lanes, then in to lie alongside, its bow along its way until the last leg,
 ## where it turns to lie along the quay.
 func _sail(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
+	if ship.anchorage:
+		_to_anchor(model, ship, sail)
+		return
 	var frame := _berth_frame(ship)
 	var quay_heading := atan2(-frame[1].y, frame[1].x)
 	if ship.path.size() < 2:
@@ -724,6 +739,18 @@ func _sail(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
 			model.rotation.y = lerp_angle(heading, quay_heading, clampf(left / maxf(leg, 0.001), 0.0, 1.0)) if i == points.size() - 1 else heading
 			return
 		left -= leg
+
+
+## A ship sailing in to its spot at anchor, or lying there, bow along its
+## last leg in.
+func _to_anchor(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
+	var points: Array[Vector2] = []
+	for point: Vector2 in ship.path:
+		points.append(point * Grid.CELL / METRES_PER_UNIT)
+	var at := Marine.point_along(points, sail if ship.state == PortSim.Ship.State.ANCHORING else 1.0)
+	model.position = Vector3(at.x, 0.0, at.y)
+	var way := points[-1] - points[-2]
+	model.rotation.y = atan2(way.x, way.y)
 
 
 ## A ship's beam in world units: its rows of boxes across, plus hull each side.

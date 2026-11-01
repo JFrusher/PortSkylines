@@ -51,37 +51,118 @@ static func berth_nodes(sim: PortSim, apron: int) -> Array[int]:
 	return found
 
 
-## The way in from the open sea to `apron` for a ship of `kind`, as lane ends
-## in cells, first to last; [] when no lane deep enough for its draft
-## reaches the berth, or the pocket is too shallow. Kept until the lanes,
-## the areas or the dredging change.
-static func route(sim: PortSim, kind: String, apron: int) -> Array[Vector2]:
-	var stamp := [sim.ship_lanes.version, sim.areas.version, sim.dredge_version]
-	if sim._ship_routes_for != stamp:
-		sim._ship_routes.clear()
-		sim._ship_routes_for = stamp
-	var key := [kind, apron]
-	if key not in sim._ship_routes:
-		sim._ship_routes[key] = _find(sim, kind, apron)
+## The way in to `apron` for a ship of `kind`, from the open sea or (with
+## `anchorage`) from that anchorage, as lane ends in cells, first to last;
+## [] when no lane deep enough for its draft reaches the berth, or the
+## pocket is too shallow. Kept until the lanes, the areas, the anchorages
+## or the dredging change.
+static func route(sim: PortSim, kind: String, apron: int, anchorage := 0) -> Array[Vector2]:
+	var key := [kind, apron, anchorage]
+	if key not in _routes(sim):
+		var none: Array[Vector2] = []
+		var deep_enough: bool = apron in sim.areas.list and pocket_depth(sim, apron) >= sim.rules.ship_classes[kind].draft
+		sim._ship_routes[key] = _find(sim, kind, _starts(sim, anchorage), berth_nodes(sim, apron)) if deep_enough else none
 	return sim._ship_routes[key]
 
 
-static func _find(sim: PortSim, kind: String, apron: int) -> Array[Vector2]:
+## The way from the open sea to anchorage `id` for a ship of `kind`, as route.
+static func route_to_anchorage(sim: PortSim, kind: String, id: int) -> Array[Vector2]:
+	var key := [kind, "anchorage", id]
+	if key not in _routes(sim):
+		sim._ship_routes[key] = _find(sim, kind, sea_nodes(sim), anchorage_nodes(sim, id))
+	return sim._ship_routes[key]
+
+
+## The route cache, emptied once lanes, areas, anchorages or dredging change.
+static func _routes(sim: PortSim) -> Dictionary:
+	var stamp := [sim.ship_lanes.version, sim.areas.version, sim.dredge_version, sim.anchorages.keys()]
+	if sim._ship_routes_for != stamp:
+		sim._ship_routes.clear()
+		sim._ship_routes_for = stamp
+	return sim._ship_routes
+
+
+static func _starts(sim: PortSim, anchorage: int) -> Array[int]:
+	return anchorage_nodes(sim, anchorage) if anchorage else sea_nodes(sim)
+
+
+## Lane ends from `starts` to `ends` through lanes deep enough for `kind`, in cells.
+static func _find(sim: PortSim, kind: String, starts: Array[int], ends: Array[int]) -> Array[Vector2]:
 	var draft: float = sim.rules.ship_classes[kind].draft
-	var none: Array[Vector2] = []
-	if apron not in sim.areas.list or pocket_depth(sim, apron) < draft:
-		return none
 	var coast := sim.areas.coast
-	var nodes := sim.ship_lanes.route(sea_nodes(sim), berth_nodes(sim, apron), func(segment: int) -> bool: return sim.ship_lanes.depth(segment, coast) >= draft)
+	var nodes := sim.ship_lanes.route(starts, ends, func(segment: int) -> bool: return sim.ship_lanes.depth(segment, coast) >= draft)
 	var points: Array[Vector2] = []
 	for node in nodes:
 		points.append(Vector2(sim.ship_lanes.nodes[node]) + Vector2(0.5, 0.5))
 	return points
 
 
-## Whether a ship of `kind` can reach `apron` from the open sea.
-static func reaches(sim: PortSim, kind: String, apron: int) -> bool:
-	return not route(sim, kind, apron).is_empty()
+## Whether a ship of `kind` can reach `apron` from the open sea, or from
+## `anchorage` when it waits there.
+static func reaches(sim: PortSim, kind: String, apron: int, anchorage := 0) -> bool:
+	return not route(sim, kind, apron, anchorage).is_empty()
+
+
+## Where ships lie in the rectangle from `from` to `to`, in cells: one every
+## water.anchorage.spacing cells each way.
+static func spots_in(sim: PortSim, from: Vector2i, to: Vector2i) -> Array[Vector2]:
+	var spacing: int = sim.rules.water.anchorage.spacing
+	var low := from.min(to)
+	var fits := ((to - from).abs() + Vector2i.ONE) / spacing
+	var found: Array[Vector2] = []
+	for i: int in fits.x:
+		for j: int in fits.y:
+			found.append(Vector2(low) + (Vector2(i, j) + Vector2(0.5, 0.5)) * spacing)
+	return found
+
+
+static func spots(sim: PortSim, id: int) -> Array[Vector2]:
+	return spots_in(sim, sim.anchorages[id].from, sim.anchorages[id].to)
+
+
+## The lane ends inside anchorage `id`.
+static func anchorage_nodes(sim: PortSim, id: int) -> Array[int]:
+	var rect := Rect2i(sim.anchorages[id].from, sim.anchorages[id].to - sim.anchorages[id].from + Vector2i.ONE)
+	var found: Array[int] = []
+	for node: int in sim.ship_lanes.nodes:
+		if rect.has_point(sim.ship_lanes.nodes[node]):
+			found.append(node)
+	return found
+
+
+## The first spot at anchorage `id` no ship holds, or -1.
+static func free_spot(sim: PortSim, id: int) -> int:
+	var held := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.anchorage == id).map(func(s: PortSim.Ship) -> int: return s.spot)
+	for i in spots(sim, id).size():
+		if i not in held:
+			return i
+	return -1
+
+
+## A ship that found no berth: one out at sea sails in to the first
+## anchorage with a free spot it can reach, else, once it has waited
+## water.max_wait_hours since it arrived, goes elsewhere and its line counts
+## a missed call. One at an anchorage just waits.
+static func wait(sim: PortSim, ship: PortSim.Ship) -> void:
+	if ship.anchorage:
+		return
+	for id: int in sim.anchorages:
+		var spot := free_spot(sim, id)
+		var way := route_to_anchorage(sim, ship.kind, id)
+		if spot >= 0 and not way.is_empty():
+			ship.anchorage = id
+			ship.spot = spot
+			ship.path = way.duplicate()
+			ship.path.append(spots(sim, id)[spot])
+			ship.sail = 0.0
+			ship.prev_sail = 0.0
+			ship.state = PortSim.Ship.State.ANCHORING
+			sim._event("A %s waits at anchor for a berth" % ship.kind)
+			return
+	if sim.clock.calendar_minutes() - ship.arrived > sim.rules.water.max_wait_hours * 60.0:
+		sim.ships.erase(ship)
+		sim._event("%s's %s went elsewhere: no berth for it, and no room at anchor to wait" % [sim.contracts.name_of(ship.line), ship.kind])
+		sim._event_if(sim.contracts.missed(ship.line))
 
 
 ## Where `ship` lies alongside its apron, in cells: the middle of its length
@@ -94,10 +175,16 @@ static func alongside(sim: PortSim, ship: PortSim.Ship) -> Vector2:
 	return quay + Vector2(area.out) * (sim.rules.water.pocket / 2.0) + Vector2(0.5, 0.5)
 
 
-## Sets `ship`'s course to its berth: in along the lanes, then alongside.
+## Sets `ship`'s course to its berth: from its spot at anchor if it waits
+## at one, in along the lanes, then alongside.
 static func set_course(sim: PortSim, ship: PortSim.Ship) -> void:
-	ship.path = route(sim, ship.kind, ship.apron).duplicate()
+	ship.path.clear()
+	if ship.anchorage:
+		ship.path.append(spots(sim, ship.anchorage)[ship.spot])
+	ship.path.append_array(route(sim, ship.kind, ship.apron, ship.anchorage))
 	ship.path.append(alongside(sim, ship))
+	ship.anchorage = 0
+	ship.spot = -1
 	ship.sail = 0.0
 	ship.prev_sail = 0.0
 

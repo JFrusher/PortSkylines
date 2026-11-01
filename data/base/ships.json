@@ -42,6 +42,11 @@
 			}
 		},
 		"pocket": 12,
+		"anchorage": {
+			"cost_per_cell": 1,
+			"spacing": 50
+		},
+		"max_wait_hours": 6.0,
 		"dredge": {
 			"max_depth": 18.0,
 			"cost_per_cell_metre": 30,

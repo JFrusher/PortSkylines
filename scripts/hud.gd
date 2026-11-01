@@ -27,6 +27,8 @@ const DRAW_AREA := -9
 const BUILD_BERTH := -10
 ## Draws a ship lane of lane_type on the water by dragging.
 const DRAW_LANE := -11
+## Drags out an anchorage on the water.
+const BUILD_ANCHORAGE := -12
 ## The build menu row each area type sits in.
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
@@ -341,7 +343,9 @@ func _ready() -> void:
 		_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_LANE
 			lane_type = key)).tooltip_text = "Drag a ship lane over open water, straight or at 45°. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % ["One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
-	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane, area or lane", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane, area or ship lane to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
+	var anchorage: Dictionary = sim.rules.water.anchorage
+	_item(_button(rows.Water, "Anchorage\n$%d a cell" % anchorage.cost_per_cell, tools, false, func() -> void: tool = BUILD_ANCHORAGE)).tooltip_text = "Drag out an anchorage over open water, with a ship lane ending in it. Ships that find no free berth wait here, one every %d m each way; with no room at anchor a ship waits out at sea %.0f hours, then goes elsewhere." % [Grid.metres(anchorage.spacing), sim.rules.water.max_wait_hours]
+	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane, area or water", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane, area, ship lane or anchorage to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
 	_category_buttons[0].button_pressed = true
 

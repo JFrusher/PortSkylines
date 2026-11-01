@@ -35,6 +35,8 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	var area := sim.areas.area_at(cell)
 	if area:
 		return {"area": area}
+	if sim.anchorage_at(cell):
+		return {"anchorage": sim.anchorage_at(cell)}
 	var lane := lane_at(sim, cell)
 	return {"lane": lane} if lane else null
 
@@ -61,6 +63,8 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		return _ship(sim, thing) if thing in sim.ships else nothing
 	if thing is PortSim.Crane:
 		return _crane(sim, thing) if thing in sim.cranes else nothing
+	if thing is Dictionary and thing.has("anchorage"):
+		return _anchorage(sim, thing.anchorage) if thing.anchorage in sim.anchorages else nothing
 	if thing is Dictionary and thing.has("lane"):
 		return _lane(sim, thing.lane) if thing.lane in sim.ship_lanes.segments else nothing
 	if thing is Dictionary and thing.has("junction"):
@@ -164,6 +168,16 @@ static func _lane(sim: PortSim, segment: int) -> Array[String]:
 	lines.append("%d m long, %d m wide, %s" % [Grid.metres(RoadNet.length(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b])), Grid.metres(spec.half_width * 2 + 1), "one ship at a time" if lane.type == "narrow" else "ships pass both ways"])
 	var drafts: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return sim.ship_lanes.depth(segment, sim.areas.coast) >= sim.rules.ship_classes[kind].draft)
 	lines.append("Deep enough for %s" % (", ".join(drafts) if not drafts.is_empty() else "no ship yet"))
+	return lines
+
+
+static func _anchorage(sim: PortSim, id: int) -> Array[String]:
+	var waiting := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.anchorage == id)
+	var lines: Array[String] = ["Anchorage", "%d of %d spots taken" % [waiting.size(), Marine.spots(sim, id).size()]]
+	if Marine.anchorage_nodes(sim, id).is_empty():
+		lines.append("No ship lane ends in it yet, so no ship can reach it")
+	for ship: PortSim.Ship in waiting:
+		lines.append("%s %s, waiting %.1f h" % [sim.contracts.name_of(ship.line), ship.kind, (sim.clock.calendar_minutes() - ship.arrived) / 60.0])
 	return lines
 
 

@@ -37,6 +37,10 @@ var land := {}
 var map: String
 ## The ship lanes drawn on the water.
 var ship_lanes: ShipLanes
+## Anchorages on the water, where ships wait for a berth: id -> {"from",
+## "to": opposite corner cells}.
+var anchorages := {}
+var _next_anchorage := 1
 ## Metres dredged in each quay apron's pocket: apron -> metres.
 var pocket_dredged := {}
 ## Bumped by every dredge, so ship routes are found again.
@@ -194,8 +198,9 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 
 
 class Ship:
-	## ANCHORED: waiting off the map for a berth.
-	enum State { ARRIVING, WORKING, LEAVING, ANCHORED }
+	## ANCHORED: waiting for a berth, at an anchorage or (anchorage 0) out at
+	## sea off the map; ANCHORING: sailing in to an anchorage.
+	enum State { ARRIVING, WORKING, LEAVING, ANCHORED, ANCHORING }
 	## Its class, a key of rules.ship_classes.
 	var kind: String
 	## Its line, a key of rules.lines.
@@ -216,6 +221,11 @@ class Ship:
 	## Room left for its line's empties, loaded after its exports.
 	var empties := 0
 	var state := State.ARRIVING
+	## The anchorage it waits at (0: none, out at sea) and its spot there, an
+	## index into Marine.spots; and the calendar minute it arrived.
+	var anchorage := 0
+	var spot := -1
+	var arrived := 0.0
 	## Its course in cells, from the open sea along the lanes to alongside
 	## its berth; set when it is given a berth.
 	var path: Array[Vector2] = []
@@ -236,12 +246,15 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
 		ship.empties = d.empties
 		ship.state = d.state
+		ship.anchorage = d.anchorage
+		ship.spot = d.spot
+		ship.arrived = d.arrived
 		ship.path.assign(d.path)
 		ship.sail = d.sail
 		ship.prev_sail = d.prev_sail
@@ -300,6 +313,8 @@ func to_dict() -> Dictionary:
 		"year": year.duplicate(),
 		"scoreboard": scoreboard.duplicate(true),
 		"ship_lanes": ship_lanes.to_dict(),
+		"anchorages": anchorages.duplicate(true),
+		"next_anchorage": _next_anchorage,
 		"pocket_dredged": pocket_dredged.duplicate(),
 		"dredge_version": dredge_version,
 		"crane_orders": crane_orders.duplicate(true),
@@ -371,6 +386,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.year = d.year.duplicate()
 	sim.scoreboard.assign(d.scoreboard)
 	sim.ship_lanes = ShipLanes.from_dict(d.ship_lanes, sim.rules.water.lanes)
+	sim.anchorages = d.anchorages.duplicate(true)
+	sim._next_anchorage = d.next_anchorage
 	sim.pocket_dredged = d.pocket_dredged.duplicate()
 	sim.dredge_version = d.dredge_version
 	sim.crane_orders.assign(d.crane_orders)
@@ -461,6 +478,10 @@ func apply(command: Dictionary) -> String:
 			return build_ship_lane(command.from, command.to, command.type)
 		"remove_ship_lane":
 			return remove_ship_lane(command.segment)
+		"build_anchorage":
+			return build_anchorage(command.from, command.to)
+		"remove_anchorage":
+			return remove_anchorage(command.id)
 		"build_road":
 			return build_road(command.from, command.to, command.type)
 		"build_rail":
@@ -1020,6 +1041,61 @@ func ship_lane_price(from: Vector2i, to: Vector2i, type: String) -> int:
 	return ship_lanes.footprint(from, to, type).size() * rules.water.lanes[type].cost_per_cell
 
 
+## Why an anchorage can't cover the rectangle from `from` to `to`, or "".
+func build_anchorage_error(from: Vector2i, to: Vector2i) -> String:
+	var cells := anchorage_cells(from, to)
+	if not cells.all(areas.is_water):
+		return "An anchorage needs open water all over it"
+	if Marine.spots_in(self, from, to).is_empty():
+		return "Too small for a ship: at least %d m each way" % Grid.metres(rules.water.anchorage.spacing)
+	for id: int in anchorages:
+		if Rect2i(anchorages[id].from, anchorages[id].to - anchorages[id].from + Vector2i.ONE).intersects(Rect2i(from.min(to), (to - from).abs() + Vector2i.ONE)):
+			return "Anchorages can't overlap"
+	if not _afford(cells.size() * rules.water.anchorage.cost_per_cell):
+		return "Not enough money"
+	return ""
+
+
+func build_anchorage(from: Vector2i, to: Vector2i) -> String:
+	var err := build_anchorage_error(from, to)
+	if err == "":
+		ledger.post("construction", -anchorage_cells(from, to).size() * rules.water.anchorage.cost_per_cell)
+		anchorages[_next_anchorage] = {"from": from.min(to), "to": from.max(to)}
+		_next_anchorage += 1
+	return err
+
+
+## The anchorage covering `cell`, or 0.
+func anchorage_at(cell: Vector2i) -> int:
+	for id: int in anchorages:
+		if Rect2i(anchorages[id].from, anchorages[id].to - anchorages[id].from + Vector2i.ONE).has_point(cell):
+			return id
+	return 0
+
+
+## The cells of the rectangle from `from` to `to`, both corners included.
+func anchorage_cells(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for x: int in range(mini(from.x, to.x), maxi(from.x, to.x) + 1):
+		for y: int in range(mini(from.y, to.y), maxi(from.y, to.y) + 1):
+			cells.append(Vector2i(x, y))
+	return cells
+
+
+## Takes out anchorage `id`; ships waiting there wait out at sea instead.
+func remove_anchorage(id: int) -> String:
+	if id not in anchorages:
+		return "No anchorage there"
+	for ship: Ship in ships:
+		if ship.anchorage == id:
+			ship.anchorage = 0
+			ship.spot = -1
+			ship.state = Ship.State.ANCHORED
+			ship.path.clear()
+	anchorages.erase(id)
+	return ""
+
+
 ## Takes out ship lane `segment`. Ships already on their way keep their course.
 func remove_ship_lane(segment: int) -> String:
 	if segment not in ship_lanes.segments:
@@ -1132,6 +1208,7 @@ func tick() -> void:
 	var berths_now := Vector2i(_departures, areas.version + roads.version)
 	for ship: Ship in ships.duplicate():
 		if ship.state == Ship.State.ANCHORED and berths_now == _berths_seen:
+			Marine.wait(self, ship)
 			continue
 		_work(ship)
 	_berths_seen = berths_now
@@ -1352,6 +1429,7 @@ func _call(service: Dictionary) -> void:
 		return
 	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
 	var ship := Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves)
+	ship.arrived = clock.calendar_minutes()
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
 	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
@@ -1440,7 +1518,11 @@ func _work(ship: Ship) -> void:
 	ship.prev_sail = ship.sail
 	match ship.state:
 		Ship.State.ANCHORED:
-			AreaFlow.berth(self, ship)
+			if not AreaFlow.berth(self, ship):
+				Marine.wait(self, ship)
+		Ship.State.ANCHORING:
+			if Marine.sail(self, ship, 1):
+				ship.state = Ship.State.ANCHORED
 		Ship.State.ARRIVING:
 			if Marine.sail(self, ship, 1):
 				ship.state = Ship.State.WORKING
