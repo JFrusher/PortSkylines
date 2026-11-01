@@ -144,6 +144,14 @@
 				"neopanamax": "Neopanamax services and berths",
 				"wide_sts": "wide STS cranes that reach across a Neopanamax"
 			}
+		},
+		"mega": {
+			"teu": 40000.0,
+			"demand": 2.0,
+			"unlocks": {
+				"ulcv": "ULCV services and berths",
+				"mega_sts": "mega STS cranes that reach across a ULCV"
+			}
 		}
 	},
 	"year_days": 28.0,

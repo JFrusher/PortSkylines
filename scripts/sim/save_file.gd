@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 29
+const VERSION := 30
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -79,6 +79,16 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v28(data)
 	if data.version < 29:
 		data = _migrate_v29(data)
+	if data.version < 30:
+		data = _migrate_v30(data)
+	return data
+
+
+## v30 lets ships call light-loaded; older ships carry their full load.
+static func _migrate_v30(data: Dictionary) -> Dictionary:
+	for ship: Dictionary in data.sim.ships:
+		ship.light = false
+	data.version = 30
 	return data
 
 
@@ -188,7 +198,7 @@ static func _valid_sim(data: Variant) -> bool:
 		if not ship is Dictionary or not _has_fields(ship, {
 			"kind": TYPE_STRING, "line": TYPE_STRING, "due": TYPE_FLOAT,
 			"boxes": TYPE_INT, "exports": TYPE_INT, "empties": TYPE_INT, "state": TYPE_INT,
-			"id": TYPE_INT, "cleared": TYPE_BOOL, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "tug_depot": TYPE_INT, "tugs_at": TYPE_FLOAT, "hold_until": TYPE_FLOAT,
+			"id": TYPE_INT, "light": TYPE_BOOL, "cleared": TYPE_BOOL, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "tug_depot": TYPE_INT, "tugs_at": TYPE_FLOAT, "hold_until": TYPE_FLOAT,
 			"anchorage": TYPE_INT, "spot": TYPE_INT, "arrived": TYPE_FLOAT, "path": TYPE_ARRAY, "sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
 			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL,
 		}):

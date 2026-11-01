@@ -236,6 +236,10 @@ class Ship:
 	var state := State.ARRIVING
 	## Its number, from the port's count of calls (0 for ships tests add by hand).
 	var id := 0
+	## Whether it calls light-loaded, with its class's light_share of its
+	## load, sitting at its light draft, because no berth has water for its
+	## full draft.
+	var light := false
 	## Whether it has clearance to sail its course (see Marine.clear), with a
 	## pilot aboard and `tugs` tugs from depot `tug_depot` arriving at the
 	## calendar minute `tugs_at`; it may not move before `hold_until`.
@@ -270,13 +274,14 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
 		ship.empties = d.empties
 		ship.state = d.state
 		ship.id = d.id
+		ship.light = d.light
 		ship.cleared = d.cleared
 		ship.pilot = d.pilot
 		ship.tugs = d.tugs
@@ -1586,14 +1591,18 @@ func _call(service: Dictionary) -> void:
 	var why := ""
 	if not AreaFlow.could_berth(self, service.kind):
 		why = "no quay apron of %d m in a terminal with a gate and a road" % Grid.metres(AreaFlow.ship_cells(self, service.kind))
-	elif not _could_berth(service.kind):
-		why = "no ship lane from the open sea to a berth, %.1f m deep all the way, for its draft" % spec.draft
+	elif not _could_berth(service.kind, true):
+		why = "no ship lane from the open sea to a berth, %.1f m deep all the way, for its draft" % spec.light_draft
 	if why != "":
 		_event("%s's %s went elsewhere: %s" % [who, service.kind, why])
 		_event_if(contracts.missed(service.line))
 		return
 	var due: float = clock.calendar_minutes() + service.window_hours * 60.0
-	var ship := Ship.new(service.kind, service.line, due, spec.import_moves, spec.export_moves)
+	# With water only for its light draft, it calls light-loaded.
+	var light := not _could_berth(service.kind)
+	var share: float = spec.light_share if light else 1.0
+	var ship := Ship.new(service.kind, service.line, due, roundi(spec.import_moves * share), roundi(spec.export_moves * share))
+	ship.light = light
 	ship.arrived = clock.calendar_minutes()
 	ship.id = _next_ship
 	_next_ship += 1
@@ -1610,12 +1619,13 @@ func _call(service: Dictionary) -> void:
 ## a lane deep enough from the sea to it, the berth long enough and a crane
 ## on it that reaches across the ship.
 func _could_offer(kind: String, apron: int) -> bool:
-	return unlocked(kind) and Marine.reaches(self, kind, apron) and AreaFlow.could_work_at(self, kind, apron)
+	return unlocked(kind) and Marine.reaches(self, kind, apron, 0, true) and AreaFlow.could_work_at(self, kind, apron)
 
 
-## Whether some apron long enough for `kind` can be reached from the sea, busy or not.
-func _could_berth(kind: String) -> bool:
-	return AreaFlow.ready_aprons(self).any(func(apron: int) -> bool: return AreaFlow._length(self, apron) >= AreaFlow.ship_cells(self, kind) and Marine.reaches(self, kind, apron))
+## Whether some apron long enough for `kind` can be reached from the sea,
+## busy or not, at its full draft or (`light`) its light draft.
+func _could_berth(kind: String, light := false) -> bool:
+	return AreaFlow.ready_aprons(self).any(func(apron: int) -> bool: return AreaFlow._length(self, apron) >= AreaFlow.ship_cells(self, kind) and Marine.reaches(self, kind, apron, 0, light))
 
 
 ## Lines may offer a new service for the berth with a crane that has the

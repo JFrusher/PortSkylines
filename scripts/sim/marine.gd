@@ -56,20 +56,26 @@ static func berth_nodes(sim: PortSim, apron: int) -> Array[int]:
 ## [] when no lane deep enough for its draft reaches the berth, or the
 ## pocket is too shallow. Kept until the lanes, the areas, the anchorages
 ## or the dredging change.
-static func route(sim: PortSim, kind: String, apron: int, anchorage := 0) -> Array[Vector2]:
-	var key := [kind, apron, anchorage]
+static func route(sim: PortSim, kind: String, apron: int, anchorage := 0, light := false) -> Array[Vector2]:
+	var key := [kind, apron, anchorage, light]
 	if key not in _routes(sim):
 		var none: Array[Vector2] = []
-		var deep_enough: bool = apron in sim.areas.list and pocket_depth(sim, apron) >= sim.rules.ship_classes[kind].draft
-		sim._ship_routes[key] = _find(sim, kind, _starts(sim, anchorage), berth_nodes(sim, apron)) if deep_enough else none
+		var deep_enough: bool = apron in sim.areas.list and pocket_depth(sim, apron) >= draft(sim, kind, light)
+		sim._ship_routes[key] = _find(sim, draft(sim, kind, light), _starts(sim, anchorage), berth_nodes(sim, apron)) if deep_enough else none
 	return sim._ship_routes[key]
 
 
+## How deep a ship of `kind` sits: its draft, or its light draft when it
+## calls light-loaded.
+static func draft(sim: PortSim, kind: String, light := false) -> float:
+	return sim.rules.ship_classes[kind].light_draft if light else sim.rules.ship_classes[kind].draft
+
+
 ## The way from the open sea to anchorage `id` for a ship of `kind`, as route.
-static func route_to_anchorage(sim: PortSim, kind: String, id: int) -> Array[Vector2]:
-	var key := [kind, "anchorage", id]
+static func route_to_anchorage(sim: PortSim, kind: String, id: int, light := false) -> Array[Vector2]:
+	var key := [kind, "anchorage", id, light]
 	if key not in _routes(sim):
-		sim._ship_routes[key] = _find(sim, kind, sea_nodes(sim), anchorage_nodes(sim, id))
+		sim._ship_routes[key] = _find(sim, draft(sim, kind, light), sea_nodes(sim), anchorage_nodes(sim, id))
 	return sim._ship_routes[key]
 
 
@@ -86,21 +92,20 @@ static func _starts(sim: PortSim, anchorage: int) -> Array[int]:
 	return anchorage_nodes(sim, anchorage) if anchorage else sea_nodes(sim)
 
 
-## Lane ends from `starts` to `ends` through lanes deep enough for `kind`, in cells.
-static func _find(sim: PortSim, kind: String, starts: Array[int], ends: Array[int]) -> Array[Vector2]:
-	var draft: float = sim.rules.ship_classes[kind].draft
+## Lane ends from `starts` to `ends` through lanes at least `deep` metres, in cells.
+static func _find(sim: PortSim, deep: float, starts: Array[int], ends: Array[int]) -> Array[Vector2]:
 	var coast := sim.areas.coast
-	var nodes := sim.ship_lanes.route(starts, ends, func(segment: int) -> bool: return sim.ship_lanes.depth(segment, coast) >= draft)
+	var nodes := sim.ship_lanes.route(starts, ends, func(segment: int) -> bool: return sim.ship_lanes.depth(segment, coast) >= deep)
 	var points: Array[Vector2] = []
 	for node in nodes:
 		points.append(Vector2(sim.ship_lanes.nodes[node]) + Vector2(0.5, 0.5))
 	return points
 
 
-## Whether a ship of `kind` can reach `apron` from the open sea, or from
-## `anchorage` when it waits there.
-static func reaches(sim: PortSim, kind: String, apron: int, anchorage := 0) -> bool:
-	return not route(sim, kind, apron, anchorage).is_empty()
+## Whether a ship of `kind` (light-loaded or not) can reach `apron` from
+## the open sea, or from `anchorage` when it waits there.
+static func reaches(sim: PortSim, kind: String, apron: int, anchorage := 0, light := false) -> bool:
+	return not route(sim, kind, apron, anchorage, light).is_empty()
 
 
 ## Where ships lie in the rectangle from `from` to `to`, in cells: one every
@@ -148,7 +153,7 @@ static func wait(sim: PortSim, ship: PortSim.Ship) -> void:
 		return
 	for id: int in sim.anchorages:
 		var spot := free_spot(sim, id)
-		var way := route_to_anchorage(sim, ship.kind, id)
+		var way := route_to_anchorage(sim, ship.kind, id, ship.light)
 		if spot >= 0 and not way.is_empty():
 			ship.anchorage = id
 			ship.spot = spot
@@ -181,7 +186,7 @@ static func set_course(sim: PortSim, ship: PortSim.Ship) -> void:
 	ship.path.clear()
 	if ship.anchorage:
 		ship.path.append(spots(sim, ship.anchorage)[ship.spot])
-	ship.path.append_array(route(sim, ship.kind, ship.apron, ship.anchorage))
+	ship.path.append_array(route(sim, ship.kind, ship.apron, ship.anchorage, ship.light))
 	ship.path.append(alongside(sim, ship))
 	ship.anchorage = 0
 	ship.spot = -1

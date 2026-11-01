@@ -19,9 +19,9 @@ func _initialize() -> void:
 
 func _test_milestone_locks() -> void:
 	var sim := PortSim.new(1, RandomPort.strait())
-	var hub: Dictionary = sim.milestones()[-1]
+	var hub: Dictionary = sim.milestones()[3]
 	for name: String in ["neopanamax", "wide_sts"]:
-		_expect(sim.lock_error(name), "Unlocked at milestone %d: %d TEU across the quay" % [sim.milestones().size(), hub.teu], "%s waits for the last milestone" % name)
+		_expect(sim.lock_error(name), "Unlocked at milestone 4: %d TEU across the quay" % hub.teu, "%s waits for the hub milestone" % name)
 	_expect(PortSim.new(1, RandomPort.quick()).lock_error("neopanamax"), "", "every milestone reached unlocks it")
 
 

@@ -3,6 +3,8 @@
 		"feeder": {
 			"length": 200.0,
 			"draft": 10.0,
+			"light_draft": 10.0,
+			"light_share": 1.0,
 			"outreach": 8.0,
 			"import_moves": 240.0,
 			"export_moves": 160.0,
@@ -14,6 +16,8 @@
 		"panamax": {
 			"length": 300.0,
 			"draft": 13.0,
+			"light_draft": 13.0,
+			"light_share": 1.0,
 			"outreach": 13.0,
 			"import_moves": 700.0,
 			"export_moves": 500.0,
@@ -25,6 +29,8 @@
 		"neopanamax": {
 			"length": 366.0,
 			"draft": 15.5,
+			"light_draft": 15.5,
+			"light_share": 1.0,
 			"outreach": 22.0,
 			"import_moves": 1400.0,
 			"export_moves": 1000.0,
@@ -32,6 +38,19 @@
 			"pilot": true,
 			"tugs": 2,
 			"port_dues": 20000
+		},
+		"ulcv": {
+			"length": 400.0,
+			"draft": 16.0,
+			"light_draft": 14.5,
+			"light_share": 0.6,
+			"outreach": 24.0,
+			"import_moves": 2000.0,
+			"export_moves": 1500.0,
+			"window_hours": 48.0,
+			"pilot": true,
+			"tugs": 3,
+			"port_dues": 30000
 		}
 	},
 	"water": {

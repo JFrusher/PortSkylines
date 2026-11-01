@@ -17,6 +17,15 @@
 			"lead_days": 0.0,
 			"width": 32.0,
 			"max_fetchers": 5.0
+		},
+		"mega_sts": {
+			"name": "Mega STS crane",
+			"cost": 70000.0,
+			"rate": 30.0,
+			"outreach": 24.0,
+			"lead_days": 0.0,
+			"width": 35.0,
+			"max_fetchers": 6.0
 		}
 	},
 	"crane_interference": 0.9,
