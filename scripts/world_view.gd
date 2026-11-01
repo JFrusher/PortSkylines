@@ -879,18 +879,18 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var reach: float = CRANE_GAUGE / 2.0 + (Grid.CELL * depth / 2.0 - Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(spec.outreach)
 	model.set_meta("reach", reach)
 	var legs: float = (spec.width / 2.0 - 2.0) / METRES_PER_UNIT
-	for x: float in [-legs, legs]:
-		for z: float in [-CRANE_GAUGE / 2.0, CRANE_GAUGE / 2.0]:
-			var leg := _box(Vector3(0.06, CRANE_HEIGHT, 0.06), CRANE_COLOR)
-			leg.position = Vector3(x, CRANE_HEIGHT / 2.0, z)
-			model.add_child(leg)
-	var girder := _box(Vector3(0.24, 0.12, reach - CRANE_BACK + 0.2), CRANE_COLOR)
-	girder.position = Vector3(0, CRANE_HEIGHT, (reach + CRANE_BACK) / 2.0)
-	model.add_child(girder)
+	var body := MeshInstance3D.new()
+	body.name = "Body"
+	body.mesh = _sts_mesh(legs, reach)
+	model.add_child(body)
 	var trolley := _box(Vector3(0.24, 0.1, 0.32), Color(0.25, 0.25, 0.27))
 	trolley.name = "Trolley"
 	trolley.position.y = CRANE_HEIGHT - 0.11
 	model.add_child(trolley)
+	# The driver's cab, hung under the trolley's waterside end.
+	var cab := _box(Vector3(0.12, 0.1, 0.12), Color(0.92, 0.92, 0.9))
+	cab.position = Vector3(0.08, -0.1, 0.12)
+	trolley.add_child(cab)
 	var cable := _box(Vector3(0.02, 1.0, 0.02), Color(0.15, 0.15, 0.15))
 	cable.name = "Cable"
 	trolley.add_child(cable)
@@ -899,6 +899,45 @@ func _crane_model(crane: PortSim.Crane) -> Node3D:
 	trolley.add_child(spreader)
 	add_child(model)
 	return model
+
+
+## An STS crane's frame as one mesh, so it draws in one call: four legs on
+## wheeled bogies along the rails, a sill beam low and a portal beam high
+## between each pair, the twin boom from the backreach out over the water,
+## the A-frame above the landside legs with the machinery house behind it.
+## `legs` is half the leg spacing along the rails, `reach` how far the boom
+## runs out, in world units; +Z points out to the water.
+func _sts_mesh(legs: float, reach: float) -> Mesh:
+	var thick := 0.07
+	var water := CRANE_GAUGE / 2.0
+	var land := -CRANE_GAUGE / 2.0
+	var white := Color(0.92, 0.92, 0.9)
+	var grey := Color(0.25, 0.25, 0.27)
+	var parts := []
+	for x: float in [-legs, legs]:
+		for z: float in [land, water]:
+			parts.append([Vector3(thick, CRANE_HEIGHT, thick), Vector3(x, CRANE_HEIGHT / 2.0, z), CRANE_COLOR])
+			parts.append([Vector3(0.22, 0.05, 0.08), Vector3(x, 0.025, z), grey])
+		# Along each side, low and high, joining the landside and waterside legs.
+		for y: float in [CRANE_HEIGHT * 0.35, CRANE_HEIGHT * 0.95]:
+			parts.append([Vector3(thick * 0.8, thick * 0.8, CRANE_GAUGE), Vector3(x, y, 0.0), CRANE_COLOR])
+	for z: float in [land, water]:
+		# Across the rails between each pair of legs: the sill low, the portal high.
+		parts.append([Vector3(legs * 2.0, thick, thick), Vector3(0.0, CRANE_HEIGHT * 0.35, z), CRANE_COLOR])
+		parts.append([Vector3(legs * 2.0, thick * 1.4, thick * 1.4), Vector3(0.0, CRANE_HEIGHT * 0.95, z), CRANE_COLOR])
+	# The twin boom, backreach to tip, with a walkway between its girders.
+	var length := reach - CRANE_BACK + 0.2
+	for x: float in [-0.11, 0.11]:
+		parts.append([Vector3(0.06, 0.12, length), Vector3(x, CRANE_HEIGHT, (reach + CRANE_BACK) / 2.0), CRANE_COLOR])
+	parts.append([Vector3(0.16, 0.02, length), Vector3(0.0, CRANE_HEIGHT - 0.05, (reach + CRANE_BACK) / 2.0), grey])
+	# The A-frame over the landside legs, and its top beam.
+	var apex := 0.7
+	for x: float in [-0.11, 0.11]:
+		parts.append([Vector3(0.05, apex, 0.05), Vector3(x, CRANE_HEIGHT + apex / 2.0, land), CRANE_COLOR])
+	parts.append([Vector3(0.3, 0.05, 0.05), Vector3(0.0, CRANE_HEIGHT + apex, land), CRANE_COLOR])
+	# The machinery house on the backreach.
+	parts.append([Vector3(0.34, 0.22, 0.36), Vector3(0.0, CRANE_HEIGHT + 0.17, CRANE_BACK + 0.22), white])
+	return _merged(parts)
 
 
 ## The ship along crane `crane`'s stretch of quay, or null.
@@ -1125,9 +1164,20 @@ func _machine_mesh(gear: String) -> Mesh:
 		for z: float in [-0.3, 0.3]:
 			parts.append([Vector3(0.08, height, 0.08), Vector3(x, height / 2.0, z), Color(0.95, 0.95, 0.92)])
 		parts.append([Vector3(0.14, 0.1, 0.72), Vector3(x, 0.05, 0), Color(0.2, 0.2, 0.22)])
+	# RTGs in yellow, RMGs in blue, so a rail yard reads apart from the stacks.
+	var colour := Color(0.95, 0.75, 0.1) if gear == "rtg" else Color(0.15, 0.45, 0.8)
 	for z: float in [-0.3, 0.3]:
-		# RTGs in yellow, RMGs in blue, so a rail yard reads apart from the stacks.
-		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), Color(0.95, 0.75, 0.1) if gear == "rtg" else Color(0.15, 0.45, 0.8)])
+		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), colour])
+		# A sill beam low across, between each pair of legs.
+		parts.append([Vector3(1.12, 0.06, 0.06), Vector3(0, height * 0.3, z), colour])
+	for x: float in [-0.56, 0.56]:
+		# The side beams joining each side's legs at the top.
+		parts.append([Vector3(0.08, 0.08, 0.6), Vector3(x, height - 0.02, 0), colour])
+	# The trolley on the girders, its spreader hanging below, and the driver's cab.
+	parts.append([Vector3(0.2, 0.08, 0.66), Vector3(0.1, height + 0.08, 0), Color(0.3, 0.3, 0.32)])
+	parts.append([Vector3(0.12, 0.04, 0.5), Vector3(0.1, height - 0.35, 0), Color(0.95, 0.75, 0.1)])
+	parts.append([Vector3(0.02, 0.4, 0.02), Vector3(0.1, height - 0.15, 0), Color(0.15, 0.15, 0.15)])
+	parts.append([Vector3(0.14, 0.12, 0.12), Vector3(-0.42, height - 0.1, -0.3), Color(0.92, 0.92, 0.9)])
 	return _merged(parts)
 
 

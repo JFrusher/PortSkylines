@@ -521,3 +521,21 @@ Replaying a hash with threads doesn't apply: the sim has no threads.
 `profile_sim.gd` and `timed_lanes.gd` had fallen behind the tick (empties,
 parks, junctions, traffic epochs) and the two-argument `LaneTraffic`; CI
 doesn't compile bench scripts, so neither failed until now.
+
+### Better crane models (M8 step P, 2026-11-01)
+
+The STS crane's frame (four legs on bogies, sill and portal beams, a twin
+boom with a walkway, the A-frame and the machinery house) is now one merged
+mesh, where its legs and girder were five meshes; RTGs and RMGs gain sill
+and side beams, a trolley with its spreader, and a cab, in their existing
+merged mesh. On the debug mega port (18 STS cranes, 80 RTG blocks), the
+camera over the first berth, 120 frames at 1280x720 on llvmpipe:
+
+| | Draw calls | Frame time, three runs |
+|---|---|---|
+| Before | 719 | 1027, 1040, 1115 ms |
+| After | 606 | 1078, 1040, 1156 ms |
+
+Draw calls fall by 113; frame time is within the runs' spread (means
+1061 against 1091 ms, both runs slower together the second time), so no
+worse here. llvmpipe is software GL: this says nothing about a GPU.

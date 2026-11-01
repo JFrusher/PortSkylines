@@ -15,7 +15,9 @@ void vertex() {
 }
 
 void fragment() {
-	float depth = texture(coast, world.xz / site).g;
+	vec2 uv = world.xz / site;
+	// Past the site's edges the sea is open and deep.
+	float depth = (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? 1.0 : texture(coast, uv).g;
 	float ripple = sin(world.x * 3.1 + TIME * 1.3) * sin(world.z * 2.7 - TIME * 1.1);
 	ALBEDO = mix(shallow, deep, depth) + ripple * 0.015;
 	ROUGHNESS = 0.15;
