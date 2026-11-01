@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 36
+const VERSION := 37
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -17,7 +17,7 @@ const VEHICLE_FIELDS := {
 	"prev_t": TYPE_FLOAT, "waited": TYPE_INT, "state": TYPE_STRING,
 	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
 	"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
-	"area": TYPE_INT, "slot": TYPE_INT,
+	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT,
 }
 const MAGIC := "PSKY"
 
@@ -93,6 +93,16 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v35(data)
 	if data.version < 36:
 		data = _migrate_v36(data)
+	if data.version < 37:
+		data = _migrate_v37(data)
+	return data
+
+
+## v37 has straddle carriers; every older vehicle is something else.
+static func _migrate_v37(data: Dictionary) -> Dictionary:
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.straddle = 0
+	data.version = 37
 	return data
 
 

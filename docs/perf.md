@@ -573,3 +573,14 @@ ms a tick, the tick 21.3 to 19.5 ms untimed. What is left is mostly that
 one pass and routing each new lorry to its gate; counters kept as lorries
 load and move would take the pass off too, at the cost of every place a
 lorry's load or area changes keeping them right.
+
+### Straddle carriers in the showcase port (2026-11-01)
+
+Making the North Terminal's two import blocks straddle blocks, in the
+showcase port over 6 game hours: 785 moves against 783 with RTGs and pool
+tractors, at 5.0 ms a tick against 3.4 ms. With the 150 pool tractors out,
+cranes used to skip looking for a box at once; with a straddle block's
+carriers often free, they look every tick, searching the yard for the next
+export and the import blocks for room. A port without straddle blocks
+pays only a cheap check (3.4 to 3.6 ms on the showcase without them).
+Open: let a crane look only at straddle blocks while the pool is out.

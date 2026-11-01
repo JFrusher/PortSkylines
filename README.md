@@ -80,6 +80,7 @@ Lines offer **weekly services** for berth windows, and the week is planned berth
 | **Hinterland** | Every box has an off-map origin or destination, reached by road or by rail, with demand that grows with each milestone |
 | **Reefers** | Plugged in reefer blocks, drawing 4 kW (7 kW on hot days), billed on the day's peak, and fined when left unplugged |
 | **Special cargo** | Rush imports fined when their call is late; dangerous goods only in their own blocks, kept apart from the rest |
+| **Straddle carriers** | A straddle block stacks three high and drives its own boxes to the quay and back, so it needs no tractors |
 | **Barges** | Barges come down the river from inland, berth only at barge berths, land exports for the big ships and take away the imports booked to barge; a barge discount draws boxes off road and rail alike |
 | **Transhipment** | A share of each line's boxes go on from its big ships to its feeders and back within a connection window, at a lower move price, stacked in the transhipment block nearest the berth they leave from |
 | **Economy** | Move prices, storage fees past free days, upkeep by terminal, loans, a bailout, and an end-of-year scoreboard |

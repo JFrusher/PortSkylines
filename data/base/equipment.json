@@ -43,7 +43,8 @@
 			"set_down_seconds": 20.0,
 			"bays_per_machine": 4.0,
 			"tiers": 4.0,
-			"empties_only": false
+			"empties_only": false,
+			"carries": false
 		},
 		"rtg": {
 			"name": "RTGs",
@@ -53,7 +54,8 @@
 			"set_down_seconds": 25.0,
 			"bays_per_machine": 10.0,
 			"tiers": 5.0,
-			"empties_only": false
+			"empties_only": false,
+			"carries": false
 		},
 		"rmg": {
 			"name": "RMGs",
@@ -63,7 +65,8 @@
 			"set_down_seconds": 20.0,
 			"bays_per_machine": 8.0,
 			"tiers": 5.0,
-			"empties_only": false
+			"empties_only": false,
+			"carries": false
 		},
 		"empty_handler": {
 			"name": "empty handlers",
@@ -73,7 +76,19 @@
 			"set_down_seconds": 15.0,
 			"bays_per_machine": 4.0,
 			"tiers": 7.0,
-			"empties_only": true
+			"empties_only": true,
+			"carries": false
+		},
+		"straddle": {
+			"name": "straddle carriers",
+			"upkeep_per_machine": 700.0,
+			"speed": 6.0,
+			"lift_seconds": 20.0,
+			"set_down_seconds": 20.0,
+			"bays_per_machine": 2.0,
+			"tiers": 3.0,
+			"empties_only": false,
+			"carries": true
 		}
 	}
 }

@@ -91,6 +91,7 @@ var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
 var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
+var _straddles_out := {}  # straddle block id -> its carriers on the road
 ## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
 var trains: Array[Train] = []
 var _next_train := 1
@@ -2048,7 +2049,9 @@ func _tractors_out() -> int:
 func _add_vehicle(vehicle: Vehicle) -> void:
 	vehicles.append(vehicle)
 	_by_id[vehicle.id] = vehicle
-	_tractors_on_road += 1 if vehicle.kind == "tractor" else 0
+	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	if vehicle.straddle:
+		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
 	_count_bound(vehicle, 1)
 	if vehicle.home != Grid.NONE:
 		if vehicle.home not in _fetching:
@@ -2061,7 +2064,9 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	lane_traffic.leave(vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
-	_tractors_on_road -= 1 if vehicle.kind == "tractor" else 0
+	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	if vehicle.straddle:
+		_straddles_out[vehicle.straddle] -= 1
 	_count_bound(vehicle, -1)
 	if vehicle.home != Grid.NONE:
 		_fetching[vehicle.home].erase(vehicle)

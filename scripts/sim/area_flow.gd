@@ -308,12 +308,16 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 ## Sends a tractor from the pool, starting in the apron slot under `crane`,
 ## to fetch an export from its terminal's export blocks and bring it back.
 static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> void:
-	if sim._tractors_out() >= sim.tractors:
+	if not _may_send(sim, sim.areas.list[ship.apron].terminal):
 		return
 	var box := _export_box(sim, ship) if ship.exports > 0 else _surplus_empty(sim, ship)
 	if box == 0:
 		return
+	var block := _block_of(sim, box)
+	if not _carrier_free(sim, block):
+		return
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
+	tractor.straddle = block if carries(sim, block) else 0
 	if not sim.lane_traffic.place(tractor):
 		return
 	sim._next_vehicle += 1
@@ -322,6 +326,34 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	sim._claimed[box] = true
 	sim._add_vehicle(tractor)
 	_go_to(sim, tractor, _block_of(sim, box))
+
+
+## Whether yard block `block`'s gear carries its own boxes to the quay
+## (straddle carriers), so no tractor from the pool is needed.
+static func carries(sim: PortSim, block: int) -> bool:
+	return sim.rules.yard_gear[sim.areas.list[block].settings.gear].carries
+
+
+## Whether anything could go for a box in `terminal`: a pool tractor, or a
+## straddle block's own carrier. Checked first, as finding the box is dearer.
+static func _may_send(sim: PortSim, terminal: int) -> bool:
+	if sim._tractors_out() < sim.tractors:
+		return true
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if area.type == "yard_block" and area.terminal == terminal and carries(sim, id) and _carrier_free(sim, id):
+			return true
+	return false
+
+
+## Whether a vehicle can go for a box at `block`: one of its own straddle
+## carriers (one a machine) if its gear carries, else a pool tractor.
+# shortcut: a straddle block's machines also stack for lorries while its carriers drive to the quay; split them if lorry-heavy straddle blocks look too quick.
+static func _carrier_free(sim: PortSim, block: int) -> bool:
+	if not carries(sim, block):
+		return sim._tractors_out() < sim.tractors
+	var carriers := sim.machines.count_for(sim.areas.list[block].settings.gear, sim.areas.layout(block).slots.size())
+	return sim._straddles_out.get(block, 0) < carriers
 
 
 ## The tractors out fetching exports for `ship`: each has its home in the
@@ -399,13 +431,16 @@ static func _crane_slot(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) 
 ## import block of the ship's terminal with room. False when there is no free
 ## tractor, slot or block yet.
 static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> bool:
-	if sim._tractors_out() >= sim.tractors:
+	if not _may_send(sim, sim.areas.list[ship.apron].terminal):
 		return false
 	var block := _block_for(sim, "import", sim.areas.list[ship.apron].terminal)
 	if block == 0:
 		sim._event("A ship is waiting: no import yard block with room and a road in its terminal")
 		return false
+	if not _carrier_free(sim, block):
+		return false
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
+	tractor.straddle = block if carries(sim, block) else 0
 	if not sim.lane_traffic.place(tractor):
 		return false
 	sim._next_vehicle += 1

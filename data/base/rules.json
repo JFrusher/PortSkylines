@@ -167,6 +167,7 @@
 				"panamax": "Panamax services",
 				"automated": "automated gates",
 				"transhipment": "transhipment between big ships and feeders",
+				"straddle": "straddle carriers, which stack and carry boxes to the quay",
 				"rmg": "rail track and RMG rail yards"
 			}
 		},
