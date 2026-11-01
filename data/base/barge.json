@@ -1,0 +1,9 @@
+{
+	"barge": {
+		"discount": {
+			"max": 100,
+			"share_per_dollar": 0.004,
+			"max_share": 0.6
+		}
+	}
+}

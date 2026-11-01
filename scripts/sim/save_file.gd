@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 35
+const VERSION := 36
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -91,6 +91,16 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v34(data)
 	if data.version < 35:
 		data = _migrate_v35(data)
+	if data.version < 36:
+		data = _migrate_v36(data)
+	return data
+
+
+## v36 has a barge discount and counts boxes delivered by barge.
+static func _migrate_v36(data: Dictionary) -> Dictionary:
+	data.sim.barge_discount = 0
+	data.sim.by_barge = 0
+	data.version = 36
 	return data
 
 
@@ -201,7 +211,7 @@ static func _migrate_v27(data: Dictionary) -> Dictionary:
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
 static func _valid_sim(data: Variant) -> bool:
 	if not data is Dictionary or not _has_fields(data, {
-		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "rail_discount": TYPE_INT, "power": TYPE_DICTIONARY, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
+		"roads": TYPE_DICTIONARY, "rails": TYPE_DICTIONARY, "by_rail": TYPE_INT, "rail_discount": TYPE_INT, "by_barge": TYPE_INT, "barge_discount": TYPE_INT, "power": TYPE_DICTIONARY, "trains": TYPE_ARRAY, "next_train": TYPE_INT, "until_train": TYPE_DICTIONARY, "areas": TYPE_DICTIONARY, "ticks": TYPE_INT, "rng_seed": TYPE_INT,
 		"rng_state": TYPE_INT, "ledger": TYPE_DICTIONARY, "delivered": TYPE_INT,
 		"events": TYPE_ARRAY, "ship_log": TYPE_ARRAY,
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,

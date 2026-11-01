@@ -24,6 +24,10 @@ var delivered := 0
 var by_rail := 0
 ## Dollars off each box carried by train, to shift lines' boxes onto rail.
 var rail_discount := 0
+## Of the boxes delivered, the ones that left by barge.
+var by_barge := 0
+## Dollars off each box carried by barge, to shift boxes onto barges.
+var barge_discount := 0
 ## Today's reefer power: the peak kW and the kWh drawn so far, billed at midnight.
 var power := {"peak_kw": 0.0, "kwh": 0.0}
 ## Shipping lines, their services and offers, and their reputation of the port.
@@ -379,6 +383,8 @@ func to_dict() -> Dictionary:
 		"delivered": delivered,
 		"by_rail": by_rail,
 		"rail_discount": rail_discount,
+		"by_barge": by_barge,
+		"barge_discount": barge_discount,
 		"power": power.duplicate(),
 		"trains": trains.map(func(train: Train) -> Dictionary: return train.to_dict()),
 		"next_train": _next_train,
@@ -461,6 +467,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.delivered = d.delivered
 	sim.by_rail = d.by_rail
 	sim.rail_discount = d.rail_discount
+	sim.by_barge = d.by_barge
+	sim.barge_discount = d.barge_discount
 	sim.power = d.power.duplicate()
 	for train: Dictionary in d.trains:
 		sim.trains.append(Train.from_dict(train))
@@ -535,6 +543,8 @@ func apply(command: Dictionary) -> String:
 			return set_storage(command.free_days, command.fee)
 		"set_rail_discount":
 			return set_rail_discount(command.dollars)
+		"set_barge_discount":
+			return set_barge_discount(command.dollars)
 		"take_loan":
 			var locked := lock_error("loans")
 			return locked if locked else finance.take_loan(command.kind, clock.calendar_minutes(), ledger)
@@ -729,6 +739,16 @@ func set_rail_discount(dollars: int) -> String:
 	if dollars < 0 or dollars > rules.rail.discount.max:
 		return "The rail discount runs from $0 to $%d a box" % rules.rail.discount.max
 	rail_discount = dollars
+	return ""
+
+
+func set_barge_discount(dollars: int) -> String:
+	var locked := lock_error("barge")
+	if locked:
+		return locked
+	if dollars < 0 or dollars > rules.barge.discount.max:
+		return "The barge discount runs from $0 to $%d a box" % rules.barge.discount.max
+	barge_discount = dollars
 	return ""
 
 
@@ -1950,9 +1970,11 @@ func by_barge_to(id: int) -> bool:
 	return rules.hinterland.places[boxes[id].place].barge_km > 0.0
 
 
-## The share of `line`'s imports for places up the river booked to barge.
+## The share of `line`'s imports for places up the river booked to barge
+## while barges call: its own share, plus what the barge discount buys, capped.
 func barge_share(line: String) -> float:
-	return rules.lines[line].barge_share
+	var discount: Dictionary = rules.barge.discount
+	return minf(rules.lines[line].barge_share + barge_discount * discount.share_per_dollar, maxf(discount.max_share, rules.lines[line].barge_share))
 
 
 ## Import `id` has left for the hinterland: once empties are unlocked, it

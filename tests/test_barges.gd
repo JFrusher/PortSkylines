@@ -3,6 +3,7 @@ extends SceneTree
 ## leaves the site; every other ship only by the open sea. Step E: a barge
 ## berth takes only barges and a barge only a barge berth; imports booked to
 ## barge leave only by barge, and what barges land goes out as exports.
+## Step F: a barge discount moves boxes onto barges from both road and rail.
 ## godot --headless --script res://tests/test_barges.gd
 
 const AreaPort := preload("res://tests/area_port.gd")
@@ -18,6 +19,7 @@ func _initialize() -> void:
 	_test_a_barge_berth_takes_only_barges()
 	_test_barge_boxes_leave_only_by_barge()
 	_test_no_barge_no_booking()
+	_test_a_barge_discount_takes_from_road_and_rail()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -126,6 +128,7 @@ func _test_barge_boxes_leave_only_by_barge() -> void:
 		sim.tick()
 		if barge.boxes == 0 and barge.exports == 0:
 			break
+	_expect(sim.by_barge, booked.size(), "each counts as delivered by barge")
 	# It has room for exactly the booked boxes, so loading any other leaves one behind.
 	_expect(booked.filter(func(id: int) -> bool: return id in sim.boxes), [], "the barge loads every barge box, and only those")
 	var landed := AreaFlow._stacks(sim, exports).of_kind("export", sim.boxes).filter(func(id: int) -> bool: return sim.boxes[id].line == "riverline")
@@ -158,3 +161,41 @@ func _test_only_barges_sail_a_river_channel() -> void:
 	_expect(Marine.route_to_anchorage(sim, "feeder", 1), [] as Array[Vector2], "a feeder never sails a river channel")
 	_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(0, 310), "to": Vector2i(50, 310), "type": "narrow"}), "", "a narrow channel beside it")
 	_expect(Marine.route_to_anchorage(sim, "feeder", 1).is_empty(), false, "a feeder takes the narrow one")
+
+
+## How a Panamax's 200 imports split between road, rail and barge in a port
+## with a rail block and Riverline calling, at a barge discount of `dollars`.
+func _split(dollars: int) -> Dictionary:
+	var rules := RandomPort.quick()
+	rules.lines.aurora.rail_share = 0.3
+	rules.lines.aurora.barge_share = 0.1
+	var sim := AreaPort.base(rules, "")
+	AreaPort.add_rail_block(sim)
+	sim.contracts.services.append({"id": 900, "line": "riverline", "kind": "barge", "start": 9000, "window_hours": 8.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000})
+	_expect(sim.apply({"op": "set_barge_discount", "dollars": dollars}), "", "the barge discount is set to $%d" % dollars)
+	var big := PortSim.Ship.new("panamax", "aurora", sim.clock.calendar_minutes() + 6000.0, 200, 0)
+	sim.ships.append(big)
+	_expect(AreaFlow.berth(sim, big), true, "the Panamax berths")
+	big.state = PortSim.Ship.State.WORKING
+	big.sail = 1.0
+	big.berthed = sim.clock.calendar_minutes()
+	var split := {"road": 0, "rail": 0, "barge": 0}
+	var seen := {}
+	for i in roundi(12 * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		for id: int in sim.boxes:
+			if id not in seen and sim.boxes[id].kind == "import" and sim.boxes[id].line == "aurora":
+				seen[id] = true
+				split["rail" if sim.boxes[id].rail else ("barge" if sim.boxes[id].barge else "road")] += 1
+		if big not in sim.ships:
+			break
+	return split
+
+
+func _test_a_barge_discount_takes_from_road_and_rail() -> void:
+	var none := _split(0)
+	var most := _split(100)
+	_expect(none.road + none.rail + none.barge >= 190 and most.road + most.rail + most.barge >= 190, true, "both land the Panamax (%s, %s)" % [none, most])
+	_expect(most.barge > none.barge * 2, true, "the discount moves boxes onto barges (%d to %d)" % [none.barge, most.barge])
+	_expect(most.rail < none.rail, true, "fewer go by rail (%d to %d)" % [none.rail, most.rail])
+	_expect(most.road < none.road, true, "fewer by road, so fewer lorries at the gate (%d to %d)" % [none.road, most.road])

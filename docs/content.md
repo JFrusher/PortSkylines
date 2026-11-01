@@ -102,6 +102,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `lines.<key>.name`, `.livery` | text | A fictional shipping line and its hull colour (`#rrggbb`). Base lines use the Okabe-Ito colour-blind-safe palette |
 | `lines.<key>.classes.<class>` | number | Relative weight of each ship class the line offers; classes must exist |
 | `lines.<key>.sensitivity` | number >0 | Multiplies every change in this line's reputation |
+| `barge.discount.max`, `.share_per_dollar`, `.max_share` | int, number, number | The port-wide barge discount: up to `max` dollars off each box carried by barge, each dollar booking `share_per_dollar` more of every line's imports for places up the river onto barges, taken from road and rail alike, up to `max_share` |
 | `hinterland.places.<key>.share`, `.road_km`, `.rail_km`, `.barge_km` | number, number, number, number | Each off-map place's share of boxes, and its distance by road, rail and barge up the river; 0 means no rail or barge link |
 | `lines.<key>.barge_share` | number 0–1 | Of the line's imports for a place up the river (`hinterland.places.<key>.barge_km` above 0), the share booked to leave by barge while a barge service calls at that terminal; such a box never leaves by lorry |
 | `contracts.offer_check_minutes` | number >0 | How often lines consider offering a service |

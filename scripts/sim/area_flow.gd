@@ -221,6 +221,11 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		sim.boxes[id].onward = onward
 		sim.boxes[id].due = sim.clock.calendar_minutes() + sim.rules.lines[ship.line].connection_hours * 60.0
 		sim.exports += 1
+	# Booked to barge first, by its line's share while barges call at this
+	# terminal, so a barge discount takes boxes from rail and road alike: it
+	# waits in its block for a barge, and no lorry takes it.
+	if sim.boxes[id].kind == "import" and sim.boxes[id].to == 0 and sim.by_barge_to(id) and barges_call(sim, here) and sim.rng.randf() < sim.barge_share(ship.line):
+		sim.boxes[id].barge = true
 	# Booked to rail by its line's share, only while a rail block has room for
 	# it and its place has a rail link, so a port without rail rolls nothing.
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
@@ -235,7 +240,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 			sim._event("A dangerous-goods box was shut out: no dangerous-goods block with room in %s" % sim.areas.terminals[sim.areas.list[ship.apron].terminal].name, sim.areas.list[ship.apron].start)
 			return
 		sim._set_area(tractor, hazard)
-	elif rail and sim.boxes[id].kind == "import" and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
+	elif rail and sim.boxes[id].kind == "import" and not sim.boxes[id].barge and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
 	elif plugs:
@@ -249,10 +254,6 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		var block := _block_for(sim, "export", here)
 		if block:
 			sim._set_area(tractor, block)
-	# Booked to barge by its line's share while barges call at this terminal:
-	# it waits in its block for one, and no lorry takes it.
-	if sim.boxes[id].kind == "import" and not sim.boxes[id].rail and sim.boxes[id].to == 0 and sim.by_barge_to(id) and barges_call(sim, here) and sim.rng.randf() < sim.barge_share(ship.line):
-		sim.boxes[id].barge = true
 	if sim.boxes[id].rush and sim.clock.calendar_minutes() > ship.due:
 		sim.ledger.post("rush_fines", -sim.rules.special_boxes.rush_fine, sim.areas.list[ship.apron].terminal)
 	ship.boxes -= 1
@@ -292,6 +293,13 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 		ship.empties -= 1
 	else:
 		ship.exports -= 1
+	if sim.boxes[tractor.box].barge:
+		# An import gone up the river: delivered, at the barge discount.
+		sim._import_left(tractor.box)
+		sim.delivered += 1
+		sim.by_barge += 1
+		if sim.barge_discount > 0:
+			sim.ledger.post("barge", -sim.barge_discount, sim.areas.list[ship.apron].terminal)
 	sim._drop_box(tractor.box)
 	ship.moves += 1
 	_gone(sim, tractor)

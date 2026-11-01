@@ -153,6 +153,9 @@ const SCHEMA := {
 	# fill first; metres a vehicle second. The rail discount the player may offer per box
 	# by train, up to `max` dollars, adds share_per_dollar to every line's
 	# rail_share, up to max_share.
+	# Each dollar of the port's barge discount books share_per_dollar more of
+	# every line's boxes for places up the river onto barges, up to max_share.
+	"barge": {"discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
 	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
 	# Off-map places boxes come from and go to: each box's share, and its
 	# distance by road, rail and barge up the river (0 for no link).
