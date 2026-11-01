@@ -14,6 +14,8 @@ signal command_issued(command: Dictionary)
 signal new_game_pressed(creative: bool, generated: bool)
 ## Debug builds only: start the big test port with every feature in use.
 signal mega_port_pressed
+## The showcase port, from the pause menu in debug builds.
+signal showcase_port_pressed
 ## A recent event was clicked: the camera goes to grid cell `cell`.
 signal event_picked(cell: Vector2i)
 
@@ -218,6 +220,9 @@ func _ready() -> void:
 		_ask(menu, "Mega port (debug)", "Start the big test port: 6 berths, 18 STS cranes, 80 RTG blocks holding 20,000 boxes, 12 gates and ships in. The port you're playing is lost unless it is saved.", func() -> void:
 			_menu.visible = false
 			mega_port_pressed.emit())
+		_ask(menu, "Showcase port (debug)", "Start the showcase: two terminals on the Estuary with one of nearly everything (every berth and crane, yard roles and gear, rail, gates, lanes, anchorage, pilots, tugs, a breakwater) and ships coming in. The port you're playing is lost unless it is saved.", func() -> void:
+			_menu.visible = false
+			showcase_port_pressed.emit())
 
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)

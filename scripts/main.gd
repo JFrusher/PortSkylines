@@ -55,6 +55,7 @@ func _ready() -> void:
 	hud.new_game_pressed.connect(_new_game)
 	# Loaded, not preloaded: bench/ is left out of exported builds, which have no such button.
 	hud.mega_port_pressed.connect(func() -> void: _use(load("res://bench/endgame_port.gd").debug_port()))
+	hud.showcase_port_pressed.connect(func() -> void: _use(load("res://bench/showcase_port.gd").debug_port()))
 	hud.event_picked.connect(_go_to)
 	add_child(hud)
 
