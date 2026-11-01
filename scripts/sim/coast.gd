@@ -11,6 +11,8 @@ extends RefCounted
 var size: Vector2i
 var _land: PackedByteArray  # 1 for land
 var _depth: PackedFloat32Array  # metres; 0 on land
+## Where rivers leave the site inland: {"cell", "radius"} in cells.
+var inland_ends: Array[Dictionary] = []
 
 static var _built := {}  # [map's hash, site size] -> Coast
 
@@ -35,11 +37,18 @@ func _init(map: Dictionary, cells: Vector2i) -> void:
 	for line: Dictionary in map.rivers:
 		for i: int in line.points.size() - 1:
 			_stamp(_point(line.points[i]), _point(line.points[i + 1]), line.width / Grid.CELL / 2.0, line.depth, river)
+		# Its first point, on the site's edge, is where it runs inland.
+		inland_ends.append({"cell": Vector2i(_point(line.points[0]).clamp(Vector2.ZERO, Vector2(size - Vector2i.ONE))), "radius": line.width / Grid.CELL / 2.0})
 	for i: int in river:
 		_land[i] = 0
 	_shelf(map.depth)
 	for i: int in river:
 		_depth[i] = river[i]
+
+
+## Whether `cell` lies in a river's inland end.
+func is_inland_end(cell: Vector2i) -> bool:
+	return inland_ends.any(func(end: Dictionary) -> bool: return Vector2(cell).distance_to(Vector2(end.cell)) <= end.radius + 1.0)
 
 
 func is_water(cell: Vector2i) -> bool:

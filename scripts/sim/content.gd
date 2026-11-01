@@ -85,8 +85,10 @@ const SCHEMA := {
 	# reputation changes by `reputation`, and no loans for `no_loans_days`.
 	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
 	# "*" means any key, each holding the record that follows.
-	# Length in metres, draft in metres, outreach in box rows.
-	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "light_draft": TYPE_FLOAT, "light_share": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "port_dues": TYPE_INT}},
+	# Length in metres, draft in metres, outreach in box rows. An inland ship
+	# (a barge) comes and goes only by a river's inland end, where it leaves
+	# the site; every other ship only by the open sea.
+	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "light_draft": TYPE_FLOAT, "light_share": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "port_dues": TYPE_INT, "inland": TYPE_BOOL}},
 	# Fictional shipping lines: the classes they sail (relative weights) and how
 	# strongly their reputation of the port moves.
 	# rail_share: of a line's imports, the share booked to leave by train when

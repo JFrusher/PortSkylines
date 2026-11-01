@@ -65,6 +65,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `ship_classes.<name>.light_draft`, `.light_share` | number, number | Where no berth has water for its full draft but one has its light draft, the class calls light-loaded with this share of its moves (`light_draft` equal to `draft` means never) |
 | `ship_classes.<name>.pilot`, `.tugs` | true/false, int | Whether the class takes a pilot in and out, and how many tugs it waits for to berth and unberth |
 | `ship_classes.<name>.port_dues` | int | What each call pays the port as its authority, in the ledger's Port dues |
+| `ship_classes.<name>.inland` | true/false | An inland class (barges) comes and goes only by ship lanes ending where a river leaves the site, the first point of each of the map's `rivers`; every other class only by lanes ending in the open sea |
 | `water.pilots.fee` | int | What each piloted passage pays, in the ledger's Pilotage |
 | `water.dredge.max_depth` | number | As deep as dredging takes a lane or a pocket, in metres |
 | `water.dredge.cost_per_cell_metre` | int | Dredging one cell of water one metre deeper |
