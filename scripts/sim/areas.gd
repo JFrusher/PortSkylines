@@ -11,7 +11,9 @@ extends RefCounted
 ## its front row, beside the road, "out": one cell away from the road,
 ## "settings": the player's rules for it, checked by PortSim.set_area,
 ## "terminal": the terminal it belongs to}; a quay apron also has "depth",
-## the rows from its road to its quay, fixed when it is built.
+## the rows from its road to its quay, fixed when it is built. Its shape
+## (M10) is laid from "curve" ([a, control, b] in grid units) on "side",
+## "columns" cells along it from "from" cells, starting "edge" cells off it.
 var list := {}
 ## Terminal id -> {"name", "colour": an index into TERMINAL_COLOURS}. The
 ## player paints terminals on the map: each area belongs to the terminal
@@ -258,6 +260,13 @@ func cells(id: int) -> Array[Vector2i]:
 	return _cells(list[id])
 
 
+## Area `id`'s shape: its own cells, laid along its curve.
+func shape(id: int) -> AreaShape:
+	var area: Dictionary = list[id]
+	var curve := RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
+	return AreaShape.along(curve, area.side, area.from, area.columns, area.edge, depth_of(area))
+
+
 ## Why area `id` does no work, or "": a road must still run along its front,
 ## since vehicles reach it from there. The box flow sends nothing to an area
 ## with a reason.
@@ -454,6 +463,14 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	var half: int = (road.forward + road.backward) / 2
 	var edge: int = half if side == 1 else half + 1
 	var placed := {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
+	var curve := _roads.curve(segment)
+	# One cell along an axis road, one diagonal step (√2) along a 45° one.
+	var step := curve.length / RoadNet.length(a, b)
+	placed.curve = [curve.a, curve.c, curve.b]
+	placed.side = side
+	placed.from = from * step
+	placed.columns = to - from + 1
+	placed.edge = (road.forward + road.backward) / 2.0
 	if types[type].kind == "quay_apron":
 		placed.depth = _reach(placed)
 	return placed

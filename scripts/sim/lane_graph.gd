@@ -81,6 +81,27 @@ func steps_at(cell: Vector2i) -> Array[Vector2i]:
 	return found
 
 
+## Every step into, through or out of an area: {"from", "to": cells,
+## "area": its area, "slot": Vector2i(area, slot) of the slot either end is
+## in (its end's first), or (-1, -1), "lorries": whether lorries may take it,
+## "into": whether `from` is a road cell, "out_of": whether `to` is}. The
+## lane network (M10) builds its area pieces from these.
+func area_edges() -> Array[Dictionary]:
+	_refresh()
+	var found: Array[Dictionary] = []
+	for id: int in _all.get_point_ids():
+		for next: int in _all.get_point_connections(id):
+			var mine := id in _area_of or id in _slot_of
+			var theirs := next in _area_of or next in _slot_of
+			if not (mine or theirs):
+				continue
+			var slot: Vector2i = _slot_of.get(next, _slot_of.get(id, Vector2i(-1, -1)))
+			var area: int = _area_of.get(next, _area_of.get(id, slot.x))
+			var lorries := _lorries.has_point(id) and _lorries.has_point(next) and _lorries.are_points_connected(id, next, false)
+			found.append({"from": Vector2i(_all.get_point_position(id)), "to": Vector2i(_all.get_point_position(next)), "area": area if area > 0 else slot.x, "slot": slot, "lorries": lorries, "into": not mine, "out_of": not theirs})
+	return found
+
+
 ## Which way traffic runs along area `id`: 1 from its start to its end, -1
 ## the other way, 0 when no road lane runs beside it.
 func flow_of(id: int) -> int:

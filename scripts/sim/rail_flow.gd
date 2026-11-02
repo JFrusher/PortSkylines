@@ -104,12 +104,12 @@ static func _move(sim: PortSim, train: Train, to: float) -> bool:
 	var ahead := ceili(_step(sim)) + 2
 	var from := maxi(floori(minf(train.t, to)) - train.length() - ahead, 0)
 	var past := mini(ceili(maxf(train.t, to)) + ahead, train.path.size() - 1)
-	var crossings := sim.lanes.crossings()
+	var crossings := Drive.crossings(sim)
 	var wanted: Array[Vector2i] = []
 	for i in range(from, past + 1):
 		if train.path[i] in crossings:
 			wanted.append(train.path[i])
-	if not sim.lane_traffic.rebook(-train.id, wanted):
+	if not Drive.rebook(sim, -train.id, wanted):
 		return false
 	train.t = to
 	return true
@@ -230,7 +230,7 @@ static func _gone(sim: PortSim, train: Train) -> void:
 			sim.delivered += 1
 			sim.by_rail += 1
 	_pay_discount(sim, train.wagons.filter(func(box: int) -> bool: return box != 0).size())
-	sim.lane_traffic.release(-train.id)
+	Drive.release(sim, -train.id)
 	sim.trains.erase(train)
 
 
@@ -250,7 +250,7 @@ static func forget(sim: PortSim, id: int) -> int:
 			if box != 0:
 				sim._drop_box(box)
 				lost += 1
-		sim.lane_traffic.release(-train.id)
+		Drive.release(sim, -train.id)
 		sim.trains.erase(train)
 	sim._until_train.erase(id)
 	return lost

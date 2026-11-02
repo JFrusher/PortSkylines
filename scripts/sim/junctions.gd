@@ -1,8 +1,11 @@
 class_name Junctions
 extends RefCounted
 ## Signals and priority signs at junctions, by each junction's grid point;
-## LaneTraffic asks may_enter before a vehicle goes from an approach into a
-## junction's box. A signal lets one phase in at a time: an arm and the one
+## traffic asks may_enter before a vehicle goes from an approach into a
+## junction's box. It asks `lanes` for a junction's arms, and `traffic`
+## whether a junction's box (box_busy) or an arm's approach (approach_busy)
+## has a vehicle in it, so it works over today's lane graph and the lane
+## network alike. A signal lets one phase in at a time: an arm and the one
 ## opposite it go together, an arm with none opposite alone. A phase gives
 ## way to the next once its green time is over and the box is empty, so two
 ## phases are never in the box together. A give-way arm goes in only while
@@ -22,7 +25,7 @@ func _init(traffic_rules: Dictionary) -> void:
 
 ## Puts signals on junction `point`, each phase green for the data's default,
 ## or takes them off.
-func set_signals(lanes: LaneGraph, point: Vector2i, on: bool) -> String:
+func set_signals(lanes: Object, point: Vector2i, on: bool) -> String:
 	if lanes.arms(point).is_empty():
 		return "No junction there"
 	if not on:
@@ -46,7 +49,7 @@ func set_green(point: Vector2i, phase: int, seconds: float) -> String:
 
 
 ## Gives arm `arm` of junction `point` a sign: "give_way", "stop" or "" for none.
-func set_sign(lanes: LaneGraph, point: Vector2i, arm: Vector2i, sign: String) -> String:
+func set_sign(lanes: Object, point: Vector2i, arm: Vector2i, sign: String) -> String:
 	if arm not in lanes.arms(point):
 		return "No road there"
 	if sign not in ["", "give_way", "stop"]:
@@ -60,7 +63,7 @@ func set_sign(lanes: LaneGraph, point: Vector2i, arm: Vector2i, sign: String) ->
 
 ## Junction `point`'s phases, each a list of arms: each arm with the one
 ## opposite it, if any.
-func phases(lanes: LaneGraph, point: Vector2i) -> Array:
+func phases(lanes: Object, point: Vector2i) -> Array:
 	var found := []
 	for arm: Vector2i in lanes.arms(point):
 		if not found.any(func(phase: Array) -> bool: return arm in phase):
@@ -68,8 +71,9 @@ func phases(lanes: LaneGraph, point: Vector2i) -> Array:
 	return found
 
 
-## Whether `vehicle` on arm `arm` may go into junction `point`'s box now.
-func may_enter(lanes: LaneGraph, traffic: LaneTraffic, point: Vector2i, arm: Vector2i, vehicle: Vehicle) -> bool:
+## Whether vehicle `id`, on arm `arm` and stopped at the line for `waited`
+## seconds, may go into junction `point`'s box now.
+func may_enter(lanes: Object, traffic: Object, point: Vector2i, arm: Vector2i, id: int, waited: float) -> bool:
 	if point in signals:
 		var at: Dictionary = signals[point]
 		if at.left <= 0.0 or arm not in phases(lanes, point)[at.phase]:
@@ -77,28 +81,26 @@ func may_enter(lanes: LaneGraph, traffic: LaneTraffic, point: Vector2i, arm: Vec
 	var sign: String = signs.get(point, {}).get(arm, "")
 	if sign == "":
 		return true
-	if sign == "stop" and vehicle.waited * SimClock.TICK_SECONDS < _rules.stop_seconds:
+	if sign == "stop" and waited < _rules.stop_seconds:
 		return false
-	if lanes.box(point).any(func(cell: Vector2i) -> bool: return traffic.holder(cell) not in [0, vehicle.id]):
+	if traffic.box_busy(point, id):
 		return false
 	for other: Vector2i in lanes.arms(point):
-		if signs.get(point, {}).has(other):
-			continue
-		if lanes.approach(point, other).any(func(cell: Vector2i) -> bool: return traffic.holder(cell) != 0):
+		if not signs.get(point, {}).has(other) and traffic.approach_busy(point, other):
 			return false
 	return true
 
 
 ## One tick of every signal: green counts down, and once it is over and the
 ## box is empty the next phase goes green. Forgets junctions that are gone.
-func tick(lanes: LaneGraph, traffic: LaneTraffic) -> void:
+func tick(lanes: Object, traffic: Object) -> void:
 	for point: Vector2i in signals.keys():
 		if lanes.arms(point).is_empty():
 			signals.erase(point)
 			continue
 		var at: Dictionary = signals[point]
 		at.left -= SimClock.TICK_SECONDS
-		if at.left <= 0.0 and lanes.box(point).all(func(cell: Vector2i) -> bool: return traffic.holder(cell) == 0):
+		if at.left <= 0.0 and not traffic.box_busy(point, 0):
 			at.phase = (at.phase + 1) % at.green.size()
 			at.left = at.green[at.phase]
 	for point: Vector2i in signs.keys():
