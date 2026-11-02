@@ -507,7 +507,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	for data: Dictionary in d.vehicles:
 		sim._add_vehicle(Vehicle.from_dict(data))
 	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes, sim.rules.traffic)
-	sim._weigh_routes()
+	Drive.weigh(sim)
 	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
 	sim.machine_jobs = d.machine_jobs.duplicate(true)
@@ -590,11 +590,11 @@ func apply(command: Dictionary) -> String:
 		"change_road":
 			return change_road(command.segment, command.type)
 		"set_signals":
-			return lane_traffic.junctions.set_signals(lanes, command.point, command.on)
+			return Drive.junctions(self).set_signals(Drive.junction_lanes(self), command.point, command.on)
 		"set_green":
-			return lane_traffic.junctions.set_green(command.point, command.phase, command.seconds)
+			return Drive.junctions(self).set_green(command.point, command.phase, command.seconds)
 		"set_sign":
-			return lane_traffic.junctions.set_sign(lanes, command.point, command.arm, command.sign)
+			return Drive.junctions(self).set_sign(Drive.junction_lanes(self), command.point, command.arm, command.sign)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
@@ -1563,13 +1563,10 @@ func tick() -> void:
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
-	lane_traffic.junctions.tick(lanes, lane_traffic)
+	Drive.signals(self)
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
-	if clock.ticks % roundi(rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		lane_traffic.settle(rules.traffic.smoothing)
-	if clock.ticks % roundi(rules.traffic.route_epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		_weigh_routes()
+	Drive.settle(self)
 
 
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
@@ -2012,12 +2009,6 @@ func _new_empty(line: String, teu: int) -> int:
 	return id
 
 
-## Routes from now on go round the lane cells vehicles wait in, by the delays
-## LaneTraffic last settled.
-func _weigh_routes() -> void:
-	lanes.set_delays(lane_traffic.delays(), rules.lorry_speed / Grid.CELL, AreaFlow.tractor_speed(self))
-
-
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.
 func _drop_box(id: int) -> void:
 	exports -= 1 if boxes[id].kind in ["export", "tranship"] else 0
@@ -2061,7 +2052,7 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 
 ## Takes `vehicle` off the roads and out of the port.
 func _drop_vehicle(vehicle: Vehicle) -> void:
-	lane_traffic.leave(vehicle)
+	Drive.leave(self, vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
 	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
