@@ -174,6 +174,8 @@ var exports := 0
 var tractors := 0
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
 var gave_up := 0
+## Tractors moved on to where they were heading after being stuck in traffic.
+var moved_on := 0
 ## Gate-in to gate-out minutes of the latest lorries, newest last.
 var turn_times: Array[float] = []
 ## The same per terminal, by the terminal of the gate a lorry left by.
@@ -228,7 +230,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	map = rules.map
 	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
 	junctions = Junctions.new(rules.traffic)
-	handovers = Handovers.new(areas)
+	handovers = Handovers.new(areas, waiting_cells())
 	machines = Machines.new(rules.yard_gear)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
@@ -414,6 +416,7 @@ func to_dict() -> Dictionary:
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
 		"gave_up": gave_up,
+		"moved_on": moved_on,
 		"turn_times": turn_times.duplicate(),
 		"terminal_turns": terminal_turns.duplicate(true),
 		"dwell_times": dwell_times.duplicate(),
@@ -499,6 +502,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
+	sim.moved_on = d.moved_on
 	sim.turn_times.assign(d.turn_times)
 	sim.terminal_turns = d.terminal_turns.duplicate(true)
 	sim.dwell_times.assign(d.dwell_times)
@@ -520,7 +524,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 		sim._add_vehicle(Vehicle.from_dict(data))
 	sim.junctions = Junctions.from_dict(d.junctions, sim.rules.traffic)
 	sim._loaded_traffic = d.traffic
-	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
+	sim.handovers = Handovers.from_dict(d.handovers, sim.areas, sim.waiting_cells())
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
 	sim.machine_jobs = d.machine_jobs.duplicate(true)
 	for area: int in d.area_stacks:
@@ -544,6 +548,11 @@ static func from_dict(d: Dictionary) -> PortSim:
 
 
 ## Identical for identical states; used by the replay and save tests.
+## Cells of buffer strip a waiting lorry takes: its length and the standstill gap.
+func waiting_cells() -> float:
+	return (rules.traffic.lorry_m + rules.traffic.standstill_gap_m) / Grid.CELL
+
+
 func state_hash() -> int:
 	return hash(var_to_bytes(to_dict()))
 

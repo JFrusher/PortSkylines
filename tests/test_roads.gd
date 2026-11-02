@@ -36,6 +36,7 @@ func _initialize() -> void:
 	_test_lorries_use_the_gate_on_their_side()
 	_test_two_way_gate()
 	_test_lorry_gives_up()
+	_test_stuck_tractor_moves_on()
 	_test_following_a_box()
 	_test_lorries_come_for_the_longest_due_box()
 	print("tests: %d failure(s)" % _failures)
@@ -522,7 +523,7 @@ func _test_handovers() -> void:
 	# 12 cells: 4 bays, so 2 slots of two bays and room for 4 in the buffer strip.
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 11}), "", "a 4-bay yard block is built")
 	var block := 1
-	var handovers := Handovers.new(sim.areas)
+	var handovers := Handovers.new(sim.areas, AreaLayout.BAY)
 	var got := []
 	for id in range(1, 11):
 		got.append(handovers.arrive(block, id))
@@ -532,7 +533,7 @@ func _test_handovers() -> void:
 	_expect(handovers.slot_of(block, 3), 1, "a freed slot goes to the first vehicle in the buffer")
 	_expect(handovers.waiting(block), {"buffer": [4, 5, 6, 7], "road": [8, 9, 10]}, "and the first on the road moves into the buffer")
 	# Vehicles dropped from the buffer (a lorry giving up) make room for the road queue.
-	var dropping := Handovers.new(sim.areas)
+	var dropping := Handovers.new(sim.areas, AreaLayout.BAY)
 	for id in range(1, 11):
 		dropping.arrive(block, id)
 	for id: int in [3, 4, 5, 6]:
@@ -843,6 +844,9 @@ func _test_lorry_gives_up() -> void:
 	# A parked tractor blocks the westbound lane between the entry and the gate.
 	var blocker := Vehicle.new(999, "tractor", [Vector3i(0, 450, sim.site_entry().y - 1)] as Array[Vector3i])
 	_expect(Drive.place(sim, blocker), true, "the blocker stands in the lane")
+	# Another stands where the lorry would be moved on to, so it can't be.
+	var in_the_way := Vehicle.new(998, "tractor", [AreaFlow._buffer_start(sim, 2)] as Array[Vector3i])
+	_expect(Drive.place(sim, in_the_way), true, "a tractor stands at the gate's way in")
 	_expect(AreaFlow.dispatch_import_lorry(sim), true, "a lorry is sent for the box due out")
 	var lorry := sim.vehicles[0]
 	var limit := roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2
@@ -853,6 +857,34 @@ func _test_lorry_gives_up() -> void:
 	var holders := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)
 	_expect(not sim._claimed.has(box) or (holders.size() == 1 and holders[0] != lorry), true, "its box is freed for another lorry")
 	_expect(sim.handovers.waiting(2), {"buffer": [], "road": []}, "and it holds no place at the gate")
+
+
+## A tractor stuck behind one that never moves, for as long as a lorry would
+## give up after, is moved on to where it was heading with its box, as
+## Cities: Skylines despawns a stuck vehicle, but nothing is lost: it is
+## counted, and the status says so.
+func _test_stuck_tractor_moves_on() -> void:
+	var sim := AreaPort.terminal(30)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59})
+	var block: int = sim.areas.list.keys().max()
+	var blocker := Vehicle.new(999, "tractor", [Vector3i(0, 450, sim.site_entry().y - 1)] as Array[Vector3i])
+	_expect(Drive.place(sim, blocker), true, "a parked tractor stands in the westbound lane")
+	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [Drive.entry_cell(sim)] as Array[Vector3i])
+	sim._next_vehicle += 1
+	_expect(Drive.place(sim, tractor), true, "a tractor comes in at the site entry")
+	tractor.box = sim._new_box("import", 0.0, "")
+	tractor.loaded = true
+	sim._add_vehicle(tractor)
+	AreaFlow._go_to(sim, tractor, block)
+	var box := tractor.box
+	var limit := roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2
+	for i in limit + 400:
+		sim.tick()
+	_expect(tractor.state != "arriving", true, "stuck behind it past the give-up time, the tractor is moved on (%s)" % tractor.state)
+	_expect(AreaFlow._stacks(sim, block).boxes().has(box), true, "and its box reaches the block's stacks")
+	_expect(sim.moved_on, 1, "it is counted")
+	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.begins_with("A tractor stuck in traffic was moved on")), true, "and the status says so")
 
 
 ## A lorry comes for the box due longest, whichever block holds it, so no

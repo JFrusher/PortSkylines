@@ -91,15 +91,16 @@ func may_enter(lanes: Object, traffic: Object, point: Vector2i, arm: Vector2i, i
 	return true
 
 
-## One tick of every signal: green counts down, and once it is over and the
+## One tick of every signal, `seconds` of traffic (real seconds, as cars
+## drive): green counts down, and once it is over and the
 ## box is empty the next phase goes green. Forgets junctions that are gone.
-func tick(lanes: Object, traffic: Object) -> void:
+func tick(lanes: Object, traffic: Object, seconds: float) -> void:
 	for point: Vector2i in signals.keys():
 		if lanes.arms(point).is_empty():
 			signals.erase(point)
 			continue
 		var at: Dictionary = signals[point]
-		at.left -= SimClock.TICK_SECONDS
+		at.left -= seconds
 		if at.left <= 0.0 and not traffic.box_busy(point, 0):
 			at.phase = (at.phase + 1) % at.green.size()
 			at.left = at.green[at.phase]

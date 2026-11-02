@@ -47,7 +47,7 @@ func _test_a_full_gate_sends_lorries_to_the_park() -> void:
 	var jams := []
 	for park: bool in [false, true]:
 		var sim := _port(8.0, park)
-		var room: int = sim.areas.layout(2).slots.size() + sim.areas.layout(2).buffer.size() / AreaLayout.BAY
+		var room: int = sim.areas.layout(2).slots.size() + sim.handovers.buffer_room(2)
 		var worst := 0
 		var parked := 0
 		var in_slots := true

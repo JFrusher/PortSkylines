@@ -67,17 +67,28 @@ func place(id: int, route: Array[int], metres_per_minute: float, metres: float) 
 ## `piece`: no car's length, on it or the pieces either side, lies within
 ## the standstill gap of it.
 func fits(piece: int, s: float, length: float) -> bool:
-	var spans := [[piece, 0.0]]  # pieces near it, and where each starts in its distances
+	# Cars keep their order on a piece and never overlap, so only the nearest
+	# ones can be in the way: on `piece`, those from the front back until one
+	# is clear behind; on the pieces after it, the rearmost; before it, the frontmost.
+	var on: Array = _on.get(piece, [])
+	for j in range(on.size() - 1, -1, -1):
+		var car: Dictionary = cars[on[j]]
+		if car.s <= s - length - _gap():
+			break
+		if car.s - car.length < s + _gap():
+			return false
+	var near := []  # [car id, where its piece starts in `piece`'s distances]
 	for after: int in network.pieces[piece].next:
-		spans.append([after, network.pieces[piece].length])
+		if not _on.get(after, []).is_empty():
+			near.append([_on[after][0], network.pieces[piece].length])
 	for before: int in _before.get(piece, []):
-		spans.append([before, -network.pieces[before].length])
-	for span: Array in spans:
-		for other: int in _on.get(span[0], []):
-			var car: Dictionary = cars[other]
-			var front: float = span[1] + car.s
-			if front > s - length - _gap() and front - car.length < s + _gap():
-				return false
+		if not _on.get(before, []).is_empty():
+			near.append([_on[before][-1], -network.pieces[before].length])
+	for found: Array in near:
+		var car: Dictionary = cars[found[0]]
+		var front: float = found[1] + car.s
+		if front > s - length - _gap() and front - car.length < s + _gap():
+			return false
 	return true
 
 
@@ -269,7 +280,7 @@ func _booking_distance(car: Dictionary) -> float:
 ## block the box"); true if booked.
 func _book(id: int, piece: int) -> bool:
 	var car: Dictionary = cars[id]
-	if _room_past(car, car.route.find(piece)) < car.length + _gap():
+	if _room_past(car, car.route.find(piece), car.length + _gap()) < car.length + _gap():
 		return false
 	var arm := network.arm_of(car.route[car.route.find(piece) - 1])
 	if not arm.is_empty() and not junctions.may_enter(network, self, arm[0], arm[1], id, car.waited):
@@ -283,15 +294,18 @@ func _book(id: int, piece: int) -> bool:
 
 
 ## How far past the end of `car`'s route piece `at` the nearest car ahead's
-## rear is, in cells; INF when its route ends first, as it may stand there.
-func _room_past(car: Dictionary, at: int) -> float:
+## rear is, in cells, looking as many pieces on as it takes to see `need`
+## cells; INF when its route ends first, as it may stand there.
+func _room_past(car: Dictionary, at: int, need: float) -> float:
 	var distance := 0.0
-	for k in range(at + 1, mini(at + 1 + LOOK_AHEAD, car.route.size())):
+	for k in range(at + 1, car.route.size()):
 		var on: Array = _on.get(car.route[k], [])
 		if not on.is_empty():
 			return distance + cars[on[0]].s - cars[on[0]].length
 		distance += network.pieces[car.route[k]].length
-	return INF if at + LOOK_AHEAD >= car.route.size() - 1 else distance
+		if distance >= need:
+			return distance
+	return INF
 
 
 ## Puts car `id` on `piece`'s list, keeping it rearmost first.

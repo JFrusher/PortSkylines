@@ -905,7 +905,7 @@ static func can_book(sim: PortSim, gate: int) -> bool:
 
 ## Whether the lorries coming in through `gate` fill its slots and buffer.
 static func _gate_full(sim: PortSim, gate: int) -> bool:
-	var room: int = sim.areas.layout(gate).slots.size() + sim.areas.layout(gate).buffer.size() / AreaLayout.BAY
+	var room: int = sim.areas.layout(gate).slots.size() + sim.handovers.buffer_room(gate)
 	var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == gate and v.gate_in < 0.0 and v.state in ["arriving", "queued", "to_slot", "at_gate", "early"]).size()
 	return coming >= room
 
@@ -1034,6 +1034,13 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 ## give-up time leaves with whatever it carries, paying nothing, and its
 ## place in any queue goes to the next. Tractors keep waiting.
 static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
+	# Stuck stuck_minutes, it is moved on to where it was heading with its box,
+	# as Cities: Skylines despawns a stuck vehicle; a lorry with no room there
+	# still gives up later.
+	if Drive.waited(sim, vehicle) >= sim.rules.traffic.stuck_minutes and Drive.move_on(sim, vehicle):
+		sim.moved_on += 1
+		sim._event("A %s stuck in traffic was moved on" % ("lorry" if vehicle.kind == "lorry" else "tractor"), Vector2i(sim.areas.centre(vehicle.target).floor()))
+		return
 	if vehicle.kind != "lorry" or Drive.waited(sim, vehicle) < roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2 * SimClock.TICK_SECONDS:
 		return
 	if vehicle.area in sim.areas.list:

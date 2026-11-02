@@ -34,9 +34,11 @@ var _next_id := 1
 var _ends := {}
 ## Each piece's segments by the cell their start is in: cell ->
 ## [[piece, index of the segment's end point, distance along to its start]],
-## built on first use and dropped with _ends; with the cells they span.
+## built on first use and kept up to date as pieces are added and split;
+## with the cells they span.
 var _cells := {}
 var _span := Rect2i()
+var _filed := {}  # piece -> the cells its segments are filed under in _cells
 ## The longest a segment between two of a piece's points may be, in cells:
 ## lanes are sampled every half cell, and an area's pieces step diagonally.
 const SEGMENT := 1.5
@@ -367,9 +369,12 @@ func split_at(position: Vector2) -> int:
 				after.insert(0, position)
 			var rest := _add(after, piece.segment, piece.lane, piece.lorries, 0, piece.kmh)
 			pieces[rest].next = piece.next
+			if not _cells.is_empty():
+				_unindex(id)
 			piece.points = before
 			_ends.clear()
-			_cells.clear()
+			if not _cells.is_empty():
+				_index(id)
 			piece.length -= pieces[rest].length
 			piece.next = [rest] as Array[int]
 			return id
@@ -419,17 +424,31 @@ func nearest(position: Vector2, lorry: bool) -> Array:
 
 ## Files every piece's segments under the cell its start is in.
 func _index_cells() -> void:
-	var first := true
+	_span = Rect2i(Vector2i(pieces.values()[0].points[0].floor()), Vector2i.ONE)
 	for id: int in pieces:
-		var points: PackedVector2Array = pieces[id].points
-		var along := 0.0
-		for i in range(1, points.size()):
-			assert(points[i - 1].distance_to(points[i]) <= SEGMENT + 0.01, "piece %d's points are at most SEGMENT apart" % id)
-			var cell := Vector2i(points[i - 1].floor())
-			_cells.get_or_add(cell, []).append([id, i, along])
-			_span = Rect2i(cell, Vector2i.ONE) if first else _span.expand(cell)
-			first = false
-			along += points[i - 1].distance_to(points[i])
+		_index(id)
+
+
+## Files piece `id`'s segments under the cells their starts are in.
+func _index(id: int) -> void:
+	var points: PackedVector2Array = pieces[id].points
+	var along := 0.0
+	var filed: Array[Vector2i] = []
+	for i in range(1, points.size()):
+		assert(points[i - 1].distance_to(points[i]) <= SEGMENT + 0.01, "piece %d's points are at most SEGMENT apart" % id)
+		var cell := Vector2i(points[i - 1].floor())
+		_cells.get_or_add(cell, []).append([id, i, along])
+		filed.append(cell)
+		_span = _span.expand(cell)
+		along += points[i - 1].distance_to(points[i])
+	_filed[id] = filed
+
+
+## Takes piece `id`'s segments out of the cells they are filed under.
+func _unindex(id: int) -> void:
+	for cell: Vector2i in _filed.get(id, []):
+		_cells[cell] = _cells[cell].filter(func(entry: Array) -> bool: return entry[0] != id)
+	_filed.erase(id)
 
 
 ## The cells `r` steps out from `centre`, round a square.
@@ -560,9 +579,11 @@ func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, no
 	for i in range(1, points.size()):
 		total += points[i - 1].distance_to(points[i])
 	_ends.clear()
-	_cells.clear()
 	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "node": node, "kmh": kmh, "area": 0, "slot": NO_SLOT}
 	_next_id += 1
+	# Kept up to date once built, rather than built again for each piece added.
+	if not _cells.is_empty():
+		_index(_next_id - 1)
 	return _next_id - 1
 
 

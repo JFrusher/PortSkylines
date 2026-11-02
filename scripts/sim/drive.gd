@@ -90,6 +90,21 @@ static func advance(sim: PortSim, vehicle: Vehicle, _speed: float) -> bool:
 	return true
 
 
+## Moves `vehicle`'s car straight to where it is heading, as Cities:
+## Skylines despawns a vehicle stuck in a jam, if there is room for it to
+## stand there; false (and nothing moved) when there isn't yet.
+static func move_on(sim: PortSim, vehicle: Vehicle) -> bool:
+	_refresh(sim)
+	var length := _length(sim, vehicle)
+	for end in sim.network.ending_at(sim.areas.centre(vehicle.target)):
+		var piece: Dictionary = sim.network.pieces[end]
+		if (vehicle.kind != "lorry" or piece.lorries) and sim.traffic.fits(end, piece.length, length):
+			sim.traffic.remove(vehicle.id)
+			sim.traffic.place_at(vehicle.id, [end] as Array[int], piece.length, _top(sim, vehicle), length)
+			return true
+	return false
+
+
 ## Sim seconds `vehicle` has stood still.
 static func waited(sim: PortSim, vehicle: Vehicle) -> float:
 	return sim.traffic.cars[vehicle.id].waited / 60.0 if vehicle.id in sim.traffic.cars else 0.0
@@ -223,7 +238,7 @@ static func delays(sim: PortSim) -> Dictionary:
 ## One tick, before the area flow: signals, then every car moves on.
 static func signals(sim: PortSim) -> void:
 	_refresh(sim)
-	sim.junctions.tick(sim.network, sim.traffic)
+	sim.junctions.tick(sim.network, sim.traffic, STEP)
 	sim.traffic.tick(STEP)
 
 

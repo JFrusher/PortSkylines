@@ -82,6 +82,8 @@ In four tested parts, new beside old and then the switch, as step 8 was:
 
 The switch (8d) cut the showcase port's deliveries to a quarter (27 in 3,000 ticks against 117 on grid traffic). Measured causes: real vehicle lengths, because areas' handover slots are spaced for one-cell vehicles (27 to 63), and acceleration at 1.5 m/s² (61 to 102); area speed barely mattered. The developer chose interim data until step 7 lays areas and slots for real lengths: lorries and tractors 4 m, `area_kmh` 25, `accel` 20. Step 7's balance pass puts back 16.5 m, 15 m, 20 km/h and 1.5 m/s².
 
+**Step 7's balance pass (2 Nov 2026):** the real values are back. With two-bay slots and "don't block the box", real acceleration and area speed cost almost nothing (124 to 122 showcase deliveries in 3,000 ticks); real lengths cost about 30%, through gridlock: queues on both lanes of the spine joined by U-turns into closed loops. Signals now count green in the traffic's real seconds (they counted sim seconds, a calendar minute each, so a phase lasted 20 game minutes), buffer room counts real lengths, and, the developer's choice, any vehicle stuck `stuck_minutes` (15) is moved on to where it was heading with its box, as Cities: Skylines despawns stuck vehicles (149 deliveries in 3,000 ticks, 52 moved on, no lorry gave up; save v42 counts them).
+
 Step 9 also ports M7's "both lanes carry" test (lorries change lane before a turn so both lanes of a 2+2 road carry traffic), dropped with LaneTraffic in 8d-3, and "a lane change costs no extra cells" on a one-way road, dropped with LaneGraph in 6c-2d.
 
 ### Traffic

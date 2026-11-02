@@ -49,9 +49,10 @@ const SCHEMA := {
 	# Continuous traffic (M10): vehicles keep standstill_gap_m plus
 	# headway_seconds of travel behind the one ahead, speed up and brake at
 	# accel and decel (m/s²), take a curve no faster than lateral_accel (m/s²)
-	# allows, and are lorry_m and tractor_m long.
+	# allows, and are lorry_m and tractor_m long; one stuck stuck_minutes is
+	# moved on to where it was heading.
 	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT, "signal_green_seconds": TYPE_FLOAT, "min_green_seconds": TYPE_FLOAT, "max_green_seconds": TYPE_FLOAT, "stop_seconds": TYPE_FLOAT,
-		"standstill_gap_m": TYPE_FLOAT, "headway_seconds": TYPE_FLOAT, "accel": TYPE_FLOAT, "decel": TYPE_FLOAT, "lateral_accel": TYPE_FLOAT, "lorry_m": TYPE_FLOAT, "tractor_m": TYPE_FLOAT, "area_kmh": TYPE_FLOAT, "give_way_seconds": TYPE_FLOAT},
+		"standstill_gap_m": TYPE_FLOAT, "headway_seconds": TYPE_FLOAT, "accel": TYPE_FLOAT, "decel": TYPE_FLOAT, "lateral_accel": TYPE_FLOAT, "lorry_m": TYPE_FLOAT, "tractor_m": TYPE_FLOAT, "area_kmh": TYPE_FLOAT, "give_way_seconds": TYPE_FLOAT, "stuck_minutes": TYPE_FLOAT},
 	# Empties: return_share of imports come back as empties return_days after
 	# leaving, the rest going to inland depots; one
 	# turned away for want of room costs its line `refused` reputation; one

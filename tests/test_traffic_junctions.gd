@@ -24,6 +24,8 @@ func _initialize() -> void:
 	_test_junctions_closer_than_a_lorry()
 	_test_a_queue_goes_on_green()
 	_test_no_lorry_blocks_the_box()
+	_test_signals_run_in_traffic_seconds()
+	_test_room_past_short_pieces()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -67,7 +69,7 @@ func _across(traffic: Traffic, id: int) -> bool:
 ## Steps `traffic` and its signals on `seconds`.
 func _run(traffic: Traffic, seconds: float) -> void:
 	for i in roundi(seconds / STEP):
-		traffic.junctions.tick(traffic.network, traffic)
+		traffic.junctions.tick(traffic.network, traffic, STEP)
 		traffic.tick(STEP)
 
 
@@ -94,7 +96,7 @@ func _test_stop_stops() -> void:
 	_send(traffic, 1, true)
 	var stopped := 0.0
 	for i in roundi(40.0 / STEP):
-		traffic.junctions.tick(traffic.network, traffic)
+		traffic.junctions.tick(traffic.network, traffic, STEP)
 		traffic.tick(STEP)
 		if traffic.cars[1].i == 0 and traffic.cars[1].v == 0.0:
 			stopped += STEP
@@ -126,7 +128,7 @@ func _cuts_in(sign: bool) -> bool:
 				next_id += 1
 		var was: int = traffic.cars[1].booked.size()
 		var busy := traffic.approach_busy(POINT, Vector2i(0, -1))
-		traffic.junctions.tick(traffic.network, traffic)
+		traffic.junctions.tick(traffic.network, traffic, STEP)
 		traffic.tick(STEP)
 		if was == 0 and not traffic.cars[1].booked.is_empty() and busy:
 			cut = true
@@ -219,7 +221,7 @@ func _test_a_queue_goes_on_green() -> void:
 	for tick in red * 3:
 		if sent < 3 and traffic.place(sent + 1, route.duplicate(), _rules.lorry_speed, _rules.traffic.lorry_m):
 			sent += 1
-		traffic.junctions.tick(traffic.network, traffic)
+		traffic.junctions.tick(traffic.network, traffic, Drive.STEP)
 		traffic.tick(Drive.STEP)
 		stood += [2, 3].filter(func(id: int) -> bool: return id in traffic.cars and traffic.cars[id].v == 0.0 and traffic.cars[id].i == 0).size()
 	_expect(sent, 3, "three lorries queue from the north")
@@ -242,3 +244,35 @@ func _test_no_lorry_blocks_the_box() -> void:
 	_send(traffic, 2, false)
 	_run(traffic, 20.0)
 	_expect(_across(traffic, 2), true, "so the one from the north gets across")
+
+
+## Signals count their green in the seconds the traffic drives in: stepped
+## as the sim steps (a junction tick, then Drive.STEP of traffic), a lorry
+## held at the red is across within two greens' worth of traffic seconds,
+## not two greens' worth of sim seconds (each a calendar minute).
+func _test_signals_run_in_traffic_seconds() -> void:
+	var traffic := _crossroads()
+	_expect(traffic.junctions.set_signals(traffic.network, POINT, true), "", "signals go up")
+	var north_first: bool = Vector2i(0, -1) in traffic.junctions.phases(traffic.network, POINT)[0]
+	_send(traffic, 1, north_first)
+	var green: float = _rules.traffic.signal_green_seconds
+	for tick in ceili((green * 2.0 + 30.0) / Drive.STEP):
+		traffic.junctions.tick(traffic.network, traffic, Drive.STEP)
+		traffic.tick(Drive.STEP)
+	_expect(_across(traffic, 1), true, "the lorry held at the red is across within %.0f traffic seconds" % (green * 2.0 + 30.0))
+
+
+## The east road past the crossroads cut into one-cell pieces, as split
+## roads and driveways leave it, and nothing on it: a lorry from the west
+## finds room past the box however many pieces that takes, and goes.
+func _test_room_past_short_pieces() -> void:
+	var traffic := _crossroads()
+	var network := traffic.network
+	var exit: int = network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)))[2]
+	var start: Vector2 = network.pieces[exit].points[0]
+	for x in range(1, 7):
+		network.split_at(start + Vector2(x, 0))
+	traffic = Traffic.new(network, _rules, Junctions.new(_rules.traffic))
+	_send(traffic, 1, true)
+	_run(traffic, 30.0)
+	_expect(_across(traffic, 1), true, "the lorry crosses into the cut-up road")

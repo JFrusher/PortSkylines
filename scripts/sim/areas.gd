@@ -55,6 +55,8 @@ var _gates := {}  # terminal -> its working gates, for the same versions
 var _idle_for := Vector2i(-1, -1)
 var _layouts := {}
 var _layouts_for := -1
+## Each area's shape, by what it was laid from: id -> [from, AreaShape].
+var _shapes := {}
 ## Each area's ground (cells), kept like _layouts.
 var _cells_of := {}
 var _cells_for := -1
@@ -64,6 +66,7 @@ const NO_SPOT := Vector3i(0, -1, -1)
 ## [[area id, quad]], for the version in _quads_for.
 var _quads := {}
 var _quads_for := -1
+var _quads_of := {}  # area id -> [the shape its quads were filed from, the cells they're filed under]
 ## Each area's cells' middles (centre), kept with _layouts.
 var _centres := {}
 
@@ -283,7 +286,11 @@ func cells(id: int) -> Array[Vector2i]:
 ## Area `id`'s shape: its own cells, laid along its curve.
 func shape(id: int) -> AreaShape:
 	var area: Dictionary = list[id]
-	return AreaShape.along(curve(id), area.side, area.from, area.columns, area.edge, depth_of(area))
+	# Kept by what it is laid from, so an unchanged area isn't laid out again.
+	var from_what := [area.curve, area.side, area.from, area.columns, area.edge, depth_of(area)]
+	if id not in _shapes or _shapes[id][0] != from_what:
+		_shapes[id] = [from_what, AreaShape.along(curve(id), area.side, area.from, area.columns, area.edge, depth_of(area))]
+	return _shapes[id][1]
 
 
 ## Area `id`'s road curve, along which its cells lie.
@@ -395,12 +402,21 @@ func centre(spot: Vector3i) -> Vector2:
 func area_over(quad: PackedVector2Array, except := 0) -> int:
 	if _quads_for != version:
 		_quads_for = version
-		_quads.clear()
+		# Only areas gone, new or laid out again are filed afresh.
+		for id: int in _quads_of.keys():
+			if id not in list or _quads_of[id][0] != shape(id):
+				for under: Vector2i in _quads_of[id][1]:
+					_quads[under] = _quads[under].filter(func(found: Array) -> bool: return found[0] != id)
+				_quads_of.erase(id)
 		for id: int in list:
-			for cell: Dictionary in shape(id).cells:
-				var corners := PackedVector2Array(cell.corners)
-				for under in _grid_under(corners):
-					_quads.get_or_add(under, []).append([id, corners])
+			if id not in _quads_of:
+				var filed: Array[Vector2i] = []
+				for cell: Dictionary in shape(id).cells:
+					var corners := PackedVector2Array(cell.corners)
+					for under in _grid_under(corners):
+						_quads.get_or_add(under, []).append([id, corners])
+						filed.append(under)
+				_quads_of[id] = [shape(id), filed]
 	for under in _grid_under(quad):
 		for found: Array in _quads.get(under, []):
 			if found[0] != except and overlap(quad, found[1]):
