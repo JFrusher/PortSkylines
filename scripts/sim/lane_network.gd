@@ -11,12 +11,14 @@ extends RefCounted
 ## lane's index across the road, or -1; "next": the piece ids it leads into;
 ## "lorries": whether lorries may use it; "node": the node a connection
 ## crosses, or 0; "kmh": its speed limit, a connection's the lower of the
-## two roads it joins}.
+## two roads it joins; "area": the area it is inside, or 0; "slot":
+## Vector2i(area, slot) of the handover slot it is in, or (-1, -1)}.
 var pieces := {}
 ## Connection piece -> the connection pieces at its node that cross it or
 ## come within CLEAR cells of it: a vehicle may take one only while none of
 ## its conflicts is in use.
 var _conflicts := {}
+const NO_SLOT := Vector2i(-1, -1)
 ## How near, in cells, two connections may pass without conflicting: two
 ## lanes side by side, a cell apart, don't.
 const CLEAR := 0.9
@@ -64,8 +66,12 @@ func conflicts(piece: int) -> Array:
 
 
 ## The pieces along a route from piece `from` to piece `to`, both included,
-## shortest by length; [] when there is none.
+## shortest by length; [] when there is none. It goes inside an area only if
+## it starts or ends in it, and into a handover slot only as its start or end,
+## so no route cuts through a buffer or a slot someone stands in.
 func route(from: int, to: int) -> Array[int]:
+	var areas := [pieces[from].area, pieces[to].area]
+	var slots := [pieces[from].slot, pieces[to].slot]
 	var cost := {from: 0.0}
 	var came := {}
 	var heap: Array = [[0.0, from]]
@@ -80,6 +86,8 @@ func route(from: int, to: int) -> Array[int]:
 		if top[0] > cost[at]:
 			continue
 		for next: int in pieces[at].next:
+			if next != to and (pieces[next].area != 0 and pieces[next].area not in areas or pieces[next].slot != NO_SLOT and pieces[next].slot not in slots):
+				continue
 			var through: float = cost[at] + pieces[next].length
 			if through < cost.get(next, INF):
 				cost[next] = through
@@ -88,10 +96,88 @@ func route(from: int, to: int) -> Array[int]:
 	return []
 
 
-## How long a route of pieces is, in cells.
+## The inside of the areas from `lanes` (today's LaneGraph), as pieces: one
+## per step, each ending at a cell's middle, at `kmh`; where a driveway
+## leaves or joins a road, its lane is split there.
+func add_areas(lanes: LaneGraph, kmh: float) -> void:
+	var made: Array[int] = []
+	var leaving := {}  # area piece -> true when it ends on a road
+	for edge: Dictionary in lanes.area_edges():
+		var a := Vector2(edge.from) + Vector2(0.5, 0.5)
+		var b := Vector2(edge.to) + Vector2(0.5, 0.5)
+		if edge.into:
+			split_at(a)
+		if edge.out_of:
+			split_at(b)
+		var id := _add(PackedVector2Array([a, b]), 0, -1, edge.lorries, 0, kmh)
+		pieces[id].area = edge.area
+		pieces[id].slot = edge.slot
+		made.append(id)
+		if edge.out_of:
+			leaving[id] = true
+	# Every piece by where it ends, and road lanes by where they start.
+	var ends := {}
+	var road_starts := {}
+	for id: int in pieces:
+		ends.get_or_add(_key(pieces[id].points[-1]), []).append(id)
+		if pieces[id].segment != 0:
+			road_starts.get_or_add(_key(pieces[id].points[0]), []).append(id)
+	for id in made:
+		for before: int in ends.get(_key(pieces[id].points[0]), []):
+			if before != id:
+				pieces[before].next.append(id)
+		if id in leaving:
+			pieces[id].next.append_array(road_starts.get(_key(pieces[id].points[-1]), []))
+
+
+## `position` as a key two pieces meeting there share.
+static func _key(position: Vector2) -> Vector2i:
+	return Vector2i((position * 1000.0).round())
+
+
+## The piece ending at `position` on a road's lane, splitting the lane's
+## piece there if none ends there yet; 0 when no lane runs through it.
+func split_at(position: Vector2) -> int:
+	for id: int in pieces:
+		if pieces[id].segment != 0 and pieces[id].points[-1].distance_to(position) < 0.001:
+			return id
+	for id: int in pieces.keys():
+		var piece: Dictionary = pieces[id]
+		if piece.segment == 0:
+			continue
+		var points: PackedVector2Array = piece.points
+		for i in range(1, points.size()):
+			if Geometry2D.get_closest_point_to_segment(position, points[i - 1], points[i]).distance_to(position) > 0.001:
+				continue
+			var before := points.slice(0, i)
+			var after := points.slice(i)
+			if before[-1].distance_to(position) > 0.001:
+				before.append(position)
+			if after[0].distance_to(position) > 0.001:
+				after.insert(0, position)
+			var rest := _add(after, piece.segment, piece.lane, piece.lorries, 0, piece.kmh)
+			pieces[rest].next = piece.next
+			piece.points = before
+			piece.length -= pieces[rest].length
+			piece.next = [rest] as Array[int]
+			return id
+	return 0
+
+
+## The pieces that end at `position`.
+func ending_at(position: Vector2) -> Array[int]:
+	var found: Array[int] = []
+	for id: int in pieces:
+		if pieces[id].points[-1].distance_to(position) < 0.001:
+			found.append(id)
+	return found
+
+
+## How far a vehicle at the end of a route's first piece drives to the end
+## of its last, in cells: every piece but the one it starts on.
 func length(route: Array[int]) -> float:
 	var total := 0.0
-	for id in route:
+	for id: int in route.slice(1):
 		total += pieces[id].length
 	return total
 
@@ -189,7 +275,7 @@ func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, no
 	var total := 0.0
 	for i in range(1, points.size()):
 		total += points[i - 1].distance_to(points[i])
-	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "node": node, "kmh": kmh}
+	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "node": node, "kmh": kmh, "area": 0, "slot": NO_SLOT}
 	_next_id += 1
 	return _next_id - 1
 

@@ -25,6 +25,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `traffic.standstill_gap_m`, `.headway_seconds` | number, number | How far back a vehicle keeps from the one ahead: this gap standing, plus this many seconds of travel at its speed |
 | `traffic.accel`, `.decel`, `.lateral_accel` | number, number, number | How fast vehicles speed up and brake (m/s²), and the sideways acceleration a curve may ask of them, which sets how fast they take it |
 | `traffic.lorry_m`, `.tractor_m` | number, number | How long a lorry and a tractor with its chassis are |
+| `traffic.area_kmh` | number | The speed limit inside areas: buffers, drive-through lanes and slots |
 | `road_types.<key>.cost_per_cell`, `.upkeep_per_cell` | int, number | Build cost and daily upkeep per 4 m cell of road length; upkeep may be a fraction of a dollar |
 | `area_types.<key>.name` | text | The area's name in the build menu |
 | `area_types.<key>.depth` | int | How many 4 m cells the area reaches back from its road edge |
