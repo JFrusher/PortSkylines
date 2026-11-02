@@ -63,6 +63,21 @@ Area layouts can't leave the global grid while vehicles drive cell to cell on it
 - **8c. Area driveways and slots as pieces.**
 - **8d. The switch.** The sim's vehicles, trains, signals and areas move onto the network and traffic; LaneGraph and LaneTraffic go. Save v40. Test: every behaviour test passes.
 
+### 6c-2: areas on their own cells (the developer's answers, 2 Nov 2026)
+
+| Question | Answer |
+|---|---|
+| How the sim names a spot in an area | **Area + local cell:** (area id, column k, row r) on the area's own cells; its place in the world comes from the area's shape. |
+| Handover slot length | **Two bays (24 m)** per slot, so a 16.5 m lorry fits once real lengths return; a block has half today's slots. A last odd bay is served from the slot beside it. |
+| Driving inside an area | **Lanes along the rows:** the buffer strip and through lanes are one curved lane each along their row, with short connections into and out of each slot, as Cities: Skylines' parking lots are. |
+| Order | **6c-2 before 6b**, as the revised order says. |
+
+In four tested parts, new beside old and then the switch, as step 8 was:
+- **6c-2a. Layouts on local cells.** AreaLayout lays buffer, slots (two bays), stacks, rails, lanes and kerbs out as (k, r) local cells from an area's shape. Standalone, with its own tests.
+- **6c-2b. Driveways as lanes.** The lane network builds each area's row lanes and slot connections from its layout and shape, not from the lane graph. Standalone, with its own tests.
+- **6c-2c. The switch.** Area flow, handovers, machines, stacks, trains, the view and Inspect name spots as (area, k, r); vehicles head for spots; save v41. Every behaviour test passes.
+- **6c-2d. LaneGraph goes.** What still reads it (level crossings, which way traffic runs beside an area, old routing tests) moves to the network.
+
 ### Interim traffic data (2 Nov 2026)
 
 The switch (8d) cut the showcase port's deliveries to a quarter (27 in 3,000 ticks against 117 on grid traffic). Measured causes: real vehicle lengths, because areas' handover slots are spaced for one-cell vehicles (27 to 63), and acceleration at 1.5 m/s² (61 to 102); area speed barely mattered. The developer chose interim data until step 7 lays areas and slots for real lengths: lorries and tractors 4 m, `area_kmh` 25, `accel` 20. Step 7's balance pass puts back 16.5 m, 15 m, 20 km/h and 1.5 m/s².
