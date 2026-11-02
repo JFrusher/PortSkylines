@@ -55,6 +55,9 @@ var _gates := {}  # terminal -> its working gates, for the same versions
 var _idle_for := Vector2i(-1, -1)
 var _layouts := {}
 var _layouts_for := -1
+## Each area's layout on its own cells (local_layout), kept like _layouts.
+var _local := {}
+var _local_for := -1
 
 
 func _init(area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> void:
@@ -263,8 +266,28 @@ func cells(id: int) -> Array[Vector2i]:
 ## Area `id`'s shape: its own cells, laid along its curve.
 func shape(id: int) -> AreaShape:
 	var area: Dictionary = list[id]
-	var curve := RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
-	return AreaShape.along(curve, area.side, area.from, area.columns, area.edge, depth_of(area))
+	return AreaShape.along(curve(id), area.side, area.from, area.columns, area.edge, depth_of(area))
+
+
+## Area `id`'s layout on its own cells (AreaLayout.local), kept until the
+## areas change.
+func local_layout(id: int) -> Dictionary:
+	if _local_for != version:
+		_local_for = version
+		_local.clear()
+	if id not in _local:
+		var area: Dictionary = list[id]
+		var present := {}
+		for cell: Dictionary in shape(id).cells:
+			present[Vector2i(cell.k, cell.r)] = true
+		_local[id] = AreaLayout.local(kind_of(area), area.columns, depth_of(area), present)
+	return _local[id]
+
+
+## Area `id`'s road curve, along which its cells lie.
+func curve(id: int) -> RoadCurve:
+	var area: Dictionary = list[id]
+	return RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
 
 
 ## Why area `id` does no work, or "": a road must still run along its front,

@@ -196,6 +196,169 @@ func add_areas(lanes: LaneGraph, kmh: float) -> void:
 			pieces[id].next.append_array(road_starts.get(_key(pieces[id].points[-1]), []))
 
 
+## Which way traffic runs along each area with driveways: area id -> 1 from
+## its first column to its last, -1 the other way: the way of the road lane
+## beside its front.
+var flows := {}
+
+
+## Every area's driveways (M10 6c-2b), from its layout on its own cells:
+## each lane row (the buffer strip, an apron's through lane, a gate's lanes)
+## a lane along its cells' middles in driving order; each slot entered
+## sideways from the lane beside it, run along to its last cell, where a
+## vehicle stands, and left sideways one cell on; an apron's and a gate's
+## lanes reached down its first column and left up its last; and the road
+## lane beside the buffer's first and last cells split for a way in and out.
+func add_driveways(areas: Areas, kmh: float) -> void:
+	var made: Array[int] = []
+	var leaving := {}
+	var ids := areas.list.keys()
+	ids.sort()
+	for id: int in ids:
+		if areas.kind_of(areas.list[id]) in ["yard_block", "quay_apron", "gate", "parking"]:
+			_add_driveway(id, areas, kmh, made, leaving)
+	_link(made, leaving)
+
+
+func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving: Dictionary) -> void:
+	var area: Dictionary = areas.list[id]
+	var kind := areas.kind_of(area)
+	var layout := areas.local_layout(id)
+	if layout.buffer.size() < 2:
+		return
+	var curve := areas.curve(id)
+	var centre := {}
+	for cell: Dictionary in areas.shape(id).cells:
+		centre[Vector2i(cell.k, cell.r)] = cell.centre
+	var out := func(k: int) -> Vector2: return curve.right_at(area.from + k + 0.5) * area.side
+	# The road lane beside the buffer's middle sets the way traffic runs.
+	var middle: Vector2i = layout.buffer[layout.buffer.size() / 2]
+	var beside := nearest(centre[middle] - out.call(middle.x), false)
+	if beside[0] == 0 or pieces[beside[0]].segment == 0:
+		return
+	var flow := 1 if point_along(beside[0], beside[1])[1].dot(curve.direction_at(area.from + middle.x + 0.5)) > 0.0 else -1
+	flows[id] = flow
+	var lorries: bool = area.type != "quay_apron"
+	var order := func(cells: Array) -> Array: return cells.duplicate() if flow > 0 else _reversed(cells)
+	var rows := {0: order.call(layout.buffer)}  # lane row -> its cells in driving order
+	var links: Array = []  # [from cell, to cell, slot]
+	if kind == "quay_apron":
+		rows[2] = order.call(layout.lanes[0])
+	elif kind == "gate":
+		for lane: Array in layout.lanes:
+			rows[lane[0].y] = order.call(lane)
+	var deepest: int = rows.keys().max()
+	if deepest > 0:
+		var first: int = rows[0][0].x
+		var last: int = rows[0][-1].x
+		for r in range(1, deepest + 1):
+			links.append([Vector2i(first, r - 1), Vector2i(first, r), LaneNetwork.NO_SLOT])
+			links.append([Vector2i(last, r), Vector2i(last, r - 1), LaneNetwork.NO_SLOT])
+	var stops := {}  # lane row -> columns a lane is cut at
+	for r: int in rows:
+		stops[r] = {rows[r][0].x: true, rows[r][-1].x: true}
+	for link: Array in links:
+		for end: Vector2i in [link[0], link[1]]:
+			if end.y in rows:
+				stops[end.y][end.x] = true
+	var slot_runs: Array = []
+	if kind in ["yard_block", "parking", "quay_apron"]:
+		var lane_row := 2 if kind == "quay_apron" else 0
+		for s: int in layout.slots.size():
+			var ks: Array = order.call(layout.slots[s])
+			var columns: Array = rows[lane_row].map(func(c: Vector2i) -> int: return c.x)
+			# Round a bend the lane may lack the cell beside a slot's ends: no way in, no slot.
+			if ks[0].x not in columns or ks[-1].x not in columns:
+				continue
+			var into: Vector2i = Vector2i(ks[0].x, lane_row)
+			var back: Vector2i = rows[lane_row][mini(columns.find(ks[-1].x) + 1, columns.size() - 1)]
+			links.append([into, ks[0], Vector2i(id, s)])
+			links.append([ks[-1], back, Vector2i(id, s)])
+			slot_runs.append([ks, Vector2i(id, s)])
+			stops[lane_row][into.x] = true
+			stops[lane_row][back.x] = true
+	elif kind == "gate":
+		for slot: Array in layout.slots:
+			var ks: Array = order.call(slot)
+			stops[ks[0].y][ks[-1].x] = true
+	# The lanes, cut where a link leaves or joins.
+	for r: int in rows:
+		var run: Array[Vector2] = []
+		for cell: Vector2i in rows[r]:
+			run.append(centre[cell])
+			if cell.x in stops[r] and run.size() > 1:
+				made.append(_area_piece(run, id, LaneNetwork.NO_SLOT, lorries, kmh))
+				run = [centre[cell]]
+	for slot_run: Array in slot_runs:
+		var run: Array[Vector2] = []
+		for cell: Vector2i in slot_run[0]:
+			run.append(centre[cell])
+		if run.size() > 1:
+			made.append(_area_piece(run, id, slot_run[1], lorries, kmh))
+	for link: Array in links:
+		made.append(_area_piece([centre[link[0]], centre[link[1]]] as Array[Vector2], id, link[2], lorries, kmh))
+	# In from the road beside the first buffer cell, out beside the last.
+	var first_cell: Vector2i = rows[0][0]
+	var last_cell: Vector2i = rows[0][-1]
+	var way_in := _road_point(centre[first_cell] - out.call(first_cell.x))
+	var way_out := _road_point(centre[last_cell] - out.call(last_cell.x))
+	if way_in != Vector2.INF:
+		made.append(_area_piece([way_in, centre[first_cell]] as Array[Vector2], id, LaneNetwork.NO_SLOT, lorries, kmh))
+	if way_out != Vector2.INF:
+		var exit := _area_piece([centre[last_cell], way_out] as Array[Vector2], id, LaneNetwork.NO_SLOT, lorries, kmh)
+		made.append(exit)
+		leaving[exit] = true
+
+
+## The point on the road lane nearest `position`, its lane split there, or
+## INF when no road lane is within a cell and a half.
+func _road_point(position: Vector2) -> Vector2:
+	var near := nearest(position, false)
+	if near[0] == 0 or pieces[near[0]].segment == 0:
+		return Vector2.INF
+	var at: Vector2 = point_along(near[0], near[1])[0]
+	if at.distance_to(position) > 1.5:
+		return Vector2.INF
+	split_at(at)
+	return at
+
+
+## An area piece through `points`, filled in to at most half a cell apart.
+func _area_piece(points: Array[Vector2], area: int, slot: Vector2i, lorries: bool, kmh: float) -> int:
+	var filled := PackedVector2Array([points[0]])
+	for i in range(1, points.size()):
+		var steps := maxi(1, ceili(points[i - 1].distance_to(points[i]) / 0.5))
+		for n in range(1, steps + 1):
+			filled.append(points[i - 1].lerp(points[i], float(n) / steps))
+	var id := _add(filled, 0, -1, lorries, 0, kmh)
+	pieces[id].area = area
+	pieces[id].slot = slot
+	return id
+
+
+static func _reversed(cells: Array) -> Array:
+	var found := cells.duplicate()
+	found.reverse()
+	return found
+
+
+## Joins the pieces in `made` to every piece ending where each starts, and
+## those in `leaving` on to the road lanes starting where they end.
+func _link(made: Array[int], leaving: Dictionary) -> void:
+	var ends := {}
+	var road_starts := {}
+	for id: int in pieces:
+		ends.get_or_add(_key(pieces[id].points[-1]), []).append(id)
+		if pieces[id].segment != 0:
+			road_starts.get_or_add(_key(pieces[id].points[0]), []).append(id)
+	for id in made:
+		for before: int in ends.get(_key(pieces[id].points[0]), []):
+			if before != id and id not in pieces[before].next:
+				pieces[before].next.append(id)
+		if id in leaving:
+			pieces[id].next.append_array(road_starts.get(_key(pieces[id].points[-1]), []))
+
+
 ## `position` as a key two pieces meeting there share.
 static func _key(position: Vector2) -> Vector2i:
 	return Vector2i((position * 1000.0).round())
