@@ -670,13 +670,8 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0, on_
 		err = "A breakwater is in the way"
 	if err == "" and not roads.footprint(from, to, type).all(owns):
 		err = "Buy this land first"
-	if err == "":
-		var built := {}
-		for id: int in areas.list:
-			for cell in areas.cells(id):
-				built[cell] = true
-		if roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return c in built):
-			err = "Something is already built here"
+	if err == "" and roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+		err = "Something is already built here"
 	if err == "":
 		err = _crossing_error(RoadNet.line(from, to), roads.footprint(from, to, type), rails.segments.keys().map(func(s: int) -> Array: return rails.cells(s)))
 	if err == "" and not _afford(road_price(from, to, type)):
@@ -739,9 +734,8 @@ func build_rail_error(from: Vector2i, to: Vector2i) -> String:
 		err = "Buy this land first"
 	if err == "":
 		var track := RoadNet.line(from, to)
-		for id: int in areas.list:
-			if areas.cells(id).any(func(c: Vector2i) -> bool: return c in track):
-				return "Something is already built here"
+		if track.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+			return "Something is already built here"
 		var lanes_of := []
 		for id: int in roads.segments:
 			for lane in roads.lanes(id):
@@ -928,10 +922,9 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 	var cells: Array[Vector2i] = plan.cells
 	if not cells.all(owns):
 		return "Buy this land first"
+	if cells.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+		return "Something is already built here"
 	var built := {}
-	for id: int in areas.list:
-		for c in areas.cells(id):
-			built[c] = true
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
 		for c in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
