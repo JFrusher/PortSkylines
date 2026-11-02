@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_no_lorry_stops_on_a_crossing()
 	_test_a_queue_at_a_booked_crossing()
 	_test_junctions_closer_than_a_lorry()
+	_test_a_queue_goes_on_green()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -201,3 +202,25 @@ func _test_junctions_closer_than_a_lorry() -> void:
 	_expect(traffic.place(1, route, _rules.lorry_speed, _rules.traffic.lorry_m), true, "a lorry sets off east")
 	_run(traffic, 60.0)
 	_expect(traffic.arrived(1), true, "and gets through both junctions")
+
+
+## Three lorries from the north queue at the red, stepped as the sim steps
+## them (a junction tick, then Drive.STEP of traffic): the first waits at the
+## line and the others stand still behind it; once their phase comes round,
+## the whole queue gets across.
+func _test_a_queue_goes_on_green() -> void:
+	var traffic := _crossroads()
+	_expect(traffic.junctions.set_signals(traffic.network, POINT, true), "", "signals go up")
+	var route := traffic.network.route(_piece_at(traffic.network, Vector2(119.5, 235)), _piece_at(traffic.network, Vector2(119.5, 265)))
+	var red := roundi(_rules.traffic.signal_green_seconds / SimClock.TICK_SECONDS)
+	var sent := 0
+	var stood := 0  # ticks a lorry behind another stood still
+	for tick in red * 3:
+		if sent < 3 and traffic.place(sent + 1, route.duplicate(), _rules.lorry_speed, _rules.traffic.lorry_m):
+			sent += 1
+		traffic.junctions.tick(traffic.network, traffic)
+		traffic.tick(Drive.STEP)
+		stood += [2, 3].filter(func(id: int) -> bool: return id in traffic.cars and traffic.cars[id].v == 0.0 and traffic.cars[id].i == 0).size()
+	_expect(sent, 3, "three lorries queue from the north")
+	_expect(stood > 0, true, "the ones behind stand still behind the first (%d lorry ticks)" % stood)
+	_expect([_across(traffic, 1), _across(traffic, 2), _across(traffic, 3)], [true, true, true], "and all of them get across once it's their green")

@@ -2,14 +2,12 @@ extends SceneTree
 ## Junctions on the lane graph: every turn drives forward through the
 ## junction and never back over a cell; a vehicle can turn back at a
 ## junction, not only at a dead end; every cell where two roads' lanes
-## overlap is a junction cell, so nobody stops inside the box; and traffic
-## from every arm to every other arm gets through a crossing.
+## overlap is a junction cell, so nobody stops inside the box. (Traffic
+## through junctions is test_traffic's and test_traffic_junctions'.)
 ## godot --headless --script res://tests/test_junctions.gd
 
-const SPEED := 3.0
 
 var _failures := 0
-var _next_id := 1
 
 
 func _initialize() -> void:
@@ -18,9 +16,7 @@ func _initialize() -> void:
 		_test_turns(type, false)
 		_test_turn_back(type)
 		_test_box_is_junction(type)
-		_test_crossing_traffic(type)
 	_test_lane_rules()
-	_test_both_lanes_carry()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -93,41 +89,6 @@ func _test_box_is_junction(type: String) -> void:
 	_expect(open, [] as Array[Vector2i], "%s crossing: every cell two roads' lanes share is a junction cell" % type)
 
 
-func _test_crossing_traffic(type: String) -> void:
-	var lanes := LaneGraph.new(_net(type, true))
-	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
-	var arms := _arms(true)
-	var waiting := {}  # arm -> routes still to start there
-	for from: String in arms:
-		waiting[from] = []
-		for i in 3:
-			for to: String in arms:
-				if to != from:
-					waiting[from].append(lanes.route(arms[from][0], arms[to][1], true))
-	var vehicles: Array[Vehicle] = []
-	var shared := false
-	for tick in 4000:
-		for from: String in arms:
-			if not waiting[from].is_empty():
-				var vehicle := Vehicle.new(_next_id, "lorry", waiting[from][0])
-				if traffic.place(vehicle):
-					_next_id += 1
-					waiting[from].pop_front()
-					vehicles.append(vehicle)
-		var cells := {}
-		for vehicle in vehicles:
-			if vehicle.at_end():
-				continue
-			if traffic.advance(vehicle, SPEED):
-				traffic.leave(vehicle)
-				continue
-			var cell := vehicle.path[int(vehicle.t)]
-			shared = shared or cell in cells
-			cells[cell] = true
-	var started := waiting.values().all(func(w: Array) -> bool: return w.is_empty())
-	var through := vehicles.filter(func(v: Vehicle) -> bool: return v.at_end()).size()
-	_expect(started and through == vehicles.size(), true, "%s crossing: all 36 vehicles, every arm to every other, get through (%d of %d through)" % [type, through, vehicles.size()])
-	_expect(shared, false, "%s crossing: no two vehicles are ever in one cell" % type)
 
 
 func _expect(actual: Variant, expected: Variant, what: String) -> void:
@@ -155,33 +116,3 @@ func _test_lane_rules() -> void:
 	_expect(size.call(left, south) > size.call(right, south) + 8, true, "the left lane can't turn right: it goes round (%d cells)" % size.call(left, south))
 	_expect([size.call(left, east) <= 24, size.call(right, east) <= 24], [true, true], "both lanes go straight on (%d, %d cells)" % [size.call(left, east), size.call(right, east)])
 
-
-## M7's lane-use exit criterion: forty lorries come in at the west end of a
-## 2+2 road to a T, all in its left lane, every other one bound south. Those
-## change into the right lane before the box, so both lanes carry traffic,
-## and every lorry gets through. (Shortest routes already split them so
-## before the turn rules; this keeps it so.)
-func _test_both_lanes_carry() -> void:
-	var lanes := LaneGraph.new(_net("terminal_2_2", false))
-	var traffic := LaneTraffic.new(lanes, Junctions.new(Content.base().traffic))
-	var waiting := 40
-	var moving: Array[Vehicle] = []
-	var rows := {}  # row each lorry drove at x = 15 -> lorries
-	var through := 0
-	for tick in 4000:
-		if waiting > 0 and traffic.holder(Vector2i(0, 20)) == 0:
-			var to := Vector2i(19, 39) if waiting % 2 == 0 else Vector2i(20, 0)
-			var lorry := Vehicle.new(_next_id, "lorry", lanes.route(Vector2i(0, 20), to, true))
-			_next_id += 1
-			if traffic.place(lorry):
-				moving.append(lorry)
-				waiting -= 1
-		for lorry: Vehicle in moving.duplicate():
-			if traffic.advance(lorry, SPEED):
-				var row: int = lorry.path.filter(func(c: Vector2i) -> bool: return c.x == 15)[0].y
-				rows[row] = rows.get(row, 0) + 1
-				traffic.leave(lorry)
-				moving.erase(lorry)
-				through += 1
-	_expect(through, 40, "every lorry gets through the T")
-	_expect([rows.get(20, 0), rows.get(21, 0)], [20, 20], "at x = 15 the left lane carries those turning left, the right lane those turning right")

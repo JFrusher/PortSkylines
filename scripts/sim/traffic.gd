@@ -110,6 +110,7 @@ func reroute(id: int, route: Array[int]) -> void:
 			_booked[piece].erase(id)
 			car.booked.erase(piece)
 	car.route = car.route.slice(first, car.i) + route
+	car.behind = []
 	car.i -= first
 
 
@@ -123,6 +124,24 @@ func arrived(id: int) -> bool:
 func pose(id: int) -> Array[Vector2]:
 	var car: Dictionary = cars[id]
 	return network.point_along(car.route[car.i], car.s)
+
+
+## Everything the traffic holds, for a save: the cars, who is on and has
+## booked each piece, the crossings' bookings and the waiting so far.
+func to_dict() -> Dictionary:
+	return {"cars": cars.duplicate(true), "on": _on.duplicate(true), "booked": _booked.duplicate(true), "crossings": _crossings.duplicate(), "delays": _delays.duplicate(), "stuck": _stuck.duplicate(), "entered": _entered.duplicate()}
+
+
+## Puts back what to_dict saved, on the same network.
+func restore(d: Dictionary) -> void:
+	cars = d.cars.duplicate(true)
+	_on = d.on.duplicate(true)
+	_booked = d.booked.duplicate(true)
+	for cell: Vector2i in d.crossings:
+		_crossings[cell] = d.crossings[cell]
+	_delays = d.delays.duplicate()
+	_stuck = d.stuck.duplicate()
+	_entered = d.entered.duplicate()
 
 
 ## Takes car `id` off the network.
@@ -145,6 +164,20 @@ func tick(seconds: float) -> void:
 func _move(id: int, seconds: float) -> void:
 	var car: Dictionary = cars[id]
 	var piece: int = car.route[car.i]
+	# At its route's end it stands, as the look ahead would find: nothing is in front of it.
+	if car.i == car.route.size() - 1 and car.s >= network.pieces[piece].length:
+		car.v = 0.0
+		car.waited += seconds
+		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
+		return
+	# Stopped behind a car that hasn't moved since, it stays stopped: the look
+	# ahead would find that car just as near again.
+	var behind: Array = car.get("behind", [])
+	if not behind.is_empty() and behind[0] in cars and cars[behind[0]].route[cars[behind[0]].i] == behind[1] and cars[behind[0]].s == behind[2]:
+		car.waited += seconds
+		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
+		return
+	car.behind = []
 	var left: float = network.pieces[piece].length - car.s
 	var ahead := _ahead(id)
 	var room: float = ahead.distance - (0.0 if ahead.end else _gap())
@@ -160,6 +193,9 @@ func _move(id: int, seconds: float) -> void:
 	car.waited = car.waited + seconds if v == 0.0 else 0.0
 	if v == 0.0:
 		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
+	if v == 0.0 and room == 0.0 and ahead.get("car", 0) != 0:
+		var other: Dictionary = cars[ahead.car]
+		car.behind = [ahead.car, other.route[other.i], other.s]
 	_advance(id, minf(v * seconds, room))
 
 
@@ -193,23 +229,27 @@ func _obstacle(id: int) -> Dictionary:
 		# The nearer of the car ahead and a crossing a train has booked stops it.
 		# Cars keep their order along a piece, so the one ahead is the next.
 		var nearest := INF
+		var blocker := 0
 		var on: Array = _on.get(piece, [])
 		if k > car.i:
 			if not on.is_empty():
 				nearest = cars[on[0]].s - cars[on[0]].length
+				blocker = on[0]
 		else:
 			for j in range(on.find(id) + 1, on.size()):
 				if cars[on[j]].s > car.s:
 					nearest = cars[on[j]].s - cars[on[j]].length
+					blocker = on[j]
 					break
 		for at: Array in _crossing_on.get(piece, []):
 			if (k > car.i or at[1] > car.s) and at[1] < nearest:
 				if _crossings[at[0]] != 0:
 					nearest = at[1]
+					blocker = 0
 				else:
 					crossing = minf(crossing, distance + at[1])
 		if nearest < INF:
-			return {"distance": distance + nearest, "end": false, "crossing": crossing}
+			return {"distance": distance + nearest, "end": false, "crossing": crossing, "car": blocker}
 		distance += network.pieces[piece].length
 		if k == car.route.size() - 1:
 			return {"distance": distance, "end": true, "crossing": crossing}
@@ -260,7 +300,7 @@ func _advance(id: int, distance: float) -> void:
 		_put(car.route[car.i], id)
 		_entered[car.route[car.i]] = _entered.get(car.route[car.i], 0) + 1
 	car.s = minf(car.s, network.pieces[car.route[car.i]].length)
-	for piece: int in car.booked.duplicate():
+	for piece: int in car.booked.duplicate() if not car.booked.is_empty() else []:
 		if _clear_of(car, piece):
 			_booked[piece].erase(id)
 			car.booked.erase(piece)

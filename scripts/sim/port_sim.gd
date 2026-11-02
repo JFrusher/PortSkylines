@@ -108,8 +108,15 @@ var junctions: Junctions
 ## game builds them from its vehicles.
 var network: LaneNetwork
 var traffic: Traffic
-var _drive_for := []
+var _drive_for := Vector3i(-1, -1, -1)
 var _delays := {}
+## Whether piece x reaches cell (y, z) for a lorry (w 1) or a tractor:
+## Vector4i -> bool, kept by Drive while the network stands.
+var _reach := {}
+## A loaded game's saved traffic (Drive.to_dict), put back when Drive first
+## builds the network; {} for a save from before v40, whose cars go back to
+## their vehicles' cells.
+var _loaded_traffic := {}
 ## The area flow's state: each area's handover slots and queues, the yard
 ## machines and what each is carrying, and the boxes stacked in each yard
 ## block (area id -> AreaStacks).
@@ -363,7 +370,6 @@ class Crane:
 
 ## Everything the sim needs to carry on exactly where it was, in plain types.
 func to_dict() -> Dictionary:
-	Drive.sync(self)
 	return {
 		"roads": roads.to_dict(),
 		"rails": rails.to_dict(),
@@ -428,6 +434,7 @@ func to_dict() -> Dictionary:
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"junctions": junctions.to_dict(),
+		"traffic": Drive.to_dict(self),
 		"handovers": handovers.to_dict(),
 		"machines": machines.to_dict(),
 		"machine_jobs": machine_jobs.duplicate(true),
@@ -517,6 +524,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	for data: Dictionary in d.vehicles:
 		sim._add_vehicle(Vehicle.from_dict(data))
 	sim.junctions = Junctions.from_dict(d.junctions, sim.rules.traffic)
+	sim._loaded_traffic = d.traffic
 	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
 	sim.machine_jobs = d.machine_jobs.duplicate(true)

@@ -151,10 +151,6 @@ func _test_malformed_payloads_are_refused() -> void:
 	var floating := valid.duplicate(true)
 	floating.cranes[0].apron = 99
 	_expect_payload_refused(floating, "a crane on a quay apron that isn't there")
-	for value: float in [NAN, INF, -INF]:
-		var bad := valid.duplicate(true)
-		bad.vehicles[0].t = value
-		_expect_payload_refused(bad, "non-finite vehicle position")
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:

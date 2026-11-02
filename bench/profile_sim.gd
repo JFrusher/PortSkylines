@@ -8,7 +8,6 @@ extends SceneTree
 ## godot --headless --script res://bench/profile_sim.gd -- <ticks>
 
 const PATH := "res://bench/endgame.bin"
-const TimedLanes := preload("res://bench/timed_lanes.gd")
 const EndgamePort := preload("res://bench/endgame_port.gd")
 
 var spent := {}  # part -> microseconds
@@ -22,7 +21,6 @@ func _initialize() -> void:
 	if sim == null:
 		return
 	print("loaded: %d vehicles, %d boxes, %d ships, %d areas" % [sim.vehicles.size(), sim.boxes.size(), sim.ships.size(), sim.areas.list.size()])
-	TimedLanes.install(sim, self)
 	for i in ticks:
 		var start := Time.get_ticks_usec()
 		_tick(sim)
@@ -35,7 +33,7 @@ func _initialize() -> void:
 		quit(1)
 		return
 	var tick_us: float = spent.tick
-	print("%d ticks: %.2f ms a tick untimed, %.2f profiled (the timed overrides cost the difference)" % [ticks, spent["untimed tick"] / 1000.0 / ticks, tick_us / 1000.0 / ticks])
+	print("%d ticks: %.2f ms a tick untimed, %.2f profiled (the timers cost the difference)" % [ticks, spent["untimed tick"] / 1000.0 / ticks, tick_us / 1000.0 / ticks])
 	spent.erase("untimed tick")
 	print("%d ticks: %.2f ms a tick, %d vehicles at the end; shares are inclusive, so route and move also count in the steps that call them" % [ticks, tick_us / 1000.0 / ticks, sim.vehicles.size()])
 	var parts := spent.keys()
@@ -102,8 +100,8 @@ func _tick(sim: PortSim) -> void:
 		sim._until_empty = sim.rules.lorry_interval_minutes
 	add("dispatch_empty_lorry", start)
 	start = Time.get_ticks_usec()
-	sim.lane_traffic.junctions.tick(sim.lanes, sim.lane_traffic)
-	add("junctions (Junctions.tick)", start)
+	Drive.signals(sim)
+	add("traffic (Drive.signals: junctions, then every car moves)", start)
 	start = Time.get_ticks_usec()
 	AreaFlow._fit_machines(sim)
 	add("_fit_machines", start)
@@ -123,7 +121,7 @@ func _tick(sim: PortSim) -> void:
 	add("trains (RailFlow.tick)", start)
 	start = Time.get_ticks_usec()
 	if sim.clock.ticks % roundi(sim.rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		sim.lane_traffic.settle(sim.rules.traffic.smoothing)
+		sim.traffic.settle(sim.rules.traffic.smoothing)
 	if sim.clock.ticks % roundi(sim.rules.traffic.route_epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		sim._weigh_routes()
-	add("traffic epochs (settle, _weigh_routes)", start)
+		Drive.weigh(sim)
+	add("traffic epochs (settle, weigh)", start)

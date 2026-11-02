@@ -63,6 +63,12 @@ Area layouts can't leave the global grid while vehicles drive cell to cell on it
 - **8c. Area driveways and slots as pieces.**
 - **8d. The switch.** The sim's vehicles, trains, signals and areas move onto the network and traffic; LaneGraph and LaneTraffic go. Save v40. Test: every behaviour test passes.
 
+### Interim traffic data (2 Nov 2026)
+
+The switch (8d) cut the showcase port's deliveries to a quarter (27 in 3,000 ticks against 117 on grid traffic). Measured causes: real vehicle lengths, because areas' handover slots are spaced for one-cell vehicles (27 to 63), and acceleration at 1.5 m/s² (61 to 102); area speed barely mattered. The developer chose interim data until step 7 lays areas and slots for real lengths: lorries and tractors 4 m, `area_kmh` 25, `accel` 20. Step 7's balance pass puts back 16.5 m, 15 m, 20 km/h and 1.5 m/s².
+
+Step 9 also ports M7's "both lanes carry" test (lorries change lane before a turn so both lanes of a 2+2 road carry traffic), dropped with LaneTraffic in 8d-3.
+
 ### Traffic
 8. **Continuous movement.** A vehicle has a lane, a distance along it and a speed. It keeps the data's gap behind the vehicle ahead, slows for a curve by its radius, and slows into junctions. This replaces one vehicle per cell. Test: a queue holds its gap; a vehicle on a tight bend is slower than on a straight.
 9. **Lane changes where marked.** A vehicle changes lane along a stretch before its turn, as CS vehicles do, using today's lane choice by cost. Test: today's routing and lane-choice tests pass.

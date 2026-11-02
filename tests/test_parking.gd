@@ -62,7 +62,7 @@ func _test_a_full_gate_sends_lorries_to_the_park() -> void:
 			parked = maxi(parked, now_parked.size())
 			if park:
 				var slots: Array = sim.areas.layout(sim.areas.list.keys()[-1]).slots
-				in_slots = in_slots and now_parked.all(func(v: Vehicle) -> bool: return slots.any(func(slot: Array) -> bool: return v.path[int(v.t)] in slot))
+				in_slots = in_slots and now_parked.all(func(v: Vehicle) -> bool: return slots.any(func(slot: Array) -> bool: return v.path[0] in slot))
 		jams.append([worst, parked, in_slots, sim.vehicles.filter(func(v: Vehicle) -> bool: return v.state == "parked").size()])
 	var slots: int = 60 / AreaLayout.BAY
 	_expect(jams[0][0] > slots, true, "without a park, the rush jams the road (%d lorries past the gate's room)" % jams[0][0])

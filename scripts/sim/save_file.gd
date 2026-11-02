@@ -13,8 +13,7 @@ const VERSION := 40
 const FIRST := 26
 ## Every field Vehicle.from_dict reads.
 const VEHICLE_FIELDS := {
-	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
-	"prev_t": TYPE_FLOAT, "waited": TYPE_INT, "state": TYPE_STRING,
+	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "state": TYPE_STRING,
 	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
 	"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
 	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT,
@@ -105,13 +104,16 @@ static func _migrate(data: Dictionary) -> Dictionary:
 
 
 ## v40 drives vehicles on the lane network: a vehicle keeps only the cell it
-## is in, and the signals and signs come out of the old lane traffic.
+## is in, not how far along its route it was nor how long it had waited, and
+## no traffic is saved, so its car goes back to that cell; the signals and
+## signs come out of the old lane traffic.
 static func _migrate_v40(data: Dictionary) -> Dictionary:
 	for vehicle: Dictionary in data.sim.vehicles:
 		vehicle.path = [vehicle.path[int(vehicle.t)]]
-		vehicle.t = 0.0
-		vehicle.prev_t = 0.0
+		for gone: String in ["t", "prev_t", "waited"]:
+			vehicle.erase(gone)
 	data.sim.junctions = data.sim.lane_traffic.junctions
+	data.sim.traffic = {}
 	data.sim.erase("lane_traffic")
 	data.version = 40
 	return data
@@ -278,7 +280,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
 		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
-		"junctions": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
+		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
 	}):
 		return false
@@ -363,6 +365,8 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 	for vehicle: Variant in data.vehicles:
 		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, false):
 			return false
+	if not data.traffic.is_empty() and not (_has_fields(data.traffic, {"pieces": TYPE_INT, "traffic": TYPE_DICTIONARY, "weighed": TYPE_DICTIONARY}) and _has_fields(data.traffic.traffic, {"cars": TYPE_DICTIONARY, "on": TYPE_DICTIONARY, "booked": TYPE_DICTIONARY, "crossings": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY})):
+		return false
 	if not _has_fields(data.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY}):
 		return false
 	for point: Variant in data.junctions.signals:

@@ -104,7 +104,12 @@ static func leave(sim: PortSim, vehicle: Vehicle) -> void:
 static func reaches(sim: PortSim, from: Vector2i, to: Vector2i, lorry: bool) -> bool:
 	_refresh(sim)
 	var start: int = sim.network.nearest(Vector2(from) + Vector2(0.5, 0.5), lorry)[0]
-	return start != 0 and not _best_route(sim, start, to, lorry).is_empty()
+	if start == 0:
+		return false
+	var key := Vector4i(start, to.x, to.y, int(lorry))
+	if key not in sim._reach:
+		_best_route(sim, start, to, lorry)
+	return sim._reach[key]
 
 
 ## Which way traffic runs along area `id`: 1 from its start to its end, -1
@@ -233,22 +238,20 @@ static func weigh(sim: PortSim) -> void:
 	sim._delays = sim.traffic.delays().duplicate()
 
 
-## Before saving: each vehicle's path is the cell its car's front stands
-## in, so a loaded game puts it back there.
-static func sync(sim: PortSim) -> void:
+## The traffic as saved: every car where it is and how fast, what it has
+## booked, and the delays routes weigh. The network isn't saved: a loaded
+## game builds the same one from the same roads, areas and track.
+static func to_dict(sim: PortSim) -> Dictionary:
 	_refresh(sim)
-	for vehicle: Vehicle in sim.vehicles:
-		if vehicle.id in sim.traffic.cars:
-			vehicle.path = [Vector2i(sim.traffic.pose(vehicle.id)[0].floor())] as Array[Vector2i]
-			vehicle.t = 0.0
-			vehicle.prev_t = 0.0
+	return {"pieces": sim.network.pieces.size(), "traffic": sim.traffic.to_dict(), "weighed": sim._delays.duplicate()}
 
 
 ## Builds the lane network and its traffic again when the roads, areas or
 ## track have changed, putting every car back at the cell it is in (or
-## stood at) and sending it on to where it was heading.
+## stood at) and sending it on to where it was heading; or, first thing in a
+## loaded game, puts back the traffic it saved.
 static func _refresh(sim: PortSim) -> void:
-	var now := [sim.roads.version, sim.areas.version, sim.rails.version]
+	var now := Vector3i(sim.roads.version, sim.areas.version, sim.rails.version)
 	if now == sim._drive_for and sim.traffic != null:
 		return
 	var old := sim.traffic
@@ -260,6 +263,13 @@ static func _refresh(sim: PortSim) -> void:
 	sim.traffic = Traffic.new(sim.network, sim.rules, sim.junctions)
 	sim.traffic.set_crossings(crossings(sim))
 	sim._delays.clear()
+	sim._reach.clear()
+	if not sim._loaded_traffic.is_empty():
+		assert(sim._loaded_traffic.pieces == sim.network.pieces.size(), "a loaded game builds the network it saved")
+		sim.traffic.restore(sim._loaded_traffic.traffic)
+		sim._delays = sim._loaded_traffic.weighed.duplicate()
+		sim._loaded_traffic = {}
+		return
 	for vehicle: Vehicle in sim.vehicles:
 		var at := Vector2(vehicle.path[0]) + Vector2(0.5, 0.5)
 		if old != null and vehicle.id in old.cars:
@@ -286,13 +296,24 @@ static func _route_to(sim: PortSim, vehicle: Vehicle, to: Vector2i) -> Array[int
 	return _best_route(sim, car.route[car.i], to, vehicle.kind == "lorry")
 
 
+## The best route from piece `start` to `to`'s middle for a lorry (`lorry`)
+## or a tractor, by length and delay; [] when there is none. Whether there
+## is one is kept in sim._reach until the network is built again, so a way
+## that isn't there is searched for once, not every tick.
 static func _best_route(sim: PortSim, start: int, to: Vector2i, lorry: bool) -> Array[int]:
+	var key := Vector4i(start, to.x, to.y, int(lorry))
+	if not sim._reach.get(key, true):
+		return []
 	var speed: float = (sim.rules.lorry_speed if lorry else sim.rules.tractor.speed) / 60.0 / Grid.CELL  # m a minute -> cells a second
 	var ends: Array[int] = []
 	for end in sim.network.ending_at(Vector2(to) + Vector2(0.5, 0.5)):
 		if not lorry or sim.network.pieces[end].lorries:
 			ends.append(end)
-	return [] as Array[int] if ends.is_empty() else sim.network.route_to_any(start, ends, lorry, sim._delays, speed)
+	var route: Array[int] = []
+	if not ends.is_empty():
+		route = sim.network.route_to_any(start, ends, lorry, sim._delays, speed)
+	sim._reach[key] = not route.is_empty()
+	return route
 
 
 ## The road lane piece ending at `cell`'s middle heading into the site

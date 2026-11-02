@@ -127,7 +127,7 @@ func route(from: Vector2i, to: Vector2i, lorry: bool) -> Array[Vector2i]:
 
 
 ## Routes from here on weigh each cell by `delays` (cell -> seconds a vehicle
-## waits in it, from LaneTraffic): entering it costs its length plus the
+## waits in it): entering it costs its length plus the
 ## cells a vehicle could drive in that time, at `all_speed` cells a second on
 ## the graph for every vehicle and `lorry_speed` on the lorries' graph, so
 ## routes go round a jam that costs more than the way round. Kept routes go.
