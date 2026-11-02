@@ -105,7 +105,7 @@ static func _junction(sim: PortSim, point: Vector2i) -> Array[String]:
 	var lines: Array[String] = ["Junction of %d roads" % Drive.arms(sim, point).size()]
 	if point in junctions.signals:
 		var at: Dictionary = junctions.signals[point]
-		var phases := junctions.phases(sim.lanes, point)
+		var phases := junctions.phases(Drive.junction_lanes(sim), point)
 		for i in phases.size():
 			var arms: Array = phases[i].map(func(arm: Vector2i) -> String: return arm_name(arm))
 			var now := ", green now (%d s left)" % ceili(at.left) if i == at.phase and at.left > 0.0 else ""

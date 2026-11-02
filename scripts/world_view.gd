@@ -6,6 +6,8 @@ extends Node3D
 ## A deck box's height and its length by TEU (20 ft and 40 ft) on a ship
 ## model, in world units, stretched a little so boxes aboard read at a distance.
 const BOX_HEIGHT := 0.3
+## A junction's approach marking is drawn every this many cells along a lane.
+const APPROACH_MARK := 3
 const BOX_LENGTH := {1: 0.4, 2: 0.8}
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
@@ -274,7 +276,7 @@ func _draw_junctions() -> void:
 	var green := {}
 	for point: Vector2i in junctions.signals:
 		var at: Dictionary = junctions.signals[point]
-		green[point] = junctions.phases(sim.lanes, point)[at.phase] if at.left > 0.0 else []
+		green[point] = junctions.phases(Drive.junction_lanes(sim), point)[at.phase] if at.left > 0.0 else []
 	var now := [sim.roads.version, green, junctions.signs.duplicate(true)]
 	if now == _junctions_drawn:
 		return
@@ -295,7 +297,7 @@ func _draw_junctions() -> void:
 			tool.set_color(color)
 			# The approach lists each lane's last cells, nearest the box last.
 			var cells := Drive.approach_cells(sim, point, arm)
-			for i in range(LaneGraph.APPROACH_CELLS - 1, cells.size(), LaneGraph.APPROACH_CELLS):
+			for i in range(APPROACH_MARK - 1, cells.size(), APPROACH_MARK):
 				var middle := (Vector2(cells[i]) + Vector2(0.5, 0.5)) * Grid.CELL
 				_strip(tool, middle - Vector2(arm) * Grid.CELL * 0.3, middle + Vector2(arm) * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
 	_junction_signs.mesh = tool.commit()

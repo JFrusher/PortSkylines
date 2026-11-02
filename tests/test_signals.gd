@@ -28,7 +28,10 @@ func _test_inspect_and_commands() -> void:
 	var point := Vector2i(86, sim.site_entry().y)
 	sim.creative = true
 	_expect(sim.apply({"op": "build_road", "from": point, "to": point + Vector2i(0, 20), "type": "terminal_1_1"}), "", "a stub road south makes the bend a T")
-	var picked: Variant = Inspect.pick(sim, sim.lanes.box(point)[0])
+	Drive.arms(sim, point)
+	var node := sim.network.node_at(point)
+	var connection: Dictionary = sim.network.pieces.values().filter(func(p: Dictionary) -> bool: return p.node == node)[0]
+	var picked: Variant = Inspect.pick(sim, Vector2i(connection.points[connection.points.size() / 2].floor()))
 	_expect(picked, {"junction": point}, "a click in the box picks the junction")
 	_expect(Inspect.describe(sim, picked).slice(0, 2), ["Junction of 3 roads", "No signals"] as Array[String], "it says what it is")
 	_expect(sim.apply({"op": "set_signals", "point": point, "on": true}), "", "signals go on")

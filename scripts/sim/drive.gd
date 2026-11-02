@@ -149,9 +149,11 @@ static func edge_cells(sim: PortSim) -> Array[Vector2i]:
 	return found
 
 
-## Lane cells where rail track crosses: level crossings.
+## Lane cells where rail track crosses: level crossings, worked out each
+## time the network is built.
 static func crossings(sim: PortSim) -> Array[Vector2i]:
-	return sim.lanes.crossings()
+	_refresh(sim)
+	return sim._crossing_cells
 
 
 ## Books exactly crossing `cells` for train `id` (negative), if no car is on
@@ -263,7 +265,8 @@ static func _refresh(sim: PortSim) -> void:
 	for cell in edge_cells(sim):
 		sim.network.split_at(Vector2(cell) + Vector2(0.5, 0.5))
 	sim.traffic = Traffic.new(sim.network, sim.rules, sim.junctions)
-	sim.traffic.set_crossings(crossings(sim))
+	sim._crossing_cells = _level_crossings(sim)
+	sim.traffic.set_crossings(sim._crossing_cells)
 	sim._delays.clear()
 	sim._reach.clear()
 	if not sim._loaded_traffic.is_empty():
@@ -286,6 +289,22 @@ static func _refresh(sim: PortSim) -> void:
 		for cell: Vector2i in old._crossings:
 			if old._crossings[cell] != 0:
 				sim.traffic._crossings[cell] = old._crossings[cell]
+
+
+## The track's cells that a road lane runs through, track segment by
+## segment.
+static func _level_crossings(sim: PortSim) -> Array[Vector2i]:
+	var lane_cells := {}
+	for id: int in sim.network.pieces:
+		if sim.network.pieces[id].segment != 0:
+			for point: Vector2 in sim.network.pieces[id].points:
+				lane_cells[Vector2i(point.floor())] = true
+	var found: Array[Vector2i] = []
+	for id: int in sim.rails.segments:
+		for cell in sim.rails.cells(id):
+			if cell in lane_cells:
+				found.append(cell)
+	return found
 
 
 ## The route for `vehicle` from the piece it is on to the piece ending at

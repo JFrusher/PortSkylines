@@ -113,6 +113,8 @@ var _delays := {}
 ## Whether a piece reaches a spot for a lorry or a tractor: [piece, spot,
 ## lorry] -> bool, kept by Drive while the network stands.
 var _reach := {}
+## The level crossings of the network Drive built last (Drive.crossings).
+var _crossing_cells: Array[Vector2i] = []
 ## A loaded game's saved traffic (Drive.to_dict), put back when Drive first
 ## builds the network; {} for a save from before v40, whose cars go back to
 ## their vehicles' cells.
@@ -151,12 +153,11 @@ const AREA_SETTINGS := {
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
-## The roads drawn on the 4 m grid, and the lanes routed over them.
+## The roads drawn on the 4 m grid.
 var roads: RoadNet
 ## Rail track, a graph of its own: where it crosses a road straight across,
 ## the cells are level crossings, in both.
 var rails: RoadNet
-var lanes: LaneGraph
 ## The areas dragged along those roads.
 var areas: Areas
 ## Every box in the port by id: {"kind": "import", "export" or "empty", "due": the
@@ -224,8 +225,6 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	roads.anchors = [site_entry_point()]
 	rails = RoadNet.new(rail_types())
 	rails.anchors = [site_rail_entry()]
-	lanes = LaneGraph.new(roads)
-	lanes.rails = rails
 	map = rules.map
 	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
 	junctions = Junctions.new(rules.traffic)
@@ -454,8 +453,6 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.roads.anchors = [sim.site_entry_point()]
 	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types())
 	sim.rails.anchors = [sim.site_rail_entry()]
-	sim.lanes = LaneGraph.new(sim.roads)
-	sim.lanes.rails = sim.rails
 	sim.map = d.map
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(MapGen.of(sim.rules, sim.map), sim.rules.site))
 	sim.clock.ticks = d.ticks

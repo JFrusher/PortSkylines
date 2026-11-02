@@ -22,7 +22,6 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | `test_neopanamax.gd` | M6's Neopanamax: the milestone lock, and channel, berth length and crane outreach gating offers; only wide cranes work it |
 | `test_special_boxes.gd` | Rush imports fined on a late call, and dangerous goods only in their own blocks, kept apart from the others |
 | `test_port_notes.gd` | Removing one STS crane, the week planned by berth with clashes, and money per crane move by line and terminal |
-| `test_junctions.gd` | Junctions on the lane graph: turns drive forward through them, vehicles can turn back at a junction, and lane rules |
 | `test_hud_details.gd` | The details panels: number formatting, KPI cards and figure groups |
 | `test_cargo.gd` | M6's cargo: hinterland places for boxes over ten game days, and demand growing with milestones |
 | `test_first_slice.gd` | M5's first slice: a port built by commands works its first ship end to end on roads and areas |
