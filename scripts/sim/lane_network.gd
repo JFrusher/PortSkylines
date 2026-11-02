@@ -373,7 +373,8 @@ static func _turn_back(arm: Dictionary) -> Array:
 
 
 ## Round a bend of two roads, each lane coming in carries on into the lane
-## going out that is as far from the middle: left to right, in order.
+## going out that is as far from the middle: left to right, in order; where
+## one road has more lanes, its extra ones join the other's outermost.
 static func _carry_on(arms: Array[Dictionary]) -> Array:
 	var pairs: Array = []
 	for i in 2:
@@ -384,8 +385,10 @@ static func _carry_on(arms: Array[Dictionary]) -> Array:
 		inbound.sort_custom(func(a: int, b: int) -> bool: return lanes[a].offset > lanes[b].offset)
 		var outbound := range(out.size()).filter(func(k: int) -> bool: return out[k].forward)
 		outbound.sort_custom(func(a: int, b: int) -> bool: return out[a].offset < out[b].offset)
-		for n in mini(inbound.size(), outbound.size()):
-			pairs.append([[i, inbound[n]], [1 - i, outbound[n]]])
+		# Where the count changes, the outermost lane fans out into the extra
+		# lanes, or they merge into it, so every lane has a way in and on.
+		for n in maxi(inbound.size(), outbound.size()) if not (inbound.is_empty() or outbound.is_empty()) else 0:
+			pairs.append([[i, inbound[mini(n, inbound.size() - 1)]], [1 - i, outbound[mini(n, outbound.size() - 1)]]])
 	return pairs
 
 

@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_a_straight_road()
 	_test_a_t_junction()
 	_test_a_bend_carries_every_lane()
+	_test_lanes_fan_out_where_a_road_widens()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -91,3 +92,26 @@ func _test_a_bend_carries_every_lane() -> void:
 	for position: Vector2 in [Vector2(120, 250.5), Vector2(120, 251.5)]:
 		var lane := _piece_at(network, position)
 		_expect(network.pieces[lane].next.size(), 1, "the lane at %s carries on round the bend" % position)
+
+
+## A 1+1 road east that carries on into a 2+2 road at (140, 250), as the
+## endgame port's corner does: every lane of each has a way in and a way on,
+## the single lane fanning out into both and both merging into it.
+func _test_lanes_fan_out_where_a_road_widens() -> void:
+	var sim := _roads([[Vector2i(100, 250), Vector2i(140, 250), "terminal_1_1"], [Vector2i(140, 250), Vector2i(180, 250), "terminal_2_2"]])
+	var network := LaneNetwork.new(sim.roads, sim.rules.junctions)
+	_joined(network, "a road that widens")
+	var lanes := network.pieces.keys().filter(func(id: int) -> bool: return network.pieces[id].segment != 0)
+	var fed := {}
+	for id: int in network.pieces:
+		for next: int in network.pieces[id].next:
+			fed[next] = true
+	for id: int in network.pieces:
+		for next: int in network.pieces[id].next:
+			for after: int in network.pieces[next].next:
+				fed[after] = true
+	_expect(lanes.filter(func(id: int) -> bool: return network.pieces[id].next.is_empty()), [], "every lane goes on somewhere")
+	_expect(lanes.filter(func(id: int) -> bool: return id not in fed), [], "and every lane is fed")
+	var narrow := _piece_at(network, Vector2(120, 250.5))
+	for wide: Vector2 in [Vector2(160, 250.5), Vector2(160, 251.5)]:
+		_expect(network.route(narrow, _piece_at(network, wide)).is_empty(), false, "the single eastbound lane reaches the wide road's lane at %s" % wide)
