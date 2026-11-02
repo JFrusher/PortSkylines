@@ -24,6 +24,12 @@ var _limits := {}  # piece -> cells a second, its road's and its curve's
 ## or 0; and where each piece runs into one: piece -> [[cell, distance]].
 var _crossings := {}
 var _crossing_on := {}
+## Seconds a car passing each piece waits on it, smoothed over epochs, for
+## routes to weigh (piece -> seconds); and this epoch so far: seconds cars
+## stood on each piece, and cars that came onto it.
+var _delays := {}
+var _stuck := {}
+var _entered := {}
 ## The least of a junction's approach, in cells, where a car giving way
 ## looks for traffic; a moving car is on it from give_way_seconds out.
 const APPROACH := 3.0
@@ -49,6 +55,7 @@ func place(id: int, route: Array[int], metres_per_minute: float, metres: float) 
 			return false
 	cars[id] = {"route": route, "i": 0, "s": length, "v": 0.0, "top": metres_per_minute / 60.0 / Grid.CELL, "length": length, "booked": 0, "waited": 0.0}
 	_on.get_or_add(route[0], []).append(id)
+	_entered[route[0]] = _entered.get(route[0], 0) + 1
 	return true
 
 
@@ -85,6 +92,8 @@ func _move(id: int, seconds: float) -> void:
 	var v := minf(minf(car.v + _accel() * seconds, limit), allowed)
 	car.v = v
 	car.waited = car.waited + seconds if v == 0.0 else 0.0
+	if v == 0.0:
+		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
 	_advance(id, minf(v * seconds, room))
 
 
@@ -151,10 +160,31 @@ func _advance(id: int, distance: float) -> void:
 		car.s -= network.pieces[car.route[car.i]].length
 		car.i += 1
 		_on.get_or_add(car.route[car.i], []).append(id)
+		_entered[car.route[car.i]] = _entered.get(car.route[car.i], 0) + 1
 	car.s = minf(car.s, network.pieces[car.route[car.i]].length)
 	if car.booked != 0 and car.route[car.i] != car.booked and car.route.find(car.booked) < car.i and car.s >= car.length:
 		_booked[car.booked].erase(id)
 		car.booked = 0
+
+
+## Folds this epoch's waiting into each piece's delay: seconds stood on it
+## per car that came onto it (all of them when none did), mixed in at
+## `smoothing` (0 to 1); a piece nobody waited on eases back towards none.
+func settle(smoothing: float) -> void:
+	for piece: int in _delays.keys() + _stuck.keys():
+		var seconds: float = _stuck.get(piece, 0.0) / maxi(_entered.get(piece, 0), 1)
+		var mixed: float = lerpf(_delays.get(piece, 0.0), seconds, smoothing)
+		if mixed < 0.01:
+			_delays.erase(piece)
+		else:
+			_delays[piece] = mixed
+	_stuck.clear()
+	_entered.clear()
+
+
+## Every piece with a delay -> its seconds.
+func delays() -> Dictionary:
+	return _delays
 
 
 ## Whether a car other than `except` has booked, or is on, a connection

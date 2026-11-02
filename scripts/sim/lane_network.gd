@@ -110,8 +110,11 @@ func conflicts(piece: int) -> Array:
 ## The pieces along a route from piece `from` to piece `to`, both included,
 ## shortest by length; [] when there is none. It goes inside an area only if
 ## it starts or ends in it, and into a handover slot only as its start or end,
-## so no route cuts through a buffer or a slot someone stands in.
-func route(from: int, to: int) -> Array[int]:
+## so no route cuts through a buffer or a slot someone stands in. A lorry's
+## (`lorry`) keeps to pieces lorries may use; every route weighs a piece by
+## its length plus the cells its delay in `delays` (piece -> seconds) is
+## worth at `speed` cells a second, so it goes round a jam that costs more.
+func route(from: int, to: int, lorry := false, delays := {}, speed := 1.0) -> Array[int]:
 	var areas := [pieces[from].area, pieces[to].area]
 	var slots := [pieces[from].slot, pieces[to].slot]
 	var cost := {from: 0.0}
@@ -130,7 +133,9 @@ func route(from: int, to: int) -> Array[int]:
 		for next: int in pieces[at].next:
 			if next != to and (pieces[next].area != 0 and pieces[next].area not in areas or pieces[next].slot != NO_SLOT and pieces[next].slot not in slots):
 				continue
-			var through: float = cost[at] + pieces[next].length
+			if lorry and not pieces[next].lorries:
+				continue
+			var through: float = cost[at] + pieces[next].length + delays.get(next, 0.0) * speed
 			if through < cost.get(next, INF):
 				cost[next] = through
 				came[next] = at
