@@ -263,10 +263,14 @@ func _booking_distance(car: Dictionary) -> float:
 
 
 ## Books connection `piece` for car `id` once it is near enough to need it,
-## its junction lets it in from the arm before it, and no connection
-## crossing it is booked by another car; true if booked.
+## its junction lets it in from the arm before it, no connection crossing it
+## is booked by another car, and past it there is room to stand clear of
+## the box, so no car ever stops in a junction (Cities: Skylines' "don't
+## block the box"); true if booked.
 func _book(id: int, piece: int) -> bool:
 	var car: Dictionary = cars[id]
+	if _room_past(car, car.route.find(piece)) < car.length + _gap():
+		return false
 	var arm := network.arm_of(car.route[car.route.find(piece) - 1])
 	if not arm.is_empty() and not junctions.may_enter(network, self, arm[0], arm[1], id, car.waited):
 		return false
@@ -276,6 +280,18 @@ func _book(id: int, piece: int) -> bool:
 	car.booked.append(piece)
 	_booked.get_or_add(piece, []).append(id)
 	return true
+
+
+## How far past the end of `car`'s route piece `at` the nearest car ahead's
+## rear is, in cells; INF when its route ends first, as it may stand there.
+func _room_past(car: Dictionary, at: int) -> float:
+	var distance := 0.0
+	for k in range(at + 1, mini(at + 1 + LOOK_AHEAD, car.route.size())):
+		var on: Array = _on.get(car.route[k], [])
+		if not on.is_empty():
+			return distance + cars[on[0]].s - cars[on[0]].length
+		distance += network.pieces[car.route[k]].length
+	return INF if at + LOOK_AHEAD >= car.route.size() - 1 else distance
 
 
 ## Puts car `id` on `piece`'s list, keeping it rearmost first.

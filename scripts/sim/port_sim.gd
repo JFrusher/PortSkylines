@@ -89,7 +89,7 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
-var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
+var _fetching := {}  # apron slot spot -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
 var _straddles_out := {}  # straddle block id -> its carriers on the road
 ## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
@@ -110,8 +110,8 @@ var network: LaneNetwork
 var traffic: Traffic
 var _drive_for := Vector3i(-1, -1, -1)
 var _delays := {}
-## Whether piece x reaches cell (y, z) for a lorry (w 1) or a tractor:
-## Vector4i -> bool, kept by Drive while the network stands.
+## Whether a piece reaches a spot for a lorry or a tractor: [piece, spot,
+## lorry] -> bool, kept by Drive while the network stands.
 var _reach := {}
 ## A loaded game's saved traffic (Drive.to_dict), put back when Drive first
 ## builds the network; {} for a save from before v40, whose cars go back to
@@ -228,7 +228,6 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	lanes.rails = rails
 	map = rules.map
 	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
-	lanes.areas = areas
 	junctions = Junctions.new(rules.traffic)
 	handovers = Handovers.new(areas)
 	machines = Machines.new(rules.yard_gear)
@@ -459,7 +458,6 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.lanes.rails = sim.rails
 	sim.map = d.map
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(MapGen.of(sim.rules, sim.map), sim.rules.site))
-	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
@@ -530,6 +528,21 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.machine_jobs = d.machine_jobs.duplicate(true)
 	for area: int in d.area_stacks:
 		sim.area_stacks[area] = AreaStacks.from_dict(d.area_stacks[area])
+	# A vehicle bound for a slot, or fetching for a crane's slot, heads for
+	# where it stands there: a no-op for a save that pointed it there itself,
+	# and for one migrated to v41 (whose slots came from grid cells) the fix.
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.state.trim_prefix("no_route:") == "to_slot" and vehicle.slot >= 0:
+			vehicle.target = AreaFlow._stand(sim, vehicle.area, vehicle.slot)
+		if vehicle.home != Areas.NO_SPOT and vehicle.home.x in sim.areas.list:
+			var slots: Array = sim.areas.layout(vehicle.home.x).get("slots", [])
+			var s := slots.find_custom(func(cells: Array) -> bool: return vehicle.home in cells)
+			if s >= 0:
+				sim._fetching[vehicle.home].erase(vehicle)
+				vehicle.home = AreaFlow._stand(sim, vehicle.home.x, s)
+				sim._fetching.get_or_add(vehicle.home, [] as Array[Vehicle]).append(vehicle)
+				if vehicle.state.trim_prefix("no_route:") == "to_crane":
+					vehicle.target = vehicle.home
 	return sim
 
 
@@ -2061,7 +2074,7 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
 	_count_bound(vehicle, 1)
-	if vehicle.home != Grid.NONE:
+	if vehicle.home != Areas.NO_SPOT:
 		if vehicle.home not in _fetching:
 			_fetching[vehicle.home] = [] as Array[Vehicle]
 		_fetching[vehicle.home].append(vehicle)
@@ -2076,7 +2089,7 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] -= 1
 	_count_bound(vehicle, -1)
-	if vehicle.home != Grid.NONE:
+	if vehicle.home != Areas.NO_SPOT:
 		_fetching[vehicle.home].erase(vehicle)
 
 
@@ -2103,5 +2116,5 @@ func vehicle_by_id(id: int) -> Vehicle:
 
 
 ## The tractors fetching exports to apron slot `home`, oldest first.
-func fetching_to(home: Vector2i) -> Array[Vehicle]:
+func fetching_to(home: Vector3i) -> Array[Vehicle]:
 	return _fetching.get(home, [] as Array[Vehicle])

@@ -6,16 +6,16 @@ extends RefCounted
 
 var id: int
 var kind: String
-## The cell it started from or last arrived at, alone; Drive puts its car
+## The spot it started from or last arrived at, alone; Drive puts its car
 ## there when the lane network is built.
-var path: Array[Vector2i]
+var path: Array[Vector3i]
 var state := ""
 ## The box it carries or has come for (0 for none), and whether it is on board.
 var box := 0
 var loaded := false
 ## The cell it is driving to, and where a tractor fetching an export brings it back to.
-var target := Grid.NONE
-var home := Grid.NONE
+var target := Areas.NO_SPOT
+var home := Areas.NO_SPOT
 ## Minutes left at a gate booth.
 var timer := 0.0
 ## Calendar minute a lorry came in through a gate, or -1 before it has.
@@ -32,7 +32,7 @@ var slot := -1
 var straddle := 0
 
 
-func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector2i]) -> void:
+func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector3i]) -> void:
 	id = vehicle_id
 	kind = vehicle_kind
 	path = route
@@ -47,7 +47,7 @@ func to_dict() -> Dictionary:
 
 
 static func from_dict(d: Dictionary) -> Vehicle:
-	var route: Array[Vector2i] = []
+	var route: Array[Vector3i] = []
 	route.assign(d.path)
 	var vehicle := Vehicle.new(d.id, d.kind, route)
 	vehicle.state = d.state

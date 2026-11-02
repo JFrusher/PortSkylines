@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 40
+const VERSION := 41
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -14,8 +14,8 @@ const FIRST := 26
 ## Every field Vehicle.from_dict reads.
 const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "state": TYPE_STRING,
-	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
-	"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
+	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR3I,
+	"home": TYPE_VECTOR3I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
 	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT,
 }
 const MAGIC := "PSKY"
@@ -100,6 +100,59 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v39(data)
 	if data.version < 40:
 		data = _migrate_v40(data)
+	if data.version < 41:
+		data = _migrate_v41(data)
+	return data
+
+
+## v41 lays areas out on their own cells: a vehicle's cells become spots
+## (the area cell whose middle is in it, else the road cell), a slot is two
+## bays so slot s becomes s / 2 (a vehicle there already keeps the next free
+## slot, or queues at the head of the buffer), and no traffic is kept, as
+## the driveways are new; a vehicle bound for a slot is pointed at where it
+## stands in it once the game is loaded (PortSim.from_dict).
+static func _migrate_v41(data: Dictionary) -> Dictionary:
+	var types: Dictionary = Content.base().area_types
+	var spot_of := {}
+	var slots_of := {}  # area id -> how many slots it has now
+	for id: int in data.sim.areas.list:
+		var area: Dictionary = data.sim.areas.list[id]
+		var kind: String = types[area.type].kind
+		var depth: int = area.depth if kind == "quay_apron" else types[area.type].depth
+		var shape := AreaShape.along(RoadCurve.new(area.curve[0], area.curve[1], area.curve[2]), area.side, area.from, area.columns, area.edge, depth)
+		var present := {}
+		for cell: Dictionary in shape.cells:
+			spot_of[Vector2i(cell.centre.floor())] = Vector3i(id, cell.k, cell.r)
+			present[Vector2i(cell.k, cell.r)] = true
+		slots_of[id] = AreaLayout.local(kind, area.columns, depth, present).get("slots", []).size()
+	var spot := func(cell: Vector2i) -> Vector3i: return Areas.NO_SPOT if cell == Grid.NONE else spot_of.get(cell, Vector3i(0, cell.x, cell.y))
+	var by_id := {}
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.path = [spot.call(vehicle.path[0])]
+		vehicle.target = spot.call(vehicle.target)
+		vehicle.home = spot.call(vehicle.home)
+		by_id[vehicle.id] = vehicle
+	for id: int in data.sim.handovers:
+		var at: Dictionary = data.sim.handovers[id]
+		var slots := []
+		slots.resize(slots_of.get(id, 0))
+		slots.fill(0)
+		for s: int in at.slots.size():
+			var holder: int = at.slots[s]
+			if holder == 0:
+				continue
+			var n: int = s / 2 if s / 2 < slots.size() and slots[s / 2] == 0 else slots.find(0)
+			if n >= 0:
+				slots[n] = holder
+			else:
+				at.buffer.push_front(holder)
+			if holder in by_id:
+				by_id[holder].slot = n
+				if n < 0:
+					by_id[holder].state = "queued"
+		at.slots = slots
+	data.sim.traffic = {}
+	data.version = 41
 	return data
 
 
@@ -363,7 +416,7 @@ static func _valid_sim(data: Variant) -> bool:
 ## slots and machines at known areas, stacks of known boxes.
 static func _valid_area_flow(data: Dictionary) -> bool:
 	for vehicle: Variant in data.vehicles:
-		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, false):
+		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or vehicle.path.size() != 1 or not vehicle.path[0] is Vector3i:
 			return false
 	if not data.traffic.is_empty() and not (_has_fields(data.traffic, {"pieces": TYPE_INT, "traffic": TYPE_DICTIONARY, "weighed": TYPE_DICTIONARY}) and _has_fields(data.traffic.traffic, {"cars": TYPE_DICTIONARY, "on": TYPE_DICTIONARY, "booked": TYPE_DICTIONARY, "crossings": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY})):
 		return false

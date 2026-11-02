@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_a_queue_at_a_booked_crossing()
 	_test_junctions_closer_than_a_lorry()
 	_test_a_queue_goes_on_green()
+	_test_no_lorry_blocks_the_box()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -224,3 +225,20 @@ func _test_a_queue_goes_on_green() -> void:
 	_expect(sent, 3, "three lorries queue from the north")
 	_expect(stood > 0, true, "the ones behind stand still behind the first (%d lorry ticks)" % stood)
 	_expect([_across(traffic, 1), _across(traffic, 2), _across(traffic, 3)], [true, true, true], "and all of them get across once it's their green")
+
+
+## A lorry stands just past the crossroads on the east road: one from the
+## west waits short of the box rather than stopping in it, so one from the
+## north still gets across.
+func _test_no_lorry_blocks_the_box() -> void:
+	var traffic := _crossroads()
+	var network := traffic.network
+	var east: Array[int] = network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)))
+	var length: float = _rules.traffic.lorry_m / Grid.CELL
+	traffic.place_at(9, [east[2]] as Array[int], length, 0.0, length)
+	_send(traffic, 1, true)
+	_run(traffic, 20.0)
+	_expect([traffic.cars[1].i, traffic.cars[1].booked], [0, []], "the lorry from the west waits short of the box")
+	_send(traffic, 2, false)
+	_run(traffic, 20.0)
+	_expect(_across(traffic, 2), true, "so the one from the north gets across")

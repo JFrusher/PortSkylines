@@ -96,25 +96,23 @@ func _test_no_way_through_a_park() -> void:
 	var sim := _port(2.0, true)
 	var park: int = sim.areas.list.keys()[-1]
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
-	var jam := {}
-	for lane: Dictionary in sim.roads.lanes(east):
-		for cell: Vector2i in lane.cells:
-			jam[cell] = 30.0
-	sim.lanes.set_delays(jam, 100.0, 120.0)
-	var route := sim.lanes.route(AreaFlow._entry_cell(sim), AreaFlow._buffer_start(sim, 2), true)
-	var inside := sim.areas.cells(park)
+	Drive.flow(sim, park)
+	var net := sim.network
+	for id: int in net.pieces:
+		if net.pieces[id].segment == east:
+			sim._delays[id] = 30.0
+	var start: int = net.nearest(sim.areas.centre(AreaFlow._entry_cell(sim)), true)[0]
+	var route := Drive._best_route(sim, start, AreaFlow._buffer_start(sim, 2), true)
 	_expect(route.is_empty(), false, "there is still a route to the gate")
-	_expect(route.filter(func(cell: Vector2i) -> bool: return cell in inside), [], "and it never enters the park")
+	_expect(route.filter(func(piece: int) -> bool: return net.pieces[piece].area == park), [], "and it never enters the park")
 	# Waiting in the park's buffer delays it too, yet a lorry leaving one space
 	# drives out along the buffer, never through the spaces beside it.
-	for cell: Vector2i in sim.areas.layout(park).buffer:
-		jam[cell] = 30.0
-	sim.lanes.set_delays(jam, 100.0, 120.0)
-	var spaces: Array = sim.areas.layout(park).slots
-	var out := sim.lanes.route(spaces[-1][1], AreaFlow._buffer_start(sim, 2), true)
-	var others := {}
-	for space: Array in spaces.slice(0, -1):
-		for cell: Vector2i in space:
-			others[cell] = true
+	for id: int in net.pieces:
+		if net.pieces[id].area == park and net.pieces[id].slot == LaneNetwork.NO_SLOT:
+			sim._delays[id] = 30.0
+	var last: int = sim.areas.layout(park).slots.size() - 1
+	var stand := sim.areas.centre(AreaFlow._stand(sim, park, last))
+	var space: int = net.ending_at(stand).filter(func(piece: int) -> bool: return net.pieces[piece].slot == Vector2i(park, last))[0]
+	var out := Drive._best_route(sim, space, AreaFlow._buffer_start(sim, 2), true)
 	_expect(out.is_empty(), false, "a lorry in the last space has a way out")
-	_expect(out.filter(func(cell: Vector2i) -> bool: return cell in others), [], "and it never drives through another space")
+	_expect(out.filter(func(piece: int) -> bool: return net.pieces[piece].slot not in [LaneNetwork.NO_SLOT, Vector2i(park, last)]), [], "and it never drives through another space")

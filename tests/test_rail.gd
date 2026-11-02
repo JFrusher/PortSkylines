@@ -52,7 +52,7 @@ func _test_level_crossing() -> void:
 	_expect(crossing.size(), 4, "the crossing is the road's four lane cells under the track")
 	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.cells(sim.rails.segments.keys()[0]) and sim.lanes.is_junction(c)), true, "each is in both graphs, and no vehicle stops on it")
 	# Booked by a train, the crossing holds a lorry back until it is freed.
-	var lorry := Vehicle.new(1, "lorry", [Vector2i(190, 100)] as Array[Vector2i])
+	var lorry := Vehicle.new(1, "lorry", [Vector3i(0, 190, 100)] as Array[Vector3i])
 	_expect(Drive.place(sim, lorry), true, "a lorry waits west of the crossing")
 	# Placed, it drives on to its lane's end, past the crossing.
 	_expect(Drive.rebook(sim, -1, crossing), true, "a train books the crossing")

@@ -1,23 +1,24 @@
 class_name Drive
 extends RefCounted
 ## Every way the sim moves vehicles on the roads and areas, in one place:
-## the rest of the sim names where a vehicle starts and where it heads (grid
-## cells: a buffer's start, a slot, a gate, the site's exit) and asks where it
-## is; how it gets there is Drive's business. Vehicles are cars on the lane
-## network (M10), moving continuously in its Traffic; a cell is the piece
-## that ends at its middle. The network is built from the roads, areas and
-## track, and built again when they change, every car put back where it was.
+## the rest of the sim names where a vehicle starts and where it heads (spots,
+## Vector3i(area, k, r): a buffer's start, a slot, a gate; area 0 a road
+## cell, such as the site's exit) and asks where it is; how it gets there is
+## Drive's business. Vehicles are cars on the lane network (M10), moving
+## continuously in its Traffic; a spot is the piece that ends at its middle.
+## The network is built from the roads, areas and track, and built again
+## when they change, every car put back where it was.
 
 ## Real seconds a tick: traffic drives in real seconds and metres, and a
 ## sim second is a calendar minute.
 const STEP := SimClock.CALENDAR_MINUTES_PER_TICK * 60.0
 
 
-## Puts `vehicle` on the lane nearest its first cell's middle (its path's
+## Puts `vehicle` on the lane nearest its first spot's middle (its path's
 ## first), if there is room.
 static func place(sim: PortSim, vehicle: Vehicle) -> bool:
 	_refresh(sim)
-	var near := sim.network.nearest(Vector2(vehicle.path[0]) + Vector2(0.5, 0.5), vehicle.kind == "lorry")
+	var near := sim.network.nearest(sim.areas.centre(vehicle.path[0]), vehicle.kind == "lorry")
 	if near[0] == 0 or not sim.traffic.fits(near[0], near[1], _length(sim, vehicle)):
 		return false
 	var route: Array[int] = [near[0]]
@@ -25,8 +26,8 @@ static func place(sim: PortSim, vehicle: Vehicle) -> bool:
 	return true
 
 
-## The cell `vehicle` stands at, or last stood at before setting off.
-static func here(_sim: PortSim, vehicle: Vehicle) -> Vector2i:
+## The spot `vehicle` stands at, or last stood at before setting off.
+static func here(_sim: PortSim, vehicle: Vehicle) -> Vector3i:
 	return vehicle.path[0]
 
 
@@ -39,7 +40,7 @@ static func where(sim: PortSim, vehicle: Vehicle, _alpha := 1.0) -> Vector2:
 static func pose(sim: PortSim, vehicle: Vehicle, _alpha: float) -> Array[Vector2]:
 	_refresh(sim)
 	if vehicle.id not in sim.traffic.cars:
-		return [Vector2(vehicle.path[0]), Vector2.ZERO]
+		return [sim.areas.centre(vehicle.path[0]) - Vector2(0.5, 0.5), Vector2.ZERO]
 	var at := sim.traffic.pose(vehicle.id)
 	return [at[0] - Vector2(0.5, 0.5), at[1]]
 
@@ -68,7 +69,7 @@ static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
 
 ## Sets `vehicle` driving from where it is to `to`, in `state` once there.
 ## With no route yet it waits where it is and tries again each tick.
-static func head(sim: PortSim, vehicle: Vehicle, to: Vector2i, state: String) -> void:
+static func head(sim: PortSim, vehicle: Vehicle, to: Vector3i, state: String) -> void:
 	_refresh(sim)
 	vehicle.target = to
 	var route := _route_to(sim, vehicle, to)
@@ -85,7 +86,7 @@ static func advance(sim: PortSim, vehicle: Vehicle, _speed: float) -> bool:
 	_refresh(sim)
 	if not sim.traffic.arrived(vehicle.id):
 		return false
-	vehicle.path = [vehicle.target] as Array[Vector2i]
+	vehicle.path = [vehicle.target] as Array[Vector3i]
 	return true
 
 
@@ -100,13 +101,13 @@ static func leave(sim: PortSim, vehicle: Vehicle) -> void:
 		sim.traffic.remove(vehicle.id)
 
 
-## Whether there is a way for a lorry (`lorry`) or a tractor from `from` to `to`.
-static func reaches(sim: PortSim, from: Vector2i, to: Vector2i, lorry: bool) -> bool:
+## Whether there is a way for a lorry (`lorry`) or a tractor from spot `from` to spot `to`.
+static func reaches(sim: PortSim, from: Vector3i, to: Vector3i, lorry: bool) -> bool:
 	_refresh(sim)
-	var start: int = sim.network.nearest(Vector2(from) + Vector2(0.5, 0.5), lorry)[0]
+	var start: int = sim.network.nearest(sim.areas.centre(from), lorry)[0]
 	if start == 0:
 		return false
-	var key := Vector4i(start, to.x, to.y, int(lorry))
+	var key := [start, to, lorry]
 	if key not in sim._reach:
 		_best_route(sim, start, to, lorry)
 	return sim._reach[key]
@@ -115,27 +116,28 @@ static func reaches(sim: PortSim, from: Vector2i, to: Vector2i, lorry: bool) -> 
 ## Which way traffic runs along area `id`: 1 from its start to its end, -1
 ## the other way, 0 when no road lane runs beside it.
 static func flow(sim: PortSim, id: int) -> int:
-	return sim.lanes.flow_of(id)
+	_refresh(sim)
+	return sim.network.flows.get(id, 0)
 
 
-## A lane cell at the site entry heading into the site with room for a
-## lorry to stand, or NONE.
-static func entry_cell(sim: PortSim) -> Vector2i:
+## A road spot at the site entry heading into the site with room for a
+## lorry to stand, or NO_SPOT.
+static func entry_cell(sim: PortSim) -> Vector3i:
 	_refresh(sim)
 	for cell in edge_cells(sim):
 		var piece := _lane_ending(sim, cell, true)
 		if piece != 0 and sim.traffic.fits(piece, sim.network.pieces[piece].length, sim.rules.traffic.lorry_m / Grid.CELL):
-			return cell
-	return Grid.NONE
+			return Vector3i(0, cell.x, cell.y)
+	return Areas.NO_SPOT
 
 
-## A lane cell at the site entry leaving the site, or NONE.
-static func exit_cell(sim: PortSim) -> Vector2i:
+## A road spot at the site entry leaving the site, or NO_SPOT.
+static func exit_cell(sim: PortSim) -> Vector3i:
 	_refresh(sim)
 	for cell in edge_cells(sim):
 		if _lane_ending(sim, cell, false) != 0:
-			return cell
-	return Grid.NONE
+			return Vector3i(0, cell.x, cell.y)
+	return Areas.NO_SPOT
 
 
 ## Cells on the site's east edge near the entry, where the highway's lanes meet the roads.
@@ -257,7 +259,7 @@ static func _refresh(sim: PortSim) -> void:
 	var old := sim.traffic
 	sim._drive_for = now
 	sim.network = LaneNetwork.new(sim.roads, sim.rules.junctions)
-	sim.network.add_areas(sim.lanes, sim.rules.traffic.area_kmh)
+	sim.network.add_driveways(sim.areas, sim.rules.traffic.area_kmh)
 	for cell in edge_cells(sim):
 		sim.network.split_at(Vector2(cell) + Vector2(0.5, 0.5))
 	sim.traffic = Traffic.new(sim.network, sim.rules, sim.junctions)
@@ -271,14 +273,13 @@ static func _refresh(sim: PortSim) -> void:
 		sim._loaded_traffic = {}
 		return
 	for vehicle: Vehicle in sim.vehicles:
-		var at := Vector2(vehicle.path[0]) + Vector2(0.5, 0.5)
-		if old != null and vehicle.id in old.cars:
-			at = old.pose(vehicle.id)[0]
+		# Where its car was; only a vehicle with no car yet goes by its spot.
+		var at: Vector2 = old.pose(vehicle.id)[0] if old != null and vehicle.id in old.cars else sim.areas.centre(vehicle.path[0])
 		var near := sim.network.nearest(at, vehicle.kind == "lorry")
 		assert(near[0] != 0, "a vehicle stands on the lanes")
 		var route: Array[int] = [near[0]]
 		sim.traffic.place_at(vehicle.id, route, near[1], _top(sim, vehicle), _length(sim, vehicle))
-		if vehicle.target != Grid.NONE and vehicle.state.trim_prefix("no_route:") in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
+		if vehicle.target != Areas.NO_SPOT and vehicle.state.trim_prefix("no_route:") in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
 			var state := vehicle.state.trim_prefix("no_route:")
 			head(sim, vehicle, vehicle.target, state)
 	if old != null:
@@ -289,7 +290,7 @@ static func _refresh(sim: PortSim) -> void:
 
 ## The route for `vehicle` from the piece it is on to the piece ending at
 ## `to`, the best of those that end there; [] when there is none.
-static func _route_to(sim: PortSim, vehicle: Vehicle, to: Vector2i) -> Array[int]:
+static func _route_to(sim: PortSim, vehicle: Vehicle, to: Vector3i) -> Array[int]:
 	if vehicle.id not in sim.traffic.cars:
 		return []
 	var car: Dictionary = sim.traffic.cars[vehicle.id]
@@ -300,13 +301,13 @@ static func _route_to(sim: PortSim, vehicle: Vehicle, to: Vector2i) -> Array[int
 ## or a tractor, by length and delay; [] when there is none. Whether there
 ## is one is kept in sim._reach until the network is built again, so a way
 ## that isn't there is searched for once, not every tick.
-static func _best_route(sim: PortSim, start: int, to: Vector2i, lorry: bool) -> Array[int]:
-	var key := Vector4i(start, to.x, to.y, int(lorry))
+static func _best_route(sim: PortSim, start: int, to: Vector3i, lorry: bool) -> Array[int]:
+	var key := [start, to, lorry]
 	if not sim._reach.get(key, true):
 		return []
 	var speed: float = (sim.rules.lorry_speed if lorry else sim.rules.tractor.speed) / 60.0 / Grid.CELL  # m a minute -> cells a second
 	var ends: Array[int] = []
-	for end in sim.network.ending_at(Vector2(to) + Vector2(0.5, 0.5)):
+	for end in sim.network.ending_at(sim.areas.centre(to)):
 		if not lorry or sim.network.pieces[end].lorries:
 			ends.append(end)
 	var route: Array[int] = []

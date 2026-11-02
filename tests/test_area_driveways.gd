@@ -60,7 +60,7 @@ func _test_every_slot_and_booth_is_reached() -> void:
 	for id: int in sim.areas.list:
 		if id not in network.flows:
 			continue
-		var layout := sim.areas.local_layout(id)
+		var layout: Dictionary = LaneNetwork._local(sim.areas.layout(id))
 		for s: int in layout.get("slots", []).size():
 			var stand: Vector2i = _driven(network, id, layout.slots[s])[-1]
 			var ends := network.ending_at(_centre(sim, id, stand))
@@ -98,7 +98,7 @@ func _test_driveways_bend_with_their_area() -> void:
 	area.curve = [a, (a + b) / 2.0 + (b - a).normalized().orthogonal() * 6.0, b]
 	sim.areas.version += 1
 	var network := _network(sim)
-	var layout := sim.areas.local_layout(block)
+	var layout: Dictionary = LaneNetwork._local(sim.areas.layout(block))
 	var first: Vector2i = _driven(network, block, layout.buffer)[0]
 	var starts := network.pieces.keys().filter(func(id: int) -> bool: return network.pieces[id].area == block and network.pieces[id].slot == LaneNetwork.NO_SLOT and network.pieces[id].points[0].distance_to(_centre(sim, block, first)) < 0.001)
 	_expect(starts.is_empty(), false, "a lane leaves the buffer's first cell")

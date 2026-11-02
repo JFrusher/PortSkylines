@@ -162,40 +162,6 @@ func route_to_any(from: int, ends: Array[int], lorry := false, delays := {}, spe
 	return []
 
 
-## The inside of the areas from `lanes` (today's LaneGraph), as pieces: one
-## per step, each ending at a cell's middle, at `kmh`; where a driveway
-## leaves or joins a road, its lane is split there.
-func add_areas(lanes: LaneGraph, kmh: float) -> void:
-	var made: Array[int] = []
-	var leaving := {}  # area piece -> true when it ends on a road
-	for edge: Dictionary in lanes.area_edges():
-		var a := Vector2(edge.from) + Vector2(0.5, 0.5)
-		var b := Vector2(edge.to) + Vector2(0.5, 0.5)
-		if edge.into:
-			split_at(a)
-		if edge.out_of:
-			split_at(b)
-		var id := _add(PackedVector2Array([a, b]), 0, -1, edge.lorries, 0, kmh)
-		pieces[id].area = edge.area
-		pieces[id].slot = edge.slot
-		made.append(id)
-		if edge.out_of:
-			leaving[id] = true
-	# Every piece by where it ends, and road lanes by where they start.
-	var ends := {}
-	var road_starts := {}
-	for id: int in pieces:
-		ends.get_or_add(_key(pieces[id].points[-1]), []).append(id)
-		if pieces[id].segment != 0:
-			road_starts.get_or_add(_key(pieces[id].points[0]), []).append(id)
-	for id in made:
-		for before: int in ends.get(_key(pieces[id].points[0]), []):
-			if before != id:
-				pieces[before].next.append(id)
-		if id in leaving:
-			pieces[id].next.append_array(road_starts.get(_key(pieces[id].points[-1]), []))
-
-
 ## Which way traffic runs along each area with driveways: area id -> 1 from
 ## its first column to its last, -1 the other way: the way of the road lane
 ## beside its front.
@@ -223,7 +189,7 @@ func add_driveways(areas: Areas, kmh: float) -> void:
 func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving: Dictionary) -> void:
 	var area: Dictionary = areas.list[id]
 	var kind := areas.kind_of(area)
-	var layout := areas.local_layout(id)
+	var layout: Dictionary = _local(areas.layout(id))
 	if layout.buffer.size() < 2:
 		return
 	var curve := areas.curve(id)
@@ -334,6 +300,21 @@ func _area_piece(points: Array[Vector2], area: int, slot: Vector2i, lorries: boo
 	pieces[id].area = area
 	pieces[id].slot = slot
 	return id
+
+
+## `part` of a layout with its spots Vector3i(area, k, r) as the area's own
+## cells Vector2i(k, r).
+static func _local(part: Variant) -> Variant:
+	if part is Vector3i:
+		return Vector2i(part.y, part.z)
+	if part is Dictionary:
+		var found := {}
+		for key: Variant in part:
+			found[key] = _local(part[key])
+		return found
+	if part is Array:
+		return part.map(func(item: Variant) -> Variant: return _local(item))
+	return part
 
 
 static func _reversed(cells: Array) -> Array:
@@ -614,7 +595,8 @@ static func _near(one: PackedVector2Array, two: PackedVector2Array) -> bool:
 ## cells along it, about every half cell and at both ends.
 static func _along(curve: RoadCurve, offset: float, start: float, stop: float) -> PackedVector2Array:
 	var points := PackedVector2Array()
-	var count := maxi(1, ceili((stop - start) / 0.5))
+	# shortcut: a stub shorter than its junctions' trims runs start > stop; sampled by its span all the same. Cap trims on short segments if such stubs drive oddly.
+	var count := maxi(1, ceili(absf(stop - start) / 0.5))
 	for i in count + 1:
 		var d := lerpf(start, stop, float(i) / count)
 		points.append(curve.point_at(d) + curve.right_at(d) * offset)

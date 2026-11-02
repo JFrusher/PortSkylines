@@ -55,9 +55,10 @@ var _gates := {}  # terminal -> its working gates, for the same versions
 var _idle_for := Vector2i(-1, -1)
 var _layouts := {}
 var _layouts_for := -1
-## Each area's layout on its own cells (local_layout), kept like _layouts.
-var _local := {}
-var _local_for := -1
+## No spot: a vehicle's target or home before it has one.
+const NO_SPOT := Vector3i(0, -1, -1)
+## Each area's cells' middles (centre), kept with _layouts.
+var _centres := {}
 
 
 func _init(area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> void:
@@ -269,21 +270,6 @@ func shape(id: int) -> AreaShape:
 	return AreaShape.along(curve(id), area.side, area.from, area.columns, area.edge, depth_of(area))
 
 
-## Area `id`'s layout on its own cells (AreaLayout.local), kept until the
-## areas change.
-func local_layout(id: int) -> Dictionary:
-	if _local_for != version:
-		_local_for = version
-		_local.clear()
-	if id not in _local:
-		var area: Dictionary = list[id]
-		var present := {}
-		for cell: Dictionary in shape(id).cells:
-			present[Vector2i(cell.k, cell.r)] = true
-		_local[id] = AreaLayout.local(kind_of(area), area.columns, depth_of(area), present)
-	return _local[id]
-
-
 ## Area `id`'s road curve, along which its cells lie.
 func curve(id: int) -> RoadCurve:
 	var area: Dictionary = list[id]
@@ -339,25 +325,64 @@ func _idle_reason(id: int) -> String:
 	return "No road runs along this %s" % types[area.type].name.to_lower()
 
 
-## What `id` holds, laid out by AreaLayout for its type.
+## What `id` holds, laid out by AreaLayout for its type on its own cells,
+## each cell named as a spot: Vector3i(id, k, r).
 func layout(id: int) -> Dictionary:
 	if _layouts_for != version:
 		_layouts_for = version
 		_layouts.clear()
+		_centres.clear()
 	if id not in _layouts:
 		var area: Dictionary = list[id]
-		match kind_of(area):
-			"yard_block":
-				_layouts[id] = AreaLayout.yard_block(area, depth_of(area))
-			"quay_apron":
-				_layouts[id] = AreaLayout.quay_apron(area, depth_of(area))
-			"gate":
-				_layouts[id] = AreaLayout.gate(area, depth_of(area))
-			"parking":
-				_layouts[id] = AreaLayout.parking(area)
-			_:
-				_layouts[id] = {}
+		var present := {}
+		for cell: Dictionary in shape(id).cells:
+			present[Vector2i(cell.k, cell.r)] = true
+		_layouts[id] = _as_spots(id, AreaLayout.local(kind_of(area), area.columns, depth_of(area), present))
 	return _layouts[id]
+
+
+## `part` (a layout or any part of one) with every local cell Vector2i(k, r)
+## named as the spot Vector3i(`id`, k, r).
+static func _as_spots(id: int, part: Variant) -> Variant:
+	if part is Vector2i:
+		return Vector3i(id, part.x, part.y)
+	if part is Dictionary:
+		var found := {}
+		for key: Variant in part:
+			found[key] = _as_spots(id, part[key])
+		return found
+	if part is Array:
+		var found := []
+		for item: Variant in part:
+			found.append(_as_spots(id, item))
+		return found
+	return part
+
+
+## Where spot `spot` is: the middle of area spot.x's cell (k, r) =
+## (spot.y, spot.z), or, for area 0, of road grid cell (spot.y, spot.z).
+func centre(spot: Vector3i) -> Vector2:
+	if spot.x == 0:
+		return Vector2(spot.y, spot.z) + Vector2(0.5, 0.5)
+	if _layouts_for != version:
+		layout(spot.x)
+	if spot.x not in _centres:
+		var found := {}
+		for cell: Dictionary in shape(spot.x).cells:
+			found[Vector2i(cell.k, cell.r)] = cell.centre
+		_centres[spot.x] = found
+	return _centres[spot.x][Vector2i(spot.y, spot.z)]
+
+
+## The spot whose middle lies in grid cell `cell`: an area's cell there,
+## else the road cell itself.
+func spot_in(cell: Vector2i) -> Vector3i:
+	var id := area_at(cell)
+	if id != 0:
+		for found: Dictionary in shape(id).cells:
+			if Vector2i(found.centre.floor()) == cell:
+				return Vector3i(id, found.k, found.r)
+	return Vector3i(0, cell.x, cell.y)
 
 
 ## The area covering `cell`, or 0.
