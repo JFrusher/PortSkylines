@@ -27,6 +27,8 @@ Placed after M9 and before events (now M11), as the developer chose on
 | Lane changes | **Anywhere but junctions** and their approaches, as today. |
 | Areas on bends | **A minimum radius per area type, in the data** (e.g. 30 m for yard blocks). Straight areas are always fine. |
 | Following distance | **A standstill gap (2 m) plus about one second of travel** at the current speed, in the data. |
+| Vehicle lengths | **Real lengths, in the data:** lorries 16.5 m, tractors with a chassis 15 m. Queues grow about four times longer than today's one-cell vehicles, so road, buffer and gate capacity matter more; a balance pass follows. |
+| Highway | **A highway road type** (2+2, 80 km/h) for the road to the site's edge. |
 | Grid snap default | **Off**, CS-style. The grid is a toggle. |
 | Code | **GDScript first;** only hot spots that are measured move to native code. |
 | Extras | **Length, cost and angle tooltip** while drawing; **parallel snapping**; **roundabouts**; **Move It-style editing** of built roads' nodes and control points. |
@@ -51,6 +53,15 @@ tools.
    - **6c. Areas store their shape (save v39).** Old saves migrate; bays, slots and stacks are laid out on the local cells. Test: every fixture loads and yards work as before.
    - **6d. Water and terminal paint** are read at each cell's centre. Test: today's coast and terminal tests pass.
 7. **Stacks, slots and machines on curved areas.** Bays follow the area's rows; machines travel along them. Test: a yard block on a bend works a ship as one on a straight road does.
+
+### Order after 6c-1 (1 Nov 2026)
+
+Area layouts can't leave the global grid while vehicles drive cell to cell on it, so continuous traffic (step 8) comes next, before 6c-2, 6b, 6d and 7. Today's lane graph is grid geometry throughout (junctions crossed cell by cell, area flow and slots by grid steps), so the new network is built beside it from steps 1-4's curves and switched to in one tested step:
+
+- **8a. Lane network.** Pieces: each lane's curve, trimmed at junctions, and each connection curve across them; routing over pieces. Standalone, with its own tests.
+- **8b. Continuous traffic.** Vehicles hold a piece, a distance along it and a speed; they keep the standstill gap plus about a second of travel behind the one ahead, book a junction's box whole before entering, and drive at the lower of the road's speed limit (in the data) and their own. Standalone, with its own tests.
+- **8c. Area driveways and slots as pieces.**
+- **8d. The switch.** The sim's vehicles, trains, signals and areas move onto the network and traffic; LaneGraph and LaneTraffic go. Save v40. Test: every behaviour test passes.
 
 ### Traffic
 8. **Continuous movement.** A vehicle has a lane, a distance along it and a speed. It keeps the data's gap behind the vehicle ahead, slows for a curve by its radius, and slows into junctions. This replaces one vehicle per cell. Test: a queue holds its gap; a vehicle on a tight bend is slower than on a straight.
