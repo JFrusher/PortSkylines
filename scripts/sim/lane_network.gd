@@ -10,8 +10,16 @@ extends RefCounted
 ## "length": cells; "segment": its road, or 0 for a connection; "lane": its
 ## lane's index across the road, or -1; "next": the piece ids it leads into;
 ## "lorries": whether lorries may use it; "node": the node a connection
-## crosses, or 0}.
+## crosses, or 0; "kmh": its speed limit, a connection's the lower of the
+## two roads it joins}.
 var pieces := {}
+## Connection piece -> the connection pieces at its node that cross it or
+## come within CLEAR cells of it: a vehicle may take one only while none of
+## its conflicts is in use.
+var _conflicts := {}
+## How near, in cells, two connections may pass without conflicting: two
+## lanes side by side, a cell apart, don't.
+const CLEAR := 0.9
 var _next_id := 1
 ## Roads within this many degrees of straight on carry on through a node of
 ## two with no junction between them.
@@ -32,7 +40,7 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 			var points := _along(curve, lanes[k].offset, start, stop)
 			if not lanes[k].forward:
 				points.reverse()
-			lane_pieces[[segment, k]] = _add(points, segment, k, road.lorries, 0)
+			lane_pieces[[segment, k]] = _add(points, segment, k, road.lorries, 0, road.speed_kmh)
 	for node: int in arms_at:
 		var arms: Array[Dictionary] = arms_at[node]
 		var pairs: Array = []
@@ -47,6 +55,12 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 			var into: Dictionary = arms[pair[0][0]]
 			var out: Dictionary = arms[pair[1][0]]
 			_join(lane_pieces[[into.segment, _segment_lane(into, pair[0][1])]], lane_pieces[[out.segment, _segment_lane(out, pair[1][1])]], node, arms.size() == 1)
+	_find_conflicts()
+
+
+## The connection pieces that conflict with connection `piece`.
+func conflicts(piece: int) -> Array:
+	return _conflicts.get(piece, [])
 
 
 ## The pieces along a route from piece `from` to piece `to`, both included,
@@ -166,18 +180,43 @@ func _join(into: int, out: int, node: int, dead_end: bool) -> void:
 	var away := _direction(pieces[out].points, false)
 	var control := (start + end) / 2.0 + heading * start.distance_to(end) if dead_end else RoadJunction._control(start, heading, end, away)
 	var curve := RoadCurve.new(start, control, end)
-	var id := _add(_along(curve, 0.0, 0.0, curve.length), 0, -1, pieces[into].lorries and pieces[out].lorries, node)
+	var id := _add(_along(curve, 0.0, 0.0, curve.length), 0, -1, pieces[into].lorries and pieces[out].lorries, node, minf(pieces[into].kmh, pieces[out].kmh))
 	pieces[into].next.append(id)
 	pieces[id].next.append(out)
 
 
-func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, node: int) -> int:
+func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, node: int, kmh: float) -> int:
 	var total := 0.0
 	for i in range(1, points.size()):
 		total += points[i - 1].distance_to(points[i])
-	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "node": node}
+	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "node": node, "kmh": kmh}
 	_next_id += 1
 	return _next_id - 1
+
+
+## Pairs every two connections at a node that cross or pass within CLEAR.
+func _find_conflicts() -> void:
+	var at := {}  # node -> its connection pieces
+	for id: int in pieces:
+		if pieces[id].node != 0:
+			at.get_or_add(pieces[id].node, []).append(id)
+	for node: int in at:
+		var links: Array = at[node]
+		for i in links.size():
+			for j in range(i + 1, links.size()):
+				if _near(pieces[links[i]].points, pieces[links[j]].points):
+					_conflicts.get_or_add(links[i], []).append(links[j])
+					_conflicts.get_or_add(links[j], []).append(links[i])
+
+
+## Whether two polylines cross or pass within CLEAR cells of each other.
+static func _near(one: PackedVector2Array, two: PackedVector2Array) -> bool:
+	for i in range(1, one.size()):
+		for j in range(1, two.size()):
+			var closest := Geometry2D.get_closest_points_between_segments(one[i - 1], one[i], two[j - 1], two[j])
+			if closest[0].distance_to(closest[1]) < CLEAR:
+				return true
+	return false
 
 
 ## Points along `curve` offset `offset` cells right, from `start` to `stop`

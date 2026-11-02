@@ -46,7 +46,12 @@ const SCHEMA := {
 	# delays every route_epoch_seconds, dropping every kept route.
 	# Signals: each phase is green signal_green_seconds by default, which the
 	# player sets between min and max; a stop sign stands stop_seconds.
-	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT, "signal_green_seconds": TYPE_FLOAT, "min_green_seconds": TYPE_FLOAT, "max_green_seconds": TYPE_FLOAT, "stop_seconds": TYPE_FLOAT},
+	# Continuous traffic (M10): vehicles keep standstill_gap_m plus
+	# headway_seconds of travel behind the one ahead, speed up and brake at
+	# accel and decel (m/s²), take a curve no faster than lateral_accel (m/s²)
+	# allows, and are lorry_m and tractor_m long.
+	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT, "signal_green_seconds": TYPE_FLOAT, "min_green_seconds": TYPE_FLOAT, "max_green_seconds": TYPE_FLOAT, "stop_seconds": TYPE_FLOAT,
+		"standstill_gap_m": TYPE_FLOAT, "headway_seconds": TYPE_FLOAT, "accel": TYPE_FLOAT, "decel": TYPE_FLOAT, "lateral_accel": TYPE_FLOAT, "lorry_m": TYPE_FLOAT, "tractor_m": TYPE_FLOAT},
 	# Empties: return_share of imports come back as empties return_days after
 	# leaving, the rest going to inland depots; one
 	# turned away for want of room costs its line `refused` reputation; one
@@ -144,7 +149,7 @@ const SCHEMA := {
 	# Roads meeting at a node must part by at least min_angle degrees; each is
 	# trimmed back to clear its neighbours' edges, plus corner_cells.
 	"junctions": {"min_angle": TYPE_FLOAT, "corner_cells": TYPE_FLOAT},
-	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
+	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "speed_kmh": TYPE_FLOAT}},
 	# Areas dragged along a road edge: how deep they reach from the road and
 	# their shortest length, in 4 m cells, and cost and daily upkeep per cell.
 	"area_types": {"*": {"name": TYPE_STRING, "kind": TYPE_STRING, "depth": TYPE_INT, "max_depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},

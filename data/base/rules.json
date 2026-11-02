@@ -60,7 +60,7 @@
 		"price_per_kwh": 0.15,
 		"peak_charge_per_kw": 1.5
 	},
-	"traffic": {"epoch_seconds": 10.0, "smoothing": 0.3, "route_epoch_seconds": 60.0, "signal_green_seconds": 20.0, "min_green_seconds": 5.0, "max_green_seconds": 120.0, "stop_seconds": 2.0},
+	"traffic": {"epoch_seconds": 10.0, "smoothing": 0.3, "route_epoch_seconds": 60.0, "signal_green_seconds": 20.0, "min_green_seconds": 5.0, "max_green_seconds": 120.0, "stop_seconds": 2.0, "standstill_gap_m": 2.0, "headway_seconds": 1.0, "accel": 1.5, "decel": 3.0, "lateral_accel": 2.0, "lorry_m": 16.5, "tractor_m": 15.0},
 	"empties": {"return_share": 0.5, "return_days": 3.0, "refused": -0.05, "stuffing_hours": 12.0, "keep": 50, "max_per_call": 80, "price_factor": 0.5},
 	"storage": {
 		"free_days": 2.0,
