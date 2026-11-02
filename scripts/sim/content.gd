@@ -148,8 +148,11 @@ const SCHEMA := {
 	# Roads the player draws: lanes each way along the drawn direction, whether
 	# lorries may use it (tractors and AGVs always may), and cost and daily upkeep per 4 m cell.
 	# Roads meeting at a node must part by at least min_angle degrees; each is
-	# trimmed back to clear its neighbours' edges, plus corner_cells.
-	"junctions": {"min_angle": TYPE_FLOAT, "corner_cells": TYPE_FLOAT},
+	# trimmed back to clear its neighbours' edges, plus corner_cells. Lanes
+	# beside one running the same way change over lane_change_cells at a
+	# road's middle, where it leaves lane_change_clear_cells each side (the
+	# longest vehicle and its standstill gap) clear of the next stop line.
+	"junctions": {"min_angle": TYPE_FLOAT, "corner_cells": TYPE_FLOAT, "lane_change_cells": TYPE_FLOAT, "lane_change_clear_cells": TYPE_FLOAT},
 	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "speed_kmh": TYPE_FLOAT}},
 	# Areas dragged along a road edge: how deep they reach from the road and
 	# their shortest length, in 4 m cells, and cost and daily upkeep per cell.

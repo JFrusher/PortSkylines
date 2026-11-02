@@ -6,5 +6,5 @@
 		"highway": {"name": "Highway", "forward": 2, "backward": 2, "lorries": true, "cost_per_cell": 60, "upkeep_per_cell": 6.0, "speed_kmh": 80.0},
 		"tractor_lane": {"name": "Tractor lane", "forward": 1, "backward": 1, "lorries": false, "cost_per_cell": 10, "upkeep_per_cell": 1.0, "speed_kmh": 25.0}
 	},
-	"junctions": {"min_angle": 30.0, "corner_cells": 1.0}
+	"junctions": {"min_angle": 30.0, "corner_cells": 1.0, "lane_change_cells": 4.0, "lane_change_clear_cells": 5.0}
 }

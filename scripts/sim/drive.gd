@@ -218,7 +218,7 @@ static func junction_at(sim: PortSim, cell: Vector2i) -> Vector2i:
 	_refresh(sim)
 	for id: int in sim.network.pieces:
 		var piece: Dictionary = sim.network.pieces[id]
-		if piece.node != 0 and piece.points.size() > 0 and Array(piece.points).any(func(p: Vector2) -> bool: return Vector2i(p.floor()) == cell):
+		if piece.node > 0 and piece.points.size() > 0 and Array(piece.points).any(func(p: Vector2) -> bool: return Vector2i(p.floor()) == cell):
 			return sim.roads.nodes[piece.node]
 	return Grid.NONE
 

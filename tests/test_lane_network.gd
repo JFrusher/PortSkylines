@@ -67,7 +67,7 @@ func _test_a_straight_road() -> void:
 
 ## A 2+2 road east-west with a 2+2 stem south from its middle: coming in from
 ## the west, the right lane turns south; the left lane may not, so its way
-## south goes on east and turns back.
+## south changes into the right lane first (step 9), no further for it.
 func _test_a_t_junction() -> void:
 	var sim := _roads([[Vector2i(100, 250), Vector2i(160, 250), "terminal_2_2"], [Vector2i(130, 250), Vector2i(130, 290), "terminal_2_2"]])
 	var network := LaneNetwork.new(sim.roads, sim.rules.junctions)
@@ -75,12 +75,14 @@ func _test_a_t_junction() -> void:
 	# Eastbound lanes run 0.5 and 1.5 cells south of the line; the right one is further out.
 	var left := _piece_at(network, Vector2(110, 250.5))
 	var right := _piece_at(network, Vector2(110, 251.5))
-	var south := _piece_at(network, Vector2(129.5, 280))
+	var south := _piece_at(network, Vector2(128.5, 280))  # the stem's outer lane, where a right turn arrives
 	_expect([left != 0, right != 0, south != 0], [true, true, true], "the lanes are found")
+	var kinds := func(route: Array) -> Array: return route.filter(func(piece: int) -> bool: return network.pieces[piece].node != 0).map(func(piece: int) -> String: return "turn" if network.pieces[piece].node > 0 else "change")
 	var turning := network.route(right, south)
-	_expect(turning.size(), 3, "the right lane turns south through one connection")
-	var round := network.route(left, south)
-	_expect(network.length(round) > network.length(turning) + 20.0, true, "the left lane goes round (%.0f cells against %.0f)" % [network.length(round), network.length(turning)])
+	_expect(kinds.call(turning), ["turn"], "the right lane turns south through one connection")
+	var changing := network.route(left, south)
+	_expect(kinds.call(changing), ["change", "turn"], "the left lane changes lane, then turns")
+	_expect(network.length(changing) < network.length(turning) + 1.0, true, "no further for it (%.1f cells against %.1f)" % [network.length(changing), network.length(turning)])
 
 
 ## A 2+2 road bending a right angle at a node with no other road: each

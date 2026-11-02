@@ -114,8 +114,10 @@ func _test_crossing_traffic_takes_turns() -> void:
 	var routes: Array = []
 	for pair: Array in [[Vector2(110, 251.5), Vector2(150, 251.5)], [Vector2(128.5, 230), Vector2(128.5, 270)]]:
 		routes.append(network.route(_piece_at(network, pair[0]), _piece_at(network, pair[1])))
-	_expect(routes.all(func(r: Array) -> bool: return r.size() == 3), true, "each stream goes straight over")
-	var crossing: Array = [routes[0][1], routes[1][1]]
+	# Each crosses the junction by one connection, changing no lane.
+	var crossing: Array = routes.map(func(r: Array) -> Array: return r.filter(func(piece: int) -> bool: return network.pieces[piece].node != 0))
+	_expect(crossing.all(func(c: Array) -> bool: return c.size() == 1 and network.pieces[c[0]].node > 0), true, "each stream goes straight over")
+	crossing = crossing.map(func(c: Array) -> int: return c[0])
 	_expect(crossing[1] in network.conflicts(crossing[0]), true, "the two straight-over connections cross")
 	var next_id := 1
 	var both := 0

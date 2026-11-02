@@ -53,12 +53,13 @@ func _test_track_is_its_own_graph() -> void:
 
 func _test_level_crossing() -> void:
 	var sim := _port()
-	sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)})
+	# East of the road's middle, where its lanes change (step 9), so a lane piece runs on through it.
+	sim.apply({"op": "build_rail", "from": Vector2i(220, 60), "to": Vector2i(220, 140)})
 	var crossing := Drive.crossings(sim)
 	_expect(crossing.size(), 4, "the crossing is the road's four lane cells under the track")
 	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.cells(sim.rails.segments.keys()[0])), true, "each lies on the track")
 	# Booked by a train, the crossing holds a lorry back until it is freed.
-	var lorry := Vehicle.new(1, "lorry", [Vector3i(0, 190, 100)] as Array[Vector3i])
+	var lorry := Vehicle.new(1, "lorry", [Vector3i(0, 210, 100)] as Array[Vector3i])
 	_expect(Drive.place(sim, lorry), true, "a lorry waits west of the crossing")
 	# Placed, it drives on to its lane's end, past the crossing.
 	_expect(Drive.rebook(sim, -1, crossing), true, "a train books the crossing")

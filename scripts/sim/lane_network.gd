@@ -10,7 +10,7 @@ extends RefCounted
 ## "length": cells; "segment": its road, or 0 for a connection; "lane": its
 ## lane's index across the road, or -1; "next": the piece ids it leads into;
 ## "lorries": whether lorries may use it; "node": the node a connection
-## crosses, or 0; "kmh": its speed limit, a connection's the lower of the
+## crosses (minus its road's segment for a lane change), or 0; "kmh": its speed limit, a connection's the lower of the
 ## two roads it joins; "area": the area it is inside, or 0; "slot":
 ## Vector2i(area, slot) of the handover slot it is in, or (-1, -1)}.
 var pieces := {}
@@ -50,18 +50,41 @@ const STRAIGHT_ON := 10.0
 func _init(net: RoadNet, rules: Dictionary) -> void:
 	var arms_at := _arms(net)
 	var trims := _trims(arms_at, rules)
-	var lane_pieces := {}  # [segment, lane] -> piece id
+	var lane_pieces := {}  # [segment, lane] -> its last piece
+	var lane_starts := {}  # [segment, lane] -> its first piece
 	for segment: int in net.segments:
 		var curve := net.curve(segment)
 		var road: Dictionary = net.types[net.segments[segment].type]
 		var start: float = trims[[segment, "a"]]
 		var stop: float = curve.length - trims[[segment, "b"]]
 		var lanes := RoadCurve.lanes(road)
+		# A lane beside one running the same way is cut either side of a
+		# stretch at the road's middle where vehicles change lane; a road
+		# without room for the longest vehicle clear of it at either end has none.
+		var middle := (start + stop) / 2.0
+		var change: float = rules.lane_change_cells
+		var cuts: Array = [start, middle - change / 2.0, middle + change / 2.0, stop] if stop - start >= change + 2.0 * rules.lane_change_clear_cells else [start, stop]
+		var parts := {}  # lane -> its pieces in driving order
 		for k in lanes.size():
-			var points := _along(curve, lanes[k].offset, start, stop)
+			var same := func(j: int) -> bool: return j >= 0 and j < lanes.size() and lanes[j].forward == lanes[k].forward
+			var at: Array = cuts if same.call(k - 1) or same.call(k + 1) else [start, stop]
+			var made: Array[int] = []
+			for c in range(1, at.size()):
+				var points := _along(curve, lanes[k].offset, at[c - 1], at[c])
+				if not lanes[k].forward:
+					points.reverse()
+				made.append(_add(points, segment, k, road.lorries, 0, road.speed_kmh))
 			if not lanes[k].forward:
-				points.reverse()
-			lane_pieces[[segment, k]] = _add(points, segment, k, road.lorries, 0, road.speed_kmh)
+				made.reverse()
+			for c in range(1, made.size()):
+				pieces[made[c - 1]].next.append(made[c])
+			parts[k] = made
+			lane_starts[[segment, k]] = made[0]
+			lane_pieces[[segment, k]] = made[-1]
+		for k in range(1, lanes.size()):
+			if lanes[k].forward == lanes[k - 1].forward and parts[k].size() == 3:
+				_change(parts[k - 1], parts[k], -segment)
+				_change(parts[k], parts[k - 1], -segment)
 	for node: int in arms_at:
 		if arms_at[node].size() < 3:
 			continue
@@ -88,7 +111,7 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 		for pair: Array in pairs:
 			var into: Dictionary = arms[pair[0][0]]
 			var out: Dictionary = arms[pair[1][0]]
-			_join(lane_pieces[[into.segment, _segment_lane(into, pair[0][1])]], lane_pieces[[out.segment, _segment_lane(out, pair[1][1])]], node, arms.size() == 1)
+			_join(lane_pieces[[into.segment, _segment_lane(into, pair[0][1])]], lane_starts[[out.segment, _segment_lane(out, pair[1][1])]], node, arms.size() == 1)
 	_find_conflicts()
 
 
@@ -396,7 +419,8 @@ func point_along(id: int, s: float) -> Array[Vector2]:
 
 ## [the piece a lorry (`lorry`) or a tractor may use nearest `position`,
 ## how far along it that nearest point is], or [0, 0.0] with none. Of pieces
-## meeting there it takes the one that ends there, so every way on is open.
+## meeting there it takes a road lane over a connection, then the one that
+## ends there, so every way on is open.
 func nearest(position: Vector2, lorry: bool) -> Array:
 	if _cells.is_empty():
 		_index_cells()
@@ -415,7 +439,9 @@ func nearest(position: Vector2, lorry: bool) -> Array:
 				var points: PackedVector2Array = pieces[id].points
 				var at := Geometry2D.get_closest_point_to_segment(position, points[entry[1] - 1], points[entry[1]])
 				var s: float = entry[2] + points[entry[1] - 1].distance_to(at)
-				if at.distance_to(position) < closest - 0.001 or (at.distance_to(position) < closest + 0.001 and s > best[1]):
+				# On a tie a road lane beats a connection (a lane change ends on a lane), then the one ending there.
+				var lane := int(pieces[id].segment != 0) - int(best[0] != 0 and pieces[best[0]].segment != 0)
+				if at.distance_to(position) < closest - 0.001 or (at.distance_to(position) < closest + 0.001 and (lane > 0 or (lane == 0 and s > best[1]))):
 					closest = minf(closest, at.distance_to(position))
 					best = [id, minf(s, pieces[id].length)]
 		r += 1
@@ -572,6 +598,18 @@ func _join(into: int, out: int, node: int, dead_end: bool) -> void:
 	var id := _add(_along(curve, 0.0, 0.0, curve.length), 0, -1, pieces[into].lorries and pieces[out].lorries, node, minf(pieces[into].kmh, pieces[out].kmh))
 	pieces[into].next.append(id)
 	pieces[id].next.append(out)
+
+
+## A lane change from lane `from`'s first piece to lane `to`'s last (each
+## cut in three), straight across the stretch between: a connection at
+## `node`, a road's own (minus its segment), booked as a junction's are.
+func _change(from: Array[int], to: Array[int], node: int) -> void:
+	var start: Vector2 = pieces[from[0]].points[-1]
+	var end: Vector2 = pieces[to[2]].points[0]
+	var curve := RoadCurve.new(start, (start + end) / 2.0, end)
+	var id := _add(_along(curve, 0.0, 0.0, curve.length), 0, -1, pieces[from[0]].lorries, node, pieces[from[0]].kmh)
+	pieces[from[0]].next.append(id)
+	pieces[id].next.append(to[2])
 
 
 func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, node: int, kmh: float) -> int:
