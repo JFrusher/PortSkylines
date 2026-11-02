@@ -19,6 +19,12 @@ var pieces := {}
 ## its conflicts is in use.
 var _conflicts := {}
 const NO_SLOT := Vector2i(-1, -1)
+## Junctions of three or more roads, by their grid point: each arm (the way
+## out along a road, rounded to a grid step, as today's) -> the lane pieces
+## arriving by it. Signals and signs are kept by these.
+var _junctions := {}
+var _arm_of := {}  # arriving lane piece -> [junction point, arm]
+var _node_at := {}  # junction point -> node
 ## How near, in cells, two connections may pass without conflicting: two
 ## lanes side by side, a cell apart, don't.
 const CLEAR := 0.9
@@ -44,6 +50,19 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 				points.reverse()
 			lane_pieces[[segment, k]] = _add(points, segment, k, road.lorries, 0, road.speed_kmh)
 	for node: int in arms_at:
+		if arms_at[node].size() < 3:
+			continue
+		var point: Vector2i = net.nodes[node]
+		_node_at[point] = node
+		for arm: Dictionary in arms_at[node]:
+			var way := Vector2i(arm.direction.round())
+			var lanes := RoadCurve.lanes(arm.road)
+			for k in lanes.size():
+				if not lanes[k].forward:
+					var piece: int = lane_pieces[[arm.segment, _segment_lane(arm, k)]]
+					_junctions.get_or_add(point, {}).get_or_add(way, []).append(piece)
+					_arm_of[piece] = [point, way]
+	for node: int in arms_at:
 		var arms: Array[Dictionary] = arms_at[node]
 		var pairs: Array = []
 		if arms.size() == 1:
@@ -58,6 +77,29 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 			var out: Dictionary = arms[pair[1][0]]
 			_join(lane_pieces[[into.segment, _segment_lane(into, pair[0][1])]], lane_pieces[[out.segment, _segment_lane(out, pair[1][1])]], node, arms.size() == 1)
 	_find_conflicts()
+
+
+## Junction `point`'s arms, sorted so they come in the same order every
+## time; [] when it is no junction.
+func arms(point: Vector2i) -> Array:
+	var found: Array = _junctions.get(point, {}).keys()
+	found.sort()
+	return found
+
+
+## The lane pieces arriving at junction `point` by arm `arm`.
+func approach(point: Vector2i, arm: Vector2i) -> Array:
+	return _junctions.get(point, {}).get(arm, [])
+
+
+## [junction point, arm] of a lane piece arriving at a junction, or [].
+func arm_of(piece: int) -> Array:
+	return _arm_of.get(piece, [])
+
+
+## The node at junction `point`, or 0.
+func node_at(point: Vector2i) -> int:
+	return _node_at.get(point, 0)
 
 
 ## The connection pieces that conflict with connection `piece`.

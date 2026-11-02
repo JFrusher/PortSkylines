@@ -53,7 +53,7 @@ func _cells(metres: float) -> float:
 ## all stop there in a queue, each the standstill gap behind the one ahead.
 func _test_a_queue_stops_at_the_standstill_gap() -> void:
 	var network := _network([[Vector2i(100, 250), Vector2i(160, 250), "terminal_1_1"]])
-	var traffic := Traffic.new(network, _rules)
+	var traffic := Traffic.new(network, _rules, Junctions.new(_rules.traffic))
 	var east := _piece_at(network, Vector2(130, 250.5))
 	var placed := 0
 	for i in roundi(120.0 / STEP):
@@ -73,7 +73,7 @@ func _test_a_queue_stops_at_the_standstill_gap() -> void:
 ## own higher top speed... unless its own is lower.
 func _test_cars_keep_to_the_limit() -> void:
 	var network := _network([[Vector2i(100, 250), Vector2i(199, 250), "terminal_1_1"]])
-	var traffic := Traffic.new(network, _rules)
+	var traffic := Traffic.new(network, _rules, Junctions.new(_rules.traffic))
 	var east := _piece_at(network, Vector2(130, 250.5))
 	var limit: float = _cells(_rules.road_types.terminal_1_1.speed_kmh / 3.6)
 	traffic.place(1, [east] as Array[int], limit * 60.0 * Grid.CELL * 2.0, _rules.traffic.tractor_m)
@@ -88,7 +88,7 @@ func _test_cars_keep_to_the_limit() -> void:
 ## plus a second of travel behind it.
 func _test_a_follower_keeps_a_second_back() -> void:
 	var network := _network([[Vector2i(100, 250), Vector2i(380, 250), "terminal_1_1"]])
-	var traffic := Traffic.new(network, _rules)
+	var traffic := Traffic.new(network, _rules, Junctions.new(_rules.traffic))
 	var east := _piece_at(network, Vector2(130, 250.5))
 	var slow := 1.0  # cells a second
 	traffic.place(1, [east] as Array[int], slow * 60.0 * Grid.CELL, _rules.traffic.lorry_m)
@@ -110,7 +110,7 @@ func _test_a_follower_keeps_a_second_back() -> void:
 ## car gets across.
 func _test_crossing_traffic_takes_turns() -> void:
 	var network := _network([[Vector2i(100, 250), Vector2i(160, 250), "terminal_2_2"], [Vector2i(130, 220), Vector2i(130, 280), "terminal_2_2"]])
-	var traffic := Traffic.new(network, _rules)
+	var traffic := Traffic.new(network, _rules, Junctions.new(_rules.traffic))
 	var routes: Array = []
 	for pair: Array in [[Vector2(110, 251.5), Vector2(150, 251.5)], [Vector2(128.5, 230), Vector2(128.5, 270)]]:
 		routes.append(network.route(_piece_at(network, pair[0]), _piece_at(network, pair[1])))

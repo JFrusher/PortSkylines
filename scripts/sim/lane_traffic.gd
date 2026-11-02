@@ -135,6 +135,16 @@ func held_by(id: int) -> Array:
 	return _held.get(id, [])
 
 
+## Whether a vehicle other than `except` holds a cell of junction `point`'s box.
+func box_busy(point: Vector2i, except: int) -> bool:
+	return _lanes.box(point).any(func(cell: Vector2i) -> bool: return holder(cell) not in [0, except])
+
+
+## Whether any vehicle holds a cell of arm `arm`'s approach to junction `point`.
+func approach_busy(point: Vector2i, arm: Vector2i) -> bool:
+	return _lanes.approach(point, arm).any(func(cell: Vector2i) -> bool: return holder(cell) != 0)
+
+
 func holder(cell: Vector2i) -> int:
 	return _holders.get(cell, 0)
 
@@ -150,7 +160,7 @@ func _enter(vehicle: Vehicle, i: int) -> bool:
 		return false
 	# Going from a junction's approach into its box: the signals and signs there say whether it may.
 	var arm := _lanes.arm_at(vehicle.path[i - 1])
-	if not arm.is_empty() and _lanes.box_of(cell) == arm[0] and not junctions.may_enter(_lanes, self, arm[0], arm[1], vehicle):
+	if not arm.is_empty() and _lanes.box_of(cell) == arm[0] and not junctions.may_enter(_lanes, self, arm[0], arm[1], vehicle.id, vehicle.waited * SimClock.TICK_SECONDS):
 		return false
 	# Most cells are plain lane: hold just this one, as the general case below would.
 	if not _lanes.is_junction(cell):

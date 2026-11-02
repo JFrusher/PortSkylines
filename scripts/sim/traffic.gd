@@ -8,21 +8,32 @@ extends RefCounted
 ## can while no connection crossing it is booked.
 
 var network: LaneNetwork
+## Signals and priority signs, asked before a car books a connection.
+var junctions: Junctions
 var _rules: Dictionary
 ## Car id -> {"route": piece ids, "i": which of them it is on, "s": its
 ## front's distance along that piece (cells), "v": its speed (cells a
 ## second), "top": its own top speed (cells a second), "length": cells,
-## "booked": the connection it has booked, or 0}.
+## "booked": the connection it has booked, or 0, "waited": seconds it has
+## stood still}.
 var cars := {}
 var _on := {}  # piece -> ids of the cars whose fronts are on it
 var _booked := {}  # connection piece -> ids of the cars that have booked it
 var _limits := {}  # piece -> cells a second, its road's and its curve's
+## Level crossings: cells rail track crosses -> the train id booking them,
+## or 0; and where each piece runs into one: piece -> [[cell, distance]].
+var _crossings := {}
+var _crossing_on := {}
+## The least of a junction's approach, in cells, where a car giving way
+## looks for traffic; a moving car is on it from give_way_seconds out.
+const APPROACH := 3.0
 ## How many pieces ahead a car looks for a car or a stop.
 const LOOK_AHEAD := 4
 
 
-func _init(lanes: LaneNetwork, rules: Dictionary) -> void:
+func _init(lanes: LaneNetwork, rules: Dictionary, junction_rules: Junctions) -> void:
 	network = lanes
+	junctions = junction_rules
 	_rules = rules.traffic
 	for id: int in network.pieces:
 		_limits[id] = minf(network.pieces[id].kmh / 3.6 / Grid.CELL, _curve_limit(network.pieces[id].points))
@@ -36,7 +47,7 @@ func place(id: int, route: Array[int], metres_per_minute: float, metres: float) 
 	for other: int in _on.get(route[0], []):
 		if cars[other].s - cars[other].length < length + _gap():
 			return false
-	cars[id] = {"route": route, "i": 0, "s": length, "v": 0.0, "top": metres_per_minute / 60.0 / Grid.CELL, "length": length, "booked": 0}
+	cars[id] = {"route": route, "i": 0, "s": length, "v": 0.0, "top": metres_per_minute / 60.0 / Grid.CELL, "length": length, "booked": 0, "waited": 0.0}
 	_on.get_or_add(route[0], []).append(id)
 	return true
 
@@ -73,6 +84,7 @@ func _move(id: int, seconds: float) -> void:
 		limit = minf(limit, sqrt(pow(minf(car.top, _limits[car.route[car.i + 1]]), 2) + 2.0 * _decel() * left))
 	var v := minf(minf(car.v + _accel() * seconds, limit), allowed)
 	car.v = v
+	car.waited = car.waited + seconds if v == 0.0 else 0.0
 	_advance(id, minf(v * seconds, room))
 
 
@@ -85,8 +97,13 @@ func _ahead(id: int) -> Dictionary:
 	var distance: float = -car.s
 	for k in range(car.i, mini(car.i + LOOK_AHEAD, car.route.size())):
 		var piece: int = car.route[k]
-		if k > car.i and network.pieces[piece].node != 0 and car.booked != piece and not _book(id, piece):
+		# A connection is booked only once the car is near enough to need it:
+		# until then its stop line is just a far-off end of the room ahead.
+		if k > car.i and network.pieces[piece].node != 0 and car.booked != piece and (distance > _booking_distance(car) or not _book(id, piece)):
 			return {"distance": distance, "end": false}
+		for crossing: Array in _crossing_on.get(piece, []):
+			if _crossings[crossing[0]] != 0 and (k > car.i or crossing[1] > car.s):
+				return {"distance": distance + crossing[1], "end": false}
 		var nearest := INF
 		for other: int in _on.get(piece, []):
 			var rear: float = cars[other].s - cars[other].length
@@ -100,11 +117,20 @@ func _ahead(id: int) -> Dictionary:
 	return {"distance": distance, "end": false}
 
 
+## How near a stop line `car` must be to book the connection beyond it:
+## its braking distance, the standstill gap and a cell more.
+func _booking_distance(car: Dictionary) -> float:
+	return car.v * car.v / (2.0 * _decel()) + _gap() + 1.0
+
+
 ## Books connection `piece` for car `id` once it is near enough to need it
 ## and no connection crossing it is booked by another car; true if booked.
 func _book(id: int, piece: int) -> bool:
 	var car: Dictionary = cars[id]
 	if car.booked != 0:
+		return false
+	var arm := network.arm_of(car.route[car.i])
+	if not arm.is_empty() and not junctions.may_enter(network, self, arm[0], arm[1], id, car.waited):
 		return false
 	for other: int in network.conflicts(piece):
 		if _booked.get(other, []).any(func(c: int) -> bool: return c != id):
@@ -129,6 +155,77 @@ func _advance(id: int, distance: float) -> void:
 	if car.booked != 0 and car.route[car.i] != car.booked and car.route.find(car.booked) < car.i and car.s >= car.length:
 		_booked[car.booked].erase(id)
 		car.booked = 0
+
+
+## Whether a car other than `except` has booked, or is on, a connection
+## across junction `point`.
+func box_busy(point: Vector2i, except: int) -> bool:
+	var node := network.node_at(point)
+	for id: int in cars:
+		var car: Dictionary = cars[id]
+		if id != except and (car.booked != 0 and network.pieces[car.booked].node == node or network.pieces[car.route[car.i]].node == node):
+			return true
+	return false
+
+
+## Whether a car on arm `arm` will reach junction `point` within
+## give_way_seconds, or stands within APPROACH cells of it: a car giving way
+## waits for a gap that long, as in Cities: Skylines.
+func approach_busy(point: Vector2i, arm: Vector2i) -> bool:
+	for piece: int in network.approach(point, arm):
+		for id: int in _on.get(piece, []):
+			if network.pieces[piece].length - cars[id].s <= maxf(APPROACH, cars[id].v * _rules.give_way_seconds):
+				return true
+	return false
+
+
+## The cells where rail track crosses lanes: level crossings, each free.
+func set_crossings(cells: Array[Vector2i]) -> void:
+	_crossings.clear()
+	_crossing_on.clear()
+	for cell in cells:
+		_crossings[cell] = 0
+	for piece: int in network.pieces:
+		var points: PackedVector2Array = network.pieces[piece].points
+		var along := 0.0
+		var seen := {}
+		for i in points.size():
+			if i > 0:
+				along += points[i - 1].distance_to(points[i])
+			var cell := Vector2i(points[i].floor())
+			if cell in _crossings and cell not in seen:
+				seen[cell] = true
+				# A cell runs half a cell either side of a lane's point in it.
+				_crossing_on.get_or_add(piece, []).append([cell, maxf(0.0, along - 0.5)])
+
+
+## Books exactly crossing `cells` for train `id` (a negative id), letting go
+## of the rest it held, if no car is on any of them; else changes nothing.
+func rebook(id: int, cells: Array[Vector2i]) -> bool:
+	for cell in cells:
+		if _crossings.get(cell, 0) not in [0, id] or _car_on(cell):
+			return false
+	release(id)
+	for cell in cells:
+		_crossings[cell] = id
+	return true
+
+
+## Lets go of every crossing train `id` books.
+func release(id: int) -> void:
+	for cell: Vector2i in _crossings:
+		if _crossings[cell] == id:
+			_crossings[cell] = 0
+
+
+## Whether any car's length lies over crossing `cell`.
+func _car_on(cell: Vector2i) -> bool:
+	for id: int in cars:
+		var car: Dictionary = cars[id]
+		for crossing: Array in _crossing_on.get(car.route[car.i], []):
+			if crossing[0] == cell and crossing[1] <= car.s + 0.5 and crossing[1] + 1.5 >= car.s - car.length:
+				return true
+	return false
 
 
 ## The fastest a vehicle may take `points`, by their tightest turn.
