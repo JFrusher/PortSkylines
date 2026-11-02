@@ -52,17 +52,18 @@ func _test_level_crossing() -> void:
 	_expect(crossing.size(), 4, "the crossing is the road's four lane cells under the track")
 	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.cells(sim.rails.segments.keys()[0]) and sim.lanes.is_junction(c)), true, "each is in both graphs, and no vehicle stops on it")
 	# Booked by a train, the crossing holds a lorry back until it is freed.
-	var lorry := Vehicle.new(1, "lorry", sim.lanes.route(Vector2i(190, 100), Vector2i(210, 100), true))
-	_expect(sim.lane_traffic.place(lorry), true, "a lorry waits west of the crossing")
-	_expect(sim.lane_traffic.book(-1, crossing), true, "a train books the crossing")
+	var lorry := Vehicle.new(1, "lorry", [Vector2i(190, 100)] as Array[Vector2i])
+	_expect(Drive.place(sim, lorry), true, "a lorry waits west of the crossing")
+	# Placed, it drives on to its lane's end, past the crossing.
+	_expect(Drive.rebook(sim, -1, crossing), true, "a train books the crossing")
 	for i in 100:
-		sim.lane_traffic.advance(lorry, 5.0)
-	_expect(crossing.any(func(c: Vector2i) -> bool: return sim.lane_traffic.holder(c) == lorry.id), false, "no lorry is on the crossing while the train has it")
-	_expect(lorry.at_end(), false, "so the lorry is still short of it")
-	sim.lane_traffic.release(-1)
+		sim.traffic.tick(Drive.STEP)
+	_expect(crossing.has(Vector2i((Drive.where(sim, lorry) + Vector2(0.5, 0.5)).floor())), false, "no lorry is on the crossing while the train has it")
+	_expect(Drive.advance(sim, lorry, 0.0), false, "so the lorry is still short of it")
+	Drive.release(sim, -1)
 	for i in 100:
-		sim.lane_traffic.advance(lorry, 5.0)
-	_expect(lorry.at_end(), true, "once the train frees it, the lorry crosses")
+		sim.traffic.tick(Drive.STEP)
+	_expect(Drive.advance(sim, lorry, 0.0), true, "once the train frees it, the lorry crosses")
 
 
 ## An RMG block works wagons on the track running along all of its back edge.
@@ -213,9 +214,9 @@ func _test_trains_book_crossings() -> void:
 	var lorries_across := 0
 	for i in roundi(4 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
-		var train_has := crossing.filter(func(c: Vector2i) -> bool: return sim.lane_traffic.holder(c) < 0)
+		var train_has := crossing.filter(func(c: Vector2i) -> bool: return sim.traffic._crossings.get(c, 0) < 0)
 		for vehicle: Vehicle in sim.vehicles:
-			if vehicle.kind == "lorry" and vehicle.path[int(vehicle.t)] in crossing:
+			if vehicle.kind == "lorry" and Vector2i((Drive.where(sim, vehicle) + Vector2(0.5, 0.5)).floor()) in crossing:
 				lorries_across += 1
 				on_while_booked += 1 if not train_has.is_empty() else 0
 		booked_ticks += 1 if not train_has.is_empty() else 0

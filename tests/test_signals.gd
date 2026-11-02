@@ -149,4 +149,4 @@ func _test_inspect_and_commands() -> void:
 	_expect(sim.apply({"op": "set_sign", "point": point, "arm": Vector2i(1, 0), "sign": "stop"}), "", "the east arm gets a stop sign")
 	_expect(Inspect.describe(sim, picked)[-1], "From the east: stop", "and shows it")
 	var copy := PortSim.from_dict(sim.to_dict())
-	_expect(copy.lane_traffic.junctions.to_dict(), sim.lane_traffic.junctions.to_dict(), "signals and signs survive a save")
+	_expect(copy.junctions.to_dict(), sim.junctions.to_dict(), "signals and signs survive a save")

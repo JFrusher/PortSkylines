@@ -100,10 +100,19 @@ var _until_train := {}
 ## RailFlow.rail_blocks, kept for the area, road and rail versions in _rail_blocks_for; not saved.
 var _rail_blocks := {}
 var _rail_blocks_for := Vector3i(-1, -1, -1)
-## The area flow's state: who holds each lane cell, each area's handover
-## slots and queues, the yard machines and what each is carrying, and the
-## boxes stacked in each yard block (area id -> AreaStacks).
-var lane_traffic: LaneTraffic
+## Signals and priority signs at the junctions.
+var junctions: Junctions
+## The lane network built from the roads, areas and track, and the cars on
+## it, built again by Drive when those change (their versions in
+## _drive_for); and the delays routes weigh, per piece. Not saved: a loaded
+## game builds them from its vehicles.
+var network: LaneNetwork
+var traffic: Traffic
+var _drive_for := []
+var _delays := {}
+## The area flow's state: each area's handover slots and queues, the yard
+## machines and what each is carrying, and the boxes stacked in each yard
+## block (area id -> AreaStacks).
 var handovers: Handovers
 var machines: Machines
 var machine_jobs := {}
@@ -213,7 +222,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	map = rules.map
 	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
 	lanes.areas = areas
-	lane_traffic = LaneTraffic.new(lanes, Junctions.new(rules.traffic))
+	junctions = Junctions.new(rules.traffic)
 	handovers = Handovers.new(areas)
 	machines = Machines.new(rules.yard_gear)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
@@ -354,6 +363,7 @@ class Crane:
 
 ## Everything the sim needs to carry on exactly where it was, in plain types.
 func to_dict() -> Dictionary:
+	Drive.sync(self)
 	return {
 		"roads": roads.to_dict(),
 		"rails": rails.to_dict(),
@@ -417,7 +427,7 @@ func to_dict() -> Dictionary:
 		"bookings": bookings.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
-		"lane_traffic": lane_traffic.to_dict(),
+		"junctions": junctions.to_dict(),
 		"handovers": handovers.to_dict(),
 		"machines": machines.to_dict(),
 		"machine_jobs": machine_jobs.duplicate(true),
@@ -506,8 +516,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
 		sim._add_vehicle(Vehicle.from_dict(data))
-	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes, sim.rules.traffic)
-	Drive.weigh(sim)
+	sim.junctions = Junctions.from_dict(d.junctions, sim.rules.traffic)
 	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
 	sim.machine_jobs = d.machine_jobs.duplicate(true)

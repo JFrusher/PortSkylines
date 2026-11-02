@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 39
+const VERSION := 40
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -99,6 +99,21 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v38(data)
 	if data.version < 39:
 		data = _migrate_v39(data)
+	if data.version < 40:
+		data = _migrate_v40(data)
+	return data
+
+
+## v40 drives vehicles on the lane network: a vehicle keeps only the cell it
+## is in, and the signals and signs come out of the old lane traffic.
+static func _migrate_v40(data: Dictionary) -> Dictionary:
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.path = [vehicle.path[int(vehicle.t)]]
+		vehicle.t = 0.0
+		vehicle.prev_t = 0.0
+	data.sim.junctions = data.sim.lane_traffic.junctions
+	data.sim.erase("lane_traffic")
+	data.version = 40
 	return data
 
 
@@ -263,7 +278,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
 		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
-		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
+		"junctions": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
 	}):
 		return false
@@ -342,35 +357,21 @@ static func _valid_sim(data: Variant) -> bool:
 	return true
 
 
-## The area flow's state: vehicles, cells held by known vehicles, slots and
-## machines at known areas, stacks of known boxes.
+## The area flow's state: vehicles, the junctions' signals and signs,
+## slots and machines at known areas, stacks of known boxes.
 static func _valid_area_flow(data: Dictionary) -> bool:
-	var ids := {}
 	for vehicle: Variant in data.vehicles:
 		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, false):
 			return false
-		ids[vehicle.id] = true
-	# Trains hold level crossings under their id negated.
-	for train: Dictionary in data.trains:
-		ids[-train.id] = true
-	if not _has_fields(data.lane_traffic, {"held": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY, "junctions": TYPE_DICTIONARY}):
+	if not _has_fields(data.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY}):
 		return false
-	if not _has_fields(data.lane_traffic.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY}):
-		return false
-	for point: Variant in data.lane_traffic.junctions.signals:
-		var at: Variant = data.lane_traffic.junctions.signals[point]
+	for point: Variant in data.junctions.signals:
+		var at: Variant = data.junctions.signals[point]
 		if not (point is Vector2i and at is Dictionary and _has_fields(at, {"green": TYPE_ARRAY, "phase": TYPE_INT, "left": TYPE_FLOAT})):
 			return false
-	for point: Variant in data.lane_traffic.junctions.signs:
-		var arms: Variant = data.lane_traffic.junctions.signs[point]
+	for point: Variant in data.junctions.signs:
+		var arms: Variant = data.junctions.signs[point]
 		if not (point is Vector2i and arms is Dictionary and arms.keys().all(func(arm: Variant) -> bool: return arm is Vector2i) and arms.values().all(func(sign: Variant) -> bool: return sign in ["give_way", "stop"])):
-			return false
-	for id: Variant in data.lane_traffic.held:
-		if not (id in ids and data.lane_traffic.held[id] is Array and _all_cells(data.lane_traffic.held[id], true)):
-			return false
-	for counts: String in ["delays", "stuck", "entered"]:
-		var by_cell: Dictionary = data.lane_traffic[counts]
-		if not by_cell.keys().all(func(cell: Variant) -> bool: return cell is Vector2i) or not by_cell.values().all(func(n: Variant) -> bool: return n is int or n is float):
 			return false
 	for area: Variant in data.handovers:
 		var at: Variant = data.handovers[area]

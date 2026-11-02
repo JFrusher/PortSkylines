@@ -97,7 +97,7 @@ static func _run(sim: PortSim, train: Train) -> void:
 
 
 ## Moves the train's head to `to` cells along its path, booking every level
-## crossing its body will cover, and those just ahead, through LaneTraffic as
+## crossing its body will cover, and those just ahead, through Drive as
 ## the one way onto a crossing; with a vehicle on one, it waits where it is.
 # shortcut: trains book only level crossings, not track, so two trains could share a cell; book track blocks when lines get busy.
 static func _move(sim: PortSim, train: Train, to: float) -> bool:

@@ -662,7 +662,7 @@ func _test_inspect_each_entity() -> void:
 	_expect(Inspect.describe(sim, ship)[0], "%s feeder" % sim.contracts.name_of(ship.line), "a ship is named by line and class")
 	_expect(Inspect.pick(sim, apron.start + along * crane.along + apron.out * 4), crane, "a click between a crane's rails picks the crane")
 	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
-	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
+	_expect(Inspect.pick(sim, Vector2i(Drive.where(sim, vehicle).round())), vehicle, "a click on a vehicle picks it")
 	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
 	_expect(Inspect.describe(sim, {"area": 3}).slice(0, 3), ["Yard block", "Terminal 1", "Import block, worked by reach stackers"] as Array[String], "a yard block shows its rules")
 	sim.vehicles.erase(vehicle)

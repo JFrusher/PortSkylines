@@ -52,10 +52,10 @@ func _initialize() -> void:
 ## against JAM_SECONDS; Containers colours yard blocks by fill.
 func _test_info_views() -> void:
 	var sim := AreaPort.base(RandomPort.quick())
-	while sim.lane_traffic.delays().is_empty():
+	while Drive.delays(sim).is_empty():
 		sim.tick()
 	var shares := WorldView.info_shares(sim, HudDetails.GROUP_TRAFFIC)
-	var delays := sim.lane_traffic.delays()
+	var delays := Drive.delays(sim)
 	_expect(shares.size(), delays.size(), "each cell with a delay is coloured, and no other")
 	var cell: Vector2i = delays.keys()[0]
 	_expect(shares[[cell]], minf(delays[cell] / WorldView.JAM_SECONDS, 1.0), "by its delay against JAM_SECONDS")

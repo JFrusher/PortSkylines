@@ -30,9 +30,10 @@ func _port(gate_minutes: float, park: bool) -> PortSim:
 	rules.gate_levels.manual.minutes = gate_minutes
 	var sim := AreaPort.base(rules, "")
 	if park:
+		# Far enough short of the gate that the gate's queue of full-length lorries (M10) leaves its way in clear.
 		var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 		sim.creative = true
-		_expect(sim.apply({"op": "build_area", "type": "truck_park", "segment": east, "side": -1, "from": 330, "to": 389}), "", "a truck park is built before the gate")
+		_expect(sim.apply({"op": "build_area", "type": "truck_park", "segment": east, "side": -1, "from": 420, "to": 479}), "", "a truck park is built before the gate")
 		sim.creative = false
 	RandomPort.calls(sim, "feeder", 10, 45, 1)
 	return sim

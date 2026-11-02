@@ -29,6 +29,17 @@ var _node_at := {}  # junction point -> node
 ## lanes side by side, a cell apart, don't.
 const CLEAR := 0.9
 var _next_id := 1
+## Piece ids by where they end (_key), built on first use and dropped when
+## a piece is added or split.
+var _ends := {}
+## Each piece's segments by the cell their start is in: cell ->
+## [[piece, index of the segment's end point, distance along to its start]],
+## built on first use and dropped with _ends; with the cells they span.
+var _cells := {}
+var _span := Rect2i()
+## The longest a segment between two of a piece's points may be, in cells:
+## lanes are sampled every half cell, and an area's pieces step diagonally.
+const SEGMENT := 1.5
 ## Roads within this many degrees of straight on carry on through a node of
 ## two with no junction between them.
 const STRAIGHT_ON := 10.0
@@ -115,23 +126,31 @@ func conflicts(piece: int) -> Array:
 ## its length plus the cells its delay in `delays` (piece -> seconds) is
 ## worth at `speed` cells a second, so it goes round a jam that costs more.
 func route(from: int, to: int, lorry := false, delays := {}, speed := 1.0) -> Array[int]:
-	var areas := [pieces[from].area, pieces[to].area]
-	var slots := [pieces[from].slot, pieces[to].slot]
+	return route_to_any(from, [to] as Array[int], lorry, delays, speed)
+
+
+## route()'s way to whichever of `ends` is nearest by its weighing.
+func route_to_any(from: int, ends: Array[int], lorry := false, delays := {}, speed := 1.0) -> Array[int]:
+	var areas := [pieces[from].area]
+	var slots := [pieces[from].slot]
+	for end in ends:
+		areas.append(pieces[end].area)
+		slots.append(pieces[end].slot)
 	var cost := {from: 0.0}
 	var came := {}
 	var heap: Array = [[0.0, from]]
 	while not heap.is_empty():
 		var top: Array = _pop(heap)
 		var at: int = top[1]
-		if at == to:
-			var found: Array[int] = [to]
+		if at in ends:
+			var found: Array[int] = [at]
 			while found[0] != from:
 				found.push_front(came[found[0]])
 			return found
 		if top[0] > cost[at]:
 			continue
 		for next: int in pieces[at].next:
-			if next != to and (pieces[next].area != 0 and pieces[next].area not in areas or pieces[next].slot != NO_SLOT and pieces[next].slot not in slots):
+			if next not in ends and (pieces[next].area != 0 and pieces[next].area not in areas or pieces[next].slot != NO_SLOT and pieces[next].slot not in slots):
 				continue
 			if lorry and not pieces[next].lorries:
 				continue
@@ -205,19 +224,90 @@ func split_at(position: Vector2) -> int:
 			var rest := _add(after, piece.segment, piece.lane, piece.lorries, 0, piece.kmh)
 			pieces[rest].next = piece.next
 			piece.points = before
+			_ends.clear()
+			_cells.clear()
 			piece.length -= pieces[rest].length
 			piece.next = [rest] as Array[int]
 			return id
 	return 0
 
 
+## [the point `s` cells along piece `id`, the way it heads there].
+func point_along(id: int, s: float) -> Array[Vector2]:
+	var points: PackedVector2Array = pieces[id].points
+	var left := s
+	for i in range(1, points.size()):
+		var step := points[i - 1].distance_to(points[i])
+		if left <= step or i == points.size() - 1:
+			var f := clampf(left / step, 0.0, 1.0) if step > 0.0 else 0.0
+			return [points[i - 1].lerp(points[i], f), (points[i] - points[i - 1]).normalized()]
+		left -= step
+	return [points[-1], Vector2.ZERO]
+
+
+## [the piece a lorry (`lorry`) or a tractor may use nearest `position`,
+## how far along it that nearest point is], or [0, 0.0] with none. Of pieces
+## meeting there it takes the one that ends there, so every way on is open.
+func nearest(position: Vector2, lorry: bool) -> Array:
+	if _cells.is_empty():
+		_index_cells()
+	var best := [0, 0.0]
+	var closest := INF
+	var centre := Vector2i(position.floor())
+	# Rings of cells outwards, until no segment starting further out could be nearer.
+	var furthest := maxi(maxi(absi(centre.x - _span.position.x), absi(centre.x - _span.end.x)), maxi(absi(centre.y - _span.position.y), absi(centre.y - _span.end.y)))
+	var r := 0
+	while closest + SEGMENT + 1.0 > r and r <= furthest:
+		for cell in _ring(centre, r):
+			for entry: Array in _cells.get(cell, []):
+				var id: int = entry[0]
+				if lorry and not pieces[id].lorries:
+					continue
+				var points: PackedVector2Array = pieces[id].points
+				var at := Geometry2D.get_closest_point_to_segment(position, points[entry[1] - 1], points[entry[1]])
+				var s: float = entry[2] + points[entry[1] - 1].distance_to(at)
+				if at.distance_to(position) < closest - 0.001 or (at.distance_to(position) < closest + 0.001 and s > best[1]):
+					closest = minf(closest, at.distance_to(position))
+					best = [id, minf(s, pieces[id].length)]
+		r += 1
+	return best
+
+
+## Files every piece's segments under the cell its start is in.
+func _index_cells() -> void:
+	var first := true
+	for id: int in pieces:
+		var points: PackedVector2Array = pieces[id].points
+		var along := 0.0
+		for i in range(1, points.size()):
+			assert(points[i - 1].distance_to(points[i]) <= SEGMENT + 0.01, "piece %d's points are at most SEGMENT apart" % id)
+			var cell := Vector2i(points[i - 1].floor())
+			_cells.get_or_add(cell, []).append([id, i, along])
+			_span = Rect2i(cell, Vector2i.ONE) if first else _span.expand(cell)
+			first = false
+			along += points[i - 1].distance_to(points[i])
+
+
+## The cells `r` steps out from `centre`, round a square.
+static func _ring(centre: Vector2i, r: int) -> Array[Vector2i]:
+	if r == 0:
+		return [centre]
+	var found: Array[Vector2i] = []
+	for d in range(-r, r + 1):
+		found.append(centre + Vector2i(d, -r))
+		found.append(centre + Vector2i(d, r))
+	for d in range(-r + 1, r):
+		found.append(centre + Vector2i(-r, d))
+		found.append(centre + Vector2i(r, d))
+	return found
+
+
 ## The pieces that end at `position`.
 func ending_at(position: Vector2) -> Array[int]:
-	var found: Array[int] = []
-	for id: int in pieces:
-		if pieces[id].points[-1].distance_to(position) < 0.001:
-			found.append(id)
-	return found
+	if _ends.is_empty():
+		for id: int in pieces:
+			_ends.get_or_add(_key(pieces[id].points[-1]), [] as Array[int]).append(id)
+	return _ends.get(_key(position), [] as Array[int])
 
 
 ## How far a vehicle at the end of a route's first piece drives to the end
@@ -322,6 +412,8 @@ func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, no
 	var total := 0.0
 	for i in range(1, points.size()):
 		total += points[i - 1].distance_to(points[i])
+	_ends.clear()
+	_cells.clear()
 	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "node": node, "kmh": kmh, "area": 0, "slot": NO_SLOT}
 	_next_id += 1
 	return _next_id - 1

@@ -3,7 +3,7 @@ extends SceneTree
 ## traffic, as on today's cells (test_signals): a red holds a lorry until
 ## its phase comes round, a stop sign stops it for stop_seconds, a give-way
 ## waits while the other road's approach is busy, and a train's booking of
-## a crossing stops a lorry short of it.
+## a crossing stops a lorry short of it, and no lorry stops on one.
 ## godot --headless --script res://tests/test_traffic_junctions.gd
 
 const RandomPort := preload("res://tests/random_port.gd")
@@ -19,6 +19,9 @@ func _initialize() -> void:
 	_test_stop_stops()
 	_test_give_way_waits_for_the_approach()
 	_test_a_train_holds_a_lorry_back()
+	_test_no_lorry_stops_on_a_crossing()
+	_test_a_queue_at_a_booked_crossing()
+	_test_junctions_closer_than_a_lorry()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -119,11 +122,11 @@ func _cuts_in(sign: bool) -> bool:
 			var north := traffic.network.route(_piece_at(traffic.network, Vector2(119.5, 235)), _piece_at(traffic.network, Vector2(119.5, 265)))
 			if traffic.place(next_id, north, _rules.lorry_speed, _rules.traffic.lorry_m):
 				next_id += 1
-		var was: int = traffic.cars[1].booked
+		var was: int = traffic.cars[1].booked.size()
 		var busy := traffic.approach_busy(POINT, Vector2i(0, -1))
 		traffic.junctions.tick(traffic.network, traffic)
 		traffic.tick(STEP)
-		if was == 0 and traffic.cars[1].booked != 0 and busy:
+		if was == 0 and not traffic.cars[1].booked.is_empty() and busy:
 			cut = true
 	_expect(_across(traffic, 1), true, "the west lorry gets across (sign %s)" % sign)
 	return cut
@@ -144,3 +147,57 @@ func _test_a_train_holds_a_lorry_back() -> void:
 	traffic.release(-1)
 	_run(traffic, 20.0)
 	_expect(_across(traffic, 1), true, "and crosses once the train has gone")
+
+
+## Rail track across the east road at x = 110 and a lorry standing just past
+## it: one following stops short of the crossing, not on it, so a train can
+## always book it once the cars on it have gone.
+func _test_no_lorry_stops_on_a_crossing() -> void:
+	var traffic := _crossroads()
+	var crossing: Array[Vector2i] = [Vector2i(110, 249), Vector2i(110, 250)]
+	traffic.set_crossings(crossing)
+	_send(traffic, 1, true)
+	var piece: int = traffic.cars[1].route[0]
+	var start: Vector2 = traffic.network.pieces[piece].points[0]
+	var route: Array[int] = [piece]
+	var length: float = _rules.traffic.lorry_m / Grid.CELL
+	traffic.place_at(2, route, 112.0 + length - start.x, 0.0, length)
+	_run(traffic, 20.0)
+	var front: Vector2 = traffic.pose(1)[0]
+	_expect(front.x < 110.0, true, "the lorry waits short of the crossing (front at %s)" % front)
+	_expect(traffic.rebook(-1, crossing), true, "so a train can book it")
+
+
+## A lorry waits at a crossing a train has booked: the one behind it stops
+## behind it, not on it, though the crossing is further on.
+func _test_a_queue_at_a_booked_crossing() -> void:
+	var traffic := _crossroads()
+	var crossing: Array[Vector2i] = [Vector2i(115, 249), Vector2i(115, 250)]
+	traffic.set_crossings(crossing)
+	_expect(traffic.rebook(-1, crossing), true, "a train books the crossing")
+	_send(traffic, 1, true)
+	var piece: int = traffic.cars[1].route[0]
+	var start: Vector2 = traffic.network.pieces[piece].points[0]
+	var route: Array[int] = [piece]
+	var length: float = _rules.traffic.lorry_m / Grid.CELL
+	traffic.place_at(2, route, 110.0 - start.x, 0.0, length)
+	_run(traffic, 20.0)
+	var gap: float = traffic.pose(2)[0].x - length - traffic.pose(1)[0].x
+	_expect(gap >= 0.0, true, "the lorry behind stops behind the one ahead (gap %.2f cells)" % gap)
+
+
+## Two T-junctions 4 cells apart on the east road, closer than a lorry is
+## long: a lorry holds the first junction's connection until its rear is
+## clear, and books the second's meanwhile, so it gets through both.
+func _test_junctions_closer_than_a_lorry() -> void:
+	var sim := PortSim.new(0, RandomPort.strait(), true)
+	for road: Array in [[Vector2i(100, 250), Vector2i(140, 250)], [Vector2i(120, 230), Vector2i(120, 250)], [Vector2i(124, 250), Vector2i(124, 270)]]:
+		_expect(sim.apply({"op": "build_road", "from": road[0], "to": road[1], "type": "terminal_1_1"}), "", "a road is built")
+	var network := LaneNetwork.new(sim.roads, sim.rules.junctions)
+	var traffic := Traffic.new(network, _rules, Junctions.new(_rules.traffic))
+	var route := network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)))
+	var between: float = network.pieces[route[2]].length
+	_expect(between < _rules.traffic.lorry_m / Grid.CELL, true, "the lane between the junctions (%.2f cells) is shorter than a lorry" % between)
+	_expect(traffic.place(1, route, _rules.lorry_speed, _rules.traffic.lorry_m), true, "a lorry sets off east")
+	_run(traffic, 60.0)
+	_expect(traffic.arrived(1), true, "and gets through both junctions")

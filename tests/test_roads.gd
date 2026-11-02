@@ -853,7 +853,7 @@ func _test_lorry_gives_up() -> void:
 	sim.boxes[box].in = 0.0
 	# A parked tractor blocks the westbound lane between the entry and the gate.
 	var blocker := Vehicle.new(999, "tractor", [Vector2i(450, sim.site_entry().y - 1)] as Array[Vector2i])
-	sim.lane_traffic.place(blocker)
+	_expect(Drive.place(sim, blocker), true, "the blocker stands in the lane")
 	_expect(AreaFlow.dispatch_import_lorry(sim), true, "a lorry is sent for the box due out")
 	var lorry := sim.vehicles[0]
 	var limit := roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2
@@ -893,7 +893,8 @@ func _test_following_a_box() -> void:
 		if not carried.is_empty():
 			box = carried[0].box
 			break
-	_expect(AreaFlow.box_at(sim, Vector2i(sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)[0].position(1.0).round())), box, "clicking the tractor under the crane picks its box")
+	var tractor: Vehicle = sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)[0]
+	_expect(AreaFlow.box_at(sim, Vector2i(Drive.where(sim, tractor).round())), box, "clicking the tractor under the crane picks its box")
 	var at := AreaFlow.box_cell(sim, box)
 	_expect(Vector2i(at.round()) in sim.areas.cells(1), true, "the box starts on the apron, under the crane")
 	var seen := {}
