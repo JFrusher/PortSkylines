@@ -293,6 +293,19 @@ func shape(id: int) -> AreaShape:
 	return _shapes[id][1]
 
 
+## The point `k` columns along area `id` and `r` rows out (whole numbers
+## are cell (k, r)'s middle), and the way its rows run there, along its curve.
+func point(id: int, k: float, r: float) -> Vector2:
+	var area: Dictionary = list[id]
+	var along := curve(id)
+	return along.point_at(area.from + k + 0.5) + along.right_at(area.from + k + 0.5) * (area.edge + r + 0.5) * area.side
+
+
+## The way area `id`'s rows run `k` columns along it (its curve's way).
+func heading(id: int, k: float) -> Vector2:
+	return curve(id).direction_at(list[id].from + k + 0.5)
+
+
 ## Area `id`'s road curve, along which its cells lie.
 func curve(id: int) -> RoadCurve:
 	var area: Dictionary = list[id]

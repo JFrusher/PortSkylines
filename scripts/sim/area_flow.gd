@@ -1384,9 +1384,8 @@ static func box_cell(sim: PortSim, box: int) -> Vector2:
 			continue
 		for machine: int in sim.machine_jobs:
 			if sim.machine_jobs[machine].vehicle == vehicle.id:
-				var area: Dictionary = sim.areas.list[sim.machines.list[machine].area]
 				var k := sim.machines.position(machine) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
-				return Vector2(area.start) + Vector2((area.end - area.start).sign()) * k + Vector2(area.out) * 2.0
+				return sim.areas.point(sim.machines.list[machine].area, k, 2.0) - Vector2(0.5, 0.5)
 		return Drive.where(sim, vehicle)
 	for area: int in sim.area_stacks:
 		var stacks: AreaStacks = sim.area_stacks[area]

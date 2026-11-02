@@ -392,33 +392,32 @@ func _draw_areas() -> void:
 	_areas_drawn = [sim.areas.version, sim.roads.version]
 	var tool := _road_tool()
 	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		# Each of the area's own cells (k, r) coloured by the part of its layout it holds.
 		var colors := {}
-		for cell in sim.areas.cells(id):
-			colors[cell] = AREA_COLOR[sim.areas.kind_of(sim.areas.list[id])]
 		var layout := sim.areas.layout(id)
-		# shortcut: each part is drawn on the grid cell its spot's middle is in, exact on straight areas; draw cells' own quads when areas bend (M10 step 7).
-		var grid := func(spot: Vector3i) -> Vector2i: return Vector2i(sim.areas.centre(spot).floor())
+		var paint := func(spot: Vector3i, color: Color) -> void: colors[Vector2i(spot.y, spot.z)] = color
 		for spot: Vector3i in layout.get("buffer", []):
-			colors[grid.call(spot)] = BUFFER_COLOR
+			paint.call(spot, BUFFER_COLOR)
 		for lane: Array in layout.get("lanes", []):
 			for spot: Vector3i in lane:
-				colors[grid.call(spot)] = ASPHALT
+				paint.call(spot, ASPHALT)
 		for rail: Array in layout.get("rails", []):
 			for spot: Vector3i in rail:
-				colors[grid.call(spot)] = RAIL_COLOR
+				paint.call(spot, RAIL_COLOR)
 		for spot: Vector3i in layout.get("edge", []):
-			colors[grid.call(spot)] = EDGE_COLOR
-		var area: Dictionary = sim.areas.list[id]
-		for spot in AreaFlow.crane_spots(sim, id) if area.type == "quay_apron" else ([] as Array[int]):
+			paint.call(spot, EDGE_COLOR)
+		for k in AreaFlow.crane_spots(sim, id) if area.type == "quay_apron" else ([] as Array[int]):
 			for d in sim.areas.depth_of(area):
-				colors[area.start + (area.end - area.start).sign() * spot + area.out * d] = SPOT_COLOR
+				colors[Vector2i(k, d)] = SPOT_COLOR
 		for i: int in layout.get("slots", []).size():
 			for spot: Vector3i in layout.slots[i]:
-				colors[grid.call(spot)] = SLOT_COLORS[i % 2]
+				paint.call(spot, SLOT_COLORS[i % 2])
 		var idle := sim.areas.idle_reason(id) != ""
-		for cell: Vector2i in colors:
-			tool.set_color(colors[cell].lerp(IDLE_TINT, 0.4) if idle else colors[cell])
-			_cell_quad(tool, cell, AREA_TOP)
+		for cell: Dictionary in sim.areas.shape(id).cells:
+			var color: Color = colors.get(Vector2i(cell.k, cell.r), AREA_COLOR[sim.areas.kind_of(area)])
+			tool.set_color(color.lerp(IDLE_TINT, 0.4) if idle else color)
+			_quad(tool, cell.corners, AREA_TOP)
 	_areas.mesh = tool.commit()
 
 
@@ -501,10 +500,13 @@ func _draw_ship_lanes() -> void:
 
 ## One 4 m cell as a flat square `height` metres up.
 static func _cell_quad(tool: SurfaceTool, cell: Vector2i, height: float) -> void:
-	var corner := Vector2(cell) * Grid.CELL
-	var corners: Array[Vector2] = [corner, corner + Vector2(Grid.CELL, 0), corner + Vector2(Grid.CELL, Grid.CELL), corner + Vector2(0, Grid.CELL)]
+	_quad(tool, [Vector2(cell), Vector2(cell) + Vector2(1, 0), Vector2(cell) + Vector2(1, 1), Vector2(cell) + Vector2(0, 1)], height)
+
+
+## The quad with corners `corners`, in cells.
+static func _quad(tool: SurfaceTool, corners: Array, height: float) -> void:
 	for i: int in [0, 1, 2, 0, 2, 3]:
-		tool.add_vertex(_world(corners[i], height))
+		tool.add_vertex(_world(corners[i] * Grid.CELL, height))
 
 
 static func _road_tool() -> SurfaceTool:
@@ -1075,12 +1077,12 @@ func _draw_area_stacks() -> void:
 ## The instance buffers, by TEU, of yard area `area`'s stacked boxes.
 func _stack_buffers(area: int, stacks: AreaStacks) -> Dictionary:
 	var buffers := {1: PackedFloat32Array(), 2: PackedFloat32Array()}
-	var geometry: Dictionary = sim.areas.list[area]
-	var along := Vector2((geometry.end - geometry.start).sign())
-	var turned := Basis(Vector3.UP, atan2(-along.normalized().y, along.normalized().x))
 	var layout := sim.areas.layout(area)
 	for position in stacks.stacks.size():
-		var centre := sim.areas.centre(layout.stacks[position].cells[1]) * Grid.CELL
+		var spot: Vector3i = layout.stacks[position].cells[1]
+		var centre := sim.areas.centre(spot) * Grid.CELL
+		var along := sim.areas.heading(area, spot.y)
+		var turned := Basis(Vector3.UP, atan2(-along.y, along.x))
 		for tier: int in stacks.stacks[position].size():
 			var ids: Array = stacks.stacks[position][tier]
 			for i in ids.size():
@@ -1117,15 +1119,13 @@ func _draw_area_machines() -> void:
 			add_child(node)
 			_area_machines[id] = node
 		var model: MeshInstance3D = _area_machines[id]
-		var area: Dictionary = sim.areas.list[machine.area]
-		var along := Vector2((area.end - area.start).sign())
-		var out := Vector2(area.out)
 		# An RTG spans the stack rows; an RMG spans them and the siding behind.
 		var row: float = {"rtg": (2 + depth - 1) / 2.0, "rmg": (2 + depth) / 2.0}.get(machine.gear, 1.0)
 		var k := sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
-		var at := (Vector2(area.start) + along * k + out * row + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+		var at := sim.areas.point(machine.area, k, row) * Grid.CELL / METRES_PER_UNIT
+		var out := (sim.areas.point(machine.area, k, 1.0) - sim.areas.point(machine.area, k, 0.0)).normalized()
 		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
-		model.rotation.y = atan2(-out.normalized().y, out.normalized().x)
+		model.rotation.y = atan2(-out.y, out.x)
 		var gantry: bool = machine.gear in ["rtg", "rmg"]
 		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights[machine.gear] if gantry else 1.0
 		var wide: float = (depth - 1.0) / (depth - 2.0) if machine.gear == "rmg" else 1.0
