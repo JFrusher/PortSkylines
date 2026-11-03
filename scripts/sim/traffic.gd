@@ -18,6 +18,11 @@ var _rules: Dictionary
 ## junctions are closer than it is long), "waited": seconds it has
 ## stood still}.
 var cars := {}
+## The cars whose vehicles may need attention after a tick: on their route's
+## last piece, waited due_after seconds or more, or placed or rerouted since
+## the tick. Any other is on its way, with nothing for its vehicle to do.
+var due := {}
+var due_after := 0.0
 var _on := {}  # piece -> ids of the cars whose fronts are on it, rearmost first
 var _booked := {}  # connection piece -> ids of the cars that have booked it
 var _limits := {}  # piece -> cells a second, its road's and its curve's
@@ -58,6 +63,7 @@ func place(id: int, route: Array[int], metres_per_minute: float, metres: float) 
 		if cars[other].s - cars[other].length < length + _gap():
 			return false
 	cars[id] = {"route": route, "i": 0, "s": length, "v": 0.0, "top": metres_per_minute / 60.0 / Grid.CELL, "length": length, "booked": [], "waited": 0.0}
+	due[id] = true
 	_put(route[0], id)
 	_entered[route[0]] = _entered.get(route[0], 0) + 1
 	return true
@@ -96,6 +102,7 @@ func fits(piece: int, s: float, length: float) -> bool:
 ## first piece, `top` cells a second at most and `length` cells long.
 func place_at(id: int, route: Array[int], s: float, top: float, length: float) -> void:
 	cars[id] = {"route": route, "i": 0, "s": s, "v": 0.0, "top": top, "length": length, "booked": [], "waited": 0.0}
+	due[id] = true
 	_put(route[0], id)
 	_entered[route[0]] = _entered.get(route[0], 0) + 1
 
@@ -106,6 +113,7 @@ func place_at(id: int, route: Array[int], s: float, top: float, length: float) -
 ## new route doesn't take.
 func reroute(id: int, route: Array[int]) -> void:
 	var car: Dictionary = cars[id]
+	due[id] = true
 	assert(route[0] == car.route[car.i], "a new route starts where the car is")
 	for piece: int in car.booked.duplicate():
 		if car.route.find(piece) >= car.i and piece not in route:
@@ -146,6 +154,8 @@ func to_dict() -> Dictionary:
 ## Puts back what to_dict saved, on the same network.
 func restore(d: Dictionary) -> void:
 	cars = d.cars.duplicate(true)
+	for id: int in cars:
+		due[id] = true
 	_on = d.on.duplicate(true)
 	_booked = d.booked.duplicate(true)
 	for cell: Vector2i in d.crossings:
@@ -166,6 +176,7 @@ func remove(id: int) -> void:
 
 ## Moves every car on for `seconds`, in order of id.
 func tick(seconds: float) -> void:
+	due.clear()
 	var ids := cars.keys()
 	ids.sort()
 	for id: int in ids:
@@ -180,6 +191,7 @@ func _move(id: int, seconds: float) -> void:
 		car.v = 0.0
 		car.waited += seconds
 		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
+		due[id] = true
 		return
 	# Stopped behind a car that hasn't moved since, it stays stopped: the look
 	# ahead would find that car just as near again.
@@ -187,6 +199,8 @@ func _move(id: int, seconds: float) -> void:
 	if not behind.is_empty() and behind[0] in cars and cars[behind[0]].route[cars[behind[0]].i] == behind[1] and cars[behind[0]].s == behind[2]:
 		car.waited += seconds
 		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
+		if car.waited >= due_after:
+			due[id] = true
 		return
 	car.behind = []
 	var left: float = network.pieces[piece].length - car.s
@@ -208,6 +222,8 @@ func _move(id: int, seconds: float) -> void:
 		var other: Dictionary = cars[ahead.car]
 		car.behind = [ahead.car, other.route[other.i], other.s]
 	_advance(id, minf(v * seconds, room))
+	if car.waited >= due_after or car.i == car.route.size() - 1:
+		due[id] = true
 
 
 ## How far car `id` may go before it reaches what's ahead along its route:

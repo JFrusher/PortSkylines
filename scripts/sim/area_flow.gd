@@ -158,6 +158,7 @@ static func tick(sim: PortSim) -> void:
 	for machine: int in sim.machines.tick():
 		_machine_done(sim, machine)
 	_unpark(sim)
+	sim.traffic.due_after = _unstick_minutes(sim) * 60.0
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		_drive(sim, vehicle)
 
@@ -659,6 +660,9 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 ## has none. False when nothing is due or wanted, there is no room, or the
 ## way in is busy.
 static func dispatch_export_lorry(sim: PortSim) -> bool:
+	# With the way in busy nothing is sent, so demand isn't worked out for nothing.
+	if _entry_cell(sim) == Areas.NO_SPOT:
+		return false
 	if not sim.transfers.is_empty() and _transfer_in(sim):
 		return true
 	var packed: bool = not sim.stuffing.is_empty() and sim.stuffing[0].at <= sim.clock.calendar_minutes()
@@ -1002,6 +1006,9 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		return
 	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
 		return
+	# On its way, not there yet nor waited long enough to unstick: nothing to do.
+	if vehicle.id in sim.traffic.cars and vehicle.id not in sim.traffic.due:
+		return
 	if not Drive.advance(sim, vehicle, _speed(sim, vehicle)):
 		_unstick(sim, vehicle)
 		return
@@ -1041,7 +1048,7 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 		sim.moved_on += 1
 		sim._event("A %s stuck in traffic was moved on" % ("lorry" if vehicle.kind == "lorry" else "tractor"), Vector2i(sim.areas.centre(vehicle.target).floor()))
 		return
-	if vehicle.kind != "lorry" or Drive.waited(sim, vehicle) < roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2 * SimClock.TICK_SECONDS:
+	if vehicle.kind != "lorry" or Drive.waited(sim, vehicle) < _give_up_minutes(sim):
 		return
 	if vehicle.area in sim.areas.list:
 		sim.handovers.drop(vehicle.area, vehicle.id)
@@ -1054,6 +1061,16 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 	_gone(sim, vehicle)
 	sim.gave_up += 1
 	sim._event("A lorry gave up on a traffic jam and left", at)
+
+
+## How long a lorry waits, in minutes, before it gives up and leaves.
+static func _give_up_minutes(sim: PortSim) -> float:
+	return roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2 * SimClock.TICK_SECONDS
+
+
+## How long any vehicle waits, in minutes, before _unstick may act on it.
+static func _unstick_minutes(sim: PortSim) -> float:
+	return minf(sim.rules.traffic.stuck_minutes, _give_up_minutes(sim))
 
 
 static func _gone(sim: PortSim, vehicle: Vehicle) -> void:

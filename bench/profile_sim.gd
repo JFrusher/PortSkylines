@@ -113,6 +113,7 @@ func _tick(sim: PortSim) -> void:
 	AreaFlow._unpark(sim)
 	add("parks (AreaFlow._unpark)", start)
 	start = Time.get_ticks_usec()
+	sim.traffic.due_after = AreaFlow._unstick_minutes(sim) * 60.0
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		AreaFlow._drive(sim, vehicle)
 	add("vehicles (AreaFlow._drive)", start)

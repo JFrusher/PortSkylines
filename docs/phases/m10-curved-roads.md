@@ -90,6 +90,8 @@ Step 9 also ports M7's "both lanes carry" test (lorries change lane before a tur
 
 **Step 10 (2 Nov 2026):** signals, priority signs and level crossings already run on the new junctions and continuous traffic (8d-1; test_traffic_junctions and test_signals pass). Junction arms are still keyed by their way rounded to a grid step, exact while roads are built straight or at 45°; step 12's any-angle tool must key them by their exact way, since arms 30° apart can round to the same step.
 
+**Step 11 (2 Nov 2026):** the endgame bench runs 15.65 ms a tick against the 19.5 ms gate (28.2 ms before), with the sim's behaviour unchanged; `docs/perf.md` has the record.
+
 ### Traffic
 8. **Continuous movement.** A vehicle has a lane, a distance along it and a speed. It keeps the data's gap behind the vehicle ahead, slows for a curve by its radius, and slows into junctions. This replaces one vehicle per cell. Test: a queue holds its gap; a vehicle on a tight bend is slower than on a straight.
 9. **Lane changes where marked.** A vehicle changes lane along a stretch before its turn, as CS vehicles do, using today's lane choice by cost. Test: today's routing and lane-choice tests pass.
