@@ -223,9 +223,9 @@ var _berths_seen := Vector2i(-1, -1)
 func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false) -> void:
 	rules = game_rules
 	creative = creative_mode
-	roads = RoadNet.new(rules.road_types)
+	roads = RoadNet.new(rules.road_types, rules.junctions)
 	roads.anchors = [site_entry_point()]
-	rails = RoadNet.new(rail_types())
+	rails = RoadNet.new(rail_types(), rules.junctions)
 	rails.anchors = [site_rail_entry()]
 	map = rules.map
 	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
@@ -452,9 +452,9 @@ func _area_stacks_dict() -> Dictionary:
 
 static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
-	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
+	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types, sim.rules.junctions)
 	sim.roads.anchors = [sim.site_entry_point()]
-	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types())
+	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types(), sim.rules.junctions)
 	sim.rails.anchors = [sim.site_rail_entry()]
 	sim.map = d.map
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(MapGen.of(sim.rules, sim.map), sim.rules.site))
@@ -671,7 +671,7 @@ func site_entry_point() -> Vector2i:
 
 ## Why a road can't be built, or "": as though segment `skip` weren't built,
 ## and (`on_fill`) as though the water under it were filled, as a berth does.
-func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0, on_fill := false) -> String:
+func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fill := false) -> String:
 	var err := roads.add_error(from, to, type, skip)
 	if err == "" and not on_fill and roads.footprint(from, to, type).any(areas.is_water):
 		err = "Roads can't be built on water"
@@ -681,8 +681,9 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0, on_
 		err = "Buy this land first"
 	if err == "" and roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
 		err = "Something is already built here"
-	if err == "":
-		err = _crossing_error(RoadNet.line(from, to), roads.footprint(from, to, type), rails.segments.keys().map(func(s: int) -> Array: return rails.cells(s)))
+	for track: int in rails.segments:
+		if err == "":
+			err = _crossing_error(from, to, roads.footprint(from, to, type), _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.cells(track))
 	if err == "" and not _afford(road_price(from, to, type)):
 		err = "Not enough money"
 	return err
@@ -703,7 +704,7 @@ func change_road_error(segment: int, type: String) -> String:
 	var road: Dictionary = roads.segments[segment]
 	if road.type == type:
 		return "This road is already a %s" % rules.road_types[type].name
-	return build_road_error(roads.grid_point(road.a), roads.grid_point(road.b), type, segment)
+	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment)
 
 
 ## Rebuilds `segment` as a road of `type` on the same line, at the new
@@ -712,13 +713,13 @@ func change_road(segment: int, type: String) -> String:
 	var err := change_road_error(segment, type)
 	if err == "":
 		var road: Dictionary = roads.segments[segment]
-		ledger.post("construction", -road_price(roads.grid_point(road.a), roads.grid_point(road.b), type))
+		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type))
 		roads.retype(segment, type)
 	return err
 
 
-func road_price(from: Vector2i, to: Vector2i, type: String) -> int:
-	return RoadNet.length(from, to) * rules.road_types[type].cost_per_cell
+func road_price(from: Vector2, to: Vector2, type: String) -> int:
+	return RoadNet.cells_long(from.distance_to(to)) * rules.road_types[type].cost_per_cell
 
 
 ## Where the highway's rail line meets the site, `entry_offset` cells south
@@ -745,12 +746,9 @@ func build_rail_error(from: Vector2i, to: Vector2i) -> String:
 		var track := RoadNet.line(from, to)
 		if track.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
 			return "Something is already built here"
-		var lanes_of := []
-		for id: int in roads.segments:
-			# shortcut: road and track cross square, lane by lane, until crossings at any angle (M10 12c).
-			for lane in roads.lanes(id):
-				lanes_of.append(lane.cells)
-		err = _crossing_error(track, track, lanes_of)
+		for road: int in roads.segments:
+			if err == "":
+				err = _crossing_error(roads.nodes[roads.segments[road].a], roads.nodes[roads.segments[road].b], roads.ground(road), Vector2(from) + Vector2(0.5, 0.5), Vector2(to) + Vector2(0.5, 0.5), track)
 	if err == "" and not _afford(RoadNet.length(from, to) * rules.rail.cost_per_cell):
 		err = "Not enough money"
 	return err
@@ -801,19 +799,26 @@ func remove_rail(segment: int) -> String:
 ## Why something drawn along `line`, covering `cells`, can't share cells with
 ## the runs in `others` (each a straight run of cells), or "": road and rail
 ## meet only at level crossings, straight across.
-static func _crossing_error(line: Array, cells: Array, others: Array) -> String:
-	var mine := {}
-	for cell: Vector2i in cells:
-		mine[cell] = true
-	var along: Vector2i = (line[-1] - line[0]).sign()
-	for other: Array in others:
-		if not other.any(func(c: Vector2i) -> bool: return c in mine):
-			continue
-		var theirs: Vector2i = (other[-1] - other[0]).sign()
-		var straight := along.x * along.y == 0 and theirs.x * theirs.y == 0
-		if not straight or along.x * theirs.x + along.y * theirs.y != 0:
-			return "Road and track cross only straight across"
+## Why a road from `road_a` to `road_b` standing on `road_cells` and track
+## from `track_a` to `track_b` on `track_cells` can't both be: where they
+## share ground they must cross, at min_angle or more, so neither runs along
+## or ends on the other; "" when they can.
+# shortcut: a road is the straight line between its ends here; curved roads cross track by their curve when roads bend (M10 step 13).
+func _crossing_error(road_a: Vector2, road_b: Vector2, road_cells: Array, track_a: Vector2, track_b: Vector2, track_cells: Array) -> String:
+	if not road_cells.any(func(c: Vector2i) -> bool: return c in track_cells):
+		return ""
+	if Geometry2D.segment_intersects_segment(road_a, road_b, track_a, track_b) == null:
+		return "Something is already built here"
+	var apart := absf(rad_to_deg((road_b - road_a).angle_to(track_b - track_a)))
+	apart = minf(apart, 180.0 - apart)
+	if apart < rules.junctions.min_angle - 0.001:
+		return "Road and track cross at %d°; they need at least %d°" % [roundi(apart), roundi(rules.junctions.min_angle)]
 	return ""
+
+
+## The point track node `node` is at: the middle of its cell.
+func _track_end(node: int) -> Vector2:
+	return rails.nodes[node] + Vector2(0.5, 0.5)
 
 
 func remove_road(segment: int) -> String:
@@ -937,7 +942,7 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 	var built := {}
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		for c in roads.footprint(roads.grid_point(road.a), roads.grid_point(road.b), road.type):
+		for c in roads.ground(segment):
 			built[c] = true
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
@@ -1616,7 +1621,7 @@ func upkeep_parts() -> Dictionary:
 	var parts := {0: 0.0}
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		parts[0] += RoadNet.length(roads.grid_point(road.a), roads.grid_point(road.b)) * rules.road_types[road.type].upkeep_per_cell
+		parts[0] += RoadNet.cells_long(roads.curve(segment).length) * rules.road_types[road.type].upkeep_per_cell
 	for segment: int in rails.segments:
 		parts[0] += RoadNet.length(rails.grid_point(rails.segments[segment].a), rails.grid_point(rails.segments[segment].b)) * rules.rail.upkeep_per_cell
 	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()

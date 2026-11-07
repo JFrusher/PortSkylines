@@ -21,6 +21,9 @@ var nodes := {}
 var segments := {}
 ## The data's road types: lanes each way, whether lorries may use them, costs.
 var types: Dictionary
+## The data's junction rules: the least angle roads part by (min_angle) and
+## how far a junction cuts its roads back (see RoadJunction.shape).
+var junctions: Dictionary
 ## Bumped on every change, so the lane graph knows to rebuild.
 var version := 0
 var _next_node := 1
@@ -37,8 +40,9 @@ var _shapes := {}  # segment -> [what it is laid from, its AreaShape, its ground
 var _next_for := -1
 
 
-func _init(road_types: Dictionary) -> void:
+func _init(road_types: Dictionary, junction_rules: Dictionary) -> void:
 	types = road_types
+	junctions = junction_rules
 	var parities := {}
 	for type: Dictionary in types.values():
 		parities[(type.forward + type.backward) % 2] = true
@@ -47,9 +51,58 @@ func _init(road_types: Dictionary) -> void:
 
 ## Adds a straight road of `type` from `from` to `to`. Its forward lanes run
 ## from `from` to `to` on the drawn line and to its right; backward lanes lie
-## to its left. Where it meets or crosses another road, both split at a shared
-## node, so junctions form by themselves. Returns "" or why it can't be built.
-func add(from: Vector2i, to: Vector2i, type: String) -> String:
+## to its left. An end within a road's half width of its end or line joins
+## it there, and where it crosses another road both split at the crossing
+## point, so junctions form by themselves. Returns "" or why it can't be built.
+func add(from: Vector2, to: Vector2, type: String) -> String:
+	if _odd():
+		return _add_on_grid(Vector2i(from), Vector2i(to), type)
+	var err := add_error(from, to, type)
+	if err != "":
+		return err
+	_place(_plan(from, to, type), type)
+	return ""
+
+
+## Builds what _plan laid out: splits the roads it meets, then its pieces.
+## Returns the nodes its pieces end at.
+func _place(plan: Dictionary, type: String) -> Array[int]:
+	for point: Vector2 in plan.splits:
+		_split_through(point)
+	var ends: Array[int] = []
+	var stops: Array = plan.stops
+	for i in stops.size() - 1:
+		segments[_next_segment] = {"a": _node_near(stops[i]), "b": _node_near(stops[i + 1]), "type": type, "control": (stops[i] + stops[i + 1]) / 2.0}
+		ends.append_array([segments[_next_segment].a, segments[_next_segment].b])
+		_next_segment += 1
+	version += 1
+	return ends
+
+
+## Why a road from `from` to `to` of `type` (or, with `skip`, segment
+## `skip` as `type`) would leave a road at the nodes it touches shorter than
+## the junctions at its ends cut it back, so it has no lane left; or "".
+func _room_error(from: Vector2, to: Vector2, type: String, skip: int) -> String:
+	var trial := RoadNet.from_dict(to_dict(), types, junctions)
+	var touched: Array[int] = []
+	if skip:
+		trial.segments[skip].type = type
+		touched.assign([segments[skip].a, segments[skip].b])
+	else:
+		touched = trial._place(trial._plan(from, to, type), type)
+	var trims := LaneNetwork._trims(LaneNetwork._arms(trial), junctions)
+	for id: int in trial.segments:
+		var road: Dictionary = trial.segments[id]
+		if (road.a in touched or road.b in touched) and trial.curve(id).length < trims[[id, "a"]] + trims[[id, "b"]] - 0.001:
+			return "Too close to a junction: a road needs room between its junctions"
+	return ""
+
+
+
+
+## add() for track, on the grid: straight or at 45°, meeting only at grid cells.
+# shortcut: track keeps today's grid rules until rail curves (M10 step 19).
+func _add_on_grid(from: Vector2i, to: Vector2i, type: String) -> String:
 	var found: Variant = _meets(from, to, type)
 	if found is String:
 		return found
@@ -70,9 +123,195 @@ func add(from: Vector2i, to: Vector2i, type: String) -> String:
 
 ## Why `add` would refuse this road, or "": as though `skip` weren't built,
 ## so a segment can be checked as another type in its own place.
-func add_error(from: Vector2i, to: Vector2i, type: String, skip := 0) -> String:
-	var found: Variant = _meets(from, to, type, skip)
-	return found if found is String else ""
+func add_error(from: Vector2, to: Vector2, type: String, skip := 0) -> String:
+	var found: Variant = _meets(Vector2i(from), Vector2i(to), type, skip) if _odd() else _plan(from, to, type, skip)
+	if found is String:
+		return found
+	return "" if _odd() else _room_error(from, to, type, skip)
+
+
+## Where a road of `type` from `from` to `to` would run and meet the roads
+## built (as though `skip` weren't): {"stops": its ends and the points it
+## crosses roads at, in order from `from`, "splits": the points where a
+## road it meets splits}; or why it can't be built.
+func _plan(from: Vector2, to: Vector2, type: String, skip := 0) -> Variant:
+	if type not in types:
+		return "Unknown road type \"%s\"" % type
+	var meets: Array[Dictionary] = []  # {"point", "node": the node there or 0, "segment": the road split there or 0}
+	var ends: Array[Vector2] = [from, to]
+	for e in 2:
+		var joined := _join(ends[e], skip)
+		if not joined.is_empty():
+			ends[e] = joined.point
+			meets.append(joined)
+	if ends[0].distance_to(ends[1]) < 1.0:
+		return "A road needs a length"
+	var way := (ends[1] - ends[0]).normalized()
+	var half: float = (types[type].forward + types[type].backward) / 2.0
+	var near: Array[int] = []  # the roads near enough to cross or overlap it
+	for id: int in segments:
+		if id != skip and _hull(id).intersects(Rect2(ends[0], Vector2.ZERO).expand(ends[1]).grow(half + 1.0)):
+			near.append(id)
+	var crossings: Array[Vector2] = []
+	for id in near:
+		var line := curve(id).offset_points(0.0)
+		for i in range(1, line.size()):
+			var hit: Variant = Geometry2D.segment_intersects_segment(ends[0], ends[1], line[i - 1], line[i])
+			if hit == null or meets.any(func(m: Dictionary) -> bool: return m.point.distance_to(hit) < 0.01) or hit.distance_to(ends[0]) < 0.01 or hit.distance_to(ends[1]) < 0.01:
+				continue
+			var at := _node_close(hit)
+			meets.append({"point": nodes[at] if at else hit, "node": at, "segment": 0 if at else id})
+			crossings.append(nodes[at] if at else hit)
+	crossings.sort_custom(func(p: Vector2, q: Vector2) -> bool: return p.distance_to(ends[0]) < q.distance_to(ends[0]))
+	# Lanes overlap only near where roads meet: as far from it as two roads
+	# that wide overlap at the angle they meet at, and a cell more. One along
+	# another meets it at under a degree, which the angles below refuse.
+	for meet in meets:
+		var sharpest := 90.0
+		for arm in _arms_at(meet, skip):
+			var apart := absf(rad_to_deg(arm.angle_to(way)))
+			sharpest = minf(sharpest, minf(apart, 180.0 - apart))
+		meet.reach = (half + _widest(meet, skip)) / sin(deg_to_rad(maxf(sharpest, 1.0))) + 1.0
+	var mine := _shape_of(RoadCurve.straight(ends[0], ends[1]), types[type])
+	for id in near:
+		for theirs: Dictionary in shape(id).cells:
+			for cell: Dictionary in mine.cells:
+				if cell.centre.distance_to(theirs.centre) < 1.5 and not meets.any(func(m: Dictionary) -> bool: return m.point.distance_to(cell.centre) < m.reach) and Areas.overlap(PackedVector2Array(cell.corners), PackedVector2Array(theirs.corners)):
+					return "A road already runs here"
+	for meet: Dictionary in meets:
+		var arms: Array[Vector2] = _arms_at(meet, skip)
+		if meet.point.distance_to(ends[0]) > 0.01:
+			arms.append(-way)
+		if meet.point.distance_to(ends[1]) > 0.01:
+			arms.append(way)
+		for i in arms.size():
+			for j in range(i + 1, arms.size()):
+				var apart := rad_to_deg(arms[i].angle_to(arms[j]))
+				if absf(apart) < 1.0:
+					return "A road already runs here"
+				if absf(apart) < junctions.min_angle - 0.001:
+					return "Roads meet at %d°; a junction needs at least %d°" % [roundi(absf(apart)), roundi(junctions.min_angle)]
+	var stops: Array = [ends[0]]
+	stops.append_array(crossings)
+	stops.append(ends[1])
+	return {"stops": stops, "splits": meets.filter(func(m: Dictionary) -> bool: return m.segment != 0).map(func(m: Dictionary) -> Vector2: return m.point)}
+
+
+## Where a road's end at `point` joins the roads built (but `skip`): a node
+## within the half width of a road there, else the nearest point on a road's
+## line within its half width: {"point", "node", "segment": the road split
+## there or 0}; {} when none is that near.
+func _join(point: Vector2, skip: int) -> Dictionary:
+	var best := {}
+	var nearest := INF
+	for node: int in nodes:
+		var reach := 0.0
+		for id: int in segments:
+			if id != skip and node in [segments[id].a, segments[id].b]:
+				reach = maxf(reach, _half(id))
+		if nodes[node].distance_to(point) <= reach and nodes[node].distance_to(point) < nearest:
+			nearest = nodes[node].distance_to(point)
+			best = {"point": nodes[node], "node": node, "segment": 0}
+	if not best.is_empty():
+		return best
+	for id: int in segments:
+		if id == skip:
+			continue
+		var along := curve(id)
+		var on := along.point_at(along.nearest(point))
+		# A point on the line already stays put, not moved by the search's rounding.
+		on = point if on.distance_to(point) < 0.01 else on
+		if on.distance_to(point) <= _half(id) and on.distance_to(point) < nearest:
+			nearest = on.distance_to(point)
+			best = {"point": on, "node": 0, "segment": id}
+	return best
+
+
+## The ways out of meeting `meet` along the roads built there (but `skip`).
+func _arms_at(meet: Dictionary, skip: int) -> Array[Vector2]:
+	var found: Array[Vector2] = []
+	if meet.segment:
+		var along := curve(meet.segment)
+		var tangent := along.direction_at(along.nearest(meet.point))
+		found.append_array([tangent, -tangent])
+		return found
+	for id: int in segments:
+		if id == skip:
+			continue
+		if segments[id].a == meet.node:
+			found.append(curve(id).direction_at(0.0))
+		if segments[id].b == meet.node:
+			found.append(-curve(id).direction_at(curve(id).length))
+	return found
+
+
+## The box `segment` lies in, its lanes included: its curve keeps within
+## the triangle of its ends and control point.
+func _hull(segment: int) -> Rect2:
+	var road: Dictionary = segments[segment]
+	return Rect2(nodes[road.a], Vector2.ZERO).expand(nodes[road.b]).expand(road.control).grow(_half(segment))
+
+
+## Half the width of the widest road built at meeting `meet` (but `skip`).
+func _widest(meet: Dictionary, skip: int) -> float:
+	if meet.segment:
+		return _half(meet.segment)
+	var widest := 0.0
+	for id: int in segments:
+		if id != skip and meet.node in [segments[id].a, segments[id].b]:
+			widest = maxf(widest, _half(id))
+	return widest
+
+
+## Half of `segment`'s width, in cells.
+func _half(segment: int) -> float:
+	var road: Dictionary = types[segments[segment].type]
+	return (road.forward + road.backward) / 2.0
+
+
+## The node within a hundredth of a cell of `point`, or 0.
+func _node_close(point: Vector2) -> int:
+	for id: int in nodes:
+		if nodes[id].distance_to(point) < 0.01:
+			return id
+	return 0
+
+
+## The node at `point`, made if there is none within a hundredth of a cell.
+func _node_near(point: Vector2) -> int:
+	var found := _node_close(point)
+	if found:
+		return found
+	nodes[_next_node] = point
+	_next_node += 1
+	return _next_node - 1
+
+
+## Splits the road whose line runs through `point` there, unless one ends
+## there: it keeps its a end, and a new one of the same type runs on to its b
+## end; each half is its piece of the curve, so the line doesn't move.
+func _split_through(point: Vector2) -> void:
+	if _node_close(point):
+		return
+	for id: int in segments.keys():
+		var along := curve(id)
+		var d := along.nearest(point)
+		if along.point_at(d).distance_to(point) > 0.01:
+			continue
+		var t := along.t_at(d)
+		var first := along.a.lerp(along.c, t)
+		var second := along.c.lerp(along.b, t)
+		# A straight road's halves are straight: each control at its middle.
+		if along.c.is_equal_approx((along.a + along.b) / 2.0):
+			first = (along.a + point) / 2.0
+			second = (point + along.b) / 2.0
+		var middle := _node_near(point)
+		var road: Dictionary = segments[id]
+		segments[_next_segment] = {"a": middle, "b": road.b, "type": road.type, "control": second}
+		_next_segment += 1
+		road.b = middle
+		road.control = first
+		return
 
 
 ## Makes `segment` a road of `type` on the same line, the same way round,
@@ -135,7 +374,7 @@ func _laid(segment: int) -> Array:
 
 ## A road of type `road` laid along `curve` (see shape).
 static func _shape_of(curve: RoadCurve, road: Dictionary) -> AreaShape:
-	var columns := ceili(curve.length - 0.001)
+	var columns := cells_long(curve.length)
 	var shape := AreaShape.new()
 	for side: int in [1, -1]:
 		shape.cells.append_array(AreaShape.along(curve, side, 0.0, columns, 0.0, (road.forward + road.backward) / 2, curve.length / columns).cells)
@@ -152,6 +391,12 @@ func _odd() -> bool:
 func curve(segment: int) -> RoadCurve:
 	var road: Dictionary = segments[segment]
 	return RoadCurve.new(nodes[road.a], road.control, nodes[road.b])
+
+
+## How many cells a road `length` long is counted as, for its price and
+## upkeep: one per cell of its shape's columns (see shape).
+static func cells_long(length: float) -> int:
+	return ceili(length - 0.001)
 
 
 ## A road's length in cells from `from` to `to`, which costs are counted in:
@@ -323,8 +568,8 @@ func to_dict() -> Dictionary:
 	return {"nodes": nodes.duplicate(), "segments": segments.duplicate(true), "next_node": _next_node, "next_segment": _next_segment}
 
 
-static func from_dict(d: Dictionary, road_types: Dictionary) -> RoadNet:
-	var net := RoadNet.new(road_types)
+static func from_dict(d: Dictionary, road_types: Dictionary, junction_rules: Dictionary) -> RoadNet:
+	var net := RoadNet.new(road_types, junction_rules)
 	net.nodes = d.nodes.duplicate()
 	net.segments = d.segments.duplicate(true)
 	net._next_node = d.next_node
@@ -429,14 +674,14 @@ func lanes(segment: int) -> Array[Dictionary]:
 
 
 ## The ground (see ground) a straight road of `type` from `from` to `to` would stand on.
-func footprint(from: Vector2i, to: Vector2i, type: String) -> Array[Vector2i]:
+func footprint(from: Vector2, to: Vector2, type: String) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
 	if _odd():
-		for lane in _lanes(from, to, types[type]):
+		for lane in _lanes(Vector2i(from), Vector2i(to), types[type]):
 			found.append_array(lane.cells)
 		return found
 	var under := {}
-	for cell: Dictionary in _shape_of(RoadCurve.new(Vector2(from), Vector2(from + to) / 2.0, Vector2(to)), types[type]).cells:
+	for cell: Dictionary in _shape_of(RoadCurve.straight(from, to), types[type]).cells:
 		under[Vector2i(cell.centre.floor())] = true
 	found.assign(under.keys())
 	return found

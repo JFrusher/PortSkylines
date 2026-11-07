@@ -36,7 +36,7 @@ func _sorted(cells: Array) -> Array:
 ## East and north, 1+1 and 2+2: the ground is the cells its lanes covered.
 func _test_straight_roads_keep_their_cells() -> void:
 	for c: Array in [[Vector2i(0, 0), Vector2i(10, 0), "terminal_1_1"], [Vector2i(0, 0), Vector2i(0, -10), "terminal_2_2"]]:
-		var net := RoadNet.new(_types)
+		var net := RoadNet.new(_types, Content.base().junctions)
 		net.add(c[0], c[1], c[2])
 		var lanes: Array = []
 		for lane in net.lanes(1):
@@ -50,7 +50,7 @@ func _test_straight_roads_keep_their_cells() -> void:
 ## along it, every one's middle within 2 cells of its line, and its ground the
 ## cells under them, so nothing beside it is taken.
 func _test_a_road_at_an_angle_follows_its_line() -> void:
-	var net := RoadNet.new(_types)
+	var net := RoadNet.new(_types, Content.base().junctions)
 	net.add(Vector2i(0, 0), Vector2i(10, 0), "terminal_2_2")
 	# Turned to (30, 17) by hand: the tool that draws it is 12d's.
 	net.nodes[net.segments[1].b] = Vector2(30, 17)

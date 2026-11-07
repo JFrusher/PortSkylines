@@ -57,6 +57,7 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 		var road: Dictionary = net.types[net.segments[segment].type]
 		var start: float = trims[[segment, "a"]]
 		var stop: float = curve.length - trims[[segment, "b"]]
+		assert(stop >= start - 0.001, "segment %d is longer than its junctions cut it back" % segment)
 		var lanes := RoadCurve.lanes(road)
 		# A lane beside one running the same way is cut either side of a
 		# stretch at the road's middle where vehicles change lane; a road
@@ -640,21 +641,40 @@ func _find_conflicts() -> void:
 			at.get_or_add(pieces[id].node, []).append(id)
 	for node: int in at:
 		var links: Array = at[node]
+		var near := _near_pairs(links)
 		for i in links.size():
 			for j in range(i + 1, links.size()):
-				if _near(pieces[links[i]].points, pieces[links[j]].points):
+				if Vector2i(i, j) in near:
 					_conflicts.get_or_add(links[i], []).append(links[j])
 					_conflicts.get_or_add(links[j], []).append(links[i])
 
 
-## Whether two polylines cross or pass within CLEAR cells of each other.
-static func _near(one: PackedVector2Array, two: PackedVector2Array) -> bool:
-	for i in range(1, one.size()):
-		for j in range(1, two.size()):
-			var closest := Geometry2D.get_closest_points_between_segments(one[i - 1], one[i], two[j - 1], two[j])
-			if closest[0].distance_to(closest[1]) < CLEAR:
-				return true
-	return false
+## The pairs of `links` (by index, lower first) whose polylines cross or
+## pass within CLEAR cells of each other. Each segment is filed by the cell
+## its start is in, cells wide enough that two segments that near (each at
+## most SEGMENT long) start in the same cell or neighbouring ones, so only
+## those are measured.
+func _near_pairs(links: Array) -> Dictionary:
+	var size := CLEAR + 2.0 * SEGMENT
+	var filed := {}  # cell -> [link index, index of the segment's end point]
+	for k in links.size():
+		var points: PackedVector2Array = pieces[links[k]].points
+		for i in range(1, points.size()):
+			filed.get_or_add(Vector2i((points[i - 1] / size).floor()), []).append([k, i])
+	var found := {}
+	for cell: Vector2i in filed:
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				for a: Array in filed[cell]:
+					for b: Array in filed.get(cell + Vector2i(dx, dy), []):
+						if a[0] >= b[0] or Vector2i(a[0], b[0]) in found:
+							continue
+						var one: PackedVector2Array = pieces[links[a[0]]].points
+						var two: PackedVector2Array = pieces[links[b[0]]].points
+						var closest := Geometry2D.get_closest_points_between_segments(one[a[1] - 1], one[a[1]], two[b[1] - 1], two[b[1]])
+						if closest[0].distance_to(closest[1]) < CLEAR:
+							found[Vector2i(a[0], b[0])] = true
+	return found
 
 
 ## Points along `curve` offset `offset` cells right, from `start` to `stop`

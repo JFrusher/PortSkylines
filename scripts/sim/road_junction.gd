@@ -80,6 +80,9 @@ static func connections(arms: Array[Dictionary], rules: Dictionary) -> Array[Dic
 				if not _may(kind, n, inbound.size() - 1, kinds):
 					continue
 				var outbound := _lanes(arms[j], true)
+				# A one-way road coming in has no lane out to join.
+				if outbound.is_empty():
+					continue
 				if kind == "straight":
 					outbound.sort_custom(func(a: int, b: int) -> bool: return lane_point(arms[j], a, trims[j]).distance_to(start + heading * (trims[i] + trims[j])) < lane_point(arms[j], b, trims[j]).distance_to(start + heading * (trims[i] + trims[j])))
 					outbound = [outbound[0]]

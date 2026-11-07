@@ -44,12 +44,12 @@ func _initialize() -> void:
 
 
 func _test_segments() -> void:
-	var net := RoadNet.new(Content.base().road_types)
+	var net := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	_expect(net.add(Vector2i(0, 0), Vector2i(5, 0), "terminal_1_1"), "", "a straight road is built")
 	_expect(net.add(Vector2i(5, 0), Vector2i(8, 3), "terminal_1_1"), "", "a 45° road is built")
-	_expect(net.add(Vector2i(0, 0), Vector2i(2, 5), "terminal_1_1"), "Roads run straight or at 45°", "other angles are refused")
+	_expect(net.add(Vector2i(0, 0), Vector2i(2, 5), "terminal_1_1"), "", "a road at any other angle is built too (M10 12c)")
 	_expect(net.add(Vector2i(4, 4), Vector2i(4, 4), "terminal_1_1"), "A road needs a length", "a road has a length")
-	_expect(net.nodes.size(), 3, "roads meeting at a grid point share its node")
+	_expect(net.nodes.size(), 4, "roads meeting at a point share its node")
 	# Drawn east along grid line y = 0, the row just right of the line is y = 0,
 	# a cell for each step between points 0 and 5.
 	_expect(net.cells(1), [Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(3, 0), Vector2i(4, 0)] as Array[Vector2i], "a straight road has a cell for each step along it")
@@ -63,7 +63,7 @@ func _test_segments() -> void:
 
 
 func _test_lanes() -> void:
-	var net := RoadNet.new(Content.base().road_types)
+	var net := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	_expect(net.add(Vector2i(0, 0), Vector2i(3, 0), "dirt_track"), "Unknown road type \"dirt_track\"", "unknown road types are refused")
 	net.add(Vector2i(0, 5), Vector2i(3, 5), "terminal_2_2")
 	var lanes := net.lanes(1)
@@ -89,33 +89,35 @@ func _test_lanes() -> void:
 
 
 func _test_junctions() -> void:
-	var net := RoadNet.new(Content.base().road_types)
-	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
+	var net := RoadNet.new(Content.base().road_types, Content.base().junctions)
+	net.add(Vector2i(0, 5), Vector2i(14, 5), "terminal_1_1")
 	_expect(net.add(Vector2i(5, 0), Vector2i(5, 10), "terminal_1_1"), "", "a road may cross another")
 	var crossing := _node(net, Vector2i(5, 5))
 	_expect(net.degree(crossing), 4, "a crossing makes a 4-way node")
 	_expect(net.segments.size(), 4, "both roads split at the crossing")
-	_expect(net.add(Vector2i(8, 5), Vector2i(8, 9), "terminal_1_1"), "", "a road may end on another")
-	_expect(net.degree(_node(net, Vector2i(8, 5))), 3, "a T join makes a 3-way node")
+	_expect(net.add(Vector2i(7, 5), Vector2i(7, 9), "terminal_1_1"), "Too close to a junction: a road needs room between its junctions", "a T two cells from the crossing leaves no lane between them (M10 12c)")
+	_expect(net.add(Vector2i(10, 5), Vector2i(10, 9), "terminal_1_1"), "", "a road may end on another")
+	_expect(net.degree(_node(net, Vector2i(10, 5))), 3, "a T join makes a 3-way node")
 	_expect(net.add(Vector2i(2, 5), Vector2i(4, 5), "terminal_1_1"), "A road already runs here", "a road can't run along another")
-	_expect(net.add(Vector2i(10, 5), Vector2i(10, 0), "terminal_1_1"), "", "a road may start at another's end")
-	_expect(net.degree(_node(net, Vector2i(10, 5))), 2, "a bend is a 2-way node")
-	var diagonal := RoadNet.new(Content.base().road_types)
-	diagonal.add(Vector2i(0, 0), Vector2i(6, 6), "terminal_1_1")
-	_expect(diagonal.add(Vector2i(0, 5), Vector2i(5, 0), "terminal_1_1"), "Roads must cross at a grid point, not between two", "45° roads that cross between grid points are refused")
-	_expect(diagonal.add(Vector2i(0, 6), Vector2i(6, 0), "terminal_1_1"), "", "45° roads crossing at a grid point are built")
-	_expect(diagonal.degree(_node(diagonal, Vector2i(3, 3))), 4, "45° roads crossing at a grid point make a 4-way node")
+	_expect(net.add(Vector2i(14, 5), Vector2i(14, 0), "terminal_1_1"), "", "a road may start at another's end")
+	_expect(net.degree(_node(net, Vector2i(14, 5))), 2, "a bend is a 2-way node")
+	for cross: Array in [[Vector2i(0, 5), Vector2i(5, 0), Vector2(2.5, 2.5)], [Vector2i(0, 6), Vector2i(6, 0), Vector2(3, 3)]]:
+		var diagonal := RoadNet.new(Content.base().road_types, Content.base().junctions)
+		diagonal.add(Vector2i(0, 0), Vector2i(6, 6), "terminal_1_1")
+		_expect(diagonal.add(cross[0], cross[1], "terminal_1_1"), "", "45° roads crossing at %s are built, on a grid point or between (M10 12c)" % cross[2])
+		var at: Array = diagonal.nodes.keys().filter(func(n: int) -> bool: return diagonal.nodes[n].distance_to(cross[2]) < 0.01)
+		_expect(diagonal.degree(at[0]) if not at.is_empty() else 0, 4, "and meet at a 4-way node at %s" % cross[2])
 	var lengths := 0
 	for id: int in net.segments:
 		lengths += net.cells(id).size()
-	_expect(lengths, 10 + 10 + 4 + 5, "splitting keeps every cell of road")
+	_expect(lengths, 14 + 10 + 4 + 5, "splitting keeps every cell of road")
 
 
 ## Routes on the lane network: round a bend, back by a dead end's turn
 ## back, forward only on a one-way road, lorries off a tractor lane, and
 ## across a grid of 2+2 roads. (A lane change on the way is step 9's.)
 func _test_routes() -> void:
-	var net := RoadNet.new(Content.base().road_types)
+	var net := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	net.add(Vector2i(0, 0), Vector2i(10, 0), "terminal_1_1")
 	net.add(Vector2i(10, 0), Vector2i(10, 10), "terminal_1_1")
 	# Keeping right, the eastbound lane runs along y = 0.5 and the southbound down x = 9.5.
@@ -123,16 +125,16 @@ func _test_routes() -> void:
 	_expect(bend.is_empty(), false, "a route runs round a bend")
 	var back := _lane_route(net, Vector2(4, 0.5), Vector2(2, -0.5), true)
 	_expect(back.is_empty(), false, "the other way is reached by the dead end's turn back")
-	var one_way := RoadNet.new(Content.base().road_types)
+	var one_way := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	one_way.add(Vector2i(0, 0), Vector2i(10, 0), "one_way")
 	_expect(_lane_route(one_way, Vector2(1, 0.5), Vector2(9, 0.5), true).is_empty(), false, "a one-way road is driven forward")
 	var one_way_lanes := LaneNetwork.new(one_way, Content.base().junctions).pieces.values()
 	_expect(one_way_lanes.all(func(p: Dictionary) -> bool: return p.points[-1].x > p.points[0].x), true, "a one-way road's lanes all run east, the way it was drawn, so it can't be driven backwards")
-	var tractors := RoadNet.new(Content.base().road_types)
+	var tractors := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	tractors.add(Vector2i(0, 5), Vector2i(10, 5), "tractor_lane")
 	_expect(_lane_route(tractors, Vector2(1, 5.5), Vector2(9, 5.5), true), [] as Array[int], "lorries can't use the tractor lane")
 	_expect(_lane_route(tractors, Vector2(1, 5.5), Vector2(9, 5.5), false).is_empty(), false, "tractors can")
-	var grid := RoadNet.new(Content.base().road_types)
+	var grid := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	for i in 3:
 		grid.add(Vector2i(0, i * 10), Vector2i(30, i * 10), "terminal_2_2")
 		grid.add(Vector2i(i * 10 + 5, -5), Vector2i(i * 10 + 5, 25), "terminal_2_2")
@@ -144,7 +146,7 @@ func _test_editing() -> void:
 	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(1, -9)), Vector2i(0, -9), "a nearly upright drag snaps straight")
 	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(6, 4)), Vector2i(5, 5), "an in-between drag snaps to 45°")
 	_expect(RoadNet.snap(Vector2i(0, 0), Vector2i(-4, 6)), Vector2i(-5, 5), "45° snapping keeps the drag's direction")
-	var snapping := RoadNet.new(Content.base().road_types)
+	var snapping := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	snapping.add(Vector2i(0, 50), Vector2i(40, 50), "terminal_1_1")
 	_expect(snapping.snap_start(Vector2i(20, 52)), Vector2i(20, 50), "a drag starting beside a road starts on it")
 	_expect(snapping.snap_start(Vector2i(38, 51)), Vector2i(40, 50), "a road's end wins over the cells beside it")
@@ -161,7 +163,7 @@ func _test_editing() -> void:
 	_expect(snapping.snap_start(Vector2i(101, 72)), Vector2i(100, 70), "a drag starting near the highway starts on it")
 	_expect(snapping.snap_end(Vector2i(60, 70), Vector2i(98, 72)), Vector2i(100, 70), "and one ending near it ends on it")
 	# Guides run on from road ends, so a new road lines up with an old one.
-	var guided := RoadNet.new(Content.base().road_types)
+	var guided := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	guided.add(Vector2i(0, 0), Vector2i(20, 0), "terminal_1_1")
 	guided.add(Vector2i(40, 10), Vector2i(40, 30), "terminal_1_1")
 	_expect(guided.guides().size(), 4, "each road end has a guide")
@@ -237,13 +239,13 @@ func _test_editing() -> void:
 	one_way.apply({"op": "build_road", "from": Vector2i(210, 90), "to": Vector2i(200, 90), "type": "one_way"})
 	_expect(one_way.roads.nodes[one_way.roads.segments[1].a], Vector2(210, 90), "a one-way road runs the way it was dragged")
 	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
-	var net := RoadNet.new(Content.base().road_types)
+	var net := RoadNet.new(Content.base().road_types, Content.base().junctions)
 	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
 	_expect(net.add_error(Vector2i(2, 5), Vector2i(4, 5), "terminal_1_1"), "A road already runs here", "add_error gives add's refusal")
 	_expect(net.add_error(Vector2i(5, 0), Vector2i(5, 10), "terminal_1_1"), "", "add_error passes a road add would build")
 	_expect(net.segments.size(), 1, "add_error changes nothing")
 	net.add(Vector2i(5, 0), Vector2i(5, 10), "terminal_1_1")
-	var copy := RoadNet.from_dict(net.to_dict(), net.types)
+	var copy := RoadNet.from_dict(net.to_dict(), net.types, net.junctions)
 	_expect(copy.to_dict(), net.to_dict(), "roads round-trip through a dictionary")
 	_expect(net.segment_at(Vector2i(8, 4)), net.segment_at(Vector2i(8, 5)), "both lanes of a road find its segment")
 	_expect(net.segment_at(Vector2i(8, 7)), 0, "a cell off every road finds none")
@@ -298,7 +300,7 @@ func _test_change_road() -> void:
 
 func _test_areas() -> void:
 	var rules := RandomPort.strait()
-	var net := RoadNet.new(rules.road_types)
+	var net := RoadNet.new(rules.road_types, rules.junctions)
 	var areas := Areas.new(rules.area_types, net, Coast.of(rules.maps[rules.map], rules.site))
 	# Drawn south down grid line x = 86, so its right is west, towards the sea
 	# (x < 75). The 1+1 lanes are x = 85 and 86.
@@ -323,18 +325,18 @@ func _test_areas() -> void:
 	_expect(areas.add("yard_block", south, -1, 1, net.cells(south).size() - 1), "", "an area is built on a road's split end")
 	var north := net.segment_at(Vector2i(85, 150))
 	_expect(areas.add("depot", north, -1, 60, net.cells(north).size() - 1), "Something is already built here", "an area can't cover a road")
-	var inland := RoadNet.new(rules.road_types)
+	var inland := RoadNet.new(rules.road_types, rules.junctions)
 	var inland_areas := Areas.new(rules.area_types, inland, Coast.of(rules.maps[rules.map], rules.site))
 	inland.add(Vector2i(96, 100), Vector2i(96, 201), "terminal_1_1")
 	_expect(inland_areas.add("quay_apron", 1, 1, 0, 40), "A quay apron reaches at most 64 m from its road to the water", "an apron must reach the water")
-	var wide := RoadNet.new(rules.road_types)
+	var wide := RoadNet.new(rules.road_types, rules.junctions)
 	var wide_areas := Areas.new(rules.area_types, wide, Coast.of(rules.maps[rules.map], rules.site))
 	# The sea ends at x = 75 and the area starts at x = 89, so the apron is 15 rows deep.
 	wide.add(Vector2i(91, 100), Vector2i(91, 201), "terminal_1_1")
 	_expect(wide_areas.add("quay_apron", 1, 1, 0, 40), "", "an apron reaches out to the water from a road further in")
 	_expect(wide_areas.depth_of(wide_areas.list[1]), 15, "it is as deep as the gap to the water")
 	_expect(_grid(wide_areas, wide_areas.layout(1).edge).all(func(c: Vector2i) -> bool: return c.x == 75), true, "its quay edge is at the water")
-	var coast := RoadNet.new(rules.road_types)
+	var coast := RoadNet.new(rules.road_types, rules.junctions)
 	var coast_areas := Areas.new(rules.area_types, coast, Coast.of(rules.maps[rules.map], rules.site))
 	coast.add(Vector2i(79, 100), Vector2i(79, 201), "terminal_1_1")
 	_expect(coast_areas.add("yard_block", 1, 1, 0, 40), "Areas can't be built on water", "areas stay out of the sea")
@@ -506,7 +508,7 @@ func _test_roads_keep_apart() -> void:
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 100), "to": Vector2i(141, 100), "type": "terminal_1_1"}), "", "a road")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 101), "to": Vector2i(141, 101), "type": "terminal_1_1"}), "A road already runs here", "a road one row over would share a lane")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 102), "to": Vector2i(141, 102), "type": "terminal_1_1"}), "", "a road whose lanes run beside it is built")
-	_expect(sim.apply({"op": "build_road", "from": Vector2i(121, 90), "to": Vector2i(121, 111), "type": "terminal_2_2"}), "", "a road crossing both is built")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(121, 90), "to": Vector2i(121, 111), "type": "terminal_2_2"}), "Too close to a junction: a road needs room between its junctions", "a road crossing both is refused: its two junctions would leave it no lane between them (M10 12c)")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(131, 80), "to": Vector2i(131, 99), "type": "terminal_1_1"}), "", "and one ending on the first in a T")
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(110, 100)), "side": -1, "from": 0, "to": 15}), "", "a yard block along the first road")
 	var block := sim.areas.cells(1)

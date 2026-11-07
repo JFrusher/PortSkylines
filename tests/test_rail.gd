@@ -44,9 +44,9 @@ func _test_track_is_its_own_graph() -> void:
 		for point: Vector2 in after.pieces[id].points:
 			lane_cells[Vector2i(point.floor())] = true
 	_expect(sim.rails.cells(sim.rails.segments.keys()[0]).filter(func(c: Vector2i) -> bool: return c in lane_cells).size(), 4, "and no lane runs along the track: lanes touch it only where the road crosses")
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(160, 101), "to": Vector2i(190, 101)}), "Road and track cross only straight across", "track can't run along a road")
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(170, 80), "to": Vector2i(190, 100)}), "Road and track cross only straight across", "or cross it at 45°")
-	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 110), "to": Vector2i(200, 130), "type": "terminal_1_1"}), "Road and track cross only straight across", "nor a road be laid along track")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(160, 101), "to": Vector2i(190, 101)}), "Something is already built here", "track can't run along a road")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 110), "to": Vector2i(200, 130), "type": "terminal_1_1"}), "Something is already built here", "nor a road be laid along track")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(175, 85), "to": Vector2i(195, 105)}), "", "track crossing it at 45° is laid: road and track cross down to 30° (M10 12c)")
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(190, 100)), "side": 1, "from": 40, "to": 60}), "Something is already built here", "no area is built over track")
 	_expect(sim.rails.anchors, [sim.site_rail_entry()] as Array[Vector2i], "track snaps onto the main line's end at the site edge")
 
