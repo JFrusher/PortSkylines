@@ -25,7 +25,7 @@ func _init(traffic_rules: Dictionary) -> void:
 
 ## Puts signals on junction `point`, each phase green for the data's default,
 ## or takes them off.
-func set_signals(lanes: Object, point: Vector2i, on: bool) -> String:
+func set_signals(lanes: Object, point: Vector2, on: bool) -> String:
 	if lanes.arms(point).is_empty():
 		return "No junction there"
 	if not on:
@@ -39,7 +39,7 @@ func set_signals(lanes: Object, point: Vector2i, on: bool) -> String:
 
 
 ## Sets phase `phase`'s green time at junction `point`.
-func set_green(point: Vector2i, phase: int, seconds: float) -> String:
+func set_green(point: Vector2, phase: int, seconds: float) -> String:
 	if point not in signals or phase < 0 or phase >= signals[point].green.size():
 		return "No such signal phase"
 	if seconds < _rules.min_green_seconds or seconds > _rules.max_green_seconds:
@@ -49,7 +49,7 @@ func set_green(point: Vector2i, phase: int, seconds: float) -> String:
 
 
 ## Gives arm `arm` of junction `point` a sign: "give_way", "stop" or "" for none.
-func set_sign(lanes: Object, point: Vector2i, arm: Vector2i, sign: String) -> String:
+func set_sign(lanes: Object, point: Vector2, arm: Vector2i, sign: String) -> String:
 	if arm not in lanes.arms(point):
 		return "No road there"
 	if sign not in ["", "give_way", "stop"]:
@@ -63,7 +63,7 @@ func set_sign(lanes: Object, point: Vector2i, arm: Vector2i, sign: String) -> St
 
 ## Junction `point`'s phases, each a list of arms: each arm with the one
 ## opposite it, if any.
-func phases(lanes: Object, point: Vector2i) -> Array:
+func phases(lanes: Object, point: Vector2) -> Array:
 	var found := []
 	for arm: Vector2i in lanes.arms(point):
 		if not found.any(func(phase: Array) -> bool: return arm in phase):
@@ -73,7 +73,7 @@ func phases(lanes: Object, point: Vector2i) -> Array:
 
 ## Whether vehicle `id`, on arm `arm` and stopped at the line for `waited`
 ## seconds, may go into junction `point`'s box now.
-func may_enter(lanes: Object, traffic: Object, point: Vector2i, arm: Vector2i, id: int, waited: float) -> bool:
+func may_enter(lanes: Object, traffic: Object, point: Vector2, arm: Vector2i, id: int, waited: float) -> bool:
 	if point in signals:
 		var at: Dictionary = signals[point]
 		if at.left <= 0.0 or arm not in phases(lanes, point)[at.phase]:
@@ -95,7 +95,7 @@ func may_enter(lanes: Object, traffic: Object, point: Vector2i, arm: Vector2i, i
 ## drive): green counts down, and once it is over and the
 ## box is empty the next phase goes green. Forgets junctions that are gone.
 func tick(lanes: Object, traffic: Object, seconds: float) -> void:
-	for point: Vector2i in signals.keys():
+	for point: Vector2 in signals.keys():
 		if lanes.arms(point).is_empty():
 			signals.erase(point)
 			continue
@@ -104,7 +104,7 @@ func tick(lanes: Object, traffic: Object, seconds: float) -> void:
 		if at.left <= 0.0 and not traffic.box_busy(point, 0):
 			at.phase = (at.phase + 1) % at.green.size()
 			at.left = at.green[at.phase]
-	for point: Vector2i in signs.keys():
+	for point: Vector2 in signs.keys():
 		if lanes.arms(point).is_empty():
 			signs.erase(point)
 

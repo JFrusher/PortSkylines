@@ -92,6 +92,19 @@ Step 9 also ports M7's "both lanes carry" test (lorries change lane before a tur
 
 **Step 11 (2 Nov 2026):** the endgame bench runs 15.65 ms a tick against the 19.5 ms gate (28.2 ms before), with the sim's behaviour unchanged; `docs/perf.md` has the record.
 
+### Step 12: the developer's answers (3 Nov 2026)
+
+| Question | Answer |
+|---|---|
+| Where a road's ends and junctions sit | **Anywhere**, as in Cities: Skylines: two roads crossing split at their exact crossing point; step 14's grid snap keeps today's layouts. |
+| Level crossings at an angle | **Down to 30°** (`min_angle`); a shallower crossing is longer, so a train books more of it. |
+
+In four tested parts, today's grid layouts behaving as they do now after each:
+- **12a. Positions off the grid (save v43).** Road and track nodes are points anywhere; junctions, signals and signs are kept by their node's point, and arms by the segment they run along. Every older save migrates.
+- **12b. Road shapes at any angle.** A road's lanes are quads along its curve, as an area's cells are; its ground (water, land, cost, upkeep) is the grid cells under their middles, and roads, track and areas block each other where quads overlap.
+- **12c. Meeting at any angle.** A road crossing another splits both at the crossing point; one ending on or near another joins its node or splits it there; junctions below `min_angle` are refused; road and track cross down to 30°. Commands only.
+- **12d. The straight tool** draws at any angle, snapping onto a road anywhere along it, with its cost by length.
+
 ### Traffic
 8. **Continuous movement.** A vehicle has a lane, a distance along it and a speed. It keeps the data's gap behind the vehicle ahead, slows for a curve by its radius, and slows into junctions. This replaces one vehicle per cell. Test: a queue holds its gap; a vehicle on a tight bend is slower than on a straight.
 9. **Lane changes where marked.** A vehicle changes lane along a stretch before its turn, as CS vehicles do, using today's lane choice by cost. Test: today's routing and lane-choice tests pass.

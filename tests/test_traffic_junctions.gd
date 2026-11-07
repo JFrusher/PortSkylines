@@ -79,7 +79,7 @@ func _test_red_holds_a_lorry() -> void:
 	var traffic := _crossroads()
 	_expect(traffic.junctions.set_signals(traffic.network, POINT, true), "", "signals go up")
 	_expect(traffic.junctions.phases(traffic.network, POINT).size(), 2, "two phases, each road's arms together")
-	var north_first: bool = Vector2i(0, -1) in traffic.junctions.phases(traffic.network, POINT)[0]
+	var north_first: bool = LaneNetwork.arm_key(Vector2(0, -1)) in traffic.junctions.phases(traffic.network, POINT)[0]
 	_send(traffic, 1, false)
 	var green: float = _rules.traffic.signal_green_seconds
 	_run(traffic, green - 2.0)
@@ -92,7 +92,7 @@ func _test_red_holds_a_lorry() -> void:
 ## stop_seconds before it goes in.
 func _test_stop_stops() -> void:
 	var traffic := _crossroads()
-	_expect(traffic.junctions.set_sign(traffic.network, POINT, Vector2i(-1, 0), "stop"), "", "a stop sign on the west arm")
+	_expect(traffic.junctions.set_sign(traffic.network, POINT, LaneNetwork.arm_key(Vector2(-1, 0)), "stop"), "", "a stop sign on the west arm")
 	_send(traffic, 1, true)
 	var stopped := 0.0
 	for i in roundi(40.0 / STEP):
@@ -117,7 +117,7 @@ func _test_give_way_waits_for_the_approach() -> void:
 func _cuts_in(sign: bool) -> bool:
 	var traffic := _crossroads()
 	if sign:
-		traffic.junctions.set_sign(traffic.network, POINT, Vector2i(-1, 0), "give_way")
+		traffic.junctions.set_sign(traffic.network, POINT, LaneNetwork.arm_key(Vector2(-1, 0)), "give_way")
 	var cut := false
 	var next_id := 2
 	_send(traffic, 1, true)
@@ -127,7 +127,7 @@ func _cuts_in(sign: bool) -> bool:
 			if traffic.place(next_id, north, _rules.lorry_speed, _rules.traffic.lorry_m):
 				next_id += 1
 		var was: int = traffic.cars[1].booked.size()
-		var busy := traffic.approach_busy(POINT, Vector2i(0, -1))
+		var busy := traffic.approach_busy(POINT, LaneNetwork.arm_key(Vector2(0, -1)))
 		traffic.junctions.tick(traffic.network, traffic, STEP)
 		traffic.tick(STEP)
 		if was == 0 and not traffic.cars[1].booked.is_empty() and busy:
@@ -253,7 +253,7 @@ func _test_no_lorry_blocks_the_box() -> void:
 func _test_signals_run_in_traffic_seconds() -> void:
 	var traffic := _crossroads()
 	_expect(traffic.junctions.set_signals(traffic.network, POINT, true), "", "signals go up")
-	var north_first: bool = Vector2i(0, -1) in traffic.junctions.phases(traffic.network, POINT)[0]
+	var north_first: bool = LaneNetwork.arm_key(Vector2(0, -1)) in traffic.junctions.phases(traffic.network, POINT)[0]
 	_send(traffic, 1, north_first)
 	var green: float = _rules.traffic.signal_green_seconds
 	for tick in ceili((green * 2.0 + 30.0) / Drive.STEP):

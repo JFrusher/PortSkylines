@@ -1005,7 +1005,7 @@ func _actions_key() -> Array:
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,
 ## and each arm's sign, which a press moves on: none, give way, stop.
-func _draw_junction_actions(point: Vector2i) -> void:
+func _draw_junction_actions(point: Vector2) -> void:
 	var junctions := Drive.junctions(sim)
 	var signalled := point in junctions.signals
 	_action_button(_inspect_actions, "Signals off" if signalled else "Signals on", {"op": "set_signals", "point": point, "on": not signalled})

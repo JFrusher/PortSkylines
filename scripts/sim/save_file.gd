@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 42
+const VERSION := 43
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -104,6 +104,30 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v41(data)
 	if data.version < 42:
 		data = _migrate_v42(data)
+	if data.version < 43:
+		data = _migrate_v43(data)
+	return data
+
+
+## v43 lets road and track nodes sit anywhere: nodes become points, and
+## junctions' signals and signs are kept by their node's point, each arm by
+## LaneNetwork.arm_key of its way (a grid step before).
+static func _migrate_v43(data: Dictionary) -> Dictionary:
+	for net: Dictionary in [data.sim.roads, data.sim.rails]:
+		for node: int in net.nodes:
+			net.nodes[node] = Vector2(net.nodes[node])
+	var signals := {}
+	for point: Vector2i in data.sim.junctions.signals:
+		signals[Vector2(point)] = data.sim.junctions.signals[point]
+	var signs := {}
+	for point: Vector2i in data.sim.junctions.signs:
+		var arms := {}
+		for arm: Vector2i in data.sim.junctions.signs[point]:
+			arms[LaneNetwork.arm_key(Vector2(arm))] = data.sim.junctions.signs[point][arm]
+		signs[Vector2(point)] = arms
+	data.sim.junctions.signals = signals
+	data.sim.junctions.signs = signs
+	data.version = 43
 	return data
 
 
@@ -433,11 +457,11 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 		return false
 	for point: Variant in data.junctions.signals:
 		var at: Variant = data.junctions.signals[point]
-		if not (point is Vector2i and at is Dictionary and _has_fields(at, {"green": TYPE_ARRAY, "phase": TYPE_INT, "left": TYPE_FLOAT})):
+		if not (point is Vector2 and at is Dictionary and _has_fields(at, {"green": TYPE_ARRAY, "phase": TYPE_INT, "left": TYPE_FLOAT})):
 			return false
 	for point: Variant in data.junctions.signs:
 		var arms: Variant = data.junctions.signs[point]
-		if not (point is Vector2i and arms is Dictionary and arms.keys().all(func(arm: Variant) -> bool: return arm is Vector2i) and arms.values().all(func(sign: Variant) -> bool: return sign in ["give_way", "stop"])):
+		if not (point is Vector2 and arms is Dictionary and arms.keys().all(func(arm: Variant) -> bool: return arm is Vector2i) and arms.values().all(func(sign: Variant) -> bool: return sign in ["give_way", "stop"])):
 			return false
 	for area: Variant in data.handovers:
 		var at: Variant = data.handovers[area]
@@ -463,11 +487,11 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 	return true
 
 
-## Roads: nodes on cells, and segments joining two known nodes with a known road type.
+## Roads: nodes at points, and segments joining two known nodes with a known road type.
 static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 	if not _has_fields(roads, {"nodes": TYPE_DICTIONARY, "segments": TYPE_DICTIONARY, "next_node": TYPE_INT, "next_segment": TYPE_INT}):
 		return false
-	if not roads.nodes.keys().all(func(id: Variant) -> bool: return id is int and roads.nodes[id] is Vector2i):
+	if not roads.nodes.keys().all(func(id: Variant) -> bool: return id is int and roads.nodes[id] is Vector2):
 		return false
 	return roads.segments.keys().all(func(id: Variant) -> bool:
 		var road: Variant = roads.segments[id]

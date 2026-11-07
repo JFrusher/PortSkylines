@@ -592,8 +592,8 @@ func _new_terminal() -> int:
 func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dictionary:
 	var road: Dictionary = _roads.types[_roads.segments[segment].type]
 	var along := _roads.cells(segment)
-	var a: Vector2i = _roads.nodes[_roads.segments[segment].a]
-	var b: Vector2i = _roads.nodes[_roads.segments[segment].b]
+	var a := _roads.grid_point(_roads.segments[segment].a)
+	var b := _roads.grid_point(_roads.segments[segment].b)
 	var out := RoadNet.right_of(b - a) * side
 	# `along` is the row just right of the line; the lanes fill half the road's
 	# width each side of it, so the first free row right is that half on, and

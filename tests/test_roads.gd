@@ -151,7 +151,7 @@ func _test_editing() -> void:
 	_expect(snapping.snap_start(Vector2i(20, 60)), Vector2i(20, 60), "a drag starting away from roads stays put")
 	_expect(snapping.snap_end(Vector2i(22, 20), Vector2i(21, 48)), Vector2i(22, 50), "a drag ending near a road ends on it, straight from its start")
 	_expect(snapping.add(Vector2i(22, 20), snapping.snap_end(Vector2i(22, 20), Vector2i(21, 48)), "terminal_1_1"), "", "and that road is built, joining at a T")
-	_expect(snapping.degree(snapping.nodes.find_key(Vector2i(22, 50))), 3, "the snapped end is a junction")
+	_expect(snapping.degree(snapping.nodes.find_key(Vector2(22, 50))), 3, "the snapped end is a junction")
 	_expect(snapping.snap_end(Vector2i(10, 30), Vector2i(32, 49)), Vector2i(30, 50), "a 45° drag ends on the road at 45°, where plain snapping gives (31, 51)")
 	_expect(snapping.snap_end(Vector2i(40, 50), Vector2i(38, 53)), Vector2i(37, 53), "a drag from a road's end doesn't snap back onto that road")
 	_expect(snapping.snap_end(Vector2i(60, 20), Vector2i(61, 30)), Vector2i(60, 30), "away from roads the end snaps straight as before")
@@ -200,7 +200,7 @@ func _test_editing() -> void:
 	# pieces built from either end, or from either side of a road, line up.
 	var lanes_of := func(port: PortSim, segment: int) -> Array: return port.roads.lanes(segment).map(func(l: Dictionary) -> Array: return l.cells)
 	var cells_of := func(port: PortSim, segment: int) -> Array:
-		var found := port.roads.footprint(port.roads.nodes[port.roads.segments[segment].a], port.roads.nodes[port.roads.segments[segment].b], port.roads.segments[segment].type)
+		var found := port.roads.footprint(port.roads.grid_point(port.roads.segments[segment].a), port.roads.grid_point(port.roads.segments[segment].b), port.roads.segments[segment].type)
 		found.sort()
 		return found
 	for type: String in ["terminal_1_1", "terminal_2_2"]:
@@ -215,7 +215,7 @@ func _test_editing() -> void:
 			stubs.apply({"op": "build_road", "from": Vector2i(200, 90), "to": Vector2i(210, 90), "type": type})
 			stubs.apply({"op": "build_road", "from": start, "to": stubs.roads.snap_end(start, Vector2i(205, 90)), "type": type})
 			var cols := {}
-			for cell: Vector2i in stubs.roads.footprint(stubs.roads.nodes[stubs.roads.segments[3].a], stubs.roads.nodes[stubs.roads.segments[3].b], type):
+			for cell: Vector2i in stubs.roads.footprint(stubs.roads.grid_point(stubs.roads.segments[3].a), stubs.roads.grid_point(stubs.roads.segments[3].b), type):
 				cols[cell.x] = true
 			columns.append(cols.keys())
 			columns[-1].sort()
@@ -235,7 +235,7 @@ func _test_editing() -> void:
 		_expect(_lane_route(bend.roads, Vector2(201, 90.5), Vector2(210.5, 81), true).is_empty() or _lane_route(bend.roads, Vector2(209.5, 81), Vector2(201, 89.5), true).is_empty(), false, "a %s road drawn back to a road's end turns there both ways" % type)
 	var one_way := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	one_way.apply({"op": "build_road", "from": Vector2i(210, 90), "to": Vector2i(200, 90), "type": "one_way"})
-	_expect(one_way.roads.nodes[one_way.roads.segments[1].a], Vector2i(210, 90), "a one-way road runs the way it was dragged")
+	_expect(one_way.roads.nodes[one_way.roads.segments[1].a], Vector2(210, 90), "a one-way road runs the way it was dragged")
 	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
 	var net := RoadNet.new(Content.base().road_types)
 	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
@@ -250,7 +250,7 @@ func _test_editing() -> void:
 	var version := net.version
 	net.remove(net.segment_at(Vector2i(5, 1)))
 	_expect(net.version > version, true, "removing a road bumps the version")
-	_expect(net.nodes.values().has(Vector2i(5, 0)), false, "a node left with no road goes")
+	_expect(net.nodes.values().has(Vector2(5, 0)), false, "a node left with no road goes")
 	_expect(net.degree(_node(net, Vector2i(5, 5))), 3, "the crossing becomes a T")
 
 
@@ -989,7 +989,7 @@ func _grid(areas: Areas, spots: Array) -> Array[Vector2i]:
 
 
 func _node(net: RoadNet, cell: Vector2i) -> int:
-	return net.nodes.find_key(cell)
+	return net.nodes.find_key(Vector2(cell))
 
 
 func _expect(actual: Variant, expected: Variant, what: String) -> void:

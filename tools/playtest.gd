@@ -58,7 +58,7 @@ func _build(mode: String) -> void:
 	var to := _sim.roads.snap_end(from, Vector2i(90, entry.y + 1))
 	print("snapping: terminal road dragged to (90, %d) ends at %s" % [entry.y + 1, to])
 	_do({"op": "build_road", "from": from, "to": to, "type": "terminal_1_1"})
-	print("snapping: the meeting is a %d-way junction" % _sim.roads.degree(_sim.roads.nodes.find_key(to)))
+	print("snapping: the meeting is a %d-way junction" % _sim.roads.degree(_sim.roads.nodes.find_key(Vector2(to))))
 	var north := _sim.roads.segment_at(Vector2i(88, 250))
 	var south := _sim.roads.segment_at(Vector2i(88, 320))
 	var east := _sim.roads.segment_at(Vector2i(300, entry.y))

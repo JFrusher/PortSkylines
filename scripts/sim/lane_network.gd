@@ -88,10 +88,10 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 	for node: int in arms_at:
 		if arms_at[node].size() < 3:
 			continue
-		var point: Vector2i = net.nodes[node]
+		var point: Vector2 = net.nodes[node]
 		_node_at[point] = node
 		for arm: Dictionary in arms_at[node]:
-			var way := Vector2i(arm.direction.round())
+			var way := arm_key(arm.direction)
 			var lanes := RoadCurve.lanes(arm.road)
 			for k in lanes.size():
 				if not lanes[k].forward:
@@ -117,15 +117,22 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 
 ## Junction `point`'s arms, sorted so they come in the same order every
 ## time; [] when it is no junction.
-func arms(point: Vector2i) -> Array:
+func arms(point: Vector2) -> Array:
 	var found: Array = _junctions.get(point, {}).keys()
 	found.sort()
 	return found
 
 
 ## The lane pieces arriving at junction `point` by arm `arm`.
-func approach(point: Vector2i, arm: Vector2i) -> Array:
+func approach(point: Vector2, arm: Vector2i) -> Array:
 	return _junctions.get(point, {}).get(arm, [])
+
+
+## The key an arm of a junction is kept by: its way out along its road, a
+## unit vector times 1000 rounded, so arms any angle apart differ and the
+## two ways of a straight road through a junction are each other's opposite.
+static func arm_key(direction: Vector2) -> Vector2i:
+	return Vector2i((direction.normalized() * 1000.0).round())
 
 
 ## [junction point, arm] of a lane piece arriving at a junction, or [].
@@ -134,7 +141,7 @@ func arm_of(piece: int) -> Array:
 
 
 ## The node at junction `point`, or 0.
-func node_at(point: Vector2i) -> int:
+func node_at(point: Vector2) -> int:
 	return _node_at.get(point, 0)
 
 

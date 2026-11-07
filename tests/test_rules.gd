@@ -285,7 +285,7 @@ func _test_upkeep_at_midnight() -> void:
 	var cells := 0.0
 	for segment: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[segment]
-		cells += RoadNet.length(sim.roads.nodes[road.a], sim.roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		cells += RoadNet.length(sim.roads.grid_point(road.a), sim.roads.grid_point(road.b)) * rules.road_types[road.type].upkeep_per_cell
 	for id: int in sim.areas.list:
 		cells += sim.areas.cells(id).size() * rules.area_types[sim.areas.list[id].type].upkeep_per_cell
 	for segment: int in sim.ship_lanes.segments:

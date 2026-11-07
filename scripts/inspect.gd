@@ -30,7 +30,7 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 		if cell in _crane_cells(sim, crane):
 			return crane
 	var junction := Drive.junction_at(sim, cell)
-	if junction != Grid.NONE:
+	if junction != Vector2.INF:
 		return {"junction": junction}
 	var area := sim.areas.area_at(cell)
 	if area:
@@ -92,15 +92,11 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 
 ## The name of the arm leaving a junction towards `arm`: "north", "south-east"...
 static func arm_name(arm: Vector2i) -> String:
-	var parts: Array[String] = []
-	if arm.y != 0:
-		parts.append("north" if arm.y < 0 else "south")
-	if arm.x != 0:
-		parts.append("west" if arm.x < 0 else "east")
-	return "-".join(parts)
+	var names := ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
+	return names[posmod(roundi(atan2(arm.y, arm.x) / (PI / 4.0)), 8)]
 
 
-static func _junction(sim: PortSim, point: Vector2i) -> Array[String]:
+static func _junction(sim: PortSim, point: Vector2) -> Array[String]:
 	var junctions := Drive.junctions(sim)
 	var lines: Array[String] = ["Junction of %d roads" % Drive.arms(sim, point).size()]
 	if point in junctions.signals:

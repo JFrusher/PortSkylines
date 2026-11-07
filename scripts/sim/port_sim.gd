@@ -703,7 +703,7 @@ func change_road_error(segment: int, type: String) -> String:
 	var road: Dictionary = roads.segments[segment]
 	if road.type == type:
 		return "This road is already a %s" % rules.road_types[type].name
-	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment)
+	return build_road_error(roads.grid_point(road.a), roads.grid_point(road.b), type, segment)
 
 
 ## Rebuilds `segment` as a road of `type` on the same line, at the new
@@ -712,7 +712,7 @@ func change_road(segment: int, type: String) -> String:
 	var err := change_road_error(segment, type)
 	if err == "":
 		var road: Dictionary = roads.segments[segment]
-		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type))
+		ledger.post("construction", -road_price(roads.grid_point(road.a), roads.grid_point(road.b), type))
 		roads.retype(segment, type)
 	return err
 
@@ -936,7 +936,7 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 	var built := {}
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		for c in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
+		for c in roads.footprint(roads.grid_point(road.a), roads.grid_point(road.b), road.type):
 			built[c] = true
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
@@ -1615,9 +1615,9 @@ func upkeep_parts() -> Dictionary:
 	var parts := {0: 0.0}
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		parts[0] += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		parts[0] += RoadNet.length(roads.grid_point(road.a), roads.grid_point(road.b)) * rules.road_types[road.type].upkeep_per_cell
 	for segment: int in rails.segments:
-		parts[0] += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
+		parts[0] += RoadNet.length(rails.grid_point(rails.segments[segment].a), rails.grid_point(rails.segments[segment].b)) * rules.rail.upkeep_per_cell
 	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]

@@ -386,7 +386,7 @@ func delays() -> Dictionary:
 
 ## Whether a car other than `except` has booked, or is on, a connection
 ## across junction `point`.
-func box_busy(point: Vector2i, except: int) -> bool:
+func box_busy(point: Vector2, except: int) -> bool:
 	var node := network.node_at(point)
 	for id: int in cars:
 		var car: Dictionary = cars[id]
@@ -398,7 +398,7 @@ func box_busy(point: Vector2i, except: int) -> bool:
 ## Whether a car on arm `arm` will reach junction `point` within
 ## give_way_seconds, or stands within APPROACH cells of it: a car giving way
 ## waits for a gap that long, as in Cities: Skylines.
-func approach_busy(point: Vector2i, arm: Vector2i) -> bool:
+func approach_busy(point: Vector2, arm: Vector2i) -> bool:
 	for piece: int in network.approach(point, arm):
 		for id: int in _on.get(piece, []):
 			if network.pieces[piece].length - cars[id].s <= maxf(APPROACH, cars[id].v * _rules.give_way_seconds):

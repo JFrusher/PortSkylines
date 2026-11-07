@@ -274,7 +274,7 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 func _draw_junctions() -> void:
 	var junctions := Drive.junctions(sim)
 	var green := {}
-	for point: Vector2i in junctions.signals:
+	for point: Vector2 in junctions.signals:
 		var at: Dictionary = junctions.signals[point]
 		green[point] = junctions.phases(Drive.junction_lanes(sim), point)[at.phase] if at.left > 0.0 else []
 	var now := [sim.roads.version, green, junctions.signs.duplicate(true)]
@@ -283,9 +283,9 @@ func _draw_junctions() -> void:
 	_junctions_drawn = now
 	var tool := _road_tool()
 	var points := {}
-	for point: Vector2i in junctions.signals.keys() + junctions.signs.keys():
+	for point: Vector2 in junctions.signals.keys() + junctions.signs.keys():
 		points[point] = true
-	for point: Vector2i in points:
+	for point: Vector2 in points:
 		for arm: Vector2i in Drive.arms(sim, point):
 			var color := Color.TRANSPARENT
 			if point in green:
@@ -299,7 +299,8 @@ func _draw_junctions() -> void:
 			var cells := Drive.approach_cells(sim, point, arm)
 			for i in range(APPROACH_MARK - 1, cells.size(), APPROACH_MARK):
 				var middle := (Vector2(cells[i]) + Vector2(0.5, 0.5)) * Grid.CELL
-				_strip(tool, middle - Vector2(arm) * Grid.CELL * 0.3, middle + Vector2(arm) * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
+				var way := Vector2(arm).normalized()
+				_strip(tool, middle - way * Grid.CELL * 0.3, middle + way * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
 	_junction_signs.mesh = tool.commit()
 
 
@@ -375,7 +376,7 @@ func _draw_roads() -> void:
 				trims[node] = maxf(trims.get(node, 0.0), lanes * Grid.CELL / 2.0)
 	for id: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[id]
-		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
+		_add_road(surface, marks, sim.roads.grid_point(road.a), sim.roads.grid_point(road.b), sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
 	var entry := sim.site_entry_point()
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
@@ -383,7 +384,7 @@ func _draw_roads() -> void:
 	# The main line the same way, to the rail entry.
 	_add_track(surface, marks, sim.site_rail_entry() + off_map, sim.site_rail_entry())
 	for id: int in sim.rails.segments:
-		_add_track(surface, marks, sim.rails.nodes[sim.rails.segments[id].a], sim.rails.nodes[sim.rails.segments[id].b])
+		_add_track(surface, marks, sim.rails.grid_point(sim.rails.segments[id].a), sim.rails.grid_point(sim.rails.segments[id].b))
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
 

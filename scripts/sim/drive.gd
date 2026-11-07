@@ -196,14 +196,14 @@ static func junction_lanes(sim: PortSim) -> Object:
 
 
 ## Junction `point`'s arms.
-static func arms(sim: PortSim, point: Vector2i) -> Array:
+static func arms(sim: PortSim, point: Vector2) -> Array:
 	_refresh(sim)
 	return sim.network.arms(point)
 
 
 ## The cells of the last stretch of arm `arm`'s lanes into junction `point`,
 ## for drawing.
-static func approach_cells(sim: PortSim, point: Vector2i, arm: Vector2i) -> Array:
+static func approach_cells(sim: PortSim, point: Vector2, arm: Vector2i) -> Array:
 	_refresh(sim)
 	var found := {}
 	for piece: int in sim.network.approach(point, arm):
@@ -213,14 +213,14 @@ static func approach_cells(sim: PortSim, point: Vector2i, arm: Vector2i) -> Arra
 	return found.keys()
 
 
-## The junction (its grid point) one of whose connections crosses `cell`, or NONE.
-static func junction_at(sim: PortSim, cell: Vector2i) -> Vector2i:
+## The junction (its node's point) one of whose connections crosses `cell`, or INF.
+static func junction_at(sim: PortSim, cell: Vector2i) -> Vector2:
 	_refresh(sim)
 	for id: int in sim.network.pieces:
 		var piece: Dictionary = sim.network.pieces[id]
 		if piece.node > 0 and piece.points.size() > 0 and Array(piece.points).any(func(p: Vector2) -> bool: return Vector2i(p.floor()) == cell):
 			return sim.roads.nodes[piece.node]
-	return Grid.NONE
+	return Vector2.INF
 
 
 ## Lane cells vehicles wait in -> seconds, for drawing jams.
