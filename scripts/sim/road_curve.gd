@@ -74,6 +74,25 @@ func distance_at(t: float) -> float:
 	return lerpf(_lengths[i], _lengths[i + 1], at - i)
 
 
+## The tightest radius the curve turns through, in cells; INF when straight.
+func min_radius() -> float:
+	var bend := 2.0 * (a - 2.0 * c + b)
+	var tightest := INF
+	for i in SAMPLES + 1:
+		var t := float(i) / SAMPLES
+		var velocity := 2.0 * ((1.0 - t) * (c - a) + t * (b - c))
+		var turn := absf(velocity.cross(bend))
+		if turn > 0.000001:
+			tightest = minf(tightest, pow(velocity.length(), 3) / turn)
+	return tightest
+
+
+## The control point of the piece of the curve from parameter `t0` to `t1`,
+## which runs from point(t0) to point(t1) along it.
+func control_between(t0: float, t1: float) -> Vector2:
+	return (1.0 - t0) * (1.0 - t1) * a + ((1.0 - t0) * t1 + t0 * (1.0 - t1)) * c + t0 * t1 * b
+
+
 ## The point `distance` along the curve.
 func point_at(distance: float) -> Vector2:
 	return point(t_at(distance))

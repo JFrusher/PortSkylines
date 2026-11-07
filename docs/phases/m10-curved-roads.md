@@ -121,6 +121,8 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 ### Drawing tools
 12. **Straight tool** at any angle, with node merging and segment splitting where a road ends on or near another. Test: commands only; drawing is the view's work.
 13. **Curved tool** (start, control point, end) and **freeform** (each piece continues tangent to the last).
+
+**Step 13 (7 Nov 2026):** `build_road` takes a control point. A curve meets the roads as a straight road does (12c), by its own way where it meets them: crossings are found along it, each piece between them keeps its part of the curve (`RoadCurve.control_between`), and a junction is checked by the curve's tangent there, not its chord. A curve whose tightest radius leaves its inner lane less than a cell (`RoadNet.MIN_INNER_RADIUS`) from the bend's centre is refused ("Too tight a curve"), as its inside would fold. The HUD's Shape button picks straight (a drag), curved (three clicks: start, the point it bends toward, end) or freeform (a drag that carries on along the road it starts from: its control point is that road's way out, half the drag's length on). The view draws a road's asphalt from its own lane quads and its markings along the curve.
 14. **Snapping:** angle snap with guides (90°, 45° and 15° against nearby roads), length snap (whole cells), guide lines from road ends and perpendicular and parallel to nearby roads, parallel snapping at a set gap, and a grid-snap toggle that keeps today's grid layouts.
 15. **Tooltip** with length, cost and angle beside the cursor.
 16. **Lane-arrow editing** at a junction.

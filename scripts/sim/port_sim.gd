@@ -616,7 +616,7 @@ func apply(command: Dictionary) -> String:
 		"remove_marine_base":
 			return remove_marine_base(command.id)
 		"build_road":
-			return build_road(command.from, command.to, command.type)
+			return build_road(command.from, command.to, command.type, command.get("control", Vector2.INF))
 		"build_rail":
 			return build_rail(command.from, command.to)
 		"remove_rail":
@@ -671,29 +671,32 @@ func site_entry_point() -> Vector2i:
 
 ## Why a road can't be built, or "": as though segment `skip` weren't built,
 ## and (`on_fill`) as though the water under it were filled, as a berth does.
-func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fill := false) -> String:
-	var err := roads.add_error(from, to, type, skip)
-	if err == "" and not on_fill and roads.footprint(from, to, type).any(areas.is_water):
+func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fill := false, control := Vector2.INF) -> String:
+	var err := roads.add_error(from, to, type, skip, control)
+	var ground := roads.footprint(from, to, type, control)
+	if err == "" and not on_fill and ground.any(areas.is_water):
 		err = "Roads can't be built on water"
-	if err == "" and roads.footprint(from, to, type).any(areas.breakwater_at):
+	if err == "" and ground.any(areas.breakwater_at):
 		err = "A breakwater is in the way"
-	if err == "" and not roads.footprint(from, to, type).all(owns):
+	if err == "" and not ground.all(owns):
 		err = "Buy this land first"
-	if err == "" and roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+	if err == "" and ground.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
 		err = "Something is already built here"
 	for track: int in rails.segments:
 		if err == "":
-			err = _crossing_error(from, to, roads.footprint(from, to, type), _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.cells(track))
-	if err == "" and not _afford(road_price(from, to, type)):
+			err = _crossing_error(from, to, ground, _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.cells(track))
+	if err == "" and not _afford(road_price(from, to, type, control)):
 		err = "Not enough money"
 	return err
 
 
-func build_road(from: Vector2, to: Vector2, type: String) -> String:
-	var err := build_road_error(from, to, type)
+## Builds a road of `type` from `from` to `to`, curving through `control`
+## (INF: straight); "" or why not.
+func build_road(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> String:
+	var err := build_road_error(from, to, type, 0, false, control)
 	if err == "":
-		ledger.post("construction", -road_price(from, to, type))
-		roads.add(from, to, type)
+		ledger.post("construction", -road_price(from, to, type, control))
+		roads.add(from, to, type, control)
 	return err
 
 
@@ -704,7 +707,7 @@ func change_road_error(segment: int, type: String) -> String:
 	var road: Dictionary = roads.segments[segment]
 	if road.type == type:
 		return "This road is already a %s" % rules.road_types[type].name
-	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment)
+	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment, false, road.control)
 
 
 ## Rebuilds `segment` as a road of `type` on the same line, at the new
@@ -713,13 +716,14 @@ func change_road(segment: int, type: String) -> String:
 	var err := change_road_error(segment, type)
 	if err == "":
 		var road: Dictionary = roads.segments[segment]
-		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type))
+		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type, road.control))
 		roads.retype(segment, type)
 	return err
 
 
-func road_price(from: Vector2, to: Vector2, type: String) -> int:
-	return RoadNet.cells_long(from.distance_to(to)) * rules.road_types[type].cost_per_cell
+func road_price(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> int:
+	var along := RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to)
+	return RoadNet.cells_long(along.length) * rules.road_types[type].cost_per_cell
 
 
 ## Where the highway's rail line meets the site, `entry_offset` cells south

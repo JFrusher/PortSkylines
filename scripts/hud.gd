@@ -54,6 +54,11 @@ var tool := DRAW_ROAD
 var road_type := ""
 ## With DRAW_ROAD, clicking a road changes it to road_type instead of drawing.
 var upgrade_roads := false
+## How DRAW_ROAD lays a road, as Cities: Skylines' road tools: "straight" by
+## a drag; "curved" by three clicks, start, control point, end; "freeform"
+## by a drag that carries on along the road it starts from.
+var road_mode := "straight"
+const ROAD_MODES := ["straight", "curved", "freeform"]
 ## The area type DRAW_AREA drags out, a key of rules.area_types, and for a
 ## gate whether it is built on both sides of the road.
 var area_type := ""
@@ -318,6 +323,13 @@ func _ready() -> void:
 		tool = DRAW_ROAD
 		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge; it crosses roads only straight across, at level crossings. $%d per 4 m, $%.1f a day upkeep." % [rail.cost_per_cell, rail.upkeep_per_cell]
 	rows.Roads.add_child(VSeparator.new())
+	var shape := _item(Button.new())
+	shape.text = "Shape\nstraight"
+	shape.tooltip_text = "How roads are laid: straight by a drag; curved by three clicks (start, a point the curve bends toward, end); freeform by a drag that carries on smoothly from the road it starts on. Click to change."
+	shape.pressed.connect(func() -> void:
+		road_mode = ROAD_MODES[(ROAD_MODES.find(road_mode) + 1) % ROAD_MODES.size()]
+		shape.text = "Shape\n%s" % road_mode)
+	rows.Roads.add_child(shape)
 	var upgrade := _item(Button.new())
 	upgrade.text = "Upgrade mode\nclick a road"
 	upgrade.toggle_mode = true

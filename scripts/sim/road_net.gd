@@ -28,6 +28,9 @@ var junctions: Dictionary
 var version := 0
 var _next_node := 1
 var _next_segment := 1
+## The least room, in cells, a curve leaves inside its inner lane: tighter,
+## and the inside of the bend folds over itself.
+const MIN_INNER_RADIUS := 1.0
 ## How near, in cells, a drawn road's ends must come to a road to snap onto it.
 const SNAP_CELLS := 3
 ## How far a guide runs on from a road's end, in cells.
@@ -54,13 +57,13 @@ func _init(road_types: Dictionary, junction_rules: Dictionary) -> void:
 ## to its left. An end within a road's half width of its end or line joins
 ## it there, and where it crosses another road both split at the crossing
 ## point, so junctions form by themselves. Returns "" or why it can't be built.
-func add(from: Vector2, to: Vector2, type: String) -> String:
+func add(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> String:
 	if _odd():
 		return _add_on_grid(Vector2i(from), Vector2i(to), type)
-	var err := add_error(from, to, type)
+	var err := add_error(from, to, type, 0, control)
 	if err != "":
 		return err
-	_place(_plan(from, to, type), type)
+	_place(_plan(from, to, type, 0, control), type)
 	return ""
 
 
@@ -70,9 +73,8 @@ func _place(plan: Dictionary, type: String) -> Array[int]:
 	for point: Vector2 in plan.splits:
 		_split_through(point)
 	var ends: Array[int] = []
-	var stops: Array = plan.stops
-	for i in stops.size() - 1:
-		segments[_next_segment] = {"a": _node_near(stops[i]), "b": _node_near(stops[i + 1]), "type": type, "control": (stops[i] + stops[i + 1]) / 2.0}
+	for piece: Array in plan.pieces:
+		segments[_next_segment] = {"a": _node_near(piece[0]), "b": _node_near(piece[2]), "type": type, "control": piece[1]}
 		ends.append_array([segments[_next_segment].a, segments[_next_segment].b])
 		_next_segment += 1
 	version += 1
@@ -82,14 +84,14 @@ func _place(plan: Dictionary, type: String) -> Array[int]:
 ## Why a road from `from` to `to` of `type` (or, with `skip`, segment
 ## `skip` as `type`) would leave a road at the nodes it touches shorter than
 ## the junctions at its ends cut it back, so it has no lane left; or "".
-func _room_error(from: Vector2, to: Vector2, type: String, skip: int) -> String:
+func _room_error(from: Vector2, to: Vector2, type: String, skip: int, control: Vector2) -> String:
 	var trial := RoadNet.from_dict(to_dict(), types, junctions)
 	var touched: Array[int] = []
 	if skip:
 		trial.segments[skip].type = type
 		touched.assign([segments[skip].a, segments[skip].b])
 	else:
-		touched = trial._place(trial._plan(from, to, type), type)
+		touched = trial._place(trial._plan(from, to, type, 0, control), type)
 	var trims := LaneNetwork._trims(LaneNetwork._arms(trial), junctions)
 	for id: int in trial.segments:
 		var road: Dictionary = trial.segments[id]
@@ -123,18 +125,19 @@ func _add_on_grid(from: Vector2i, to: Vector2i, type: String) -> String:
 
 ## Why `add` would refuse this road, or "": as though `skip` weren't built,
 ## so a segment can be checked as another type in its own place.
-func add_error(from: Vector2, to: Vector2, type: String, skip := 0) -> String:
-	var found: Variant = _meets(Vector2i(from), Vector2i(to), type, skip) if _odd() else _plan(from, to, type, skip)
+func add_error(from: Vector2, to: Vector2, type: String, skip := 0, control := Vector2.INF) -> String:
+	var found: Variant = _meets(Vector2i(from), Vector2i(to), type, skip) if _odd() else _plan(from, to, type, skip, control)
 	if found is String:
 		return found
-	return "" if _odd() else _room_error(from, to, type, skip)
+	return "" if _odd() else _room_error(from, to, type, skip, control)
 
 
-## Where a road of `type` from `from` to `to` would run and meet the roads
-## built (as though `skip` weren't): {"stops": its ends and the points it
-## crosses roads at, in order from `from`, "splits": the points where a
+## Where a road of `type` from `from` to `to`, curving through `control`
+## (INF: straight), would run and meet the roads built (as though `skip`
+## weren't): {"pieces": [start, control, end] of each piece of it between
+## the roads it meets, in order from `from`, "splits": the points where a
 ## road it meets splits}; or why it can't be built.
-func _plan(from: Vector2, to: Vector2, type: String, skip := 0) -> Variant:
+func _plan(from: Vector2, to: Vector2, type: String, skip := 0, control := Vector2.INF) -> Variant:
 	if type not in types:
 		return "Unknown road type \"%s\"" % type
 	var meets: Array[Dictionary] = []  # {"point", "node": the node there or 0, "segment": the road split there or 0}
@@ -146,44 +149,52 @@ func _plan(from: Vector2, to: Vector2, type: String, skip := 0) -> Variant:
 			meets.append(joined)
 	if ends[0].distance_to(ends[1]) < 1.0:
 		return "A road needs a length"
-	var way := (ends[1] - ends[0]).normalized()
+	var mine := RoadCurve.new(ends[0], (ends[0] + ends[1]) / 2.0 if control == Vector2.INF else control, ends[1])
 	var half: float = (types[type].forward + types[type].backward) / 2.0
+	if mine.min_radius() < half + MIN_INNER_RADIUS:
+		return "Too tight a curve: its inside lane would turn tighter than %d m" % Grid.metres(MIN_INNER_RADIUS)
+	var bounds := Rect2(mine.a, Vector2.ZERO).expand(mine.b).expand(mine.c).grow(half + 1.0)
 	var near: Array[int] = []  # the roads near enough to cross or overlap it
 	for id: int in segments:
-		if id != skip and _hull(id).intersects(Rect2(ends[0], Vector2.ZERO).expand(ends[1]).grow(half + 1.0)):
+		if id != skip and _hull(id).intersects(bounds):
 			near.append(id)
-	var crossings: Array[Vector2] = []
+	var line := mine.offset_points(0.0)
+	var crossings: Array[float] = []  # distances along it
 	for id in near:
-		var line := curve(id).offset_points(0.0)
+		var theirs := curve(id).offset_points(0.0)
 		for i in range(1, line.size()):
-			var hit: Variant = Geometry2D.segment_intersects_segment(ends[0], ends[1], line[i - 1], line[i])
-			if hit == null or meets.any(func(m: Dictionary) -> bool: return m.point.distance_to(hit) < 0.01) or hit.distance_to(ends[0]) < 0.01 or hit.distance_to(ends[1]) < 0.01:
-				continue
-			var at := _node_close(hit)
-			meets.append({"point": nodes[at] if at else hit, "node": at, "segment": 0 if at else id})
-			crossings.append(nodes[at] if at else hit)
-	crossings.sort_custom(func(p: Vector2, q: Vector2) -> bool: return p.distance_to(ends[0]) < q.distance_to(ends[0]))
+			for j in range(1, theirs.size()):
+				var hit: Variant = Geometry2D.segment_intersects_segment(line[i - 1], line[i], theirs[j - 1], theirs[j])
+				if hit == null or meets.any(func(m: Dictionary) -> bool: return m.point.distance_to(hit) < 0.01) or hit.distance_to(ends[0]) < 0.01 or hit.distance_to(ends[1]) < 0.01:
+					continue
+				var at := _node_close(hit)
+				var point: Vector2 = nodes[at] if at else hit
+				meets.append({"point": point, "node": at, "segment": 0 if at else id})
+				crossings.append(mine.nearest(point))
+	crossings.sort()
 	# Lanes overlap only near where roads meet: as far from it as two roads
 	# that wide overlap at the angle they meet at, and a cell more. One along
 	# another meets it at under a degree, which the angles below refuse.
 	for meet in meets:
+		var way := mine.direction_at(mine.nearest(meet.point))
 		var sharpest := 90.0
 		for arm in _arms_at(meet, skip):
 			var apart := absf(rad_to_deg(arm.angle_to(way)))
 			sharpest = minf(sharpest, minf(apart, 180.0 - apart))
 		meet.reach = (half + _widest(meet, skip)) / sin(deg_to_rad(maxf(sharpest, 1.0))) + 1.0
-	var mine := _shape_of(RoadCurve.straight(ends[0], ends[1]), types[type])
+	var laid := _shape_of(mine, types[type])
 	for id in near:
 		for theirs: Dictionary in shape(id).cells:
-			for cell: Dictionary in mine.cells:
+			for cell: Dictionary in laid.cells:
 				if cell.centre.distance_to(theirs.centre) < 1.5 and not meets.any(func(m: Dictionary) -> bool: return m.point.distance_to(cell.centre) < m.reach) and Areas.overlap(PackedVector2Array(cell.corners), PackedVector2Array(theirs.corners)):
 					return "A road already runs here"
 	for meet: Dictionary in meets:
 		var arms: Array[Vector2] = _arms_at(meet, skip)
+		var d := mine.nearest(meet.point)
 		if meet.point.distance_to(ends[0]) > 0.01:
-			arms.append(-way)
+			arms.append(-mine.direction_at(d))
 		if meet.point.distance_to(ends[1]) > 0.01:
-			arms.append(way)
+			arms.append(mine.direction_at(d))
 		for i in arms.size():
 			for j in range(i + 1, arms.size()):
 				var apart := rad_to_deg(arms[i].angle_to(arms[j]))
@@ -191,10 +202,18 @@ func _plan(from: Vector2, to: Vector2, type: String, skip := 0) -> Variant:
 					return "A road already runs here"
 				if absf(apart) < junctions.min_angle - 0.001:
 					return "Roads meet at %d°; a junction needs at least %d°" % [roundi(absf(apart)), roundi(junctions.min_angle)]
-	var stops: Array = [ends[0]]
-	stops.append_array(crossings)
-	stops.append(ends[1])
-	return {"stops": stops, "splits": meets.filter(func(m: Dictionary) -> bool: return m.segment != 0).map(func(m: Dictionary) -> Vector2: return m.point)}
+	# Its pieces between the points it meets roads at, each its part of the curve.
+	var cuts: Array[float] = [0.0]
+	cuts.append_array(crossings)
+	cuts.append(mine.length)
+	var pieces: Array = []
+	for i in cuts.size() - 1:
+		var t0 := mine.t_at(cuts[i])
+		var t1 := mine.t_at(cuts[i + 1])
+		var start: Vector2 = ends[0] if i == 0 else meets.filter(func(m: Dictionary) -> bool: return m.point.distance_to(mine.point_at(cuts[i])) < 0.05)[0].point
+		var stop: Vector2 = ends[1] if i == cuts.size() - 2 else meets.filter(func(m: Dictionary) -> bool: return m.point.distance_to(mine.point_at(cuts[i + 1])) < 0.05)[0].point
+		pieces.append([start, (start + stop) / 2.0 if control == Vector2.INF else mine.control_between(t0, t1), stop])
+	return {"pieces": pieces, "splits": meets.filter(func(m: Dictionary) -> bool: return m.segment != 0).map(func(m: Dictionary) -> Vector2: return m.point)}
 
 
 ## Where a road's end at `point` joins the roads built (but `skip`): a node
@@ -704,15 +723,16 @@ func lanes(segment: int) -> Array[Dictionary]:
 	return _lanes(grid_point(segments[segment].a), grid_point(segments[segment].b), types[segments[segment].type])
 
 
-## The ground (see ground) a straight road of `type` from `from` to `to` would stand on.
-func footprint(from: Vector2, to: Vector2, type: String) -> Array[Vector2i]:
+## The ground (see ground) a road of `type` from `from` to `to`, curving
+## through `control` (INF: straight), would stand on.
+func footprint(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
 	if _odd():
 		for lane in _lanes(Vector2i(from), Vector2i(to), types[type]):
 			found.append_array(lane.cells)
 		return found
 	var under := {}
-	for cell: Dictionary in _shape_of(RoadCurve.straight(from, to), types[type]).cells:
+	for cell: Dictionary in _shape_of(RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to), types[type]).cells:
 		under[Vector2i(cell.centre.floor())] = true
 	found.assign(under.keys())
 	return found

@@ -19,6 +19,8 @@ var _painting := false
 var _last_cell := Grid.NONE
 ## Where a road drag started on the 4 m grid, or NONE.
 var _road_from := Vector2.INF
+## A curved road's control point once its second click has placed it, or INF.
+var _road_control := Vector2.INF
 ## How near a lane end a lane drag has to start or end to join it, in cells.
 const LANE_SNAP := 4
 ## Where a ship lane drag started, or Grid.NONE.
@@ -90,6 +92,7 @@ func _use(new_sim: PortSim) -> void:
 	sim = new_sim
 	_painting = false
 	_road_from = Vector2.INF
+	_road_control = Vector2.INF
 	_lane_from = Grid.NONE
 	_anchor_from = Grid.NONE
 	_wall_from = Grid.NONE
@@ -165,7 +168,7 @@ func _process(dt: float) -> void:
 	elif berth.has("line"):
 		ends = [Vector2(berth.line[0]), Vector2(berth.line[1])] as Array[Vector2]
 		road_type = PortSim.BERTH_ROAD
-	view.show_road_preview(ends[0], ends[1], road_type, ok)
+	view.show_road_preview(ends[0], ends[1], road_type, ok, _road_bend() if _road_from != Vector2.INF else (sim.roads.segments[picked[1]].control if not picked.is_empty() and picked[0] == sim.roads else Vector2.INF))
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_painting = false
@@ -180,10 +183,19 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Vector2.INF:
 		if hud.tool == Hud.DRAW_ROAD and hud.road_type == "track":
 			_report(sim.apply({"op": "build_rail", "from": Vector2i(_road_from), "to": Vector2i(_road_to())}))
+		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "curved" and _road_control == Vector2.INF:
+			# A curved road's second click places the point it bends toward; the third ends it.
+			if _road_to() != _road_from:
+				_road_control = _road_to()
+			return
 		elif hud.tool == Hud.DRAW_ROAD:
 			var ends := _road_ends()
-			_report(sim.apply({"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}))
+			var command := {"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}
+			if _road_bend() != Vector2.INF:
+				command.control = _road_bend()
+			_report(sim.apply(command))
 		_road_from = Vector2.INF
+		_road_control = Vector2.INF
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _wall_from != Grid.NONE:
 		if hud.tool == Hud.BUILD_BREAKWATER:
@@ -233,7 +245,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_report(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(_hovered_grid_cell()), "type": hud.road_type}))
 			return
 		if hud.tool == Hud.DRAW_ROAD:
-			_road_from = _road_start()
+			if _road_from == Vector2.INF:
+				_road_from = _road_start()
 			return
 		if hud.tool == Hud.INSPECT:
 			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
@@ -351,7 +364,7 @@ func _order_error(cell: Vector2i) -> String:
 			if hud.road_type == "track":
 				return sim.build_rail_error(Vector2i(_road_from), Vector2i(_road_to()))
 			var ends := _road_ends()
-			return sim.build_road_error(ends[0], ends[1], hud.road_type)
+			return sim.build_road_error(ends[0], ends[1], hud.road_type, 0, false, _road_bend())
 		Hud.DRAW_AREA:
 			if _area_from.is_empty():
 				return ""
@@ -547,6 +560,27 @@ func _net() -> RoadNet:
 ## The points a road drag builds between.
 func _road_ends() -> Array[Vector2]:
 	return [_road_from, _road_to()] as Array[Vector2]
+
+
+## The point the road being drawn bends toward, or INF while it is straight:
+## a curved road's second click, or for a freeform drag from a road's end,
+## that road's way out of it carried on half the drag's length.
+func _road_bend() -> Vector2:
+	if hud.road_type == "track":
+		return Vector2.INF
+	if hud.road_mode == "curved":
+		return _road_control
+	if hud.road_mode != "freeform":
+		return Vector2.INF
+	var to := _road_to()
+	for id: int in sim.roads.segments:
+		var road: Dictionary = sim.roads.segments[id]
+		for end: String in ["a", "b"]:
+			if sim.roads.nodes[road[end]] == _road_from and sim.roads.degree(road[end]) == 1:
+				var along := sim.roads.curve(id)
+				var out := -along.direction_at(0.0) if end == "a" else along.direction_at(along.length)
+				return _road_from + out * _road_from.distance_to(to) / 2.0
+	return Vector2.INF
 
 
 ## The grid point under the mouse, in cells with their fractions.

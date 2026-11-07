@@ -70,8 +70,9 @@ func _test_info_views() -> void:
 func _test_road_mesh_faces_up() -> void:
 	var types: Dictionary = Content.base().road_types
 	var surface := WorldView._road_tool()
-	WorldView._add_road(surface, null, Vector2i(10, 10), Vector2i(30, 10), types.terminal_1_1)
-	WorldView._add_road(surface, null, Vector2i(30, 10), Vector2i(40, 20), types.tractor_lane)
+	WorldView._add_road(surface, null, RoadCurve.straight(Vector2(10, 10), Vector2(30, 10)), types.terminal_1_1)
+	WorldView._add_road(surface, null, RoadCurve.straight(Vector2(30, 10), Vector2(40, 20)), types.tractor_lane)
+	WorldView._add_road(surface, null, RoadCurve.new(Vector2(40, 20), Vector2(60, 20), Vector2(60, 40)), types.terminal_2_2)
 	WorldView._cell_quad(surface, Vector2i(5, 7), 0.2)
 	var vertices: PackedVector3Array = surface.commit().surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var clockwise := true

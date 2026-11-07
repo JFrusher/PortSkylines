@@ -254,9 +254,10 @@ func show_hover_at(centre: Vector2, cells: int, ok: bool) -> void:
 	(_hover.mesh.material as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
-## Shows the road a drag would build from `from` to `to`, green if it can be
-## built, else red; hidden when `from` is INF.
-func show_road_preview(from: Vector2, to: Vector2, type: String, ok: bool) -> void:
+## Shows the road a drag would build from `from` to `to`, curving through
+## `control` (INF: straight), green if it can be built, else red; hidden
+## when `from` is INF.
+func show_road_preview(from: Vector2, to: Vector2, type: String, ok: bool, control := Vector2.INF) -> void:
 	_road_preview.visible = from != Vector2.INF and from != to
 	if not _road_preview.visible:
 		return
@@ -264,7 +265,7 @@ func show_road_preview(from: Vector2, to: Vector2, type: String, ok: bool) -> vo
 	if type == "track":
 		_add_track(surface, null, Vector2i(from), Vector2i(to))
 	else:
-		_add_road(surface, null, from, to, sim.rules.road_types[type])
+		_add_road(surface, null, RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to), sim.rules.road_types[type])
 	_road_preview.mesh = surface.commit()
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
@@ -371,11 +372,11 @@ func _draw_roads() -> void:
 	var trim := func(id: int, end: String) -> float: return cut[[id, end]] * Grid.CELL if sim.roads.degree(sim.roads.segments[id][end]) >= 3 else 0.0
 	for id: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[id]
-		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trim.call(id, "a"), trim.call(id, "b"))
+		_add_road(surface, marks, sim.roads.curve(id), sim.rules.road_types[road.type], trim.call(id, "a"), trim.call(id, "b"))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
 	var entry := sim.site_entry_point()
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
-	_add_road(surface, marks, entry + off_map, entry, sim.rules.road_types.terminal_2_2)
+	_add_road(surface, marks, RoadCurve.straight(Vector2(entry + off_map), Vector2(entry)), sim.rules.road_types.terminal_2_2)
 	# The main line the same way, to the rail entry.
 	_add_track(surface, marks, sim.site_rail_entry() + off_map, sim.site_rail_entry())
 	for id: int in sim.rails.segments:
@@ -521,53 +522,56 @@ static func _road_tool() -> SurfaceTool:
 ## bend; ends at a junction (a trim) are left square. Markings go to `marks` unless it is null: a solid line between the
 ## two directions, dashes between lanes going the same way, stopping `trim_a`
 ## and `trim_b` metres short of the ends.
-static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2, b: Vector2, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
+static func _add_road(surface: SurfaceTool, marks: Variant, curve: RoadCurve, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
 	var lanes: int = road.forward + road.backward
-	var along := (b - a).normalized()
-	var side := Vector2(-along.y, along.x)
-	# The lanes lie a cell wide each, evenly either side of the line from a to b, at any angle (RoadNet.shape).
-	var lane_width := float(Grid.CELL)
-	var start: Vector2 = a * Grid.CELL
-	var end: Vector2 = b * Grid.CELL
-	var half := lanes * lane_width / 2.0
+	var half := lanes * Grid.CELL / 2.0
 	surface.set_color(ASPHALT if road.lorries else TRACTOR_ONLY)
 	var top := ROAD_TOP + (ASPHALT_RISE if road.lorries else 0.0)
-	_strip(surface, start, end, half, top)
+	# The asphalt is the road's own lane quads, as the sim lays them (RoadNet.shape), so it bends with the road.
+	for cell: Dictionary in RoadNet._shape_of(curve, road).cells:
+		# Cells left of the line are laid the other way round; face them all up.
+		var corners: Array = cell.corners.duplicate()
+		if (corners[1] - corners[0]).cross(corners[2] - corners[0]) < 0.0:
+			corners.reverse()
+		_quad(surface, corners, top)
 	# A junction's widest road covers its middle, so an end there gets no round cap to poke out past it.
 	if trim_a == 0.0:
-		_disc(surface, start, half, top)
+		_disc(surface, curve.a * Grid.CELL, half, top)
 	if trim_b == 0.0:
-		_disc(surface, end, half, top)
+		_disc(surface, curve.b * Grid.CELL, half, top)
 	if marks == null:
 		return
 	marks.set_color(MARKING)
-	var length: float = start.distance_to(end) - trim_a - trim_b
+	var total := curve.length * Grid.CELL
+	var length := total - trim_a - trim_b
 	if length <= 0.0:
 		return
+	# The point `d` metres along the road and `offset` metres right of its line, in metres.
+	var at := func(d: float, offset: float) -> Vector2: return (curve.point_at(d / Grid.CELL) + curve.right_at(d / Grid.CELL) * offset / Grid.CELL) * Grid.CELL
 	# Where a road meets a junction: a zebra crossing at its edge, a stop line
 	# behind it across the lanes driving in, then the lane markings, if they fit.
 	var ends := int(trim_a > 0.0) + int(trim_b > 0.0)
 	if ends > 0 and length >= JUNCTION_MARKS * ends + DASH:
-		var middle_line: float = road.backward * lane_width - half
+		var middle_line: float = road.backward * Grid.CELL - half
 		if trim_a > 0.0:
-			_junction_marks(marks, start + along * trim_a, along, side, half, -half, middle_line)
+			_junction_marks(marks, at.call(trim_a, 0.0), curve.direction_at(trim_a / Grid.CELL), curve.right_at(trim_a / Grid.CELL), half, -half, middle_line)
 			trim_a += JUNCTION_MARKS
 		if trim_b > 0.0:
-			_junction_marks(marks, end - along * trim_b, -along, side, half, middle_line, half)
+			_junction_marks(marks, at.call(total - trim_b, 0.0), -curve.direction_at((total - trim_b) / Grid.CELL), curve.right_at((total - trim_b) / Grid.CELL), half, middle_line, half)
 			trim_b += JUNCTION_MARKS
-		length = start.distance_to(end) - trim_a - trim_b
-	start += along * trim_a
-	end = start + along * length
 	for k in range(1, lanes):
-		var offset := side * (k * lane_width - half)
-		if k == road.backward:
-			_strip(marks, start + offset, end + offset, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
-			continue
-		var at := 0.0
-		while at < length:
-			var dash_end := minf(at + DASH, length)
-			_strip(marks, start + offset + along * at, start + offset + along * dash_end, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
-			at += DASH + DASH_GAP
+		var offset := k * Grid.CELL - half
+		var solid: bool = k == road.backward
+		var d := trim_a
+		while d < total - trim_b:
+			var dash_end := total - trim_b if solid else minf(d + DASH, total - trim_b)
+			# In half-cell steps, so a mark bends with the road.
+			var step := d
+			while step < dash_end:
+				var next := minf(step + Grid.CELL / 2.0, dash_end)
+				_strip(marks, at.call(step, offset), at.call(next, offset), MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
+				step = next
+			d = dash_end + (0.0 if solid else DASH_GAP)
 
 
 ## A zebra crossing across a road `half` metres wide each side of `edge`,
