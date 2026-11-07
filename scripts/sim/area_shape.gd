@@ -16,21 +16,23 @@ var cells: Array[Dictionary] = []
 
 
 ## The cells beside `curve` on `side` (1 right of its way, -1 left):
-## `columns` of them, one cell along the line each from `from` cells along
-## it, starting `edge` cells off the line and reaching `depth` rows out.
-static func along(curve: RoadCurve, side: int, from: float, columns: int, edge: float, depth: int) -> AreaShape:
+## `columns` of them, `step` cells along the line each (one for an area, a
+## little less on a road at an angle so a whole number run its length) from
+## `from` cells along it, starting `edge` cells off the line and reaching
+## `depth` rows out.
+static func along(curve: RoadCurve, side: int, from: float, columns: int, edge: float, depth: int, step := 1.0) -> AreaShape:
 	var shape := AreaShape.new()
 	for k in columns:
-		var d0 := from + k
-		var d1 := d0 + 1.0
-		var direction := curve.direction_at(d0 + 0.5)
+		var d0 := from + k * step
+		var d1 := d0 + step
+		var direction := curve.direction_at(d0 + step / 2.0)
 		for r in depth:
 			var near := edge + r
 			var far := near + 1.0
 			var corners: Array[Vector2] = [_at(curve, d0, near, side), _at(curve, d1, near, side), _at(curve, d1, far, side), _at(curve, d0, far, side)]
 			if not (_usable(corners[0], corners[1], direction) and _usable(corners[3], corners[2], direction)):
 				continue
-			shape.cells.append({"k": k, "r": r, "centre": _at(curve, d0 + 0.5, near + 0.5, side), "corners": corners})
+			shape.cells.append({"k": k, "r": r, "centre": _at(curve, d0 + step / 2.0, near + 0.5, side), "corners": corners})
 	return shape
 
 

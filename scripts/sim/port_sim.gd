@@ -747,6 +747,7 @@ func build_rail_error(from: Vector2i, to: Vector2i) -> String:
 			return "Something is already built here"
 		var lanes_of := []
 		for id: int in roads.segments:
+			# shortcut: road and track cross square, lane by lane, until crossings at any angle (M10 12c).
 			for lane in roads.lanes(id):
 				lanes_of.append(lane.cells)
 		err = _crossing_error(track, track, lanes_of)

@@ -169,13 +169,13 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 			return "Areas must stay on the site"
 		if is_water(cell) and types[type].kind != "quay_apron":
 			return "Areas can't be built on water"
-	# Blocked where its cells' quads overlap a road lane's or breakwater's cell, or another area's cells.
-	var taken := _taken()
+	# Blocked where its cells' quads overlap a road's lane quads, a breakwater's cells or another area's cells.
+	var lanes := _lane_quads()
 	var depth: int = placed.depth if types[type].kind == "quay_apron" else types[type].depth
 	var curve := RoadCurve.new(placed.curve[0], placed.curve[1], placed.curve[2])
 	for cell: Dictionary in AreaShape.along(curve, placed.side, placed.from, placed.columns, placed.edge, depth).cells:
 		var quad := PackedVector2Array(cell.corners)
-		if area_over(quad) != 0 or _grid_under(quad).any(func(under: Vector2i) -> bool: return under in taken and overlap(quad, square(under))):
+		if area_over(quad) != 0 or _grid_under(quad).any(func(under: Vector2i) -> bool: return (under in _breakwater_cells and overlap(quad, square(under))) or lanes.get(under, []).any(func(lane: PackedVector2Array) -> bool: return overlap(quad, lane))):
 			return "Something is already built here"
 	if types[type].kind == "quay_apron" and not _on_the_water(placed):
 		return "A quay apron's quay must face open water along its whole length"
@@ -218,9 +218,8 @@ func paint_cells(cells: Array, terminal: int) -> String:
 func fill_cells(start: Vector2i) -> Array[Vector2i]:
 	var lanes := {}
 	for segment: int in _roads.segments:
-		for lane in _roads.lanes(segment):
-			for cell: Vector2i in lane.cells:
-				lanes[cell] = true
+		for cell in _roads.ground(segment):
+			lanes[cell] = true
 	var found: Array[Vector2i] = []
 	var seen := {start: true}
 	var todo: Array[Vector2i] = [start]
@@ -351,9 +350,8 @@ func _idle_reason(id: int) -> String:
 		_lanes_for = _roads.version
 		_lane_cells.clear()
 		for segment: int in _roads.segments:
-			for lane in _roads.lanes(segment):
-				for cell: Vector2i in lane.cells:
-					_lane_cells[cell] = true
+			for cell in _roads.ground(segment):
+				_lane_cells[cell] = true
 	var lanes := _lane_cells
 	for cell in RoadNet.line(area.start, area.end):
 		if cell - area.out in lanes:
@@ -661,14 +659,15 @@ func _cells(area: Dictionary) -> Array[Vector2i]:
 
 ## Grid cells already taken: every road lane and breakwater (areas are
 ## checked by their cells' quads, area_over).
-func _taken() -> Dictionary:
-	var taken := {}
+## Every road's lane quads by the grid cells their bounds cover: cell -> [quad].
+func _lane_quads() -> Dictionary:
+	var found := {}
 	for id: int in _roads.segments:
-		for lane in _roads.lanes(id):
-			for cell: Vector2i in lane.cells:
-				taken[cell] = true
-	taken.merge(_breakwater_cells)
-	return taken
+		for cell: Dictionary in _roads.shape(id).cells:
+			var quad := PackedVector2Array(cell.corners)
+			for under in _grid_under(quad):
+				found.get_or_add(under, []).append(quad)
+	return found
 
 
 ## Whether the row just past an apron's quay is water all along it.

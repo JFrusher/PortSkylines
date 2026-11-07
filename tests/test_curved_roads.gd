@@ -36,7 +36,8 @@ func _all_straight(net: RoadNet, what: String) -> void:
 
 func _test_a_new_road_is_straight() -> void:
 	var sim := PortSim.new(0, RandomPort.strait(), true)
-	_expect(sim.apply({"op": "build_road", "from": Vector2i(100, 200), "to": Vector2i(140, 240), "type": "terminal_1_1"}), "", "a 45° road is built")
+	# A cell in from the land's corner: a 45° road's square end there would reach over its edge (12b).
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(101, 201), "to": Vector2i(141, 241), "type": "terminal_1_1"}), "", "a 45° road is built")
 	_all_straight(sim.roads, "a new road")
 
 

@@ -33,6 +33,7 @@ const GUIDE_CELLS := 60
 ## where the highway meets the site.
 var anchors: Array[Vector2i] = []
 var _next_cells := {}  # cell -> cells a step on along a segment, for path()
+var _shapes := {}  # segment -> [what it is laid from, its AreaShape, its ground as cell -> true]
 var _next_for := -1
 
 
@@ -91,13 +92,60 @@ func remove(segment: int) -> void:
 	version += 1
 
 
-## The segment whose lanes cover `cell`, or 0.
+## The segment standing on `cell` (its ground), or 0.
 func segment_at(cell: Vector2i) -> int:
 	for id: int in segments:
-		for lane in lanes(id):
-			if cell in lane.cells:
-				return id
+		if cell in _laid(id)[2]:
+			return id
 	return 0
+
+
+## `segment`'s lanes as quads along its curve, as an area's cells are laid
+## (AreaShape): half its lanes either side of its line, in columns a cell
+## long, or a little less so a whole number of them run its length.
+func shape(segment: int) -> AreaShape:
+	return _laid(segment)[1]
+
+
+## The grid cells `segment` stands on: those under its quads' middles.
+# shortcut: track (odd-width types) stands on its lanes' grid cells until rail curves (M10 step 19).
+func ground(segment: int) -> Array[Vector2i]:
+	var found: Array[Vector2i] = []
+	found.assign(_laid(segment)[2].keys())
+	return found
+
+
+## [what `segment` is laid from, its shape, its ground], laid again only when it changes.
+func _laid(segment: int) -> Array:
+	var road: Dictionary = segments[segment]
+	var key := [nodes[road.a], road.control, nodes[road.b], road.type]
+	if segment not in _shapes or _shapes[segment][0] != key:
+		var shape := _shape_of(curve(segment), types[road.type])
+		var under := {}
+		if _odd():
+			for lane in lanes(segment):
+				for cell: Vector2i in lane.cells:
+					under[cell] = true
+		else:
+			for cell: Dictionary in shape.cells:
+				under[Vector2i(cell.centre.floor())] = true
+		_shapes[segment] = [key, shape, under]
+	return _shapes[segment]
+
+
+## A road of type `road` laid along `curve` (see shape).
+static func _shape_of(curve: RoadCurve, road: Dictionary) -> AreaShape:
+	var columns := ceili(curve.length - 0.001)
+	var shape := AreaShape.new()
+	for side: int in [1, -1]:
+		shape.cells.append_array(AreaShape.along(curve, side, 0.0, columns, 0.0, (road.forward + road.backward) / 2, curve.length / columns).cells)
+	return shape
+
+
+## Whether this net's types are odd-width: track, whose line runs through cell middles.
+func _odd() -> bool:
+	var type: Dictionary = types.values()[0]
+	return (type.forward + type.backward) % 2 == 1
 
 
 ## `segment`'s line as a curve, in grid units.
@@ -321,10 +369,7 @@ func _meets(from: Vector2i, to: Vector2i, type: String, skip := 0) -> Variant:
 		var road: Dictionary = types[segments[id].type]
 		var theirs_d: Vector2i = grid_point(segments[id].b) - grid_point(segments[id].a)
 		var reach := maxi(width, road.forward + road.backward) + (1 if d.x * d.y != 0 or theirs_d.x * theirs_d.y != 0 else 0)
-		var theirs := {}
-		for lane in lanes(id):
-			for cell: Vector2i in lane.cells:
-				theirs[cell] = true
+		var theirs: Dictionary = _laid(id)[2]
 		for cell in mine:
 			if cell in theirs and not meets.keys().any(func(m: Vector2i) -> bool: return maxi(absi(m.x - cell.x), absi(m.y - cell.y)) < reach):
 				return "A road already runs here"
@@ -383,11 +428,17 @@ func lanes(segment: int) -> Array[Dictionary]:
 	return _lanes(grid_point(segments[segment].a), grid_point(segments[segment].b), types[segments[segment].type])
 
 
-## Every lane cell a road of `type` from `from` to `to` would cover.
+## The ground (see ground) a straight road of `type` from `from` to `to` would stand on.
 func footprint(from: Vector2i, to: Vector2i, type: String) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
-	for lane in _lanes(from, to, types[type]):
-		found.append_array(lane.cells)
+	if _odd():
+		for lane in _lanes(from, to, types[type]):
+			found.append_array(lane.cells)
+		return found
+	var under := {}
+	for cell: Dictionary in _shape_of(RoadCurve.new(Vector2(from), Vector2(from + to) / 2.0, Vector2(to)), types[type]).cells:
+		under[Vector2i(cell.centre.floor())] = true
+	found.assign(under.keys())
 	return found
 
 
