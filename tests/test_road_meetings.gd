@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_along_another_is_refused()
 	_test_track_at_an_angle()
 	_test_junctions_need_room()
+	_test_the_tool_snaps_onto_roads()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -39,6 +40,24 @@ func _test_junctions_need_room() -> void:
 	_expect(_road(sim, Vector2i(130, 230), Vector2i(130, 270), "terminal_1_1"), "", "a 1+1 road across at x = 130")
 	_expect(_road(sim, Vector2i(132, 230), Vector2i(132, 270), "terminal_1_1"), "Too close to a junction: a road needs room between its junctions", "one two cells on is refused")
 	_expect(_road(sim, Vector2i(140, 230), Vector2i(140, 270), "terminal_1_1"), "", "one ten cells on is built")
+
+
+## The straight tool (12d) snaps a drag's end onto the roads: to a road's
+## end within SNAP_CELLS before any other point, else onto the nearest point
+## of a road's line that close, at any angle; never back onto the road the
+## drag starts on; and nowhere when no road is that near.
+func _test_the_tool_snaps_onto_roads() -> void:
+	var sim := _port()
+	var roads := sim.roads
+	_expect(roads.snap_point(Vector2(158, 252)), Vector2(160, 250), "near its end, a drag snaps to the end")
+	_expect(roads.snap_point(Vector2(131.3, 252)).distance_to(Vector2(131.3, 250)) < 0.01, true, "near its line, to the nearest point on it")
+	_expect(roads.snap_point(Vector2(131.3, 252), Vector2(120, 250)), Vector2(131.3, 252), "but not back onto the road the drag starts on")
+	_expect(roads.snap_point(Vector2(131.3, 256)), Vector2(131.3, 256), "and not from further than SNAP_CELLS")
+	var at: Vector2 = roads.snap_point(Vector2(132.4, 247.5))
+	_expect(_road(sim, Vector2i(150, 225), Vector2i(150, 235)), "", "a road north of it")
+	_expect(at.distance_to(Vector2(132.4, 250)) < 0.01, true, "a drag ending beside the road snaps onto it")
+	_expect(sim.apply({"op": "build_road", "from": Vector2(150, 235), "to": at, "type": "terminal_1_1"}), "", "a drag from that road's end to the snapped point builds a road at any angle")
+	_expect(_node(sim, at) != 0, true, "ending on the road at the snapped point (nodes near: %s)" % sim.roads.nodes.values().filter(func(p: Vector2) -> bool: return p.distance_to(at) < 3.0))
 
 
 ## A port with a 2+2 road east along y = 250 from x = 100 to 160.

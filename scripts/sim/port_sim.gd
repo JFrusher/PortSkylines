@@ -689,7 +689,7 @@ func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fi
 	return err
 
 
-func build_road(from: Vector2i, to: Vector2i, type: String) -> String:
+func build_road(from: Vector2, to: Vector2, type: String) -> String:
 	var err := build_road_error(from, to, type)
 	if err == "":
 		ledger.post("construction", -road_price(from, to, type))

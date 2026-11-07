@@ -417,6 +417,37 @@ static func snap(from: Vector2i, to: Vector2i) -> Vector2i:
 	return from + d.sign() * run
 
 
+## Where a road drag's end at `near` snaps onto the roads, as Cities:
+## Skylines snaps: a road's end, a junction or an anchor within SNAP_CELLS
+## before any other point, else the nearest point on a road's line that
+## close; roads through `from` (the drag's start) don't count, so a drag
+## never snaps back along its own road; else `near` itself.
+func snap_point(near: Vector2, from := Vector2.INF) -> Vector2:
+	var best := near
+	var best_score := INF
+	for id: int in segments:
+		if not _hull(id).grow(SNAP_CELLS).has_point(near):
+			continue
+		var along := curve(id)
+		if from != Vector2.INF and along.point_at(along.nearest(from)).distance_to(from) < 0.01:
+			continue
+		for node: int in [segments[id].a, segments[id].b]:
+			var d: float = nodes[node].distance_to(near)
+			if d <= SNAP_CELLS and d - SNAP_CELLS * 2 < best_score:
+				best = nodes[node]
+				best_score = d - SNAP_CELLS * 2
+		var on := along.point_at(along.nearest(near))
+		if on.distance_to(near) <= SNAP_CELLS and on.distance_to(near) < best_score:
+			best = on
+			best_score = on.distance_to(near)
+	for anchor in anchors:
+		var d := Vector2(anchor).distance_to(near)
+		if d <= SNAP_CELLS and d - SNAP_CELLS * 2 < best_score:
+			best = Vector2(anchor)
+			best_score = d - SNAP_CELLS * 2
+	return best
+
+
 ## Where a road drag starts: on the nearest road within SNAP_CELLS of `cell`,
 ## a junction or road end before any other point, as Cities: Skylines snaps;
 ## else on a guide (see guide_start); else `cell` itself.

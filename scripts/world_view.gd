@@ -255,14 +255,14 @@ func show_hover_at(centre: Vector2, cells: int, ok: bool) -> void:
 
 
 ## Shows the road a drag would build from `from` to `to`, green if it can be
-## built, else red; hidden when `from` is NONE.
-func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> void:
-	_road_preview.visible = from != Grid.NONE and from != to
+## built, else red; hidden when `from` is INF.
+func show_road_preview(from: Vector2, to: Vector2, type: String, ok: bool) -> void:
+	_road_preview.visible = from != Vector2.INF and from != to
 	if not _road_preview.visible:
 		return
 	var surface := _road_tool()
 	if type == "track":
-		_add_track(surface, null, from, to)
+		_add_track(surface, null, Vector2i(from), Vector2i(to))
 	else:
 		_add_road(surface, null, from, to, sim.rules.road_types[type])
 	_road_preview.mesh = surface.commit()
@@ -366,17 +366,12 @@ func _draw_roads() -> void:
 	_roads_drawn = [sim.roads.version, sim.rails.version]
 	var surface := _road_tool()
 	var marks := _road_tool()
-	# Markings stop where a junction's widest road begins.
-	var trims := {}
+	# Markings stop where a junction's shape cuts each road back, as its lanes do (LaneNetwork).
+	var cut := LaneNetwork._trims(LaneNetwork._arms(sim.roads), sim.rules.junctions)
+	var trim := func(id: int, end: String) -> float: return cut[[id, end]] * Grid.CELL if sim.roads.degree(sim.roads.segments[id][end]) >= 3 else 0.0
 	for id: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[id]
-		var lanes: int = sim.rules.road_types[road.type].forward + sim.rules.road_types[road.type].backward
-		for node: int in [road.a, road.b]:
-			if sim.roads.degree(node) >= 3:
-				trims[node] = maxf(trims.get(node, 0.0), lanes * Grid.CELL / 2.0)
-	for id: int in sim.roads.segments:
-		var road: Dictionary = sim.roads.segments[id]
-		_add_road(surface, marks, sim.roads.grid_point(road.a), sim.roads.grid_point(road.b), sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
+		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trim.call(id, "a"), trim.call(id, "b"))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
 	var entry := sim.site_entry_point()
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
@@ -526,18 +521,14 @@ static func _road_tool() -> SurfaceTool:
 ## bend; ends at a junction (a trim) are left square. Markings go to `marks` unless it is null: a solid line between the
 ## two directions, dashes between lanes going the same way, stopping `trim_a`
 ## and `trim_b` metres short of the ends.
-static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
+static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2, b: Vector2, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
 	var lanes: int = road.forward + road.backward
-	var across := Vector2(RoadNet.right_of(b - a))
-	var along := Vector2(b - a).normalized()
+	var along := (b - a).normalized()
 	var side := Vector2(-along.y, along.x)
-	# A lane's width across the road: a cell, or less on 45° roads, where lanes step straight across.
-	var lane_width := Grid.CELL * absf(across.dot(side))
-	# The lanes lie evenly either side of the line between grid points a and b;
-	# a 45° road's sit half a cell south of it (see RoadNet._row).
-	var middle := Vector2(0, 0.5) if (b - a).x * (b - a).y != 0 else Vector2.ZERO
-	var start: Vector2 = (Vector2(a) + middle) * Grid.CELL
-	var end: Vector2 = (Vector2(b) + middle) * Grid.CELL
+	# The lanes lie a cell wide each, evenly either side of the line from a to b, at any angle (RoadNet.shape).
+	var lane_width := float(Grid.CELL)
+	var start: Vector2 = a * Grid.CELL
+	var end: Vector2 = b * Grid.CELL
 	var half := lanes * lane_width / 2.0
 	surface.set_color(ASPHALT if road.lorries else TRACTOR_ONLY)
 	var top := ROAD_TOP + (ASPHALT_RISE if road.lorries else 0.0)
