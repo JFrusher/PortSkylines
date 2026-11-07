@@ -32,12 +32,18 @@ func _port() -> PortSim:
 func _test_track_is_its_own_graph() -> void:
 	var sim := _port()
 	var segments := sim.roads.segments.size()
-	var route := sim.lanes.route(Vector2i(150, 100), Vector2i(250, 100), true)
+	var network := LaneNetwork.new(sim.roads, sim.rules.junctions)
+	var route := network.route(network.nearest(Vector2(151, 100.5), true)[0], network.nearest(Vector2(249, 100.5), true)[0], true)
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)}), "", "track is built straight across the road")
 	_expect(sim.roads.segments.size(), segments, "track doesn't split the road it crosses")
 	_expect(sim.rails.segments.size(), 1, "and the road doesn't split the track")
-	_expect(sim.lanes.route(Vector2i(150, 100), Vector2i(250, 100), true), route, "vehicles route as before")
-	_expect(sim.lanes.route(Vector2i(200, 60), Vector2i(200, 140), false), [] as Array[Vector2i], "and never along the track")
+	var after := LaneNetwork.new(sim.roads, sim.rules.junctions)
+	_expect(route.is_empty() or after.route(after.nearest(Vector2(151, 100.5), true)[0], after.nearest(Vector2(249, 100.5), true)[0], true) != route, false, "vehicles route as before")
+	var lane_cells := {}
+	for id: int in after.pieces:
+		for point: Vector2 in after.pieces[id].points:
+			lane_cells[Vector2i(point.floor())] = true
+	_expect(sim.rails.cells(sim.rails.segments.keys()[0]).filter(func(c: Vector2i) -> bool: return c in lane_cells).size(), 4, "and no lane runs along the track: lanes touch it only where the road crosses")
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(160, 101), "to": Vector2i(190, 101)}), "Road and track cross only straight across", "track can't run along a road")
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(170, 80), "to": Vector2i(190, 100)}), "Road and track cross only straight across", "or cross it at 45°")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 110), "to": Vector2i(200, 130), "type": "terminal_1_1"}), "Road and track cross only straight across", "nor a road be laid along track")
@@ -47,22 +53,24 @@ func _test_track_is_its_own_graph() -> void:
 
 func _test_level_crossing() -> void:
 	var sim := _port()
-	sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)})
-	var crossing := sim.lanes.crossings()
+	# East of the road's middle, where its lanes change (step 9), so a lane piece runs on through it.
+	sim.apply({"op": "build_rail", "from": Vector2i(220, 60), "to": Vector2i(220, 140)})
+	var crossing := Drive.crossings(sim)
 	_expect(crossing.size(), 4, "the crossing is the road's four lane cells under the track")
-	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.cells(sim.rails.segments.keys()[0]) and sim.lanes.is_junction(c)), true, "each is in both graphs, and no vehicle stops on it")
+	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.cells(sim.rails.segments.keys()[0])), true, "each lies on the track")
 	# Booked by a train, the crossing holds a lorry back until it is freed.
-	var lorry := Vehicle.new(1, "lorry", sim.lanes.route(Vector2i(190, 100), Vector2i(210, 100), true))
-	_expect(sim.lane_traffic.place(lorry), true, "a lorry waits west of the crossing")
-	_expect(sim.lane_traffic.book(-1, crossing), true, "a train books the crossing")
+	var lorry := Vehicle.new(1, "lorry", [Vector3i(0, 210, 100)] as Array[Vector3i])
+	_expect(Drive.place(sim, lorry), true, "a lorry waits west of the crossing")
+	# Placed, it drives on to its lane's end, past the crossing.
+	_expect(Drive.rebook(sim, -1, crossing), true, "a train books the crossing")
 	for i in 100:
-		sim.lane_traffic.advance(lorry, 5.0)
-	_expect(crossing.any(func(c: Vector2i) -> bool: return sim.lane_traffic.holder(c) == lorry.id), false, "no lorry is on the crossing while the train has it")
-	_expect(lorry.at_end(), false, "so the lorry is still short of it")
-	sim.lane_traffic.release(-1)
+		sim.traffic.tick(Drive.STEP)
+	_expect(crossing.has(Vector2i((Drive.where(sim, lorry) + Vector2(0.5, 0.5)).floor())), false, "no lorry is on the crossing while the train has it")
+	_expect(Drive.advance(sim, lorry, 0.0), false, "so the lorry is still short of it")
+	Drive.release(sim, -1)
 	for i in 100:
-		sim.lane_traffic.advance(lorry, 5.0)
-	_expect(lorry.at_end(), true, "once the train frees it, the lorry crosses")
+		sim.traffic.tick(Drive.STEP)
+	_expect(Drive.advance(sim, lorry, 0.0), true, "once the train frees it, the lorry crosses")
 
 
 ## An RMG block works wagons on the track running along all of its back edge.
@@ -206,16 +214,16 @@ func _test_trains_book_crossings() -> void:
 	var bend := Vector2i(entry.x - 5, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
 		_expect(sim.apply({"op": "build_rail", "from": leg[0], "to": leg[1]}), "", "track across the road to the rail entry")
-	var crossing := sim.lanes.crossings()
+	var crossing := Drive.crossings(sim)
 	_expect(crossing.size() > 0 and RailFlow.is_rail_block(sim, block), true, "the track crosses the road on its way to the rail block")
 	var booked_ticks := 0
 	var on_while_booked := 0
 	var lorries_across := 0
 	for i in roundi(4 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
-		var train_has := crossing.filter(func(c: Vector2i) -> bool: return sim.lane_traffic.holder(c) < 0)
+		var train_has := crossing.filter(func(c: Vector2i) -> bool: return sim.traffic._crossings.get(c, 0) < 0)
 		for vehicle: Vehicle in sim.vehicles:
-			if vehicle.kind == "lorry" and vehicle.path[int(vehicle.t)] in crossing:
+			if vehicle.kind == "lorry" and Vector2i((Drive.where(sim, vehicle) + Vector2(0.5, 0.5)).floor()) in crossing:
 				lorries_across += 1
 				on_while_booked += 1 if not train_has.is_empty() else 0
 		booked_ticks += 1 if not train_has.is_empty() else 0

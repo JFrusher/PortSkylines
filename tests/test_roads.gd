@@ -36,6 +36,7 @@ func _initialize() -> void:
 	_test_lorries_use_the_gate_on_their_side()
 	_test_two_way_gate()
 	_test_lorry_gives_up()
+	_test_stuck_tractor_moves_on()
 	_test_following_a_box()
 	_test_lorries_come_for_the_longest_due_box()
 	print("tests: %d failure(s)" % _failures)
@@ -110,43 +111,32 @@ func _test_junctions() -> void:
 	_expect(lengths, 10 + 10 + 4 + 5, "splitting keeps every cell of road")
 
 
+## Routes on the lane network: round a bend, back by a dead end's turn
+## back, forward only on a one-way road, lorries off a tractor lane, and
+## across a grid of 2+2 roads. (A lane change on the way is step 9's.)
 func _test_routes() -> void:
 	var net := RoadNet.new(Content.base().road_types)
-	var lanes := LaneGraph.new(net)
 	net.add(Vector2i(0, 0), Vector2i(10, 0), "terminal_1_1")
 	net.add(Vector2i(10, 0), Vector2i(10, 10), "terminal_1_1")
-	# Keeping right, the eastbound lane is row 0 (x 0 to 9) and the southbound
-	# column 9 (y 0 to 9): they share the corner cell (9, 0).
-	var bend := lanes.route(Vector2i(0, 0), Vector2i(9, 9), true)
-	_expect(bend.size(), 19, "round a bend the route is the cells along both lanes, sharing the corner")
-	_expect(_steps_are_single(bend), true, "a route moves one cell at a time")
-	var back := lanes.route(Vector2i(4, 0), Vector2i(2, -1), true)
-	_expect(not back.is_empty(), true, "the other way is reached by the dead end's U-turn")
-	_expect(back.has(Vector2i(9, 9)) and back.has(Vector2i(10, 9)), true, "the U-turn is at the dead end")
+	# Keeping right, the eastbound lane runs along y = 0.5 and the southbound down x = 9.5.
+	var bend := _lane_route(net, Vector2(1, 0.5), Vector2(9.5, 9), true)
+	_expect(bend.is_empty(), false, "a route runs round a bend")
+	var back := _lane_route(net, Vector2(4, 0.5), Vector2(2, -0.5), true)
+	_expect(back.is_empty(), false, "the other way is reached by the dead end's turn back")
 	var one_way := RoadNet.new(Content.base().road_types)
-	var one_way_lanes := LaneGraph.new(one_way)
 	one_way.add(Vector2i(0, 0), Vector2i(10, 0), "one_way")
-	# Its two lanes are rows -1 and 0, either side of grid line y = 0, x 0 to 9.
-	_expect(one_way_lanes.route(Vector2i(0, 0), Vector2i(9, 0), true).size(), 10, "a one-way road is driven forward")
-	_expect(one_way_lanes.route(Vector2i(9, 0), Vector2i(0, 0), true), [] as Array[Vector2i], "a one-way road can't be driven backwards")
-	_expect(one_way_lanes.route(Vector2i(0, 0), Vector2i(9, -1), true).size(), 10, "a lane change costs no extra cells")
+	_expect(_lane_route(one_way, Vector2(1, 0.5), Vector2(9, 0.5), true).is_empty(), false, "a one-way road is driven forward")
+	var one_way_lanes := LaneNetwork.new(one_way, Content.base().junctions).pieces.values()
+	_expect(one_way_lanes.all(func(p: Dictionary) -> bool: return p.points[-1].x > p.points[0].x), true, "a one-way road's lanes all run east, the way it was drawn, so it can't be driven backwards")
 	var tractors := RoadNet.new(Content.base().road_types)
-	var tractor_lanes := LaneGraph.new(tractors)
 	tractors.add(Vector2i(0, 5), Vector2i(10, 5), "tractor_lane")
-	_expect(tractor_lanes.route(Vector2i(0, 5), Vector2i(9, 5), true), [] as Array[Vector2i], "lorries can't use the tractor lane")
-	_expect(tractor_lanes.route(Vector2i(0, 5), Vector2i(9, 5), false).size(), 10, "tractors can")
+	_expect(_lane_route(tractors, Vector2(1, 5.5), Vector2(9, 5.5), true), [] as Array[int], "lorries can't use the tractor lane")
+	_expect(_lane_route(tractors, Vector2(1, 5.5), Vector2(9, 5.5), false).is_empty(), false, "tractors can")
 	var grid := RoadNet.new(Content.base().road_types)
-	var grid_lanes := LaneGraph.new(grid)
 	for i in 3:
 		grid.add(Vector2i(0, i * 10), Vector2i(30, i * 10), "terminal_2_2")
 		grid.add(Vector2i(i * 10 + 5, -5), Vector2i(i * 10 + 5, 25), "terminal_2_2")
-	var across := grid_lanes.route(Vector2i(0, 0), Vector2i(25, 20), true)
-	_expect(_steps_are_single(across), true, "junction crossings move one cell at a time")
-	# 25 east and 20 south, less a diagonal for each lane change towards the
-	# goal (one on each of the four runs that can use one) and each left turn
-	# between segments whose lanes share no cell (two): the route staircases
-	# down the columns west of x = 5 and 15.
-	_expect(across.size() - 1, 25 + 20 - 6, "a route across a road grid is the shortest by hand")
+	_expect(_lane_route(grid, Vector2(1, 0.5), Vector2(29, 20.5), true).is_empty(), false, "a route runs across a road grid")
 
 
 func _test_editing() -> void:
@@ -161,7 +151,7 @@ func _test_editing() -> void:
 	_expect(snapping.snap_start(Vector2i(20, 60)), Vector2i(20, 60), "a drag starting away from roads stays put")
 	_expect(snapping.snap_end(Vector2i(22, 20), Vector2i(21, 48)), Vector2i(22, 50), "a drag ending near a road ends on it, straight from its start")
 	_expect(snapping.add(Vector2i(22, 20), snapping.snap_end(Vector2i(22, 20), Vector2i(21, 48)), "terminal_1_1"), "", "and that road is built, joining at a T")
-	_expect(snapping.degree(snapping.nodes.find_key(Vector2i(22, 50))), 3, "the snapped end is a junction")
+	_expect(snapping.degree(snapping.nodes.find_key(Vector2(22, 50))), 3, "the snapped end is a junction")
 	_expect(snapping.snap_end(Vector2i(10, 30), Vector2i(32, 49)), Vector2i(30, 50), "a 45° drag ends on the road at 45°, where plain snapping gives (31, 51)")
 	_expect(snapping.snap_end(Vector2i(40, 50), Vector2i(38, 53)), Vector2i(37, 53), "a drag from a road's end doesn't snap back onto that road")
 	_expect(snapping.snap_end(Vector2i(60, 20), Vector2i(61, 30)), Vector2i(60, 30), "away from roads the end snaps straight as before")
@@ -210,7 +200,7 @@ func _test_editing() -> void:
 	# pieces built from either end, or from either side of a road, line up.
 	var lanes_of := func(port: PortSim, segment: int) -> Array: return port.roads.lanes(segment).map(func(l: Dictionary) -> Array: return l.cells)
 	var cells_of := func(port: PortSim, segment: int) -> Array:
-		var found := port.roads.footprint(port.roads.nodes[port.roads.segments[segment].a], port.roads.nodes[port.roads.segments[segment].b], port.roads.segments[segment].type)
+		var found := port.roads.footprint(port.roads.grid_point(port.roads.segments[segment].a), port.roads.grid_point(port.roads.segments[segment].b), port.roads.segments[segment].type)
 		found.sort()
 		return found
 	for type: String in ["terminal_1_1", "terminal_2_2"]:
@@ -225,7 +215,7 @@ func _test_editing() -> void:
 			stubs.apply({"op": "build_road", "from": Vector2i(200, 90), "to": Vector2i(210, 90), "type": type})
 			stubs.apply({"op": "build_road", "from": start, "to": stubs.roads.snap_end(start, Vector2i(205, 90)), "type": type})
 			var cols := {}
-			for cell: Vector2i in stubs.roads.footprint(stubs.roads.nodes[stubs.roads.segments[3].a], stubs.roads.nodes[stubs.roads.segments[3].b], type):
+			for cell: Vector2i in stubs.roads.footprint(stubs.roads.grid_point(stubs.roads.segments[3].a), stubs.roads.grid_point(stubs.roads.segments[3].b), type):
 				cols[cell.x] = true
 			columns.append(cols.keys())
 			columns[-1].sort()
@@ -242,10 +232,10 @@ func _test_editing() -> void:
 		var bend := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 		bend.apply({"op": "build_road", "from": Vector2i(200, 90), "to": Vector2i(210, 90), "type": type})
 		bend.apply({"op": "build_road", "from": Vector2i(210, 80), "to": Vector2i(210, 90), "type": type})
-		_expect(bend.lanes.route(Vector2i(200, 90), Vector2i(210, 80), true).is_empty() or bend.lanes.route(Vector2i(210, 80), Vector2i(200, 90), true).is_empty(), false, "a %s road drawn back to a road's end turns there both ways" % type)
+		_expect(_lane_route(bend.roads, Vector2(201, 90.5), Vector2(210.5, 81), true).is_empty() or _lane_route(bend.roads, Vector2(209.5, 81), Vector2(201, 89.5), true).is_empty(), false, "a %s road drawn back to a road's end turns there both ways" % type)
 	var one_way := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	one_way.apply({"op": "build_road", "from": Vector2i(210, 90), "to": Vector2i(200, 90), "type": "one_way"})
-	_expect(one_way.roads.nodes[one_way.roads.segments[1].a], Vector2i(210, 90), "a one-way road runs the way it was dragged")
+	_expect(one_way.roads.nodes[one_way.roads.segments[1].a], Vector2(210, 90), "a one-way road runs the way it was dragged")
 	_expect(RoadNet.length(Vector2i(0, 0), Vector2i(-5, 5)), 5, "a road's length is its run in cells")
 	var net := RoadNet.new(Content.base().road_types)
 	net.add(Vector2i(0, 5), Vector2i(10, 5), "terminal_1_1")
@@ -260,7 +250,7 @@ func _test_editing() -> void:
 	var version := net.version
 	net.remove(net.segment_at(Vector2i(5, 1)))
 	_expect(net.version > version, true, "removing a road bumps the version")
-	_expect(net.nodes.values().has(Vector2i(5, 0)), false, "a node left with no road goes")
+	_expect(net.nodes.values().has(Vector2(5, 0)), false, "a node left with no road goes")
 	_expect(net.degree(_node(net, Vector2i(5, 5))), 3, "the crossing becomes a T")
 
 
@@ -274,7 +264,7 @@ func _test_sim_commands() -> void:
 	_expect(sim.daily_upkeep() - upkeep, roundi(20 * sim.rules.road_types.terminal_2_2.upkeep_per_cell), "roads add their upkeep")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(115, 10), "to": Vector2i(125, 10), "type": "terminal_1_1"}), "A road already runs here", "a refused road")
 	_expect(money - sim.money, 20 * cost, "costs nothing")
-	_expect(sim.lanes.route(Vector2i(110, 10), Vector2i(129, 10), true).size(), 20, "the sim routes on its roads")
+	_expect(_lane_route(sim.roads, Vector2(111, 10.5), Vector2(129, 10.5), true).is_empty(), false, "the sim routes on its roads")
 	var poor := AreaPort.owned(PortSim.new(0, RandomPort.strait()))
 	poor.ledger.post("construction", -poor.money)
 	_expect(poor.apply({"op": "build_road", "from": Vector2i(110, 10), "to": Vector2i(130, 10), "type": "terminal_2_2"}), "Not enough money", "roads need the money")
@@ -300,7 +290,7 @@ func _test_change_road() -> void:
 	_expect(sim.roads.segments[segment].type, "terminal_2_2", "it keeps its segment and takes the new type")
 	_expect(money - sim.money, 10 * sim.rules.road_types.terminal_2_2.cost_per_cell, "and costs the new type's price for its length")
 	_expect(sim.roads.footprint(Vector2i(110, 10), Vector2i(120, 10), "terminal_2_2").all(func(c: Vector2i) -> bool: return sim.roads.segment_at(c) != 0), true, "its lanes are the new type's")
-	_expect(sim.lanes.route(Vector2i(110, 10), Vector2i(120, 0), true).is_empty(), false, "the junction still joins")
+	_expect(_lane_route(sim.roads, Vector2(111, 10.5), Vector2(119.5, 1), true).is_empty(), false, "the junction still joins")
 	sim.apply({"op": "build_road", "from": Vector2i(140, 12), "to": Vector2i(160, 12), "type": "terminal_1_1"})
 	sim.apply({"op": "build_road", "from": Vector2i(140, 10), "to": Vector2i(160, 10), "type": "terminal_1_1"})
 	_expect(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(Vector2i(150, 10)), "type": "terminal_2_2"}), "A road already runs here", "a change that would run into a road beside it is refused")
@@ -343,7 +333,7 @@ func _test_areas() -> void:
 	wide.add(Vector2i(91, 100), Vector2i(91, 201), "terminal_1_1")
 	_expect(wide_areas.add("quay_apron", 1, 1, 0, 40), "", "an apron reaches out to the water from a road further in")
 	_expect(wide_areas.depth_of(wide_areas.list[1]), 15, "it is as deep as the gap to the water")
-	_expect(wide_areas.layout(1).edge.all(func(c: Vector2i) -> bool: return c.x == 75), true, "its quay edge is at the water")
+	_expect(_grid(wide_areas, wide_areas.layout(1).edge).all(func(c: Vector2i) -> bool: return c.x == 75), true, "its quay edge is at the water")
 	var coast := RoadNet.new(rules.road_types)
 	var coast_areas := Areas.new(rules.area_types, coast, Coast.of(rules.maps[rules.map], rules.site))
 	coast.add(Vector2i(79, 100), Vector2i(79, 201), "terminal_1_1")
@@ -388,14 +378,14 @@ func _test_yard_layout() -> void:
 	var depth: int = sim.rules.area_types.yard_block.depth
 	var layout := sim.areas.layout(1)
 	_expect(layout.buffer.size(), 31, "the buffer strip runs the block's whole length")
-	_expect(layout.buffer.all(func(c: Vector2i) -> bool: return c.y == 101), true, "beside the road")
-	_expect(layout.slots.size(), 10, "31 cells hold 10 bays of 3, so 10 handover slots")
-	_expect(layout.slots.all(func(s: Array) -> bool: return s.size() == AreaLayout.BAY and s.all(func(c: Vector2i) -> bool: return c.y == 102)), true, "each slot is a bay of the truck lane, one row in")
+	_expect(_grid(sim.areas, layout.buffer).all(func(c: Vector2i) -> bool: return c.y == 101), true, "beside the road")
+	_expect(layout.slots.size(), 5, "31 cells hold 10 bays of 3, so 5 handover slots of two bays")
+	_expect(layout.slots.all(func(s: Array) -> bool: return s.size() == AreaLayout.SLOT and _grid(sim.areas, s).all(func(c: Vector2i) -> bool: return c.y == 102)), true, "each slot is two bays of the truck lane, one row in")
 	_expect(layout.stacks.size(), 10 * (depth - 2), "a stack per bay in each row behind the truck lane")
 	var used := {}
 	var overlap := false
 	for cells: Array in [layout.buffer] + layout.slots + layout.stacks.map(func(s: Dictionary) -> Array: return s.cells):
-		for cell: Vector2i in cells:
+		for cell: Vector2i in _grid(sim.areas, cells):
 			overlap = overlap or cell in used
 			used[cell] = true
 	_expect(overlap, false, "no cell is used twice")
@@ -411,19 +401,20 @@ func _test_apron_and_gate_layouts() -> void:
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29}), "", "an apron is built on the coast")
 	var depth: int = sim.rules.area_types.quay_apron.depth
 	var apron := sim.areas.layout(1)
-	_expect(apron.buffer.all(func(c: Vector2i) -> bool: return c.x == 84), true, "the apron's buffer strip is beside the road")
-	_expect(apron.rails[0].all(func(c: Vector2i) -> bool: return c.x == 83) and apron.rails[1].all(func(c: Vector2i) -> bool: return c.x == 76), true, "crane rails run landside and waterside")
-	_expect(apron.edge.all(func(c: Vector2i) -> bool: return c.x == 75), true, "the quay edge is on the water")
-	_expect(apron.lanes.size() == 1 and apron.lanes[0].all(func(c: Vector2i) -> bool: return c.x == 82), true, "a through lane runs beside the landside rail")
-	_expect(apron.slots.size() == 10 and apron.slots.all(func(s: Array) -> bool: return s.all(func(c: Vector2i) -> bool: return c.x == 81)), true, "a handover slot per bay in the working lane under the cranes")
+	var on := func(part: Array, x: int) -> bool: return _grid(sim.areas, part).all(func(c: Vector2i) -> bool: return c.x == x)
+	_expect(on.call(apron.buffer, 84), true, "the apron's buffer strip is beside the road")
+	_expect(on.call(apron.rails[0], 83) and on.call(apron.rails[1], 76), true, "crane rails run landside and waterside")
+	_expect(on.call(apron.edge, 75), true, "the quay edge is on the water")
+	_expect(apron.lanes.size() == 1 and on.call(apron.lanes[0], 82), true, "a through lane runs beside the landside rail")
+	_expect(apron.slots.size() == 5 and apron.slots.all(func(s: Array) -> bool: return on.call(s, 81)), true, "a two-bay handover slot in the working lane under the cranes")
 	_expect(apron.hatches.size(), 30 * (depth - 6), "hatch covers lie between the working lane and the waterside rail")
-	_expect(_covers_once(apron, sim.areas.cells(1)), true, "the apron's parts cover it with no cell used twice")
+	_expect(_covers_once(sim.areas, apron, sim.areas.cells(1)), true, "the apron's parts cover it with no cell used twice")
 	_expect(sim.apply({"op": "build_area", "type": "gate", "segment": 1, "side": -1, "from": 0, "to": 14}), "", "a gate is built across the road")
 	var gate_depth: int = sim.rules.area_types.gate.depth
 	var gate := sim.areas.layout(2)
 	_expect(gate.lanes.size(), gate_depth - 2, "a gate's lanes fill the rows between its buffer strip and kerb")
 	_expect(gate.slots.size(), gate.lanes.size(), "one booth slot per lane")
-	_expect(gate.slots.all(func(s: Array) -> bool: return s[0].y == 106), true, "booths sit at the gate's middle bay")
+	_expect(gate.slots.all(func(s: Array) -> bool: return _grid(sim.areas, s)[0].y == 104), true, "booths are two bays centred on the gate")
 	_expect(gate.lanes.all(func(l: Array) -> bool: return l.size() == 15), true, "gate lanes run the gate's length")
 	_expect(sim.apply({"op": "build_area", "type": "gate_small", "segment": 1, "side": -1, "from": 16, "to": 30}), "", "a small gate is built")
 	_expect(sim.areas.layout(3).lanes.size(), 2, "a small gate has 2 lanes")
@@ -523,36 +514,36 @@ func _test_roads_keep_apart() -> void:
 	# An area beside a tractor lane joins the all-vehicle graph only, with no error logged.
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 100), "to": Vector2i(241, 100), "type": "tractor_lane"}), "", "a tractor lane")
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(210, 100)), "side": -1, "from": 0, "to": 15}), "", "a yard block beside it")
-	_expect(sim.lanes.route(Vector2i(200, 100), sim.areas.layout(2).slots[0][1], false).is_empty(), false, "tractors route into it")
+	_expect(_route(sim, Vector3i(0, 200, 100), AreaFlow._stand(sim, 2, 0), false).is_empty(), false, "tractors route into it")
 
 
 func _test_handovers() -> void:
 	var sim := AreaPort.owned(PortSim.new(0, RandomPort.strait(), true))
 	sim.apply({"op": "build_road", "from": Vector2i(101, 100), "to": Vector2i(101, 141), "type": "terminal_1_1"})
-	# 12 cells: 4 bays, so 4 slots and room for 4 in the buffer strip.
+	# 12 cells: 4 bays, so 2 slots of two bays and room for 4 in the buffer strip.
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 11}), "", "a 4-bay yard block is built")
 	var block := 1
-	var handovers := Handovers.new(sim.areas)
+	var handovers := Handovers.new(sim.areas, AreaLayout.BAY)
 	var got := []
 	for id in range(1, 11):
 		got.append(handovers.arrive(block, id))
-	_expect(got, ["slot", "slot", "slot", "slot", "buffer", "buffer", "buffer", "buffer", "road", "road"], "vehicles take slots, then the buffer strip, then queue on the road")
-	_expect(handovers.waiting(block), {"buffer": [5, 6, 7, 8], "road": [9, 10]}, "a full block shows a road queue")
+	_expect(got, ["slot", "slot", "buffer", "buffer", "buffer", "buffer", "road", "road", "road", "road"], "vehicles take slots, then the buffer strip, then queue on the road")
+	_expect(handovers.waiting(block), {"buffer": [3, 4, 5, 6], "road": [7, 8, 9, 10]}, "a full block shows a road queue")
 	handovers.leave(block, 2)
-	_expect(handovers.slot_of(block, 5), 1, "a freed slot goes to the first vehicle in the buffer")
-	_expect(handovers.waiting(block), {"buffer": [6, 7, 8, 9], "road": [10]}, "and the first on the road moves into the buffer")
+	_expect(handovers.slot_of(block, 3), 1, "a freed slot goes to the first vehicle in the buffer")
+	_expect(handovers.waiting(block), {"buffer": [4, 5, 6, 7], "road": [8, 9, 10]}, "and the first on the road moves into the buffer")
 	# Vehicles dropped from the buffer (a lorry giving up) make room for the road queue.
-	var dropping := Handovers.new(sim.areas)
+	var dropping := Handovers.new(sim.areas, AreaLayout.BAY)
 	for id in range(1, 11):
 		dropping.arrive(block, id)
-	for id: int in [5, 6, 7, 8]:
+	for id: int in [3, 4, 5, 6]:
 		dropping.drop(block, id)
-	_expect(dropping.waiting(block), {"buffer": [9, 10], "road": []}, "the road queue moves up into a buffer emptied by drops")
+	_expect(dropping.waiting(block), {"buffer": [7, 8, 9, 10], "road": []}, "the road queue moves up into a buffer emptied by drops")
 	dropping.leave(block, 1)
-	_expect([dropping.slot_of(block, 9), dropping.waiting(block)], [0, {"buffer": [10], "road": []}], "and a freed slot still goes to the first in line")
+	_expect([dropping.slot_of(block, 7), dropping.waiting(block)], [0, {"buffer": [8, 9, 10], "road": []}], "and a freed slot still goes to the first in line")
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 3
-	var holding := [1, 3, 4, 5]
+	var holding := [1, 3]
 	var next_id := 11
 	var too_many := false
 	var doubled := false
@@ -567,7 +558,7 @@ func _test_handovers() -> void:
 		doubled = doubled or slots.size() != Dictionary(slots.reduce(func(seen: Dictionary, s: int) -> Dictionary:
 			seen[s] = true
 			return seen, {})).size()
-		too_many = too_many or holding.size() > 4
+		too_many = too_many or holding.size() > 2
 	_expect(doubled or too_many, false, "no slot ever holds two vehicles, and no more vehicles hold slots than there are slots")
 
 
@@ -652,27 +643,26 @@ func _test_driveways() -> void:
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": road, "side": 1, "from": 100, "to": 129})
 	var south: Dictionary = sim.areas.layout(1)
 	var north: Dictionary = sim.areas.layout(2)
-	var slot: Vector2i = south.slots[4][1]
+	var slot := AreaFlow._stand(sim, 1, 4)
 	var inbound := _inbound(sim, entry)
-	var there := sim.lanes.route(inbound, slot, true)
+	var there := _route(sim, inbound, slot, true)
 	_expect(there.is_empty(), false, "a lorry routes from the site entry into a yard slot")
-	_expect(there.any(func(c: Vector2i) -> bool: return c in south.buffer), true, "through the block's buffer strip")
-	_expect(_steps_are_single(there), true, "a cell at a time")
-	var back := sim.lanes.route(slot, _outbound(sim, entry), true)
+	_expect(there.any(func(piece: int) -> bool: return sim.network.pieces[piece].area == 1 and sim.network.pieces[piece].slot == LaneNetwork.NO_SLOT), true, "through the block's buffer strip")
+	_expect(sim.network.pieces[there[-1]].points[-1].distance_to(sim.areas.centre(slot)) < 0.001, true, "to where a lorry stands in the slot")
+	var back := _route(sim, slot, _outbound(sim, entry), true)
 	_expect(back.is_empty(), false, "and from the slot back out to the site exit")
-	var other := sim.lanes.route(inbound, north.slots[2][1], true)
+	var other := _route(sim, inbound, AreaFlow._stand(sim, 2, 2), true)
 	_expect(other.is_empty(), false, "blocks on both sides of a road are reached, each with its own flow")
-	var parked: Vector2i = north.slots[3][1]
-	var past := sim.lanes.route(inbound, north.slots[5][1], true)
-	_expect(parked in past, false, "a slot is never driven through on the way to another")
+	var past := _route(sim, inbound, AreaFlow._stand(sim, 2, 4), true)
+	_expect(past.any(func(piece: int) -> bool: return sim.network.pieces[piece].slot == Vector2i(2, 3)), false, "a slot is never driven through on the way to another")
 	# Drawn south down grid line x = 86 to the corner, its right (west) side reaches the sea.
 	sim.apply({"op": "build_road", "from": Vector2i(86, 200), "to": Vector2i(86, entry.y + 1), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, 250))
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 10, "to": 39}), "", "an apron is built on the coast")
 	var apron: Dictionary = sim.areas.layout(sim.areas.list.keys()[-1])
-	var under_crane: Vector2i = apron.slots[1][1]
-	_expect(sim.lanes.route(inbound, under_crane, false).is_empty(), false, "a tractor routes under the cranes")
-	_expect(sim.lanes.route(inbound, under_crane, true), [] as Array[Vector2i], "a lorry can't drive onto an apron")
+	var under_crane := AreaFlow._stand(sim, sim.areas.list.keys()[-1], 1)
+	_expect(_route(sim, inbound, under_crane, false).is_empty(), false, "a tractor routes under the cranes")
+	_expect(_route(sim, inbound, under_crane, true), [] as Array[int], "a lorry can't drive onto an apron")
 
 
 func _test_apron_berths() -> void:
@@ -780,7 +770,7 @@ func _test_crane_keeps_tractors_busy() -> void:
 	var most := 0
 	for i in 80000:
 		sim.tick()
-		most = maxi(most, sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor" and v.home != Grid.NONE).size())
+		most = maxi(most, sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor" and v.home != Areas.NO_SPOT).size())
 		if ship.state == PortSim.Ship.State.LEAVING:
 			break
 	_expect(most >= 2, true, "a loading crane has more than one tractor fetching exports at once (most %d)" % most)
@@ -836,12 +826,12 @@ func _test_two_way_gate() -> void:
 	var east := port.roads.segment_at(Vector2i(200, port.site_entry().y))
 	_expect(port.apply({"op": "build_area", "type": "gate", "segment": east, "side": -1, "from": 200, "to": 214}), "", "a second gate further in")
 	var second: int = port.areas.list.keys().max()
-	_expect(AreaFlow._gate_of(port, 1, port.site_entry()), 2, "with no queues a lorry takes the nearest gate")
+	_expect(AreaFlow._gate_of(port, 1, Vector3i(0, port.site_entry().x, port.site_entry().y)), 2, "with no queues a lorry takes the nearest gate")
 	for i in 20:
-		var waiting := Vehicle.new(900 + i, "lorry", [Vector2i.ZERO] as Array[Vector2i])
+		var waiting := Vehicle.new(900 + i, "lorry", [Vector3i.ZERO] as Array[Vector3i])
 		waiting.area = 2
 		port._add_vehicle(waiting)
-	_expect(AreaFlow._gate_of(port, 1, port.site_entry()), second, "with 20 lorries bound for it, the next drives on to the other gate")
+	_expect(AreaFlow._gate_of(port, 1, Vector3i(0, port.site_entry().x, port.site_entry().y)), second, "with 20 lorries bound for it, the next drives on to the other gate")
 
 
 func _test_lorry_gives_up() -> void:
@@ -852,8 +842,11 @@ func _test_lorry_gives_up() -> void:
 	AreaFlow._stacks(sim, 3).place(box, sim.boxes[box].teu)
 	sim.boxes[box].in = 0.0
 	# A parked tractor blocks the westbound lane between the entry and the gate.
-	var blocker := Vehicle.new(999, "tractor", [Vector2i(450, sim.site_entry().y - 1)] as Array[Vector2i])
-	sim.lane_traffic.place(blocker)
+	var blocker := Vehicle.new(999, "tractor", [Vector3i(0, 450, sim.site_entry().y - 1)] as Array[Vector3i])
+	_expect(Drive.place(sim, blocker), true, "the blocker stands in the lane")
+	# Another stands where the lorry would be moved on to, so it can't be.
+	var in_the_way := Vehicle.new(998, "tractor", [AreaFlow._buffer_start(sim, 2)] as Array[Vector3i])
+	_expect(Drive.place(sim, in_the_way), true, "a tractor stands at the gate's way in")
 	_expect(AreaFlow.dispatch_import_lorry(sim), true, "a lorry is sent for the box due out")
 	var lorry := sim.vehicles[0]
 	var limit := roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2
@@ -864,6 +857,34 @@ func _test_lorry_gives_up() -> void:
 	var holders := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)
 	_expect(not sim._claimed.has(box) or (holders.size() == 1 and holders[0] != lorry), true, "its box is freed for another lorry")
 	_expect(sim.handovers.waiting(2), {"buffer": [], "road": []}, "and it holds no place at the gate")
+
+
+## A tractor stuck behind one that never moves, for as long as a lorry would
+## give up after, is moved on to where it was heading with its box, as
+## Cities: Skylines despawns a stuck vehicle, but nothing is lost: it is
+## counted, and the status says so.
+func _test_stuck_tractor_moves_on() -> void:
+	var sim := AreaPort.terminal(30)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 30, "to": 59})
+	var block: int = sim.areas.list.keys().max()
+	var blocker := Vehicle.new(999, "tractor", [Vector3i(0, 450, sim.site_entry().y - 1)] as Array[Vector3i])
+	_expect(Drive.place(sim, blocker), true, "a parked tractor stands in the westbound lane")
+	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [Drive.entry_cell(sim)] as Array[Vector3i])
+	sim._next_vehicle += 1
+	_expect(Drive.place(sim, tractor), true, "a tractor comes in at the site entry")
+	tractor.box = sim._new_box("import", 0.0, "")
+	tractor.loaded = true
+	sim._add_vehicle(tractor)
+	AreaFlow._go_to(sim, tractor, block)
+	var box := tractor.box
+	var limit := roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2
+	for i in limit + 400:
+		sim.tick()
+	_expect(tractor.state != "arriving", true, "stuck behind it past the give-up time, the tractor is moved on (%s)" % tractor.state)
+	_expect(AreaFlow._stacks(sim, block).boxes().has(box), true, "and its box reaches the block's stacks")
+	_expect(sim.moved_on, 1, "it is counted")
+	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.begins_with("A tractor stuck in traffic was moved on")), true, "and the status says so")
 
 
 ## A lorry comes for the box due longest, whichever block holds it, so no
@@ -893,7 +914,8 @@ func _test_following_a_box() -> void:
 		if not carried.is_empty():
 			box = carried[0].box
 			break
-	_expect(AreaFlow.box_at(sim, Vector2i(sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)[0].position(1.0).round())), box, "clicking the tractor under the crane picks its box")
+	var tractor: Vehicle = sim.vehicles.filter(func(v: Vehicle) -> bool: return v.box == box)[0]
+	_expect(AreaFlow.box_at(sim, Vector2i(Drive.where(sim, tractor).round())), box, "clicking the tractor under the crane picks its box")
 	var at := AreaFlow.box_cell(sim, box)
 	_expect(Vector2i(at.round()) in sim.areas.cells(1), true, "the box starts on the apron, under the crane")
 	var seen := {}
@@ -916,45 +938,58 @@ func _test_following_a_box() -> void:
 	_expect(not gears.is_empty() and gears.all(func(g: String) -> bool: return g == "rtg"), true, "RTGs did the block's work (%s)" % [gears])
 
 
-## A lane cell at the site entry a vehicle can drive in from.
-func _inbound(sim: PortSim, entry: Vector2i) -> Vector2i:
-	for y in range(entry.y - 4, entry.y + 5):
-		if not sim.lanes.route(Vector2i(entry.x, y), Vector2i(entry.x - 3, y), true).is_empty():
-			return Vector2i(entry.x, y)
-	return Grid.NONE
+## The road spot at the site entry a vehicle can drive in from.
+func _inbound(sim: PortSim, _entry: Vector2i) -> Vector3i:
+	return Drive.entry_cell(sim)
 
 
-## A lane cell at the site entry a vehicle can drive out on.
-func _outbound(sim: PortSim, entry: Vector2i) -> Vector2i:
-	for y in range(entry.y - 4, entry.y + 5):
-		if not sim.lanes.route(Vector2i(entry.x - 3, y), Vector2i(entry.x, y), true).is_empty():
-			return Vector2i(entry.x, y)
-	return Grid.NONE
+## The road spot at the site entry a vehicle can drive out on.
+func _outbound(sim: PortSim, _entry: Vector2i) -> Vector3i:
+	return Drive.exit_cell(sim)
+
+
+## The lane network's route over `roads` for a lorry (`lorry`) or a tractor
+## from the lane nearest `from` to the one nearest `to`; [] when there is none.
+func _lane_route(roads: RoadNet, from: Vector2, to: Vector2, lorry: bool) -> Array[int]:
+	var network := LaneNetwork.new(roads, Content.base().junctions)
+	var start: int = network.nearest(from, lorry)[0]
+	var end: int = network.nearest(to, lorry)[0]
+	if start == 0 or end == 0:
+		return []
+	return network.route(start, end, lorry)
+
+
+## The lane network's route for a lorry (`lorry`) or a tractor from spot
+## `from` to spot `to`, as Drive finds it; [] when there is none.
+func _route(sim: PortSim, from: Vector3i, to: Vector3i, lorry: bool) -> Array[int]:
+	Drive.flow(sim, 0)
+	var start: int = sim.network.nearest(sim.areas.centre(from), lorry)[0]
+	return Drive._best_route(sim, start, to, lorry)
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`
 ## exactly once each.
-func _covers_once(layout: Dictionary, cells: Array[Vector2i]) -> bool:
+func _covers_once(areas: Areas, layout: Dictionary, cells: Array[Vector2i]) -> bool:
 	var used := {}
 	var parts: Array = [layout.buffer, layout.edge, layout.hatches] + layout.rails + layout.lanes + layout.slots
 	for part: Array in parts:
-		for cell: Vector2i in part:
+		for cell: Vector2i in _grid(areas, part):
 			if cell in used:
 				return false
 			used[cell] = true
 	return cells.all(func(c: Vector2i) -> bool: return c in used)
 
 
-func _steps_are_single(cells: Array[Vector2i]) -> bool:
-	for i in cells.size() - 1:
-		var d := (cells[i + 1] - cells[i]).abs()
-		if maxi(d.x, d.y) != 1:
-			return false
-	return true
+## The grid cells `spots`' middles lie in.
+func _grid(areas: Areas, spots: Array) -> Array[Vector2i]:
+	var found: Array[Vector2i] = []
+	for spot: Vector3i in spots:
+		found.append(Vector2i(areas.centre(spot).floor()))
+	return found
 
 
 func _node(net: RoadNet, cell: Vector2i) -> int:
-	return net.nodes.find_key(cell)
+	return net.nodes.find_key(Vector2(cell))
 
 
 func _expect(actual: Variant, expected: Variant, what: String) -> void:

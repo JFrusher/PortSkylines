@@ -156,7 +156,7 @@ func _process(dt: float) -> void:
 		# The one segment, junction to junction, that a click would remove or change.
 		var net: RoadNet = picked[0]
 		var road: Dictionary = net.segments[picked[1]]
-		ends = [net.nodes[road.a], net.nodes[road.b]] as Array[Vector2i]
+		ends = [net.grid_point(road.a), net.grid_point(road.b)] as Array[Vector2i]
 		road_type = "track" if net == sim.rails else road.type
 		if _upgrading():
 			road_type = hud.road_type
@@ -495,8 +495,8 @@ func _segment_hint(picked: Array) -> String:
 		return ""
 	var net: RoadNet = picked[0]
 	var road: Dictionary = net.segments[picked[1]]
-	var a: Vector2i = net.nodes[road.a]
-	var b: Vector2i = net.nodes[road.b]
+	var a := net.grid_point(road.a)
+	var b := net.grid_point(road.b)
 	var name: String = sim.rules.rail.name if net == sim.rails else sim.rules.road_types[road.type].name
 	var text := "%s, %d m" % [name, Grid.metres(RoadNet.length(a, b))]
 	if not _upgrading():

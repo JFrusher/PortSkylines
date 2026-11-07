@@ -285,7 +285,7 @@ func _test_upkeep_at_midnight() -> void:
 	var cells := 0.0
 	for segment: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[segment]
-		cells += RoadNet.length(sim.roads.nodes[road.a], sim.roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		cells += RoadNet.length(sim.roads.grid_point(road.a), sim.roads.grid_point(road.b)) * rules.road_types[road.type].upkeep_per_cell
 	for id: int in sim.areas.list:
 		cells += sim.areas.cells(id).size() * rules.area_types[sim.areas.list[id].type].upkeep_per_cell
 	for segment: int in sim.ship_lanes.segments:
@@ -662,7 +662,7 @@ func _test_inspect_each_entity() -> void:
 	_expect(Inspect.describe(sim, ship)[0], "%s feeder" % sim.contracts.name_of(ship.line), "a ship is named by line and class")
 	_expect(Inspect.pick(sim, apron.start + along * crane.along + apron.out * 4), crane, "a click between a crane's rails picks the crane")
 	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
-	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
+	_expect(Inspect.pick(sim, Vector2i(Drive.where(sim, vehicle).round())), vehicle, "a click on a vehicle picks it")
 	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
 	_expect(Inspect.describe(sim, {"area": 3}).slice(0, 3), ["Yard block", "Terminal 1", "Import block, worked by reach stackers"] as Array[String], "a yard block shows its rules")
 	sim.vehicles.erase(vehicle)

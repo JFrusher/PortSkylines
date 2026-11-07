@@ -12,9 +12,12 @@ extends RefCounted
 ## through cell middles and a node is a cell. A net's types are all one or
 ## the other.
 
-## Node id -> its grid point (even-width types) or cell (odd-width).
+## Node id -> where it is, in grid units: anywhere (M10 step 12). While roads
+## are still drawn on the grid it is a grid point (even-width types) or a
+## cell (odd-width), which grid_point() gives for what still counts cells.
 var nodes := {}
-## Segment id -> {"a": node id, "b": node id, "type": a key of road_types}.
+## Segment id -> {"a": node id, "b": node id, "type": a key of road_types,
+## "control": its curve's control point, at its middle while it is straight}.
 var segments := {}
 ## The data's road types: lanes each way, whether lorries may use them, costs.
 var types: Dictionary
@@ -58,7 +61,7 @@ func add(from: Vector2i, to: Vector2i, type: String) -> String:
 			stops.append(cell)
 	stops.append(to)
 	for i in stops.size() - 1:
-		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type}
+		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type, "control": Vector2(stops[i] + stops[i + 1]) / 2.0}
 		_next_segment += 1
 	version += 1
 	return ""
@@ -95,6 +98,12 @@ func segment_at(cell: Vector2i) -> int:
 			if cell in lane.cells:
 				return id
 	return 0
+
+
+## `segment`'s line as a curve, in grid units.
+func curve(segment: int) -> RoadCurve:
+	var road: Dictionary = segments[segment]
+	return RoadCurve.new(nodes[road.a], road.control, nodes[road.b])
 
 
 ## A road's length in cells from `from` to `to`, which costs are counted in:
@@ -139,8 +148,8 @@ func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
 func guides() -> Array[Dictionary]:
 	var out := {}  # node -> the steps outward of its segments
 	for id: int in segments:
-		var a: Vector2i = nodes[segments[id].a]
-		var b: Vector2i = nodes[segments[id].b]
+		var a := grid_point(segments[id].a)
+		var b := grid_point(segments[id].b)
 		out.get_or_add(a, []).append((b - a).sign())
 		out.get_or_add(b, []).append((a - b).sign())
 	var found: Array[Dictionary] = []
@@ -310,7 +319,7 @@ func _meets(from: Vector2i, to: Vector2i, type: String, skip := 0) -> Variant:
 		if id == skip:
 			continue
 		var road: Dictionary = types[segments[id].type]
-		var theirs_d: Vector2i = nodes[segments[id].b] - nodes[segments[id].a]
+		var theirs_d: Vector2i = grid_point(segments[id].b) - grid_point(segments[id].a)
 		var reach := maxi(width, road.forward + road.backward) + (1 if d.x * d.y != 0 or theirs_d.x * theirs_d.y != 0 else 0)
 		var theirs := {}
 		for lane in lanes(id):
@@ -345,32 +354,33 @@ func _crosses_between_cells(drawn: Array[Vector2i], segment: int) -> bool:
 ## end, and a new segment of the same type runs on from `cell` to the b end.
 func _split(segment: int, cell: Vector2i) -> void:
 	var road: Dictionary = segments[segment]
-	if nodes[road.a] == cell or nodes[road.b] == cell:
+	if grid_point(road.a) == cell or grid_point(road.b) == cell:
 		return
 	var middle := _node_at(cell)
-	segments[_next_segment] = {"a": middle, "b": road.b, "type": road.type}
+	segments[_next_segment] = {"a": middle, "b": road.b, "type": road.type, "control": (Vector2(cell) + nodes[road.b]) / 2.0}
 	_next_segment += 1
 	road.b = middle
+	road.control = (nodes[road.a] + Vector2(cell)) / 2.0
 
 
 ## The grid points (or cells, for odd-width types) `segment`'s line runs
 ## through, from its a end to its b end.
 func points(segment: int) -> Array[Vector2i]:
-	return line(nodes[segments[segment].a], nodes[segments[segment].b])
+	return line(grid_point(segments[segment].a), grid_point(segments[segment].b))
 
 
 ## The cells just right of `segment`'s line from its a end to its b end: the
 ## row areas beside it measure from. For odd-width types, the line's cells.
 func cells(segment: int) -> Array[Vector2i]:
-	var a: Vector2i = nodes[segments[segment].a]
-	var b: Vector2i = nodes[segments[segment].b]
+	var a := grid_point(segments[segment].a)
+	var b := grid_point(segments[segment].b)
 	return _row(a, b, types[segments[segment].type], 0)
 
 
 ## `segment`'s lanes from left to right across its drawn direction, each
 ## {"cells": in driving order, "forward": true if it runs from a to b}.
 func lanes(segment: int) -> Array[Dictionary]:
-	return _lanes(nodes[segments[segment].a], nodes[segments[segment].b], types[segments[segment].type])
+	return _lanes(grid_point(segments[segment].a), grid_point(segments[segment].b), types[segments[segment].type])
 
 
 ## Every lane cell a road of `type` from `from` to `to` would cover.
@@ -437,10 +447,17 @@ static func line(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	return found
 
 
+## Node `node`'s grid point (or cell, for odd-width types).
+# shortcut: nodes sit on the grid until roads meet at any angle (M10 12c); what counts cells reads this until 12b gives roads shapes.
+func grid_point(node: int) -> Vector2i:
+	assert(nodes[node] == nodes[node].round(), "node %d is on the grid" % node)
+	return Vector2i(nodes[node])
+
+
 func _node_at(cell: Vector2i) -> int:
 	for id: int in nodes:
-		if nodes[id] == cell:
+		if nodes[id] == Vector2(cell):
 			return id
-	nodes[_next_node] = cell
+	nodes[_next_node] = Vector2(cell)
 	_next_node += 1
 	return _next_node - 1

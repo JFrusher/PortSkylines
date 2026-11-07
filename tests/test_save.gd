@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_every_fixture_loads_or_is_refused()
 	_test_area_flow_round_trips()
 	_test_a_removed_apron_saves()
+	_test_v43_positions_off_the_grid()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -151,10 +152,6 @@ func _test_malformed_payloads_are_refused() -> void:
 	var floating := valid.duplicate(true)
 	floating.cranes[0].apron = 99
 	_expect_payload_refused(floating, "a crane on a quay apron that isn't there")
-	for value: float in [NAN, INF, -INF]:
-		var bad := valid.duplicate(true)
-		bad.vehicles[0].t = value
-		_expect_payload_refused(bad, "non-finite vehicle position")
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:
@@ -203,3 +200,29 @@ func _test_a_removed_apron_saves() -> void:
 	_expect(SaveFile.save("user://removed.bin", sim), "", "the port saves")
 	var loaded := SaveFile.load_from("user://removed.bin")
 	_expect(loaded.has("sim"), true, "and loads (%s)" % loaded.get("error", ""))
+
+
+## v43 lets road and track nodes sit anywhere: a v42 save's nodes become
+## points, and its signals and signs are kept by their junction's point and
+## each arm by its way (LaneNetwork.arm_key), so a 45° arm keeps its sign.
+func _test_v43_positions_off_the_grid() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v42.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var data: Dictionary = file.get_var()
+	file.close()
+	var point := Vector2i(120, 250)
+	data.sim.junctions.signals[point] = {"green": [20.0, 20.0], "phase": 1, "left": 7.0}
+	data.sim.junctions.signs[point] = {Vector2i(1, 0): "stop", Vector2i(-1, 1): "give_way"}
+	file = FileAccess.open("user://v42_signs.bin", FileAccess.WRITE)
+	file.store_buffer(SaveFile.MAGIC.to_ascii_buffer())
+	file.store_var(data, false)
+	file.close()
+	var loaded := SaveFile.load_from("user://v42_signs.bin")
+	_expect(loaded.get("error", ""), "", "the v42 save with signs loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.roads.nodes.values().all(func(at: Variant) -> bool: return at is Vector2) and sim.rails.nodes.values().all(func(at: Variant) -> bool: return at is Vector2), true, "road and track nodes are points")
+	_expect(sim.junctions.signals.keys(), [Vector2(point)], "a signal is kept by its junction's point")
+	_expect(sim.junctions.signals[Vector2(point)].left, 7.0, "and runs on as it was")
+	_expect(sim.junctions.signs[Vector2(point)], {LaneNetwork.arm_key(Vector2(1, 0)): "stop", LaneNetwork.arm_key(Vector2(-1, 1)): "give_way"}, "each sign is kept by its arm's way")

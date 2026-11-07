@@ -115,8 +115,8 @@ static func cranes_for(sim: PortSim, ship: PortSim.Ship) -> Array[PortSim.Crane]
 static func sts_error(sim: PortSim, apron: int, along: int, kind: String) -> String:
 	if apron not in sim.areas.list or sim.areas.list[apron].type != "quay_apron":
 		return "STS cranes stand on a quay apron's rails"
-	# A crane works over a handover slot, and slots cover whole bays only.
-	if along < 0 or along >= _length(sim, apron) / AreaLayout.BAY * AreaLayout.BAY:
+	# A crane works over a handover slot, and slots cover whole pairs of bays only.
+	if along < 0 or along >= _length(sim, apron) / AreaLayout.SLOT * AreaLayout.SLOT:
 		return "STS cranes stand on a quay apron's rails"
 	var spots := crane_spots(sim, apron)
 	if not spots.is_empty() and along not in spots:
@@ -158,6 +158,7 @@ static func tick(sim: PortSim) -> void:
 	for machine: int in sim.machines.tick():
 		_machine_done(sim, machine)
 	_unpark(sim)
+	sim.traffic.due_after = _unstick_minutes(sim) * 60.0
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		_drive(sim, vehicle)
 
@@ -316,12 +317,12 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	var block := _block_of(sim, box)
 	if not _carrier_free(sim, block):
 		return
-	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
+	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector3i])
 	tractor.straddle = block if carries(sim, block) else 0
-	if not sim.lane_traffic.place(tractor):
+	if not Drive.place(sim, tractor):
 		return
 	sim._next_vehicle += 1
-	tractor.home = tractor.path[0]
+	tractor.home = Drive.here(sim, tractor)
 	tractor.box = box
 	sim._claimed[box] = true
 	sim._add_vehicle(tractor)
@@ -352,7 +353,7 @@ static func _may_send(sim: PortSim, terminal: int) -> bool:
 static func _carrier_free(sim: PortSim, block: int) -> bool:
 	if not carries(sim, block):
 		return sim._tractors_out() < sim.tractors
-	var carriers := sim.machines.count_for(sim.areas.list[block].settings.gear, sim.areas.layout(block).slots.size())
+	var carriers := sim.machines.count_for(sim.areas.list[block].settings.gear, _bays(sim, block))
 	return sim._straddles_out.get(block, 0) < carriers
 
 
@@ -422,9 +423,27 @@ static func _surplus_empty(sim: PortSim, ship: PortSim.Ship) -> int:
 	return free[0] if free.size() > sim.rules.empties.keep else 0
 
 
-## The middle cell of the apron slot under `crane`, in the lane nearest the road.
-static func _crane_slot(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> Vector2i:
-	return sim.areas.layout(ship.apron).slots[crane.along / AreaLayout.BAY][1]
+## Where a tractor stands in the apron slot under `crane`.
+static func _crane_slot(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> Vector3i:
+	return _stand(sim, ship.apron, crane.along / AreaLayout.SLOT)
+
+
+## Where a vehicle stands in `area`'s slot `slot`: its last cell in driving
+## order, the rest of the slot behind it.
+static func _stand(sim: PortSim, area: int, slot: int) -> Vector3i:
+	var cells: Array = sim.areas.layout(area).slots[slot]
+	return cells[-1] if Drive.flow(sim, area) >= 0 else cells[0]
+
+
+## The bay in the middle of `area`'s slot `slot`, where a machine meets it.
+static func _slot_bay(sim: PortSim, area: int, slot: int) -> int:
+	var cells: Array = sim.areas.layout(area).slots[slot]
+	return (cells[0].y + cells[-1].y) / 2 / AreaLayout.BAY
+
+
+## How many bays `area` is long.
+static func _bays(sim: PortSim, area: int) -> int:
+	return sim.areas.list[area].columns / AreaLayout.BAY
 
 
 ## Puts a tractor from the pool in the apron slot under `crane`, bound for an
@@ -439,9 +458,9 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 		return false
 	if not _carrier_free(sim, block):
 		return false
-	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector2i])
+	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector3i])
 	tractor.straddle = block if carries(sim, block) else 0
-	if not sim.lane_traffic.place(tractor):
+	if not Drive.place(sim, tractor):
 		return false
 	sim._next_vehicle += 1
 	tractor.state = "under_crane"
@@ -590,13 +609,13 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 	if box == 0:
 		return false
 	var entry := _entry_cell(sim)
-	if entry == Grid.NONE:
+	if entry == Areas.NO_SPOT:
 		return false
 	var gate := _gate_of(sim, terminal, entry)
 	if not can_book(sim, gate):
 		return false
-	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
-	sim.lane_traffic.place(lorry)
+	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector3i])
+	Drive.place(sim, lorry)
 	sim._next_vehicle += 1
 	lorry.box = box
 	sim._claimed[box] = true
@@ -617,14 +636,14 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 	var roomy: Array = gated.filter(func(t: int) -> bool: return _block_for(sim, "empty", t) != 0)
 	var terminal: int = roomy[0] if not roomy.is_empty() else gated[0]
 	var entry := _entry_cell(sim)
-	if entry == Grid.NONE:
+	if entry == Areas.NO_SPOT:
 		return false
 	var gate := _gate_of(sim, terminal, entry)
 	if not can_book(sim, gate):
 		return false
 	var back: Dictionary = sim.returning.pop_front()
-	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
-	sim.lane_traffic.place(lorry)
+	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector3i])
+	Drive.place(sim, lorry)
 	sim._next_vehicle += 1
 	lorry.box = sim._new_empty(back.line, back.teu)
 	lorry.loaded = true
@@ -641,6 +660,9 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 ## has none. False when nothing is due or wanted, there is no room, or the
 ## way in is busy.
 static func dispatch_export_lorry(sim: PortSim) -> bool:
+	# With the way in busy nothing is sent, so demand isn't worked out for nothing.
+	if _entry_cell(sim) == Areas.NO_SPOT:
+		return false
 	if not sim.transfers.is_empty() and _transfer_in(sim):
 		return true
 	var packed: bool = not sim.stuffing.is_empty() and sim.stuffing[0].at <= sim.clock.calendar_minutes()
@@ -650,13 +672,13 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 		if not _has_gate(sim, terminal) or _export_room(sim, terminal) <= 0:
 			continue
 		var entry := _entry_cell(sim)
-		if entry == Grid.NONE:
+		if entry == Areas.NO_SPOT:
 			return false
 		var gate := _gate_of(sim, terminal, entry)
 		if not can_book(sim, gate):
 			continue
-		var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
-		sim.lane_traffic.place(lorry)
+		var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector3i])
+		Drive.place(sim, lorry)
 		sim._next_vehicle += 1
 		var empty := 0 if packed else _free_empty(sim, terminal)
 		if empty:
@@ -682,13 +704,13 @@ static func _transfer_in(sim: PortSim) -> bool:
 	if terminal not in sim.areas.terminals or not _has_gate(sim, terminal) or _export_room(sim, terminal) <= 0:
 		return false
 	var entry := _entry_cell(sim)
-	if entry == Grid.NONE:
+	if entry == Areas.NO_SPOT:
 		return false
 	var gate := _gate_of(sim, terminal, entry)
 	if not can_book(sim, gate):
 		return false
-	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector2i])
-	sim.lane_traffic.place(lorry)
+	var lorry := Vehicle.new(sim._next_vehicle, "lorry", [entry] as Array[Vector3i])
+	Drive.place(sim, lorry)
 	sim._next_vehicle += 1
 	lorry.box = sim.transfers.pop_front().box
 	lorry.loaded = true
@@ -784,30 +806,12 @@ static func _export_room(sim: PortSim, terminal: int) -> int:
 	return room - _lorries(sim).exports.get(terminal, 0)
 
 
-## A free lane cell at the site entry heading into the site, or NONE.
-static func _entry_cell(sim: PortSim) -> Vector2i:
-	for cell in _edge_cells(sim):
-		if sim.lane_traffic.holder(cell) == 0 and sim.lanes.steps_at(cell).any(func(step: Vector2i) -> bool: return step.x < 0):
-			return cell
-	return Grid.NONE
+static func _entry_cell(sim: PortSim) -> Vector3i:
+	return Drive.entry_cell(sim)
 
 
-## A lane cell at the site entry leaving the site, or NONE.
-static func _exit_cell(sim: PortSim) -> Vector2i:
-	for cell in _edge_cells(sim):
-		var steps := sim.lanes.steps_at(cell)
-		if not steps.is_empty() and not steps.any(func(step: Vector2i) -> bool: return step.x < 0):
-			return cell
-	return Grid.NONE
-
-
-## Cells on the site's east edge near the entry, where the highway's lanes meet the roads.
-static func _edge_cells(sim: PortSim) -> Array[Vector2i]:
-	var entry := sim.site_entry()
-	var found: Array[Vector2i] = []
-	for dy in range(-8, 9):
-		found.append(entry + Vector2i(0, dy))
-	return found
+static func _exit_cell(sim: PortSim) -> Vector3i:
+	return Drive.exit_cell(sim)
 
 
 ## Minutes gate `gate` takes to check one lorry, from its level.
@@ -836,19 +840,19 @@ static func _has_gate(sim: PortSim, terminal: int) -> bool:
 ## and spread over the gates as one jams. The first gate when none can be
 ## reached, as the lorry then waits for a road; 0 when the terminal has none.
 # shortcut: drive minutes by grid distance, not route length, which cost 12 route searches a lorry; use route lengths if detours mislead the choice.
-static func _gate_of(sim: PortSim, terminal: int, from: Vector2i) -> int:
+static func _gate_of(sim: PortSim, terminal: int, from: Vector3i) -> int:
 	var gates := _gates(sim, terminal).duplicate()
 	while not gates.is_empty():
 		var best := 0
 		var soonest := INF
 		for gate: int in gates:
 			# A vehicle second is a calendar minute, so driving and queueing add up.
-			var drive: float = RoadNet.length(from, _buffer_start(sim, gate)) / (sim.rules.lorry_speed / Grid.CELL)
+			var drive: float = sim.areas.centre(from).distance_to(sim.areas.centre(_buffer_start(sim, gate))) / (sim.rules.lorry_speed / Grid.CELL)
 			var minutes: float = drive + sim.lorries_bound_for(gate) * gate_minutes(sim, gate) / sim.areas.layout(gate).lanes.size()
 			if best == 0 or minutes < soonest:
 				best = gate
 				soonest = minutes
-		if not sim.lanes.route(from, _buffer_start(sim, best), true).is_empty():
+		if Drive.reaches(sim, from, _buffer_start(sim, best), true):
 			return best
 		gates.erase(best)
 	return _gates(sim, terminal)[0] if _has_gate(sim, terminal) else 0
@@ -905,7 +909,7 @@ static func can_book(sim: PortSim, gate: int) -> bool:
 
 ## Whether the lorries coming in through `gate` fill its slots and buffer.
 static func _gate_full(sim: PortSim, gate: int) -> bool:
-	var room: int = sim.areas.layout(gate).slots.size() + sim.areas.layout(gate).buffer.size() / AreaLayout.BAY
+	var room: int = sim.areas.layout(gate).slots.size() + sim.handovers.buffer_room(gate)
 	var coming := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == gate and v.gate_in < 0.0 and v.state in ["arriving", "queued", "to_slot", "at_gate", "early"]).size()
 	return coming >= room
 
@@ -933,7 +937,7 @@ static func _unpark(sim: PortSim) -> void:
 		if lorry.state != "parked":
 			continue
 		var park := lorry.area
-		var gate := _gate_of(sim, sim.areas.list[park].terminal, lorry.path[int(lorry.t)])
+		var gate := _gate_of(sim, sim.areas.list[park].terminal, Drive.here(sim, lorry))
 		if gate == 0 or _gate_full(sim, gate) or lorry.booked > sim.clock.calendar_minutes():
 			continue
 		sim.handovers.leave(park, lorry.id)
@@ -953,9 +957,9 @@ static func _go_to(sim: PortSim, vehicle: Vehicle, area: int) -> void:
 
 
 ## The first cell of `area`'s buffer strip in driving order, where vehicles come in.
-static func _buffer_start(sim: PortSim, area: int) -> Vector2i:
+static func _buffer_start(sim: PortSim, area: int) -> Vector3i:
 	var buffer: Array = sim.areas.layout(area).buffer
-	return buffer[0] if sim.lanes.flow_of(area) > 0 else buffer[-1]
+	return buffer[0] if Drive.flow(sim, area) > 0 else buffer[-1]
 
 
 ## `vehicle` reached the start of its area's buffer strip: it books a slot.
@@ -968,32 +972,19 @@ static func _book(sim: PortSim, vehicle: Vehicle) -> void:
 
 static func _head_to_slot(sim: PortSim, vehicle: Vehicle) -> void:
 	vehicle.slot = sim.handovers.slot_of(vehicle.area, vehicle.id)
-	var slot: Array = sim.areas.layout(vehicle.area).slots[vehicle.slot]
-	_head(sim, vehicle, slot[1], "to_slot")
+	_head(sim, vehicle, _stand(sim, vehicle.area, vehicle.slot), "to_slot")
 
 
 ## The last cell of `area`'s buffer strip in driving order, beside its way out.
-static func _buffer_end(sim: PortSim, area: int) -> Vector2i:
+static func _buffer_end(sim: PortSim, area: int) -> Vector3i:
 	var buffer: Array = sim.areas.layout(area).buffer
-	return buffer[-1] if sim.lanes.flow_of(area) > 0 else buffer[0]
+	return buffer[-1] if Drive.flow(sim, area) > 0 else buffer[0]
 
 
 ## Sets `vehicle` driving from where it stands to `to`, in `state` once there.
 ## With no route yet it waits where it is and tries again each tick.
-static func _head(sim: PortSim, vehicle: Vehicle, to: Vector2i, state: String) -> void:
-	var here := vehicle.path[int(vehicle.t)]
-	var route := sim.lanes.route(here, to, vehicle.kind == "lorry")
-	var new_path: Array[Vector2i] = []
-	if not route.is_empty():
-		new_path.assign(route)
-	else:
-		new_path.append(here)
-
-	vehicle.path = new_path
-	vehicle.t = 0.0
-	vehicle.prev_t = 0.0
-	vehicle.state = state if not route.is_empty() else "no_route:" + state
-	vehicle.target = to
+static func _head(sim: PortSim, vehicle: Vehicle, to: Vector3i, state: String) -> void:
+	Drive.head(sim, vehicle, to, state)
 
 
 static func _speed(sim: PortSim, vehicle: Vehicle) -> float:
@@ -1015,7 +1006,10 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		return
 	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
 		return
-	if not sim.lane_traffic.advance(vehicle, _speed(sim, vehicle)):
+	# On its way, not there yet nor waited long enough to unstick: nothing to do.
+	if vehicle.id in sim.traffic.cars and vehicle.id not in sim.traffic.due:
+		return
+	if not Drive.advance(sim, vehicle, _speed(sim, vehicle)):
 		_unstick(sim, vehicle)
 		return
 	match vehicle.state:
@@ -1047,7 +1041,14 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 ## give-up time leaves with whatever it carries, paying nothing, and its
 ## place in any queue goes to the next. Tractors keep waiting.
 static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
-	if vehicle.kind != "lorry" or vehicle.waited < roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2:
+	# Stuck stuck_minutes, it is moved on to where it was heading with its box,
+	# as Cities: Skylines despawns a stuck vehicle; a lorry with no room there
+	# still gives up later.
+	if Drive.waited(sim, vehicle) >= sim.rules.traffic.stuck_minutes and Drive.move_on(sim, vehicle):
+		sim.moved_on += 1
+		sim._event("A %s stuck in traffic was moved on" % ("lorry" if vehicle.kind == "lorry" else "tractor"), Vector2i(sim.areas.centre(vehicle.target).floor()))
+		return
+	if vehicle.kind != "lorry" or Drive.waited(sim, vehicle) < _give_up_minutes(sim):
 		return
 	if vehicle.area in sim.areas.list:
 		sim.handovers.drop(vehicle.area, vehicle.id)
@@ -1056,10 +1057,20 @@ static func _unstick(sim: PortSim, vehicle: Vehicle) -> void:
 		sim._drop_box(vehicle.box)
 	elif vehicle.box != 0:
 		sim._claimed.erase(vehicle.box)
-	var at := Vector2i(vehicle.position(1.0).round())
+	var at := Vector2i(Drive.where(sim, vehicle).round())
 	_gone(sim, vehicle)
 	sim.gave_up += 1
 	sim._event("A lorry gave up on a traffic jam and left", at)
+
+
+## How long a lorry waits, in minutes, before it gives up and leaves.
+static func _give_up_minutes(sim: PortSim) -> float:
+	return roundi(sim.rules.give_up_seconds / SimClock.TICK_SECONDS) * 2 * SimClock.TICK_SECONDS
+
+
+## How long any vehicle waits, in minutes, before _unstick may act on it.
+static func _unstick_minutes(sim: PortSim) -> float:
+	return minf(sim.rules.traffic.stuck_minutes, _give_up_minutes(sim))
 
 
 static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
@@ -1145,19 +1156,19 @@ static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
 		# A machine done this tick is still busy until its job is booked off.
 		if machine.area != vehicle.area or id in sim.machine_jobs:
 			continue
-		# A yard block has one slot per bay, so a slot's index is its bay.
+		# A machine meets a vehicle at the bay in the middle of its slot.
 		if vehicle.loaded:
 			var position := stacks.place_spot(sim.boxes[vehicle.box].teu)
 			if position < 0:
 				return
-			sim.machines.give(id, vehicle.slot, layout.stacks[position].bay)
+			sim.machines.give(id, _slot_bay(sim, vehicle.area, vehicle.slot), layout.stacks[position].bay)
 			sim.machine_jobs[id] = {"vehicle": vehicle.id, "position": position}
 		else:
 			var bay: int = layout.stacks[stacks.position_of(vehicle.box)].bay
 			var rehandles := stacks.take(vehicle.box)
 			if rehandles < 0:
 				return
-			sim.machines.give(id, bay, vehicle.slot, rehandles)
+			sim.machines.give(id, bay, _slot_bay(sim, vehicle.area, vehicle.slot), rehandles)
 			sim.machine_jobs[id] = {"vehicle": vehicle.id, "position": -1}
 		vehicle.state = "handled"
 		return
@@ -1222,7 +1233,7 @@ static func _retry_handling(sim: PortSim, block: int) -> void:
 ## Sends a lorry out through `terminal`'s gate, or straight to the site
 ## exit when there is no gate to pass.
 static func _go_out(sim: PortSim, vehicle: Vehicle, terminal: int) -> void:
-	var gate := _gate_of(sim, terminal, vehicle.path[int(vehicle.t)]) if terminal else 0
+	var gate := _gate_of(sim, terminal, Drive.here(sim, vehicle)) if terminal else 0
 	if gate:
 		_go_to(sim, vehicle, gate)
 		return
@@ -1262,7 +1273,7 @@ static func _fit_machines(sim: PortSim) -> void:
 				sim._machines_fit_for = -1
 			else:
 				sim.machines.list.erase(id)
-		var bays: int = sim.areas.layout(area).slots.size()
+		var bays := _bays(sim, area)
 		var have := sim.machines.list.values().filter(func(m: Dictionary) -> bool: return m.area == area and m.gear == gear).size()
 		var missing := sim.machines.count_for(gear, bays) - have
 		for i in missing:
@@ -1287,10 +1298,9 @@ static func remove(sim: PortSim, id: int) -> void:
 			sim._drop_box(box)
 			lost += 1
 		sim.area_stacks.erase(id)
-	var cells := sim.areas.cells(id)
 	for vehicle: Vehicle in sim.vehicles.duplicate():
-		# Bound for the area, or fetching an export for a crane on it.
-		if vehicle.area == id or vehicle.home in cells:
+		# Bound for the area, fetching an export for a crane on it, or driving out through it.
+		if vehicle.area == id or vehicle.home.x == id or vehicle.target.x == id:
 			if vehicle.loaded:
 				sim._drop_box(vehicle.box)
 				lost += 1
@@ -1365,8 +1375,9 @@ static func _vehicle(sim: PortSim, id: int) -> Vehicle:
 ## The box at grid cell `cell`: one on a vehicle there, else the top box of
 ## a stack covering it; 0 for none. For picking a box to follow.
 static func box_at(sim: PortSim, cell: Vector2i) -> int:
+	var spot := sim.areas.spot_in(cell)
 	for vehicle in sim.vehicles:
-		if vehicle.box != 0 and vehicle.box in sim.boxes and Vector2i(vehicle.position(1.0).round()) == cell:
+		if vehicle.box != 0 and vehicle.box in sim.boxes and Vector2i(Drive.where(sim, vehicle).round()) == cell:
 			return vehicle.box
 	for area: int in sim.area_stacks:
 		if area not in sim.areas.list:
@@ -1374,7 +1385,7 @@ static func box_at(sim: PortSim, cell: Vector2i) -> int:
 		var layout := sim.areas.layout(area)
 		var stacks: AreaStacks = sim.area_stacks[area]
 		for position in stacks.stacks.size():
-			if cell in layout.stacks[position].cells and not stacks.stacks[position].is_empty():
+			if spot in layout.stacks[position].cells and not stacks.stacks[position].is_empty():
 				return stacks.stacks[position][-1][-1]
 	return 0
 
@@ -1390,12 +1401,11 @@ static func box_cell(sim: PortSim, box: int) -> Vector2:
 			continue
 		for machine: int in sim.machine_jobs:
 			if sim.machine_jobs[machine].vehicle == vehicle.id:
-				var area: Dictionary = sim.areas.list[sim.machines.list[machine].area]
 				var k := sim.machines.position(machine) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
-				return Vector2(area.start) + Vector2((area.end - area.start).sign()) * k + Vector2(area.out) * 2.0
-		return vehicle.position(1.0)
+				return sim.areas.point(sim.machines.list[machine].area, k, 2.0) - Vector2(0.5, 0.5)
+		return Drive.where(sim, vehicle)
 	for area: int in sim.area_stacks:
 		var stacks: AreaStacks = sim.area_stacks[area]
 		if stacks.boxes().has(box) and area in sim.areas.list:
-			return Vector2(sim.areas.layout(area).stacks[stacks.position_of(box)].cells[1])
+			return sim.areas.centre(sim.areas.layout(area).stacks[stacks.position_of(box)].cells[1]) - Vector2(0.5, 0.5)
 	return Vector2.INF

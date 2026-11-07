@@ -6,6 +6,8 @@ extends Node3D
 ## A deck box's height and its length by TEU (20 ft and 40 ft) on a ship
 ## model, in world units, stretched a little so boxes aboard read at a distance.
 const BOX_HEIGHT := 0.3
+## A junction's approach marking is drawn every this many cells along a lane.
+const APPROACH_MARK := 3
 const BOX_LENGTH := {1: 0.4, 2: 0.8}
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
@@ -270,21 +272,21 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 ## Marks the head of each lane into a junction with signals or a sign, when
 ## they or the phases showing green have changed.
 func _draw_junctions() -> void:
-	var junctions := sim.lane_traffic.junctions
+	var junctions := Drive.junctions(sim)
 	var green := {}
-	for point: Vector2i in junctions.signals:
+	for point: Vector2 in junctions.signals:
 		var at: Dictionary = junctions.signals[point]
-		green[point] = junctions.phases(sim.lanes, point)[at.phase] if at.left > 0.0 else []
+		green[point] = junctions.phases(Drive.junction_lanes(sim), point)[at.phase] if at.left > 0.0 else []
 	var now := [sim.roads.version, green, junctions.signs.duplicate(true)]
 	if now == _junctions_drawn:
 		return
 	_junctions_drawn = now
 	var tool := _road_tool()
 	var points := {}
-	for point: Vector2i in junctions.signals.keys() + junctions.signs.keys():
+	for point: Vector2 in junctions.signals.keys() + junctions.signs.keys():
 		points[point] = true
-	for point: Vector2i in points:
-		for arm: Vector2i in sim.lanes.arms(point):
+	for point: Vector2 in points:
+		for arm: Vector2i in Drive.arms(sim, point):
 			var color := Color.TRANSPARENT
 			if point in green:
 				color = Color(0.2, 0.9, 0.3) if arm in green[point] else Color(0.95, 0.2, 0.15)
@@ -294,10 +296,11 @@ func _draw_junctions() -> void:
 				continue
 			tool.set_color(color)
 			# The approach lists each lane's last cells, nearest the box last.
-			var cells := sim.lanes.approach(point, arm)
-			for i in range(LaneGraph.APPROACH_CELLS - 1, cells.size(), LaneGraph.APPROACH_CELLS):
+			var cells := Drive.approach_cells(sim, point, arm)
+			for i in range(APPROACH_MARK - 1, cells.size(), APPROACH_MARK):
 				var middle := (Vector2(cells[i]) + Vector2(0.5, 0.5)) * Grid.CELL
-				_strip(tool, middle - Vector2(arm) * Grid.CELL * 0.3, middle + Vector2(arm) * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
+				var way := Vector2(arm).normalized()
+				_strip(tool, middle - way * Grid.CELL * 0.3, middle + way * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
 	_junction_signs.mesh = tool.commit()
 
 
@@ -373,7 +376,7 @@ func _draw_roads() -> void:
 				trims[node] = maxf(trims.get(node, 0.0), lanes * Grid.CELL / 2.0)
 	for id: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[id]
-		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
+		_add_road(surface, marks, sim.roads.grid_point(road.a), sim.roads.grid_point(road.b), sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
 	var entry := sim.site_entry_point()
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
@@ -381,7 +384,7 @@ func _draw_roads() -> void:
 	# The main line the same way, to the rail entry.
 	_add_track(surface, marks, sim.site_rail_entry() + off_map, sim.site_rail_entry())
 	for id: int in sim.rails.segments:
-		_add_track(surface, marks, sim.rails.nodes[sim.rails.segments[id].a], sim.rails.nodes[sim.rails.segments[id].b])
+		_add_track(surface, marks, sim.rails.grid_point(sim.rails.segments[id].a), sim.rails.grid_point(sim.rails.segments[id].b))
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
 
@@ -390,31 +393,32 @@ func _draw_areas() -> void:
 	_areas_drawn = [sim.areas.version, sim.roads.version]
 	var tool := _road_tool()
 	for id: int in sim.areas.list:
-		var colors := {}
-		for cell in sim.areas.cells(id):
-			colors[cell] = AREA_COLOR[sim.areas.kind_of(sim.areas.list[id])]
-		var layout := sim.areas.layout(id)
-		for cell: Vector2i in layout.get("buffer", []):
-			colors[cell] = BUFFER_COLOR
-		for lane: Array in layout.get("lanes", []):
-			for cell: Vector2i in lane:
-				colors[cell] = ASPHALT
-		for rail: Array in layout.get("rails", []):
-			for cell: Vector2i in rail:
-				colors[cell] = RAIL_COLOR
-		for cell: Vector2i in layout.get("edge", []):
-			colors[cell] = EDGE_COLOR
 		var area: Dictionary = sim.areas.list[id]
-		for spot in AreaFlow.crane_spots(sim, id) if area.type == "quay_apron" else ([] as Array[int]):
+		# Each of the area's own cells (k, r) coloured by the part of its layout it holds.
+		var colors := {}
+		var layout := sim.areas.layout(id)
+		var paint := func(spot: Vector3i, color: Color) -> void: colors[Vector2i(spot.y, spot.z)] = color
+		for spot: Vector3i in layout.get("buffer", []):
+			paint.call(spot, BUFFER_COLOR)
+		for lane: Array in layout.get("lanes", []):
+			for spot: Vector3i in lane:
+				paint.call(spot, ASPHALT)
+		for rail: Array in layout.get("rails", []):
+			for spot: Vector3i in rail:
+				paint.call(spot, RAIL_COLOR)
+		for spot: Vector3i in layout.get("edge", []):
+			paint.call(spot, EDGE_COLOR)
+		for k in AreaFlow.crane_spots(sim, id) if area.type == "quay_apron" else ([] as Array[int]):
 			for d in sim.areas.depth_of(area):
-				colors[area.start + (area.end - area.start).sign() * spot + area.out * d] = SPOT_COLOR
+				colors[Vector2i(k, d)] = SPOT_COLOR
 		for i: int in layout.get("slots", []).size():
-			for cell: Vector2i in layout.slots[i]:
-				colors[cell] = SLOT_COLORS[i % 2]
+			for spot: Vector3i in layout.slots[i]:
+				paint.call(spot, SLOT_COLORS[i % 2])
 		var idle := sim.areas.idle_reason(id) != ""
-		for cell: Vector2i in colors:
-			tool.set_color(colors[cell].lerp(IDLE_TINT, 0.4) if idle else colors[cell])
-			_cell_quad(tool, cell, AREA_TOP)
+		for cell: Dictionary in sim.areas.shape(id).cells:
+			var color: Color = colors.get(Vector2i(cell.k, cell.r), AREA_COLOR[sim.areas.kind_of(area)])
+			tool.set_color(color.lerp(IDLE_TINT, 0.4) if idle else color)
+			_quad(tool, cell.corners, AREA_TOP)
 	_areas.mesh = tool.commit()
 
 
@@ -439,7 +443,7 @@ func _draw_info() -> void:
 static func info_shares(sim: PortSim, view: String) -> Dictionary:
 	var shares := {}
 	if view == HudDetails.GROUP_TRAFFIC:
-		var delays := sim.lane_traffic.delays()
+		var delays := Drive.delays(sim)
 		for cell: Vector2i in delays:
 			shares[[cell]] = minf(delays[cell] / JAM_SECONDS, 1.0)
 	else:
@@ -497,10 +501,13 @@ func _draw_ship_lanes() -> void:
 
 ## One 4 m cell as a flat square `height` metres up.
 static func _cell_quad(tool: SurfaceTool, cell: Vector2i, height: float) -> void:
-	var corner := Vector2(cell) * Grid.CELL
-	var corners: Array[Vector2] = [corner, corner + Vector2(Grid.CELL, 0), corner + Vector2(Grid.CELL, Grid.CELL), corner + Vector2(0, Grid.CELL)]
+	_quad(tool, [Vector2(cell), Vector2(cell) + Vector2(1, 0), Vector2(cell) + Vector2(1, 1), Vector2(cell) + Vector2(0, 1)], height)
+
+
+## The quad with corners `corners`, in cells.
+static func _quad(tool: SurfaceTool, corners: Array, height: float) -> void:
 	for i: int in [0, 1, 2, 0, 2, 3]:
-		tool.add_vertex(_world(corners[i], height))
+		tool.add_vertex(_world(corners[i] * Grid.CELL, height))
 
 
 static func _road_tool() -> SurfaceTool:
@@ -666,27 +673,6 @@ static func coast_image(sim: PortSim) -> Image:
 ## The 4 m grid cell at world point `at`.
 static func grid_cell(at: Vector3) -> Vector2i:
 	return Vector2i(floori(at.x * METRES_PER_UNIT / Grid.CELL), floori(at.z * METRES_PER_UNIT / Grid.CELL))
-
-
-## Where along `path` a vehicle `at` cells in is drawn, as [position in grid
-## cells, heading]. Through a cell where the path turns it follows a quarter
-## circle between the middles of the cell's edges, so it never snaps.
-static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
-	var i := clampi(int(at), 0, path.size() - 1)
-	var f := at - i
-	if path.size() < 2:
-		return [Vector2(path[0]), Vector2.ZERO]
-	if i >= path.size() - 1:
-		return [Vector2(path[-1]), Vector2(path[-1] - path[-2])]
-	var corner := i + 1 if f >= 0.5 else i
-	if corner > 0 and corner < path.size() - 1:
-		var d_in := Vector2(path[corner] - path[corner - 1])
-		var d_out := Vector2(path[corner + 1] - path[corner])
-		if d_in != d_out and d_in != -d_out:
-			var u := (f - 0.5 if corner == i + 1 else f + 0.5) * PI / 2
-			var centre := Vector2(path[corner]) + (d_out - d_in) * 0.5
-			return [centre + 0.5 * (d_in * sin(u) - d_out * cos(u)), d_in * cos(u) + d_out * sin(u)]
-	return [Vector2(path[i]).lerp(Vector2(path[i + 1]), f), Vector2(path[i + 1] - path[i])]
 
 
 ## `line`'s livery, a touch lighter or darker per box so a stack reads as
@@ -973,7 +959,7 @@ func _draw_trains() -> void:
 			var at := head - AreaLayout.BAY * (k + 0.5)
 			if at < 0.0:
 				break
-			var pose := path_pose(train.path, at)
+			var pose := Drive.path_pose(train.path, at)
 			var turned := Basis(Vector3.UP, atan2(-pose[1].y, pose[1].x))
 			var centre := (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 			var origin := Vector3(centre.x, ROAD_TOP / METRES_PER_UNIT + 0.02, centre.y)
@@ -1004,7 +990,7 @@ func _draw_vehicles() -> void:
 		buffers[part] = PackedFloat32Array()
 	var headings := {}
 	for vehicle: Vehicle in sim.vehicles:
-		var pose := path_pose(vehicle.path, lerpf(vehicle.prev_t, vehicle.t, alpha))
+		var pose := Drive.pose(sim, vehicle, alpha)
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
 		headings[vehicle.id] = heading
 		# Each lane is its own cell, so a vehicle drives down the middle of it.
@@ -1092,13 +1078,12 @@ func _draw_area_stacks() -> void:
 ## The instance buffers, by TEU, of yard area `area`'s stacked boxes.
 func _stack_buffers(area: int, stacks: AreaStacks) -> Dictionary:
 	var buffers := {1: PackedFloat32Array(), 2: PackedFloat32Array()}
-	var geometry: Dictionary = sim.areas.list[area]
-	var along := Vector2((geometry.end - geometry.start).sign())
-	var turned := Basis(Vector3.UP, atan2(-along.normalized().y, along.normalized().x))
 	var layout := sim.areas.layout(area)
 	for position in stacks.stacks.size():
-		var middle: Vector2i = layout.stacks[position].cells[1]
-		var centre := (Vector2(middle) + Vector2(0.5, 0.5)) * Grid.CELL
+		var spot: Vector3i = layout.stacks[position].cells[1]
+		var centre := sim.areas.centre(spot) * Grid.CELL
+		var along := sim.areas.heading(area, spot.y)
+		var turned := Basis(Vector3.UP, atan2(-along.y, along.x))
 		for tier: int in stacks.stacks[position].size():
 			var ids: Array = stacks.stacks[position][tier]
 			for i in ids.size():
@@ -1135,15 +1120,13 @@ func _draw_area_machines() -> void:
 			add_child(node)
 			_area_machines[id] = node
 		var model: MeshInstance3D = _area_machines[id]
-		var area: Dictionary = sim.areas.list[machine.area]
-		var along := Vector2((area.end - area.start).sign())
-		var out := Vector2(area.out)
 		# An RTG spans the stack rows; an RMG spans them and the siding behind.
 		var row: float = {"rtg": (2 + depth - 1) / 2.0, "rmg": (2 + depth) / 2.0}.get(machine.gear, 1.0)
 		var k := sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
-		var at := (Vector2(area.start) + along * k + out * row + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+		var at := sim.areas.point(machine.area, k, row) * Grid.CELL / METRES_PER_UNIT
+		var out := (sim.areas.point(machine.area, k, 1.0) - sim.areas.point(machine.area, k, 0.0)).normalized()
 		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
-		model.rotation.y = atan2(-out.normalized().y, out.normalized().x)
+		model.rotation.y = atan2(-out.y, out.x)
 		var gantry: bool = machine.gear in ["rtg", "rmg"]
 		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights[machine.gear] if gantry else 1.0
 		var wide: float = (depth - 1.0) / (depth - 2.0) if machine.gear == "rmg" else 1.0

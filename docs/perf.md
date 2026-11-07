@@ -584,3 +584,22 @@ carriers often free, they look every tick, searching the yard for the next
 export and the import blocks for room. A port without straddle blocks
 pays only a cheap check (3.4 to 3.6 ms on the showcase without them).
 Open: let a crane look only at straddle blocks while the pool is out.
+
+## M10 step 11: the performance gate (2026-11-02)
+
+The gate: the endgame save no slower than before M10 step 1, 19.5 ms a
+tick (`profile_sim.gd -- 200`, untimed). On M10's continuous traffic it ran
+**28.2 ms**. Two changes, each leaving `hash_ticks.gd` on the endgame save
+at 300 ticks unchanged (3191150738):
+
+| Change | Hot spot removed | ms a tick |
+|---|---|---|
+| Traffic keeps `due`: cars on their route's last piece, waited past the time `_unstick` acts, or placed or rerouted since the tick; `AreaFlow._drive` skips a driving vehicle whose car isn't due | `_drive` 9.9 to 2.6 ms: 1,522 driving vehicles each paid 6.7 µs for `advance` and `_unstick`'s checks and nothing came of it | 20.9 |
+| Export dispatch checks the way in first: with it busy nothing is sent, so export demand and its pass over the lorries aren't worked out | `dispatch_export_lorry` 4.4 to under 0.1 ms | **15.65** |
+
+The save's way in was busy on all 200 ticks, so the second gain is the
+jammed case; a port whose entry is free pays the lorry pass (about 2-3.5
+ms) on the ticks it dispatches. What is left: traffic 6.6 ms, of which
+nearly every car is stopped behind one that hasn't moved and is still
+visited each tick (about 2.7 µs a car); waking followers only when the car
+ahead moves would take most of that.

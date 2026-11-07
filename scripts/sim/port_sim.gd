@@ -89,7 +89,7 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
-var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
+var _fetching := {}  # apron slot spot -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
 var _straddles_out := {}  # straddle block id -> its carriers on the road
 ## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
@@ -100,10 +100,28 @@ var _until_train := {}
 ## RailFlow.rail_blocks, kept for the area, road and rail versions in _rail_blocks_for; not saved.
 var _rail_blocks := {}
 var _rail_blocks_for := Vector3i(-1, -1, -1)
-## The area flow's state: who holds each lane cell, each area's handover
-## slots and queues, the yard machines and what each is carrying, and the
-## boxes stacked in each yard block (area id -> AreaStacks).
-var lane_traffic: LaneTraffic
+## Signals and priority signs at the junctions.
+var junctions: Junctions
+## The lane network built from the roads, areas and track, and the cars on
+## it, built again by Drive when those change (their versions in
+## _drive_for); and the delays routes weigh, per piece. Not saved: a loaded
+## game builds them from its vehicles.
+var network: LaneNetwork
+var traffic: Traffic
+var _drive_for := Vector3i(-1, -1, -1)
+var _delays := {}
+## Whether a piece reaches a spot for a lorry or a tractor: [piece, spot,
+## lorry] -> bool, kept by Drive while the network stands.
+var _reach := {}
+## The level crossings of the network Drive built last (Drive.crossings).
+var _crossing_cells: Array[Vector2i] = []
+## A loaded game's saved traffic (Drive.to_dict), put back when Drive first
+## builds the network; {} for a save from before v40, whose cars go back to
+## their vehicles' cells.
+var _loaded_traffic := {}
+## The area flow's state: each area's handover slots and queues, the yard
+## machines and what each is carrying, and the boxes stacked in each yard
+## block (area id -> AreaStacks).
 var handovers: Handovers
 var machines: Machines
 var machine_jobs := {}
@@ -135,12 +153,11 @@ const AREA_SETTINGS := {
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
-## The roads drawn on the 4 m grid, and the lanes routed over them.
+## The roads drawn on the 4 m grid.
 var roads: RoadNet
 ## Rail track, a graph of its own: where it crosses a road straight across,
 ## the cells are level crossings, in both.
 var rails: RoadNet
-var lanes: LaneGraph
 ## The areas dragged along those roads.
 var areas: Areas
 ## Every box in the port by id: {"kind": "import", "export" or "empty", "due": the
@@ -157,6 +174,8 @@ var exports := 0
 var tractors := 0
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
 var gave_up := 0
+## Tractors moved on to where they were heading after being stuck in traffic.
+var moved_on := 0
 ## Gate-in to gate-out minutes of the latest lorries, newest last.
 var turn_times: Array[float] = []
 ## The same per terminal, by the terminal of the gate a lorry left by.
@@ -208,13 +227,10 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 	roads.anchors = [site_entry_point()]
 	rails = RoadNet.new(rail_types())
 	rails.anchors = [site_rail_entry()]
-	lanes = LaneGraph.new(roads)
-	lanes.rails = rails
 	map = rules.map
 	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
-	lanes.areas = areas
-	lane_traffic = LaneTraffic.new(lanes, Junctions.new(rules.traffic))
-	handovers = Handovers.new(areas)
+	junctions = Junctions.new(rules.traffic)
+	handovers = Handovers.new(areas, waiting_cells())
 	machines = Machines.new(rules.yard_gear)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
@@ -400,6 +416,7 @@ func to_dict() -> Dictionary:
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
 		"gave_up": gave_up,
+		"moved_on": moved_on,
 		"turn_times": turn_times.duplicate(),
 		"terminal_turns": terminal_turns.duplicate(true),
 		"dwell_times": dwell_times.duplicate(),
@@ -417,7 +434,8 @@ func to_dict() -> Dictionary:
 		"bookings": bookings.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
-		"lane_traffic": lane_traffic.to_dict(),
+		"junctions": junctions.to_dict(),
+		"traffic": Drive.to_dict(self),
 		"handovers": handovers.to_dict(),
 		"machines": machines.to_dict(),
 		"machine_jobs": machine_jobs.duplicate(true),
@@ -438,11 +456,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.roads.anchors = [sim.site_entry_point()]
 	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types())
 	sim.rails.anchors = [sim.site_rail_entry()]
-	sim.lanes = LaneGraph.new(sim.roads)
-	sim.lanes.rails = sim.rails
 	sim.map = d.map
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(MapGen.of(sim.rules, sim.map), sim.rules.site))
-	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
@@ -487,6 +502,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
+	sim.moved_on = d.moved_on
 	sim.turn_times.assign(d.turn_times)
 	sim.terminal_turns = d.terminal_turns.duplicate(true)
 	sim.dwell_times.assign(d.dwell_times)
@@ -506,17 +522,37 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
 		sim._add_vehicle(Vehicle.from_dict(data))
-	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes, sim.rules.traffic)
-	sim._weigh_routes()
-	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
+	sim.junctions = Junctions.from_dict(d.junctions, sim.rules.traffic)
+	sim._loaded_traffic = d.traffic
+	sim.handovers = Handovers.from_dict(d.handovers, sim.areas, sim.waiting_cells())
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
 	sim.machine_jobs = d.machine_jobs.duplicate(true)
 	for area: int in d.area_stacks:
 		sim.area_stacks[area] = AreaStacks.from_dict(d.area_stacks[area])
+	# A vehicle bound for a slot, or fetching for a crane's slot, heads for
+	# where it stands there: a no-op for a save that pointed it there itself,
+	# and for one migrated to v41 (whose slots came from grid cells) the fix.
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.state.trim_prefix("no_route:") == "to_slot" and vehicle.slot >= 0:
+			vehicle.target = AreaFlow._stand(sim, vehicle.area, vehicle.slot)
+		if vehicle.home != Areas.NO_SPOT and vehicle.home.x in sim.areas.list:
+			var slots: Array = sim.areas.layout(vehicle.home.x).get("slots", [])
+			var s := slots.find_custom(func(cells: Array) -> bool: return vehicle.home in cells)
+			if s >= 0:
+				sim._fetching[vehicle.home].erase(vehicle)
+				vehicle.home = AreaFlow._stand(sim, vehicle.home.x, s)
+				sim._fetching.get_or_add(vehicle.home, [] as Array[Vehicle]).append(vehicle)
+				if vehicle.state.trim_prefix("no_route:") == "to_crane":
+					vehicle.target = vehicle.home
 	return sim
 
 
 ## Identical for identical states; used by the replay and save tests.
+## Cells of buffer strip a waiting lorry takes: its length and the standstill gap.
+func waiting_cells() -> float:
+	return (rules.traffic.lorry_m + rules.traffic.standstill_gap_m) / Grid.CELL
+
+
 func state_hash() -> int:
 	return hash(var_to_bytes(to_dict()))
 
@@ -590,11 +626,11 @@ func apply(command: Dictionary) -> String:
 		"change_road":
 			return change_road(command.segment, command.type)
 		"set_signals":
-			return lane_traffic.junctions.set_signals(lanes, command.point, command.on)
+			return Drive.junctions(self).set_signals(Drive.junction_lanes(self), command.point, command.on)
 		"set_green":
-			return lane_traffic.junctions.set_green(command.point, command.phase, command.seconds)
+			return Drive.junctions(self).set_green(command.point, command.phase, command.seconds)
 		"set_sign":
-			return lane_traffic.junctions.set_sign(lanes, command.point, command.arm, command.sign)
+			return Drive.junctions(self).set_sign(Drive.junction_lanes(self), command.point, command.arm, command.sign)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
@@ -643,13 +679,8 @@ func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0, on_
 		err = "A breakwater is in the way"
 	if err == "" and not roads.footprint(from, to, type).all(owns):
 		err = "Buy this land first"
-	if err == "":
-		var built := {}
-		for id: int in areas.list:
-			for cell in areas.cells(id):
-				built[cell] = true
-		if roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return c in built):
-			err = "Something is already built here"
+	if err == "" and roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+		err = "Something is already built here"
 	if err == "":
 		err = _crossing_error(RoadNet.line(from, to), roads.footprint(from, to, type), rails.segments.keys().map(func(s: int) -> Array: return rails.cells(s)))
 	if err == "" and not _afford(road_price(from, to, type)):
@@ -672,7 +703,7 @@ func change_road_error(segment: int, type: String) -> String:
 	var road: Dictionary = roads.segments[segment]
 	if road.type == type:
 		return "This road is already a %s" % rules.road_types[type].name
-	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment)
+	return build_road_error(roads.grid_point(road.a), roads.grid_point(road.b), type, segment)
 
 
 ## Rebuilds `segment` as a road of `type` on the same line, at the new
@@ -681,7 +712,7 @@ func change_road(segment: int, type: String) -> String:
 	var err := change_road_error(segment, type)
 	if err == "":
 		var road: Dictionary = roads.segments[segment]
-		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type))
+		ledger.post("construction", -road_price(roads.grid_point(road.a), roads.grid_point(road.b), type))
 		roads.retype(segment, type)
 	return err
 
@@ -712,9 +743,8 @@ func build_rail_error(from: Vector2i, to: Vector2i) -> String:
 		err = "Buy this land first"
 	if err == "":
 		var track := RoadNet.line(from, to)
-		for id: int in areas.list:
-			if areas.cells(id).any(func(c: Vector2i) -> bool: return c in track):
-				return "Something is already built here"
+		if track.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+			return "Something is already built here"
 		var lanes_of := []
 		for id: int in roads.segments:
 			for lane in roads.lanes(id):
@@ -901,13 +931,12 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 	var cells: Array[Vector2i] = plan.cells
 	if not cells.all(owns):
 		return "Buy this land first"
+	if cells.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+		return "Something is already built here"
 	var built := {}
-	for id: int in areas.list:
-		for c in areas.cells(id):
-			built[c] = true
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		for c in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
+		for c in roads.footprint(roads.grid_point(road.a), roads.grid_point(road.b), road.type):
 			built[c] = true
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
@@ -1563,13 +1592,10 @@ func tick() -> void:
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
-	lane_traffic.junctions.tick(lanes, lane_traffic)
+	Drive.signals(self)
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
-	if clock.ticks % roundi(rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		lane_traffic.settle(rules.traffic.smoothing)
-	if clock.ticks % roundi(rules.traffic.route_epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		_weigh_routes()
+	Drive.settle(self)
 
 
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
@@ -1589,9 +1615,9 @@ func upkeep_parts() -> Dictionary:
 	var parts := {0: 0.0}
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		parts[0] += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		parts[0] += RoadNet.length(roads.grid_point(road.a), roads.grid_point(road.b)) * rules.road_types[road.type].upkeep_per_cell
 	for segment: int in rails.segments:
-		parts[0] += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
+		parts[0] += RoadNet.length(rails.grid_point(rails.segments[segment].a), rails.grid_point(rails.segments[segment].b)) * rules.rail.upkeep_per_cell
 	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
@@ -2012,12 +2038,6 @@ func _new_empty(line: String, teu: int) -> int:
 	return id
 
 
-## Routes from now on go round the lane cells vehicles wait in, by the delays
-## LaneTraffic last settled.
-func _weigh_routes() -> void:
-	lanes.set_delays(lane_traffic.delays(), rules.lorry_speed / Grid.CELL, AreaFlow.tractor_speed(self))
-
-
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.
 func _drop_box(id: int) -> void:
 	exports -= 1 if boxes[id].kind in ["export", "tranship"] else 0
@@ -2053,7 +2073,7 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
 	_count_bound(vehicle, 1)
-	if vehicle.home != Grid.NONE:
+	if vehicle.home != Areas.NO_SPOT:
 		if vehicle.home not in _fetching:
 			_fetching[vehicle.home] = [] as Array[Vehicle]
 		_fetching[vehicle.home].append(vehicle)
@@ -2061,14 +2081,14 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 
 ## Takes `vehicle` off the roads and out of the port.
 func _drop_vehicle(vehicle: Vehicle) -> void:
-	lane_traffic.leave(vehicle)
+	Drive.leave(self, vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
 	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] -= 1
 	_count_bound(vehicle, -1)
-	if vehicle.home != Grid.NONE:
+	if vehicle.home != Areas.NO_SPOT:
 		_fetching[vehicle.home].erase(vehicle)
 
 
@@ -2095,5 +2115,5 @@ func vehicle_by_id(id: int) -> Vehicle:
 
 
 ## The tractors fetching exports to apron slot `home`, oldest first.
-func fetching_to(home: Vector2i) -> Array[Vehicle]:
+func fetching_to(home: Vector3i) -> Array[Vehicle]:
 	return _fetching.get(home, [] as Array[Vehicle])

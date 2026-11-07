@@ -14,14 +14,14 @@ func _initialize() -> void:
 	_test_info_views()
 	_expect(WorldView.grid_cell(Vector3(1, 0, 0.5)), Vector2i(6, 3), "a world point finds its 4 m cell (25 m a unit)")
 	var path: Array[Vector2i] = [Vector2i(0, 0), Vector2i(1, 0), Vector2i(1, 1)]
-	_expect(WorldView.path_pose(path, 0.25), [Vector2(0.25, 0), Vector2(1, 0)] as Array[Vector2], "a straight stretch lerps")
-	var last := WorldView.path_pose(path, 0.5)
+	_expect(Drive.path_pose(path, 0.25), [Vector2(0.25, 0), Vector2(1, 0)] as Array[Vector2], "a straight stretch lerps")
+	var last := Drive.path_pose(path, 0.5)
 	for step in range(1, 21):
-		var pose := WorldView.path_pose(path, 0.5 + step * 0.05)
+		var pose := Drive.path_pose(path, 0.5 + step * 0.05)
 		_expect(pose[0].distance_to(last[0]) < 0.1, true, "no jump at t=%.2f" % (0.5 + step * 0.05))
 		_expect(pose[1].normalized().angle_to(last[1].normalized()) < 0.2, true, "no snap in heading at t=%.2f" % (0.5 + step * 0.05))
 		last = pose
-	var middle := WorldView.path_pose(path, 1.0)
+	var middle := Drive.path_pose(path, 1.0)
 	_expect(middle[0].distance_to(Vector2(0.5, 0.5) + Vector2(1, -1).normalized() * 0.5) < 0.001, true, "a corner cell is crossed on a quarter circle about its inner corner")
 	for discharging: bool in [true, false]:
 		var from := 1.0 if discharging else 0.0
@@ -52,10 +52,10 @@ func _initialize() -> void:
 ## against JAM_SECONDS; Containers colours yard blocks by fill.
 func _test_info_views() -> void:
 	var sim := AreaPort.base(RandomPort.quick())
-	while sim.lane_traffic.delays().is_empty():
+	while Drive.delays(sim).is_empty():
 		sim.tick()
 	var shares := WorldView.info_shares(sim, HudDetails.GROUP_TRAFFIC)
-	var delays := sim.lane_traffic.delays()
+	var delays := Drive.delays(sim)
 	_expect(shares.size(), delays.size(), "each cell with a delay is coloured, and no other")
 	var cell: Vector2i = delays.keys()[0]
 	_expect(shares[[cell]], minf(delays[cell] / WorldView.JAM_SECONDS, 1.0), "by its delay against JAM_SECONDS")

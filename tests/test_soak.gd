@@ -118,7 +118,6 @@ func _check(sim: PortSim) -> void:
 		# A train's job carries its box itself, counted below.
 		if job.has("vehicle") and job.position < 0:
 			lifting[job.vehicle] = true
-	var cells := {}
 	var ids := {}
 	for vehicle: Vehicle in sim.vehicles:
 		ids[vehicle.id] = true
@@ -130,13 +129,17 @@ func _check(sim: PortSim) -> void:
 			seen[vehicle.box] = vehicle.id
 		elif vehicle.box != 0:
 			_expect(seen.has(vehicle.box), true, "%s %d's box %d waits in a stack %s" % [vehicle.kind, vehicle.id, vehicle.box, at])
-		var cell := vehicle.path[int(vehicle.t)]
-		_expect(sim.lane_traffic.holder(cell), vehicle.id, "%s %d holds the cell it is on %s" % [vehicle.kind, vehicle.id, at])
-		# M7's routes (by cost, round areas and slots, keeping to turn lanes) still step cell to cell.
-		var jumps := range(1, vehicle.path.size()).filter(func(i: int) -> bool: return RoadNet.length(vehicle.path[i - 1], vehicle.path[i]) > 1)
-		_expect(jumps, [], "%s %d's route steps cell to cell %s" % [vehicle.kind, vehicle.id, at])
-		_expect(cells.has(cell), false, "vehicles %d and %d share cell %s %s" % [vehicle.id, cells.get(cell, 0), cell, at])
-		cells[cell] = vehicle.id
+		_expect(vehicle.id in sim.traffic.cars, true, "%s %d is on the lanes %s" % [vehicle.kind, vehicle.id, at])
+	# M10: no two cars on a piece overlap.
+	var on := {}
+	for id: int in sim.traffic.cars:
+		var car: Dictionary = sim.traffic.cars[id]
+		on.get_or_add(car.route[car.i], []).append(car)
+	for piece: int in on:
+		var cars: Array = on[piece]
+		cars.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.s < b.s)
+		for k in range(1, cars.size()):
+			_expect(cars[k].s - cars[k].length >= cars[k - 1].s - 0.001, true, "cars on piece %d keep apart %s" % [piece, at])
 	# M8's water: no two ships' bookings of a narrow lane overlap, ships at
 	# one anchorage hold their own spots, and a ship under way has a course.
 	for i in sim.passages.size():

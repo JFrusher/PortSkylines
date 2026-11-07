@@ -6,17 +6,16 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 37
+const VERSION := 43
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
 const FIRST := 26
 ## Every field Vehicle.from_dict reads.
 const VEHICLE_FIELDS := {
-	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "t": TYPE_FLOAT,
-	"prev_t": TYPE_FLOAT, "waited": TYPE_INT, "state": TYPE_STRING,
-	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR2I,
-	"home": TYPE_VECTOR2I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
+	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "state": TYPE_STRING,
+	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR3I,
+	"home": TYPE_VECTOR3I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
 	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT,
 }
 const MAGIC := "PSKY"
@@ -95,6 +94,143 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v36(data)
 	if data.version < 37:
 		data = _migrate_v37(data)
+	if data.version < 38:
+		data = _migrate_v38(data)
+	if data.version < 39:
+		data = _migrate_v39(data)
+	if data.version < 40:
+		data = _migrate_v40(data)
+	if data.version < 41:
+		data = _migrate_v41(data)
+	if data.version < 42:
+		data = _migrate_v42(data)
+	if data.version < 43:
+		data = _migrate_v43(data)
+	return data
+
+
+## v43 lets road and track nodes sit anywhere: nodes become points, and
+## junctions' signals and signs are kept by their node's point, each arm by
+## LaneNetwork.arm_key of its way (a grid step before).
+static func _migrate_v43(data: Dictionary) -> Dictionary:
+	for net: Dictionary in [data.sim.roads, data.sim.rails]:
+		for node: int in net.nodes:
+			net.nodes[node] = Vector2(net.nodes[node])
+	var signals := {}
+	for point: Vector2i in data.sim.junctions.signals:
+		signals[Vector2(point)] = data.sim.junctions.signals[point]
+	var signs := {}
+	for point: Vector2i in data.sim.junctions.signs:
+		var arms := {}
+		for arm: Vector2i in data.sim.junctions.signs[point]:
+			arms[LaneNetwork.arm_key(Vector2(arm))] = data.sim.junctions.signs[point][arm]
+		signs[Vector2(point)] = arms
+	data.sim.junctions.signals = signals
+	data.sim.junctions.signs = signs
+	data.version = 43
+	return data
+
+
+## v42 counts tractors moved on after being stuck in traffic; none were before.
+static func _migrate_v42(data: Dictionary) -> Dictionary:
+	data.sim.moved_on = 0
+	data.version = 42
+	return data
+
+
+## v41 lays areas out on their own cells: a vehicle's cells become spots
+## (the area cell whose middle is in it, else the road cell), a slot is two
+## bays so slot s becomes s / 2 (a vehicle there already keeps the next free
+## slot, or queues at the head of the buffer), and no traffic is kept, as
+## the driveways are new; a vehicle bound for a slot is pointed at where it
+## stands in it once the game is loaded (PortSim.from_dict).
+static func _migrate_v41(data: Dictionary) -> Dictionary:
+	var types: Dictionary = Content.base().area_types
+	var spot_of := {}
+	var slots_of := {}  # area id -> how many slots it has now
+	for id: int in data.sim.areas.list:
+		var area: Dictionary = data.sim.areas.list[id]
+		var kind: String = types[area.type].kind
+		var depth: int = area.depth if kind == "quay_apron" else types[area.type].depth
+		var shape := AreaShape.along(RoadCurve.new(area.curve[0], area.curve[1], area.curve[2]), area.side, area.from, area.columns, area.edge, depth)
+		var present := {}
+		for cell: Dictionary in shape.cells:
+			spot_of[Vector2i(cell.centre.floor())] = Vector3i(id, cell.k, cell.r)
+			present[Vector2i(cell.k, cell.r)] = true
+		slots_of[id] = AreaLayout.local(kind, area.columns, depth, present).get("slots", []).size()
+	var spot := func(cell: Vector2i) -> Vector3i: return Areas.NO_SPOT if cell == Grid.NONE else spot_of.get(cell, Vector3i(0, cell.x, cell.y))
+	var by_id := {}
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.path = [spot.call(vehicle.path[0])]
+		vehicle.target = spot.call(vehicle.target)
+		vehicle.home = spot.call(vehicle.home)
+		by_id[vehicle.id] = vehicle
+	for id: int in data.sim.handovers:
+		var at: Dictionary = data.sim.handovers[id]
+		var slots := []
+		slots.resize(slots_of.get(id, 0))
+		slots.fill(0)
+		for s: int in at.slots.size():
+			var holder: int = at.slots[s]
+			if holder == 0:
+				continue
+			var n: int = s / 2 if s / 2 < slots.size() and slots[s / 2] == 0 else slots.find(0)
+			if n >= 0:
+				slots[n] = holder
+			else:
+				at.buffer.push_front(holder)
+			if holder in by_id:
+				by_id[holder].slot = n
+				if n < 0:
+					by_id[holder].state = "queued"
+		at.slots = slots
+	data.sim.traffic = {}
+	data.version = 41
+	return data
+
+
+## v40 drives vehicles on the lane network: a vehicle keeps only the cell it
+## is in, not how far along its route it was nor how long it had waited, and
+## no traffic is saved, so its car goes back to that cell; the signals and
+## signs come out of the old lane traffic.
+static func _migrate_v40(data: Dictionary) -> Dictionary:
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.path = [vehicle.path[int(vehicle.t)]]
+		for gone: String in ["t", "prev_t", "waited"]:
+			vehicle.erase(gone)
+	data.sim.junctions = data.sim.lane_traffic.junctions
+	data.sim.traffic = {}
+	data.sim.erase("lane_traffic")
+	data.version = 40
+	return data
+
+
+## v39 lays each area's shape from a curve: an older one's is the straight
+## line along its front row's inner edge, so its cells start right on it.
+static func _migrate_v39(data: Dictionary) -> Dictionary:
+	for area: Dictionary in data.sim.areas.list.values():
+		var out: Vector2 = Vector2(area.out)
+		# Along its front row; a one-cell row runs the way its rows grow right of.
+		var along: Vector2 = Vector2((area.end - area.start).sign()) if area.end != area.start else Vector2(out.y, -out.x)
+		var right := Vector2(-along.y, along.x)
+		var a: Vector2 = Vector2(area.start) + Vector2(0.5, 0.5) - out * 0.5 - along * 0.5
+		var b: Vector2 = Vector2(area.end) + Vector2(0.5, 0.5) - out * 0.5 + along * 0.5
+		area.curve = [a, (a + b) / 2.0, b]
+		area.side = 1 if right.dot(out) > 0.0 else -1
+		area.from = 0.0
+		area.columns = maxi(absi(area.end.x - area.start.x), absi(area.end.y - area.start.y)) + 1
+		area.edge = 0.0
+	data.version = 39
+	return data
+
+
+## v38 makes every road and rail segment a curve; an older one is the
+## straight curve on its own line, its control point at its middle.
+static func _migrate_v38(data: Dictionary) -> Dictionary:
+	for net: Dictionary in [data.sim.roads, data.sim.rails]:
+		for road: Dictionary in net.segments.values():
+			road.control = Vector2(net.nodes[road.a] + net.nodes[road.b]) / 2.0
+	data.version = 38
 	return data
 
 
@@ -227,10 +363,10 @@ static func _valid_sim(data: Variant) -> bool:
 		"delivered_yesterday": TYPE_INT, "delivered_at_midnight": TYPE_INT,
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
-		"gave_up": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
+		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
 		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
-		"lane_traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
+		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
 	}):
 		return false
@@ -309,35 +445,23 @@ static func _valid_sim(data: Variant) -> bool:
 	return true
 
 
-## The area flow's state: vehicles, cells held by known vehicles, slots and
-## machines at known areas, stacks of known boxes.
+## The area flow's state: vehicles, the junctions' signals and signs,
+## slots and machines at known areas, stacks of known boxes.
 static func _valid_area_flow(data: Dictionary) -> bool:
-	var ids := {}
 	for vehicle: Variant in data.vehicles:
-		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or not _all_cells(vehicle.path, false):
+		if not vehicle is Dictionary or not _has_fields(vehicle, VEHICLE_FIELDS) or vehicle.path.size() != 1 or not vehicle.path[0] is Vector3i:
 			return false
-		ids[vehicle.id] = true
-	# Trains hold level crossings under their id negated.
-	for train: Dictionary in data.trains:
-		ids[-train.id] = true
-	if not _has_fields(data.lane_traffic, {"held": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY, "junctions": TYPE_DICTIONARY}):
+	if not data.traffic.is_empty() and not (_has_fields(data.traffic, {"pieces": TYPE_INT, "traffic": TYPE_DICTIONARY, "weighed": TYPE_DICTIONARY}) and _has_fields(data.traffic.traffic, {"cars": TYPE_DICTIONARY, "on": TYPE_DICTIONARY, "booked": TYPE_DICTIONARY, "crossings": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY})):
 		return false
-	if not _has_fields(data.lane_traffic.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY}):
+	if not _has_fields(data.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY}):
 		return false
-	for point: Variant in data.lane_traffic.junctions.signals:
-		var at: Variant = data.lane_traffic.junctions.signals[point]
-		if not (point is Vector2i and at is Dictionary and _has_fields(at, {"green": TYPE_ARRAY, "phase": TYPE_INT, "left": TYPE_FLOAT})):
+	for point: Variant in data.junctions.signals:
+		var at: Variant = data.junctions.signals[point]
+		if not (point is Vector2 and at is Dictionary and _has_fields(at, {"green": TYPE_ARRAY, "phase": TYPE_INT, "left": TYPE_FLOAT})):
 			return false
-	for point: Variant in data.lane_traffic.junctions.signs:
-		var arms: Variant = data.lane_traffic.junctions.signs[point]
-		if not (point is Vector2i and arms is Dictionary and arms.keys().all(func(arm: Variant) -> bool: return arm is Vector2i) and arms.values().all(func(sign: Variant) -> bool: return sign in ["give_way", "stop"])):
-			return false
-	for id: Variant in data.lane_traffic.held:
-		if not (id in ids and data.lane_traffic.held[id] is Array and _all_cells(data.lane_traffic.held[id], true)):
-			return false
-	for counts: String in ["delays", "stuck", "entered"]:
-		var by_cell: Dictionary = data.lane_traffic[counts]
-		if not by_cell.keys().all(func(cell: Variant) -> bool: return cell is Vector2i) or not by_cell.values().all(func(n: Variant) -> bool: return n is int or n is float):
+	for point: Variant in data.junctions.signs:
+		var arms: Variant = data.junctions.signs[point]
+		if not (point is Vector2 and arms is Dictionary and arms.keys().all(func(arm: Variant) -> bool: return arm is Vector2i) and arms.values().all(func(sign: Variant) -> bool: return sign in ["give_way", "stop"])):
 			return false
 	for area: Variant in data.handovers:
 		var at: Variant = data.handovers[area]
@@ -363,15 +487,15 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 	return true
 
 
-## Roads: nodes on cells, and segments joining two known nodes with a known road type.
+## Roads: nodes at points, and segments joining two known nodes with a known road type.
 static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 	if not _has_fields(roads, {"nodes": TYPE_DICTIONARY, "segments": TYPE_DICTIONARY, "next_node": TYPE_INT, "next_segment": TYPE_INT}):
 		return false
-	if not roads.nodes.keys().all(func(id: Variant) -> bool: return id is int and roads.nodes[id] is Vector2i):
+	if not roads.nodes.keys().all(func(id: Variant) -> bool: return id is int and roads.nodes[id] is Vector2):
 		return false
 	return roads.segments.keys().all(func(id: Variant) -> bool:
 		var road: Variant = roads.segments[id]
-		return id is int and road is Dictionary and _has_fields(road, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING}) and road.a in roads.nodes and road.b in roads.nodes and road.type in types)
+		return id is int and road is Dictionary and _has_fields(road, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING, "control": TYPE_VECTOR2}) and road.a in roads.nodes and road.b in roads.nodes and road.type in types)
 
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.
@@ -390,7 +514,7 @@ static func _valid_areas(areas: Dictionary) -> bool:
 	var levels: Dictionary = Content.base().gate_levels
 	return areas.list.keys().all(func(id: Variant) -> bool:
 		var area: Variant = areas.list[id]
-		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
+		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT, "curve": TYPE_ARRAY, "side": TYPE_INT, "from": TYPE_FLOAT, "columns": TYPE_INT, "edge": TYPE_FLOAT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
 			return false
 		if types[area.type].kind == "quay_apron" and not area.get("depth") is int:
 			return false

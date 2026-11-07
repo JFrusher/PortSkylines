@@ -11,7 +11,9 @@ extends RefCounted
 ## its front row, beside the road, "out": one cell away from the road,
 ## "settings": the player's rules for it, checked by PortSim.set_area,
 ## "terminal": the terminal it belongs to}; a quay apron also has "depth",
-## the rows from its road to its quay, fixed when it is built.
+## the rows from its road to its quay, fixed when it is built. Its shape
+## (M10) is laid from "curve" ([a, control, b] in grid units) on "side",
+## "columns" cells along it from "from" cells, starting "edge" cells off it.
 var list := {}
 ## Terminal id -> {"name", "colour": an index into TERMINAL_COLOURS}. The
 ## player paints terminals on the map: each area belongs to the terminal
@@ -53,6 +55,20 @@ var _gates := {}  # terminal -> its working gates, for the same versions
 var _idle_for := Vector2i(-1, -1)
 var _layouts := {}
 var _layouts_for := -1
+## Each area's shape, by what it was laid from: id -> [from, AreaShape].
+var _shapes := {}
+## Each area's ground (cells), kept like _layouts.
+var _cells_of := {}
+var _cells_for := -1
+## No spot: a vehicle's target or home before it has one.
+const NO_SPOT := Vector3i(0, -1, -1)
+## Each area's cells' quads by the grid cells their bounds cover: cell ->
+## [[area id, quad]], for the version in _quads_for.
+var _quads := {}
+var _quads_for := -1
+var _quads_of := {}  # area id -> [the shape its quads were filed from, the cells they're filed under]
+## Each area's cells' middles (centre), kept with _layouts.
+var _centres := {}
 
 
 func _init(area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> void:
@@ -148,14 +164,18 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 	var placed := _placed(type, segment, side, from, to)
 	if types[type].kind == "quay_apron" and placed.depth > types[type].max_depth:
 		return "A quay apron reaches at most %d m from its road to the water" % Grid.metres(types[type].max_depth)
-	var cells := _cells(placed)
-	var taken := _taken()
-	for cell in cells:
+	for cell in _cells(placed):
 		if cell.x < 0 or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
 			return "Areas must stay on the site"
 		if is_water(cell) and types[type].kind != "quay_apron":
 			return "Areas can't be built on water"
-		if cell in taken:
+	# Blocked where its cells' quads overlap a road lane's or breakwater's cell, or another area's cells.
+	var taken := _taken()
+	var depth: int = placed.depth if types[type].kind == "quay_apron" else types[type].depth
+	var curve := RoadCurve.new(placed.curve[0], placed.curve[1], placed.curve[2])
+	for cell: Dictionary in AreaShape.along(curve, placed.side, placed.from, placed.columns, placed.edge, depth).cells:
+		var quad := PackedVector2Array(cell.corners)
+		if area_over(quad) != 0 or _grid_under(quad).any(func(under: Vector2i) -> bool: return under in taken and overlap(quad, square(under))):
 			return "Something is already built here"
 	if types[type].kind == "quay_apron" and not _on_the_water(placed):
 		return "A quay apron's quay must face open water along its whole length"
@@ -255,7 +275,41 @@ func terminal_error(terminal: int) -> String:
 
 ## The cells `id` covers.
 func cells(id: int) -> Array[Vector2i]:
-	return _cells(list[id])
+	if _cells_for != version:
+		_cells_for = version
+		_cells_of.clear()
+	if id not in _cells_of:
+		_cells_of[id] = _cells(list[id])
+	return _cells_of[id]
+
+
+## Area `id`'s shape: its own cells, laid along its curve.
+func shape(id: int) -> AreaShape:
+	var area: Dictionary = list[id]
+	# Kept by what it is laid from, so an unchanged area isn't laid out again.
+	var from_what := [area.curve, area.side, area.from, area.columns, area.edge, depth_of(area)]
+	if id not in _shapes or _shapes[id][0] != from_what:
+		_shapes[id] = [from_what, AreaShape.along(curve(id), area.side, area.from, area.columns, area.edge, depth_of(area))]
+	return _shapes[id][1]
+
+
+## The point `k` columns along area `id` and `r` rows out (whole numbers
+## are cell (k, r)'s middle), and the way its rows run there, along its curve.
+func point(id: int, k: float, r: float) -> Vector2:
+	var area: Dictionary = list[id]
+	var along := curve(id)
+	return along.point_at(area.from + k + 0.5) + along.right_at(area.from + k + 0.5) * (area.edge + r + 0.5) * area.side
+
+
+## The way area `id`'s rows run `k` columns along it (its curve's way).
+func heading(id: int, k: float) -> Vector2:
+	return curve(id).direction_at(list[id].from + k + 0.5)
+
+
+## Area `id`'s road curve, along which its cells lie.
+func curve(id: int) -> RoadCurve:
+	var area: Dictionary = list[id]
+	return RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
 
 
 ## Why area `id` does no work, or "": a road must still run along its front,
@@ -307,25 +361,123 @@ func _idle_reason(id: int) -> String:
 	return "No road runs along this %s" % types[area.type].name.to_lower()
 
 
-## What `id` holds, laid out by AreaLayout for its type.
+## What `id` holds, laid out by AreaLayout for its type on its own cells,
+## each cell named as a spot: Vector3i(id, k, r).
 func layout(id: int) -> Dictionary:
 	if _layouts_for != version:
 		_layouts_for = version
 		_layouts.clear()
+		_centres.clear()
 	if id not in _layouts:
 		var area: Dictionary = list[id]
-		match kind_of(area):
-			"yard_block":
-				_layouts[id] = AreaLayout.yard_block(area, depth_of(area))
-			"quay_apron":
-				_layouts[id] = AreaLayout.quay_apron(area, depth_of(area))
-			"gate":
-				_layouts[id] = AreaLayout.gate(area, depth_of(area))
-			"parking":
-				_layouts[id] = AreaLayout.parking(area)
-			_:
-				_layouts[id] = {}
+		var present := {}
+		for cell: Dictionary in shape(id).cells:
+			present[Vector2i(cell.k, cell.r)] = true
+		_layouts[id] = _as_spots(id, AreaLayout.local(kind_of(area), area.columns, depth_of(area), present))
 	return _layouts[id]
+
+
+## `part` (a layout or any part of one) with every local cell Vector2i(k, r)
+## named as the spot Vector3i(`id`, k, r).
+static func _as_spots(id: int, part: Variant) -> Variant:
+	if part is Vector2i:
+		return Vector3i(id, part.x, part.y)
+	if part is Dictionary:
+		var found := {}
+		for key: Variant in part:
+			found[key] = _as_spots(id, part[key])
+		return found
+	if part is Array:
+		var found := []
+		for item: Variant in part:
+			found.append(_as_spots(id, item))
+		return found
+	return part
+
+
+## Where spot `spot` is: the middle of area spot.x's cell (k, r) =
+## (spot.y, spot.z), or, for area 0, of road grid cell (spot.y, spot.z).
+func centre(spot: Vector3i) -> Vector2:
+	if spot.x == 0:
+		return Vector2(spot.y, spot.z) + Vector2(0.5, 0.5)
+	if _layouts_for != version:
+		layout(spot.x)
+	if spot.x not in _centres:
+		var found := {}
+		for cell: Dictionary in shape(spot.x).cells:
+			found[Vector2i(cell.k, cell.r)] = cell.centre
+		_centres[spot.x] = found
+	return _centres[spot.x][Vector2i(spot.y, spot.z)]
+
+
+## The area (other than `except`) one of whose cells overlaps `quad` with
+## any area, or 0: edges that only touch don't count.
+func area_over(quad: PackedVector2Array, except := 0) -> int:
+	if _quads_for != version:
+		_quads_for = version
+		# Only areas gone, new or laid out again are filed afresh.
+		for id: int in _quads_of.keys():
+			if id not in list or _quads_of[id][0] != shape(id):
+				for under: Vector2i in _quads_of[id][1]:
+					_quads[under] = _quads[under].filter(func(found: Array) -> bool: return found[0] != id)
+				_quads_of.erase(id)
+		for id: int in list:
+			if id not in _quads_of:
+				var filed: Array[Vector2i] = []
+				for cell: Dictionary in shape(id).cells:
+					var corners := PackedVector2Array(cell.corners)
+					for under in _grid_under(corners):
+						_quads.get_or_add(under, []).append([id, corners])
+						filed.append(under)
+				_quads_of[id] = [shape(id), filed]
+	for under in _grid_under(quad):
+		for found: Array in _quads.get(under, []):
+			if found[0] != except and overlap(quad, found[1]):
+				return found[0]
+	return 0
+
+
+## Whether quads `a` and `b` overlap with any area, not just at an edge.
+static func overlap(a: PackedVector2Array, b: PackedVector2Array) -> bool:
+	for part: PackedVector2Array in Geometry2D.intersect_polygons(a, b):
+		# Measured from its first corner: whole grid coordinates' cross products lose a sliver's area to rounding.
+		var twice := 0.0
+		for i in range(1, part.size() - 1):
+			twice += (part[i] - part[0]).cross(part[i + 1] - part[0])
+		if absf(twice) > 0.02:
+			return true
+	return false
+
+
+## A grid cell's square.
+static func square(cell: Vector2i) -> PackedVector2Array:
+	var at := Vector2(cell)
+	return PackedVector2Array([at, at + Vector2(1, 0), at + Vector2(1, 1), at + Vector2(0, 1)])
+
+
+## The grid cells `quad`'s bounds cover.
+static func _grid_under(quad: PackedVector2Array) -> Array[Vector2i]:
+	var low := quad[0]
+	var high := quad[0]
+	for corner in quad:
+		low = low.min(corner)
+		high = high.max(corner)
+	var found: Array[Vector2i] = []
+	for x in range(floori(low.x), ceili(high.x)):
+		for y in range(floori(low.y), ceili(high.y)):
+			found.append(Vector2i(x, y))
+	return found
+
+
+## The spot whose middle lies in grid cell `cell`: an area's cell there,
+## else the road cell itself.
+func spot_in(cell: Vector2i) -> Vector3i:
+	var id := area_at(cell)
+	if id != 0:
+		for found: Dictionary in shape(id).cells:
+			if Vector2i(found.centre.floor()) == cell:
+				return Vector3i(id, found.k, found.r)
+	return Vector3i(0, cell.x, cell.y)
 
 
 ## The area covering `cell`, or 0.
@@ -338,13 +490,8 @@ func area_at(cell: Vector2i) -> int:
 
 ## How many cells along area `id` `cell` lies, or -1 when it is not in it.
 func along(id: int, cell: Vector2i) -> int:
-	var area: Dictionary = list[id]
-	var front := RoadNet.line(area.start, area.end)
-	for k in front.size():
-		for d in depth_of(area):
-			if front[k] + area.out * d == cell:
-				return k
-	return -1
+	var spot := spot_in(cell)
+	return spot.y if spot.x == id else -1
 
 
 ## The cells an area of `type` would cover beside `segment`: rows parallel to
@@ -445,8 +592,8 @@ func _new_terminal() -> int:
 func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dictionary:
 	var road: Dictionary = _roads.types[_roads.segments[segment].type]
 	var along := _roads.cells(segment)
-	var a: Vector2i = _roads.nodes[_roads.segments[segment].a]
-	var b: Vector2i = _roads.nodes[_roads.segments[segment].b]
+	var a := _roads.grid_point(_roads.segments[segment].a)
+	var b := _roads.grid_point(_roads.segments[segment].b)
 	var out := RoadNet.right_of(b - a) * side
 	# `along` is the row just right of the line; the lanes fill half the road's
 	# width each side of it, so the first free row right is that half on, and
@@ -454,6 +601,14 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	var half: int = (road.forward + road.backward) / 2
 	var edge: int = half if side == 1 else half + 1
 	var placed := {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
+	var curve := _roads.curve(segment)
+	# One cell along an axis road, one diagonal step (√2) along a 45° one.
+	var step := curve.length / RoadNet.length(a, b)
+	placed.curve = [curve.a, curve.c, curve.b]
+	placed.side = side
+	placed.from = from * step
+	placed.columns = to - from + 1
+	placed.edge = (road.forward + road.backward) / 2.0
 	if types[type].kind == "quay_apron":
 		placed.depth = _reach(placed)
 	return placed
@@ -490,24 +645,28 @@ static func _step(area: Dictionary) -> Vector2i:
 	return (area.end - area.start).sign()
 
 
+## The ground `area` stands on: the grid cells its own cells' middles lie
+## in, column by column, for water, land, paint and upkeep (M10 6d).
 func _cells(area: Dictionary) -> Array[Vector2i]:
+	var seen := {}
 	var found: Array[Vector2i] = []
-	for cell in RoadNet.line(area.start, area.end):
-		for d in depth_of(area):
-			found.append(cell + area.out * d)
+	var curve := RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
+	for cell: Dictionary in AreaShape.along(curve, area.side, area.from, area.columns, area.edge, depth_of(area)).cells:
+		var under := Vector2i(cell.centre.floor())
+		if under not in seen:
+			seen[under] = true
+			found.append(under)
 	return found
 
 
-## Cells already taken: every road lane and every area.
+## Grid cells already taken: every road lane and breakwater (areas are
+## checked by their cells' quads, area_over).
 func _taken() -> Dictionary:
 	var taken := {}
 	for id: int in _roads.segments:
 		for lane in _roads.lanes(id):
 			for cell: Vector2i in lane.cells:
 				taken[cell] = true
-	for id: int in list:
-		for cell in cells(id):
-			taken[cell] = true
 	taken.merge(_breakwater_cells)
 	return taken
 

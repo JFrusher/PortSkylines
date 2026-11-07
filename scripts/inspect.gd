@@ -17,7 +17,7 @@ const TRAIN_STATES := {"arriving": "Coming in to its siding", "working": "At its
 ## segment} there, else null.
 static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for vehicle in sim.vehicles:
-		if Vector2i(vehicle.position(1.0).round()) == cell:
+		if Vector2i(Drive.where(sim, vehicle).round()) == cell:
 			return vehicle
 	for train: Train in sim.trains:
 		var head := int(train.t)
@@ -29,8 +29,8 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for crane in sim.cranes:
 		if cell in _crane_cells(sim, crane):
 			return crane
-	var junction := sim.lanes.box_of(cell)
-	if junction != Grid.NONE:
+	var junction := Drive.junction_at(sim, cell)
+	if junction != Vector2.INF:
 		return {"junction": junction}
 	var area := sim.areas.area_at(cell)
 	if area:
@@ -84,7 +84,7 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 	if thing is Dictionary and thing.has("lane"):
 		return _lane(sim, thing.lane) if thing.lane in sim.ship_lanes.segments else nothing
 	if thing is Dictionary and thing.has("junction"):
-		return _junction(sim, thing.junction) if not sim.lanes.arms(thing.junction).is_empty() else nothing
+		return _junction(sim, thing.junction) if not Drive.arms(sim, thing.junction).is_empty() else nothing
 	if thing is Dictionary:
 		return _area(sim, thing.area) if thing.area in sim.areas.list else nothing
 	return nothing
@@ -92,20 +92,16 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 
 ## The name of the arm leaving a junction towards `arm`: "north", "south-east"...
 static func arm_name(arm: Vector2i) -> String:
-	var parts: Array[String] = []
-	if arm.y != 0:
-		parts.append("north" if arm.y < 0 else "south")
-	if arm.x != 0:
-		parts.append("west" if arm.x < 0 else "east")
-	return "-".join(parts)
+	var names := ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
+	return names[posmod(roundi(atan2(arm.y, arm.x) / (PI / 4.0)), 8)]
 
 
-static func _junction(sim: PortSim, point: Vector2i) -> Array[String]:
-	var junctions := sim.lane_traffic.junctions
-	var lines: Array[String] = ["Junction of %d roads" % sim.lanes.arms(point).size()]
+static func _junction(sim: PortSim, point: Vector2) -> Array[String]:
+	var junctions := Drive.junctions(sim)
+	var lines: Array[String] = ["Junction of %d roads" % Drive.arms(sim, point).size()]
 	if point in junctions.signals:
 		var at: Dictionary = junctions.signals[point]
-		var phases := junctions.phases(sim.lanes, point)
+		var phases := junctions.phases(Drive.junction_lanes(sim), point)
 		for i in phases.size():
 			var arms: Array = phases[i].map(func(arm: Vector2i) -> String: return arm_name(arm))
 			var now := ", green now (%d s left)" % ceili(at.left) if i == at.phase and at.left > 0.0 else ""
@@ -113,7 +109,7 @@ static func _junction(sim: PortSim, point: Vector2i) -> Array[String]:
 	else:
 		lines.append("No signals")
 	var signs: Dictionary = junctions.signs.get(point, {})
-	for arm: Vector2i in sim.lanes.arms(point):
+	for arm: Vector2i in Drive.arms(sim, point):
 		if arm in signs:
 			lines.append("From the %s: %s" % [arm_name(arm), "give way" if signs[arm] == "give_way" else "stop"])
 	return lines
