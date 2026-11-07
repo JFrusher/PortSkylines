@@ -156,8 +156,7 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 		return "Unknown area type \"%s\"" % type
 	if segment not in _roads.segments or side not in [1, -1]:
 		return "Areas are built along a road's edge"
-	var along := _roads.cells(segment)
-	if from < 0 or to >= along.size() or from > to:
+	if from < 0 or to >= _columns(segment) or from > to:
 		return "Areas are built along a road's edge"
 	if to - from + 1 < types[type].min_length:
 		return "A %s is at least %d m long" % [types[type].name.to_lower(), Grid.metres(types[type].min_length)]
@@ -295,8 +294,12 @@ func shape(id: int) -> AreaShape:
 ## The point `k` columns along area `id` and `r` rows out (whole numbers
 ## are cell (k, r)'s middle), and the way its rows run there, along its curve.
 func point(id: int, k: float, r: float) -> Vector2:
-	var area: Dictionary = list[id]
-	var along := curve(id)
+	return _point_of(list[id], k, r)
+
+
+## point() for an area's dictionary, built or not.
+static func _point_of(area: Dictionary, k: float, r: float) -> Vector2:
+	var along := RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
 	return along.point_at(area.from + k + 0.5) + along.right_at(area.from + k + 0.5) * (area.edge + r + 0.5) * area.side
 
 
@@ -346,17 +349,18 @@ func _idle_reason(id: int) -> String:
 	var area: Dictionary = list[id]
 	if area.terminal == 0:
 		return "Paint this %s into a terminal on the map (Map, key 6)" % types[area.type].name.to_lower()
+	return "" if road_beside(id) else "No road runs along this %s" % types[area.type].name.to_lower()
+
+
+## Whether a road's lane runs beside any of area `id`'s first row.
+func road_beside(id: int) -> bool:
 	if _lanes_for != _roads.version:
 		_lanes_for = _roads.version
 		_lane_cells.clear()
 		for segment: int in _roads.segments:
 			for cell in _roads.ground(segment):
 				_lane_cells[cell] = true
-	var lanes := _lane_cells
-	for cell in RoadNet.line(area.start, area.end):
-		if cell - area.out in lanes:
-			return ""
-	return "No road runs along this %s" % types[area.type].name.to_lower()
+	return range(list[id].columns).any(func(k: int) -> bool: return Vector2i(point(id, k, -1.0).floor()) in _lane_cells)
 
 
 ## What `id` holds, laid out by AreaLayout for its type on its own cells,
@@ -502,24 +506,23 @@ func cells_of(type: String, segment: int, side: int, from: int, to: int) -> Arra
 ## the road edge an area would grow from, or {} if no road edge is in reach.
 func attach(cell: Vector2i, type: String) -> Dictionary:
 	for segment: int in _roads.segments:
-		var along := _roads.cells(segment)
 		for side: int in [1, -1]:
-			var front := _placed(type, segment, side, 0, along.size() - 1)
-			for d: int in types[type].max_depth:
-				for i in along.size():
-					if front.start + _step(front) * i + front.out * d == cell:
-						return {"segment": segment, "side": side, "index": i}
+			var front := _placed(type, segment, side, 0, _columns(segment) - 1)
+			var curve := RoadCurve.new(front.curve[0], front.curve[1], front.curve[2])
+			for found: Dictionary in AreaShape.along(curve, side, 0.0, front.columns, front.edge, types[type].max_depth).cells:
+				if Vector2i(found.centre.floor()) == cell:
+					return {"segment": segment, "side": side, "index": found.k}
 	return {}
 
 
 ## The index along `segment` nearest to `cell`, for the far end of a drag.
 func index_near(segment: int, cell: Vector2i) -> int:
-	var along := _roads.cells(segment)
-	var best := 0
-	for i in along.size():
-		if Vector2(along[i]).distance_to(Vector2(cell)) < Vector2(along[best]).distance_to(Vector2(cell)):
-			best = i
-	return best
+	return clampi(floori(_roads.curve(segment).nearest(Vector2(cell) + Vector2(0.5, 0.5))), 0, _columns(segment) - 1)
+
+
+## How many cells along `segment` an area can take: one per whole cell of its curve.
+func _columns(segment: int) -> int:
+	return floori(_roads.curve(segment).length + 0.001)
 
 
 func to_dict() -> Dictionary:
@@ -573,10 +576,10 @@ func _repaint(touched: Rect2i) -> void:
 
 ## The cells `area` spans, from its corners.
 func _bounds(area: Dictionary) -> Rect2i:
-	var back: Vector2i = area.out * (depth_of(area) - 1)
-	var rect := Rect2i(area.start, Vector2i.ONE)
-	for corner: Vector2i in [area.end, area.start + back, area.end + back]:
-		rect = rect.expand(corner).expand(corner + Vector2i.ONE)
+	var cells := _cells(area)
+	var rect := Rect2i(cells[0], Vector2i.ONE)
+	for cell in cells:
+		rect = rect.expand(cell).expand(cell + Vector2i.ONE)
 	return rect
 
 
@@ -589,24 +592,13 @@ func _new_terminal() -> int:
 ## An area's own geometry beside `segment`, from index `from` to `to`.
 func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dictionary:
 	var road: Dictionary = _roads.types[_roads.segments[segment].type]
-	var along := _roads.cells(segment)
-	var a := _roads.grid_point(_roads.segments[segment].a)
-	var b := _roads.grid_point(_roads.segments[segment].b)
-	var out := RoadNet.right_of(b - a) * side
-	# `along` is the row just right of the line; the lanes fill half the road's
-	# width each side of it, so the first free row right is that half on, and
-	# left one more.
-	var half: int = (road.forward + road.backward) / 2
-	var edge: int = half if side == 1 else half + 1
-	var placed := {"type": type, "start": along[from] + out * edge, "end": along[to] + out * edge, "out": out}
 	var curve := _roads.curve(segment)
-	# One cell along an axis road, one diagonal step (√2) along a 45° one.
-	var step := curve.length / RoadNet.length(a, b)
-	placed.curve = [curve.a, curve.c, curve.b]
-	placed.side = side
-	placed.from = from * step
-	placed.columns = to - from + 1
-	placed.edge = (road.forward + road.backward) / 2.0
+	# Column k is k cells along the curve; rows start where the road's lanes end.
+	var placed := {"type": type, "curve": [curve.a, curve.c, curve.b], "side": side, "from": float(from), "columns": to - from + 1, "edge": (road.forward + road.backward) / 2.0}
+	# Its front's first and last grid cells and its way out, for quay aprons and berths, which stay on grid roads until berths turn (M10 step 21).
+	placed.start = Vector2i(_point_of(placed, 0.0, 0.0).floor())
+	placed.end = Vector2i(_point_of(placed, placed.columns - 1.0, 0.0).floor())
+	placed.out = Vector2i((curve.right_at(from + 0.5) * side).round())
 	if types[type].kind == "quay_apron":
 		placed.depth = _reach(placed)
 	return placed
@@ -637,10 +629,6 @@ func kind_of(area: Dictionary) -> String:
 ## distance from the water.
 func depth_of(area: Dictionary) -> int:
 	return area.depth if kind_of(area) == "quay_apron" else types[area.type].depth
-
-
-static func _step(area: Dictionary) -> Vector2i:
-	return (area.end - area.start).sign()
 
 
 ## The ground `area` stands on: the grid cells its own cells' middles lie

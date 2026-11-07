@@ -1350,10 +1350,8 @@ static func siding(sim: PortSim, block: int) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
 	if area.type != "yard_block" or area.settings.gear != "rmg":
 		return found
-	var behind := sim.areas.depth_of(area)
-	var along: Vector2i = (area.end - area.start).sign()
-	for k in RoadNet.length(area.start, area.end) + 1:
-		var cell: Vector2i = area.start + along * k + area.out * behind
+	for k: int in area.columns:
+		var cell := Vector2i(sim.areas.point(block, k, sim.areas.depth_of(area)).floor())
 		if sim.rails.segment_at(cell) == 0:
 			return [] as Array[Vector2i]
 		found.append(cell)
