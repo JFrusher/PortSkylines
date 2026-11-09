@@ -33,17 +33,19 @@ func _sorted(cells: Array) -> Array:
 	return found
 
 
-## East and north, 1+1 and 2+2: the ground is the cells its lanes covered.
+## East and north, 1+1 and 2+2: the ground is the block of cells its lanes
+## run over, a lane's width either side of its line.
 func _test_straight_roads_keep_their_cells() -> void:
-	for c: Array in [[Vector2i(0, 0), Vector2i(10, 0), "terminal_1_1"], [Vector2i(0, 0), Vector2i(0, -10), "terminal_2_2"]]:
+	for c: Array in [[Vector2i(0, 0), Vector2i(10, 0), "terminal_1_1", Rect2i(0, -1, 10, 2)], [Vector2i(0, 0), Vector2i(0, -10), "terminal_2_2", Rect2i(-2, -10, 4, 10)]]:
 		var net := RoadNet.new(_types, Content.base().junctions)
 		net.add(c[0], c[1], c[2])
-		var lanes: Array = []
-		for lane in net.lanes(1):
-			lanes.append_array(lane.cells)
-		_expect(_sorted(net.ground(1)), _sorted(lanes), "%s to %s: its ground is its lanes' cells" % [c[0], c[1]])
-		_expect(net.shape(1).cells.size(), lanes.size(), "a quad for each")
-		_expect(net.segment_at(lanes[0]), 1, "and picking finds it there")
+		var block: Array = []
+		for x in range(c[3].position.x, c[3].end.x):
+			for y in range(c[3].position.y, c[3].end.y):
+				block.append(Vector2i(x, y))
+		_expect(_sorted(net.ground(1)), _sorted(block), "%s to %s: its ground is the cells its lanes run over" % [c[0], c[1]])
+		_expect(net.shape(1).cells.size(), block.size(), "a quad for each")
+		_expect(net.segment_at(block[0]), 1, "and picking finds it there")
 
 
 ## A 2+2 road from (0, 0) to (30, 17), about 30° off east: 4 quads per cell

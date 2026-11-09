@@ -89,9 +89,6 @@ func _test_lanes_sit_where_grid_lanes_do() -> void:
 	var north := road.offset_points(-0.5)
 	_expect(north[0], Vector2(0, -0.5), "the backward lane of a road east runs half a cell north")
 	_expect(north[-1], Vector2(10, -0.5), "all along")
-	# Today's grid cells for the same lane have their middles on it.
-	var cells: Array = RoadNet._lanes(Vector2i(0, 0), Vector2i(10, 0), types.terminal_1_1)[0].cells
-	_expect(cells.all(func(cell: Vector2i) -> bool: return is_equal_approx(Vector2(cell).y + 0.5, -0.5)), true, "and today's grid lane has its cell middles on it")
 
 
 ## A 2+2 road round a quarter turn: every lane stays its offset from the

@@ -449,23 +449,23 @@ func _lane_to() -> Vector2i:
 	return to if d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y) else RoadNet.snap(_lane_from, to)
 
 
-## Where a road drag from _road_from ends: onto a road near the mouse, at
-## any angle (RoadNet.snap_point), with Shift held the point under it. Track
-## ends in the middle of the cell that point is in.
+## Where a road drag from _road_from ends: where RoadNet.snap_drag puts the
+## point under the mouse, with Shift held that point (on the grid, straight
+## or at 45°). Track ends in the middle of the cell that point is in.
 func _road_to() -> Vector2:
-	var node := _hovered_node()
-	if _on_grid():
-		return Vector2(RoadNet.snap(Vector2i(_road_from), node) if _raw() else _net().snap_end(Vector2i(_road_from), node))
-	return _laid(_hovered_grid_point() if _raw() else _net().snap_drag(_road_from, _hovered_grid_point(), hud.road_type).point)
+	var here := _hovered_grid_point()
+	if _raw():
+		return _laid(Vector2(RoadNet.snap(Vector2i(_road_from.round()), Vector2i(here.round()))) if _on_grid() else here)
+	return _laid(_net().snap_drag(_road_from, here, hud.road_type, _on_grid()).point)
 
 
-## Where a road drag would start: on a road near the mouse, or with Shift
-## held the point under it. Track starts in the middle of that point's cell.
+## Where a road drag would start: on a road near the mouse, else (or with
+## Shift held) the point under it, on the grid the nearest grid point. Track
+## starts in the middle of that point's cell.
 func _road_start() -> Vector2:
-	var node := _hovered_node()
-	if _on_grid():
-		return Vector2(node if _raw() else _net().snap_start(node))
-	return _laid(_hovered_grid_point() if _raw() else _net().snap_point(_hovered_grid_point()))
+	var here := _hovered_grid_point()
+	var onto := here if _raw() else _net().snap_point(here)
+	return _laid(onto if onto != here or not _on_grid() else here.round())
 
 
 ## `point` as the road tool lays it: track through the middle of its cell
@@ -525,32 +525,15 @@ func _raw() -> bool:
 	return Input.is_key_pressed(KEY_SHIFT)
 
 
-## The guides the road drag's start or end lies on, unless it joins a road
-## there: pairs of [guide's road end, the drag's point] in grid units.
+## The guide lines the road drag's end lies on, as pairs of points in grid
+## units (RoadNet.snap_drag).
 func _guide_lines(cell: Vector2i) -> Array[Vector2]:
 	var found: Array[Vector2] = []
-	if hud.tool != Hud.DRAW_ROAD or hud.road_type == "" or _upgrading() or cell == Grid.NONE or _raw():
+	if hud.tool != Hud.DRAW_ROAD or hud.road_type == "" or _upgrading() or cell == Grid.NONE or _raw() or _road_from == Vector2.INF:
 		return found
-	if not _on_grid():
-		if _road_from != Vector2.INF:
-			for guide: Array in _net().snap_drag(_road_from, _hovered_grid_point(), hud.road_type).guides:
-				found.append_array(guide)
-		return found
-	var node := _hovered_node()
-	var from := Grid.NONE if _road_from == Vector2.INF else Vector2i(_road_from)
-	var guided := _net().guide_start(node) if from == Grid.NONE else _net().guide_end(from, node)
-	if _net().snaps(node, from):
-		return found
-	for guide: Dictionary in guided.guides:
-		found.append_array([Vector2(guide.at), Vector2(guided.point)])
+	for guide: Array in _net().snap_drag(_road_from, _hovered_grid_point(), hud.road_type, _on_grid()).guides:
+		found.append_array(guide)
 	return found
-
-
-## The grid point a road drag would use under the mouse; NONE off the ground.
-func _hovered_node() -> Vector2i:
-	if _hovered_point() == null:
-		return Grid.NONE
-	return Vector2i(_hovered_grid_point().round())
 
 
 ## How many lanes across the road tool's road type is.
@@ -603,25 +586,13 @@ func _segment_hint(picked: Array) -> String:
 ## grid units.
 func _snapped_ends(cell: Vector2i) -> Array[Vector2]:
 	var found: Array[Vector2] = []
-	var node := _hovered_node()
 	if hud.tool != Hud.DRAW_ROAD or _upgrading() or cell == Grid.NONE or _raw():
 		return found
-	if not _on_grid():
-		# Marked where an end lands on a road, not where it only snaps to an angle or length.
-		var here := _hovered_grid_point()
-		var onto := _net().snap_point(here, _road_from)
-		if onto != here:
-			found.append(onto)
-		return found
-	var from := Grid.NONE if _road_from == Vector2.INF else Vector2i(_road_from)
-	if from == Grid.NONE:
-		if _net().snaps(node):
-			found.append(Vector2(Vector2i(_road_start())))
-		return found
-	if _net().snaps(from):
-		found.append(Vector2(from))
-	if _net().snaps(node, from):
-		found.append(Vector2(Vector2i(_road_to())))
+	# Marked where an end lands on a road, not where it only snaps to an angle or length.
+	var here := _hovered_grid_point()
+	var onto := _net().snap_point(here, _road_from)
+	if onto != here:
+		found.append(onto)
 	return found
 
 

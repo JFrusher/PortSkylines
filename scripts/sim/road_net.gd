@@ -456,12 +456,16 @@ static func snap(from: Vector2i, to: Vector2i) -> Vector2i:
 ## line within GUIDE_SNAP of it, on from a road's end or parallel to a
 ## nearby straight road at the gap where both roads' lanes just clear; else
 ## its way snaps to the nearest 15° step from east or from the road it
-## starts on, within ANGLE_SNAP, and its length to whole cells. {"point",
-## "guides": [from, to] of each guide line it lies on, to draw}.
-func snap_drag(from: Vector2, to: Vector2, type: String) -> Dictionary:
+## starts on, within ANGLE_SNAP, and its length to whole cells. With `grid`,
+## past a road it ends on a grid point straight or at 45° from `from` (as
+## today's grid layouts). {"point", "guides": [from, to] of each guide
+## line it lies on, to draw}.
+func snap_drag(from: Vector2, to: Vector2, type: String, grid := false) -> Dictionary:
 	var onto := snap_point(to, from)
 	if onto != to:
 		return {"point": onto, "guides": []}
+	if grid:
+		return {"point": Vector2(snap(Vector2i(from.round()), Vector2i(to.round()))), "guides": []}
 	var found := {}
 	var nearest := GUIDE_SNAP
 	for line: Array in _guide_lines(from, to, type):
@@ -544,122 +548,6 @@ func snap_point(near: Vector2, from := Vector2.INF) -> Vector2:
 		if d <= SNAP_CELLS and d - SNAP_CELLS * 2 < best_score:
 			best = Vector2(anchor)
 			best_score = d - SNAP_CELLS * 2
-	return best
-
-
-## Where a road drag starts: on the nearest road within SNAP_CELLS of `cell`,
-## a junction or road end before any other point, as Cities: Skylines snaps;
-## else on a guide (see guide_start); else `cell` itself.
-func snap_start(cell: Vector2i) -> Vector2i:
-	return _snap_onto(cell, Grid.NONE, guide_start(cell).point)
-
-
-## Where a drag from `from` towards `to` ends: on the nearest road within
-## SNAP_CELLS of `to` snapped straight or to 45° that a road from `from`
-## reaches, a junction or road end first; otherwise `to` snapped. Measured
-## from the snapped end, not the mouse, so a release off to the side of the
-## line still joins the road the line meets. Roads `from` is on don't count,
-## so a drag never snaps back along its own road. With no road that close,
-## it ends on a guide (see guide_end).
-func snap_end(from: Vector2i, to: Vector2i) -> Vector2i:
-	return _snap_onto(snap(from, to), from, guide_end(from, to).point)
-
-
-## The guides a drag can line up with, as Cities: Skylines draws them: from
-## each road end that no road carries on straight from, the road's line run
-## on GUIDE_CELLS. Each is {"at": the end, "dir": its step outward}.
-func guides() -> Array[Dictionary]:
-	var out := {}  # node -> the steps outward of its segments
-	for id: int in segments:
-		var a := grid_point(segments[id].a)
-		var b := grid_point(segments[id].b)
-		out.get_or_add(a, []).append((b - a).sign())
-		out.get_or_add(b, []).append((a - b).sign())
-	var found: Array[Dictionary] = []
-	for at: Vector2i in out:
-		for step: Vector2i in out[at]:
-			if -step not in out[at]:
-				found.append({"at": at, "dir": -step})
-	return found
-
-
-## Whether `point` lies on `guide`, past its end and within GUIDE_CELLS.
-static func on_guide(guide: Dictionary, point: Vector2i) -> bool:
-	var t := length(guide.at, point)
-	return t >= 1 and t <= GUIDE_CELLS and guide.at + guide.dir * t == point
-
-
-## Where a drag from `from` towards `to`, snapped straight or to 45°, meets a
-## guide within SNAP_CELLS of its snapped end, nearest first: {"point", "guides":
-## the guides there}; the snapped end and no guides when none is that close.
-## Guides from `from` itself don't count.
-func guide_end(from: Vector2i, to: Vector2i) -> Dictionary:
-	var end := snap(from, to)
-	var best := {"point": end, "guides": []}
-	var step := (end - from).sign()
-	var run := length(from, end)
-	var near := SNAP_CELLS + 1
-	var all := guides().filter(func(g: Dictionary) -> bool: return g.at != from)
-	for s in range(maxi(1, run - SNAP_CELLS), run + SNAP_CELLS + 1):
-		var point := from + step * s
-		var on := all.filter(func(g: Dictionary) -> bool: return on_guide(g, point))
-		if step != Vector2i.ZERO and not on.is_empty() and absi(s - run) < near:
-			best = {"point": point, "guides": on}
-			near = absi(s - run)
-	return best
-
-
-## Where a drag starting near `cell` lines up with guides within SNAP_CELLS:
-## where two cross before any other point, then the nearest; {"point",
-## "guides"} as guide_end, `cell` and no guides when none is that close.
-func guide_start(cell: Vector2i) -> Dictionary:
-	var best := {"point": cell, "guides": []}
-	var best_score := INF
-	var all := guides()
-	for dx in range(-SNAP_CELLS, SNAP_CELLS + 1):
-		for dy in range(-SNAP_CELLS, SNAP_CELLS + 1):
-			var point := cell + Vector2i(dx, dy)
-			var on := all.filter(func(g: Dictionary) -> bool: return on_guide(g, point))
-			var score := Vector2(dx, dy).length() - (SNAP_CELLS * 2 if on.size() > 1 else 0)
-			if not on.is_empty() and score < best_score:
-				best = {"point": point, "guides": on}
-				best_score = score
-	return best
-
-
-## Whether a drag from `from` (NONE for a start) at `cell` would snap onto a road.
-func snaps(cell: Vector2i, from := Grid.NONE) -> bool:
-	return _snap_onto(cell if from == Grid.NONE else snap(from, cell), from, Grid.NONE) != Grid.NONE
-
-
-## The road cell nearest `near` within SNAP_CELLS, nodes first, reachable
-## from `from` unless that is NONE; else `otherwise`.
-## shortcut: scans every road cell each call, fine for hundreds of segments; index cells by chunk if drawing slows on big ports.
-func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i:
-	var best := otherwise
-	var best_score := INF
-	for id: int in segments:
-		var road := points(id)
-		if from in road:
-			continue
-		var ends := [road[0], road[-1]]
-		for cell in road:
-			var d := maxi(absi(cell.x - near.x), absi(cell.y - near.y))
-			if d > SNAP_CELLS or (from != Grid.NONE and snap(from, cell) != cell):
-				continue
-			var score := Vector2(cell - near).length() - (SNAP_CELLS * 2 if cell in ends else 0)
-			if score < best_score:
-				best = cell
-				best_score = score
-	for anchor in anchors:
-		var cell := Vector2i(anchor)
-		var d := maxi(absi(cell.x - near.x), absi(cell.y - near.y))
-		if cell == from or d > SNAP_CELLS or (from != Grid.NONE and snap(from, cell) != cell):
-			continue
-		var score := Vector2(cell - near).length() - SNAP_CELLS * 2
-		if score < best_score:
-			best = cell
-			best_score = score
 	return best
 
 
@@ -784,26 +672,6 @@ func degree(node: int) -> int:
 	return segments.values().filter(func(s: Dictionary) -> bool: return s.a == node or s.b == node).size()
 
 
-## The grid points (or cells, for odd-width types) `segment`'s line runs
-## through, from its a end to its b end.
-func points(segment: int) -> Array[Vector2i]:
-	return line(grid_point(segments[segment].a), grid_point(segments[segment].b))
-
-
-## The cells just right of `segment`'s line from its a end to its b end: the
-## row areas beside it measure from. For odd-width types, the line's cells.
-func cells(segment: int) -> Array[Vector2i]:
-	var a := grid_point(segments[segment].a)
-	var b := grid_point(segments[segment].b)
-	return _row(a, b, types[segments[segment].type], 0)
-
-
-## `segment`'s lanes from left to right across its drawn direction, each
-## {"cells": in driving order, "forward": true if it runs from a to b}.
-func lanes(segment: int) -> Array[Dictionary]:
-	return _lanes(grid_point(segments[segment].a), grid_point(segments[segment].b), types[segments[segment].type])
-
-
 ## The ground (see ground) a road of `type` from `from` to `to`, curving
 ## through `control` (INF: straight), would stand on.
 func footprint(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> Array[Vector2i]:
@@ -811,52 +679,6 @@ func footprint(from: Vector2, to: Vector2, type: String, control := Vector2.INF)
 	var found: Array[Vector2i] = []
 	found.assign(_ground_of(along, _shape_of(along, types[type])).keys())
 	return found
-
-
-## Lanes left to right across the way from `a` to `b`: the first `backward`
-## run from b to a, the rest from a to b. They lie evenly either side of the
-## line, lane k (0-based) in the row k - lanes / 2 to its right, so drawn
-## either way a road covers the same cells.
-static func _lanes(a: Vector2i, b: Vector2i, road: Dictionary) -> Array[Dictionary]:
-	var width: int = road.forward + road.backward
-	var found: Array[Dictionary] = []
-	for k in width:
-		var forward: bool = k >= road.backward
-		var cells := _row(a, b, road, k - width / 2)
-		if not forward:
-			cells.reverse()
-		found.append({"cells": cells, "forward": forward})
-	return found
-
-
-## The cells from `a` to `b` in row `row` right of the line (negative: left).
-## Rows sit half a cell either side of a line along grid lines, so one
-## between points a and b has a cell per step; a line through cell middles
-## has its rows a whole cell apart and covers both end cells. A 45° line
-## through grid points also runs through cell middles, so its even rows
-## can't sit evenly either side: they step straight across, half a cell
-## south of the line, whichever way it was drawn.
-static func _row(a: Vector2i, b: Vector2i, road: Dictionary, row: int) -> Array[Vector2i]:
-	var d := (b - a).sign()
-	var across := right_of(b - a)
-	var found: Array[Vector2i] = []
-	if (road.forward + road.backward) % 2 == 1:
-		for cell in line(a, b):
-			found.append(cell + across * row)
-		return found
-	for t in length(a, b):
-		var middle := Vector2(a) + Vector2(d) * (t + 0.5) + Vector2(across) * (row + 0.5)
-		found.append(Vector2i(middle.floor()))
-	return found
-
-
-## One cell to the right of travel along `d`. On a 45° road that is a step
-## straight across, so neighbouring lanes touch with no gap row between them.
-static func right_of(d: Vector2i) -> Vector2i:
-	var step := d.sign()
-	if step.x == 0 or step.y == 0:
-		return Vector2i(-step.y, step.x)
-	return Vector2i(0, step.x)
 
 
 ## The cells from `from` to `to` inclusive, along a straight or 45° line.
@@ -867,10 +689,3 @@ static func line(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	for i in maxi(absi(d.x), absi(d.y)) + 1:
 		found.append(from + step * i)
 	return found
-
-
-## Node `node`'s grid point (or cell, for odd-width types).
-# shortcut: nodes sit on the grid until roads meet at any angle (M10 12c); what counts cells reads this until 12b gives roads shapes.
-func grid_point(node: int) -> Vector2i:
-	assert(nodes[node] == nodes[node].round(), "node %d is on the grid" % node)
-	return Vector2i(nodes[node])

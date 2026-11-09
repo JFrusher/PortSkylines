@@ -32,8 +32,9 @@ func _test_lorries_take_the_way_round_a_jam() -> void:
 		_expect(sim.apply({"op": "build_road", "from": leg[0], "to": leg[1], "type": "terminal_1_1"}), "", "a bypass leg is built")
 	sim.creative = false
 	var east := sim.roads.segment_at(Vector2i(500, y))
-	var westbound: Array = sim.roads.lanes(east).filter(func(lane: Dictionary) -> bool: return not lane.forward)[0].cells
-	var stand: Vector2i = westbound.filter(func(c: Vector2i) -> bool: return c.x == 500)[0]
+	# The westbound lane keeps right: half a cell north of the road's line.
+	var stand := Vector2i(500, y - 1)
+	_expect(sim.roads.segment_at(stand), east, "the westbound lane runs over (500, y - 1)")
 	var broken := Vehicle.new(999999, "lorry", [Vector3i(0, stand.x, stand.y)] as Array[Vector3i])
 	_expect(Drive.place(sim, broken), true, "the broken-down lorry stands in the westbound lane")
 	RandomPort.calls(sim, "feeder", 10, 45, 1)

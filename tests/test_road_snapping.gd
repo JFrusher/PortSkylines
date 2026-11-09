@@ -17,6 +17,8 @@ func _initialize() -> void:
 	_test_a_road_wins()
 	_test_guides_from_road_ends()
 	_test_parallel_roads()
+	_test_grid_snap()
+	_test_anchors()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -84,3 +86,22 @@ func _test_parallel_roads() -> void:
 	var found: Dictionary = net.snap_drag(Vector2(110, 104.6), Vector2(140, 104.4), "terminal_2_2")
 	_expect(_near(found.point, Vector2(140, 104)), true, "parallel, 4 cells off (%s)" % found.point)
 	_expect(found.guides.size(), 1, "with the parallel guide")
+
+
+## With grid snap on, a drag away from roads ends on a grid point, straight
+## or at 45° from its start, as today's grid layouts; one ending near a road
+## still ends on it.
+func _test_grid_snap() -> void:
+	var net := _net()
+	net.add(Vector2(100, 100), Vector2(140, 100), "terminal_1_1")
+	_expect(net.snap_drag(Vector2(60, 20), Vector2(61.3, 30.2), "terminal_1_1", true).point, Vector2(60, 30), "a nearly upright drag ends straight, on a grid point")
+	_expect(net.snap_drag(Vector2(60, 20), Vector2(66.2, 24.4), "terminal_1_1", true), {"point": Vector2(65, 25), "guides": []}, "an in-between one at 45°, with no guides")
+	_expect(net.snap_drag(Vector2(120, 80), Vector2(123.4, 98.8), "terminal_1_1", true).point.distance_to(Vector2(123.4, 100)) < 0.01, true, "and one ending beside a road ends on it")
+
+
+## The highway's anchor at the site edge: a drag ending near it ends on it.
+func _test_anchors() -> void:
+	var net := _net()
+	net.anchors = [Vector2(100, 70)] as Array[Vector2]
+	_expect(net.snap_point(Vector2(101, 72)), Vector2(100, 70), "a drag starting near the highway starts on it")
+	_expect(net.snap_drag(Vector2(60, 70), Vector2(98, 72), "terminal_1_1").point, Vector2(100, 70), "and one ending near it ends on it")
