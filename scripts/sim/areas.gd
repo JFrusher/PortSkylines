@@ -181,6 +181,24 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 	return ""
 
 
+## Lays area `id` again along road `segment`, over the same columns, as
+## after the road is moved; "" or why it no longer fits there, when it is
+## left as it was.
+func refit(id: int, segment: int) -> String:
+	var area: Dictionary = list[id]
+	var from := int(area.from)
+	list.erase(id)
+	var err := add_error(area.type, segment, area.side, from, from + area.columns - 1)
+	list[id] = area
+	if err == "":
+		var placed := _placed(area.type, segment, area.side, from, from + area.columns - 1)
+		placed.settings = area.settings
+		placed.terminal = area.terminal
+		list[id] = placed
+	version += 1
+	return err
+
+
 func remove(id: int) -> void:
 	list.erase(id)
 	version += 1

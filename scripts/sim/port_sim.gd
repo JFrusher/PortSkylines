@@ -631,6 +631,10 @@ func apply(command: Dictionary) -> String:
 			return Drive.junctions(self).set_signals(Drive.junction_lanes(self), command.point, command.on)
 		"set_green":
 			return Drive.junctions(self).set_green(command.point, command.phase, command.seconds)
+		"move_road_node":
+			return move_road({"node": command.node, "to": command.to}, true)
+		"move_road_control":
+			return move_road({"segment": command.segment, "control": command.control}, true)
 		"build_roundabout":
 			return build_roundabout(command.centre, command.radius)
 		"set_lane_arrows":
@@ -693,6 +697,73 @@ func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fi
 			err = _crossing_error(from, to, ground, _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.cells(track))
 	if err == "" and not _afford(road_price(from, to, type, control)):
 		err = "Not enough money"
+	return err
+
+
+## Moves a road node (`change.node` to `change.to`) or a road's control
+## point (`change.segment`'s to `change.control`), as Cities: Skylines' Move
+## It mod does, and the areas built along the roads it reshapes with them;
+## with `keep` false, only checks. "" or why not, the port then as it was:
+## a reshaped road must still meet the others where it did and nowhere new,
+## and stand where a road could be built; its areas must still fit.
+# shortcut: an area moves with a road only if it was laid along that road's whole curve; one laid before the road was split is refused, until areas know their road.
+func move_road(change: Dictionary, keep: bool) -> String:
+	if not (change.get("node", 0) in roads.nodes or change.get("segment", 0) in roads.segments):
+		return "No road there"
+	var roads_before := roads.to_dict()
+	var areas_before := areas.list.duplicate(true)
+	var curves := {}  # road -> its curve before
+	for id: int in roads.segments:
+		var road: Dictionary = roads.segments[id]
+		curves[id] = [roads.nodes[road.a], road.control, roads.nodes[road.b]]
+	var moved := roads.move(change)
+	var err := ""
+	for id in moved:
+		if err == "":
+			err = _moved_road_error(id)
+		for area: int in areas.list.keys():
+			if err == "" and areas_before[area].curve == curves[id]:
+				err = areas.refit(area, id)
+			elif err == "" and roads.curve(id).nearest(areas_before[area].curve[0]) > 0.0 and _along(areas_before[area].curve, curves[id]):
+				err = "An area along this road was built before it was split: rebuild it to move the road"
+	if err != "" or not keep:
+		roads.restore(roads_before)
+		areas.list = areas_before
+		areas.version += 1
+	return err
+
+
+## Whether area curve `area` lies along road curve `road` (both [a, c, b]), as one built on part of it.
+static func _along(area: Array, road: Array) -> bool:
+	var along := RoadCurve.new(road[0], road[1], road[2])
+	return [area[0], area[2]].all(func(p: Vector2) -> bool: return along.point_at(along.nearest(p)).distance_to(p) < 0.01)
+
+
+## Why road `segment`, as it now lies after a move, couldn't be there: it
+## must meet the roads only at its own ends, by the junction rules, and
+## stand on owned dry land clear of breakwaters, areas and track.
+func _moved_road_error(segment: int) -> String:
+	var road: Dictionary = roads.segments[segment]
+	var a: Vector2 = roads.nodes[road.a]
+	var b: Vector2 = roads.nodes[road.b]
+	var err := roads.add_error(a, b, road.type, segment, road.control)
+	if err != "":
+		return err
+	var plan: Dictionary = roads._plan(a, b, road.type, segment, road.control)
+	if plan.pieces.size() > 1 or not plan.splits.is_empty():
+		return "A road would cross another: draw it again instead"
+	if plan.pieces[0][0] != a or plan.pieces[0][2] != b:
+		return "Too close to another road"
+	var ground := roads.ground(segment)
+	if ground.any(areas.is_water):
+		return "Roads can't be built on water"
+	if ground.any(areas.breakwater_at):
+		return "A breakwater is in the way"
+	if not ground.all(owns):
+		return "Buy this land first"
+	for track: int in rails.segments:
+		if err == "":
+			err = _crossing_error(a, b, ground, _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.cells(track))
 	return err
 
 

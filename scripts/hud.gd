@@ -36,6 +36,8 @@ const BUILD_ANCHORAGE := -12
 const BUILD_MARINE := -13
 ## Drags a breakwater across the water.
 const BUILD_BREAKWATER := -14
+## Drags a road's node, or the point it bends toward, to reshape it (Move It).
+const MOVE_ROAD := -15
 ## The build menu row each area type sits in.
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
@@ -344,6 +346,7 @@ func _ready() -> void:
 		grid_snap = on
 		grid.text = "Grid snap\n%s" % ("on" if on else "off"))
 	rows.Roads.add_child(grid)
+	_item(_button(rows.Roads, "Move It\ndrag a node or bend", tools, false, func() -> void: tool = MOVE_ROAD)).tooltip_text = "Drag a road's end or junction to move it, or drag from the middle of a road to bend it. Areas along a road move with it. A move that would cross another road, meet one too sharply or leave an area without room is refused."
 	var upgrade := _item(Button.new())
 	upgrade.text = "Upgrade mode\nclick a road"
 	upgrade.toggle_mode = true

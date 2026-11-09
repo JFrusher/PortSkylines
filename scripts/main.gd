@@ -21,6 +21,8 @@ var _last_cell := Grid.NONE
 var _road_from := Vector2.INF
 ## A curved road's control point once its second click has placed it, or INF.
 var _road_control := Vector2.INF
+## What a Move It drag holds: {"node": id} or {"segment": id}, or {}.
+var _moving := {}
 ## How near a lane end a lane drag has to start or end to join it, in cells.
 const LANE_SNAP := 4
 ## Where a ship lane drag started, or Grid.NONE.
@@ -182,6 +184,17 @@ func _process(dt: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _following and event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE, KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 		_following = 0
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _moving.is_empty():
+		if hud.tool == Hud.MOVE_ROAD:
+			var to := _hovered_grid_point()
+			if _moving.has("node"):
+				_report(sim.apply({"op": "move_road_node", "node": _moving.node, "to": to}))
+			else:
+				# The road's middle follows the mouse: a curve's middle is (a + 2 control + b) / 4.
+				var road: Dictionary = sim.roads.segments[_moving.segment]
+				_report(sim.apply({"op": "move_road_control", "segment": _moving.segment, "control": to * 2.0 - (sim.roads.nodes[road.a] + sim.roads.nodes[road.b]) / 2.0}))
+		_moving = {}
+		return
 	# A drag builds on release only if its tool is still the one selected.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Vector2.INF:
 		if hud.tool == Hud.DRAW_ROAD and hud.road_type == "track":
@@ -252,6 +265,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if hud.tool == Hud.DRAW_ROAD:
 			if _road_from == Vector2.INF:
 				_road_from = _road_start()
+			return
+		if hud.tool == Hud.MOVE_ROAD:
+			_moving = _move_handle(_hovered_grid_point())
 			return
 		if hud.tool == Hud.INSPECT:
 			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
@@ -470,6 +486,27 @@ func _drag_hint() -> String:
 		return "Roundabout, %d m across, %s" % [roundi(radius * 2.0 * Grid.CELL), HudDetails.dollars(price)]
 	var bearing := posmod(roundi(rad_to_deg((to - _road_from).angle()) + 90.0), 360)
 	return "%d m, %s, %d°" % [metres, HudDetails.dollars(sim.road_price(_road_from, to, hud.road_type, bend)), bearing]
+
+
+## The Move It handle nearest `point` within two cells: a road's end or
+## junction first, else the point a road bends toward (its control point);
+## {} when none is that near.
+func _move_handle(point: Vector2) -> Dictionary:
+	var best := {}
+	var nearest := 2.0
+	for node: int in sim.roads.nodes:
+		if sim.roads.nodes[node].distance_to(point) < nearest:
+			nearest = sim.roads.nodes[node].distance_to(point)
+			best = {"node": node}
+	if not best.is_empty():
+		return best
+	for id: int in sim.roads.segments:
+		var along := sim.roads.curve(id)
+		var middle := along.point_at(along.length / 2.0)
+		if middle.distance_to(point) < nearest:
+			nearest = middle.distance_to(point)
+			best = {"segment": id}
+	return best
 
 
 ## Whether the road tool works on the grid: always for track (until rail

@@ -720,6 +720,38 @@ func path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	return found
 
 
+## Moves node `change.node` to `change.to` (the straight roads at it stay
+## straight, curves keep their control points), or road `change.segment`'s
+## control point to `change.control`. Returns the roads it reshapes.
+func move(change: Dictionary) -> Array[int]:
+	var moved: Array[int] = []
+	if change.has("node"):
+		var straight := {}
+		for id: int in segments:
+			var road: Dictionary = segments[id]
+			if change.node in [road.a, road.b]:
+				moved.append(id)
+				straight[id] = road.control.is_equal_approx((nodes[road.a] + nodes[road.b]) / 2.0)
+		nodes[change.node] = change.to
+		for id in moved:
+			if straight[id]:
+				segments[id].control = (nodes[segments[id].a] + nodes[segments[id].b]) / 2.0
+	else:
+		segments[change.segment].control = change.control
+		moved.append(change.segment)
+	version += 1
+	return moved
+
+
+## Puts the net back as `d` (to_dict) has it, in place, for those holding it.
+func restore(d: Dictionary) -> void:
+	nodes = d.nodes.duplicate()
+	segments = d.segments.duplicate(true)
+	_next_node = d.next_node
+	_next_segment = d.next_segment
+	version += 1
+
+
 func to_dict() -> Dictionary:
 	return {"nodes": nodes.duplicate(), "segments": segments.duplicate(true), "next_node": _next_node, "next_segment": _next_segment}
 
