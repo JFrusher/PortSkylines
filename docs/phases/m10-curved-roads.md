@@ -126,6 +126,7 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 14. **Snapping:** angle snap with guides (90°, 45° and 15° against nearby roads), length snap (whole cells), guide lines from road ends and perpendicular and parallel to nearby roads, parallel snapping at a set gap, and a grid-snap toggle that keeps today's grid layouts.
 **Step 14 (9 Nov 2026):** a road drag ends where `RoadNet.snap_drag` puts it: onto a road near the mouse; else onto a guide line within `GUIDE_SNAP` (a cell): on from a road's dead end, or parallel to a nearby straight road at the gap where both roads' lanes just clear; else its way snaps to the nearest 15° step from east or from the road it starts on, within `ANGLE_SNAP` (5°), and its length to whole cells. The guides it lies on are drawn. The HUD's Grid snap button keeps today's grid snapping (straight or 45°, grid guides), which track always uses until step 19; Shift places freely.
 15. **Tooltip** with length, cost and angle beside the cursor.
+**Step 15 (9 Nov 2026):** while a road is drawn, the tooltip beside the cursor gives its length along its curve, its price and its heading as a compass bearing (north 0°); over a built road, an upgrade's price is for its own curve.
 16. **Lane-arrow editing** at a junction.
 17. **Roundabouts:** a circle tool that builds a one-way ring with yield entries.
 18. **Move It-style editing:** drag a built road's node or control point to reshape it, moving its areas with it, or refuse with the reason.

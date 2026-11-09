@@ -152,7 +152,7 @@ func _process(dt: float) -> void:
 	if hud.tool == Hud.DRAW_LANE:
 		hud.hint("%d m, %s" % [Grid.metres(RoadNet.length(_lane_from, _lane_to())), HudDetails.dollars(sim.ship_lane_price(_lane_from, _lane_to(), hud.lane_type))] if _lane_from != Grid.NONE and _lane_to() != _lane_from else "")
 	else:
-		hud.hint(_segment_hint(picked) if _road_from == Vector2.INF else "%d m" % roundi(_road_from.distance_to(_road_to()) * Grid.CELL))
+		hud.hint(_segment_hint(picked) if _road_from == Vector2.INF else _drag_hint())
 	if _road_from != Vector2.INF:
 		ends = _road_ends()
 	elif not picked.is_empty():
@@ -446,6 +446,19 @@ func _road_start() -> Vector2:
 	return _hovered_grid_point() if _raw() else sim.roads.snap_point(_hovered_grid_point())
 
 
+## The tooltip beside the cursor while a road is drawn: its length along
+## its curve, its price and its heading as a compass bearing (north 0°).
+func _drag_hint() -> String:
+	var to := _road_to()
+	var bend := _road_bend()
+	var along := RoadCurve.straight(_road_from, to) if bend == Vector2.INF else RoadCurve.new(_road_from, bend, to)
+	var metres := roundi(along.length * Grid.CELL)
+	if hud.road_type == "track" or to == _road_from:
+		return "%d m" % metres
+	var bearing := posmod(roundi(rad_to_deg((to - _road_from).angle()) + 90.0), 360)
+	return "%d m, %s, %d°" % [metres, HudDetails.dollars(sim.road_price(_road_from, to, hud.road_type, bend)), bearing]
+
+
 ## Whether the road tool works on the grid: always for track (until rail
 ## curves), and for roads with the HUD's grid snap on.
 func _on_grid() -> bool:
@@ -535,7 +548,7 @@ func _segment_hint(picked: Array) -> String:
 	var err := sim.change_road_error(picked[1], hud.road_type)
 	if err != "":
 		return "%s\n%s" % [text, err]
-	return "%s\nto %s: %s" % [text, sim.rules.road_types[hud.road_type].name, Hud.HudDetails.dollars(sim.road_price(a, b, hud.road_type))]
+	return "%s\nto %s: %s" % [text, sim.rules.road_types[hud.road_type].name, Hud.HudDetails.dollars(sim.road_price(a, b, hud.road_type, road.control))]
 
 
 ## Where the ends of the road being drawn, or about to be, join a road, in
