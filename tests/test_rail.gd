@@ -43,12 +43,12 @@ func _test_track_is_its_own_graph() -> void:
 	for id: int in after.pieces:
 		for point: Vector2 in after.pieces[id].points:
 			lane_cells[Vector2i(point.floor())] = true
-	_expect(sim.rails.cells(sim.rails.segments.keys()[0]).filter(func(c: Vector2i) -> bool: return c in lane_cells).size(), 4, "and no lane runs along the track: lanes touch it only where the road crosses")
+	_expect(sim.rails.ground(sim.rails.segments.keys()[0]).filter(func(c: Vector2i) -> bool: return c in lane_cells).size(), 4, "and no lane runs along the track: lanes touch it only where the road crosses")
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(160, 101), "to": Vector2i(190, 101)}), "Something is already built here", "track can't run along a road")
 	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 110), "to": Vector2i(200, 130), "type": "terminal_1_1"}), "Something is already built here", "nor a road be laid along track")
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(175, 85), "to": Vector2i(195, 105)}), "", "track crossing it at 45° is laid: road and track cross down to 30° (M10 12c)")
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(190, 100)), "side": 1, "from": 40, "to": 60}), "Something is already built here", "no area is built over track")
-	_expect(sim.rails.anchors, [sim.site_rail_entry()] as Array[Vector2i], "track snaps onto the main line's end at the site edge")
+	_expect(sim.rails.anchors, [Vector2(sim.site_rail_entry()) + Vector2(0.5, 0.5)] as Array[Vector2], "track snaps onto the main line's end at the site edge")
 
 
 func _test_level_crossing() -> void:
@@ -57,7 +57,7 @@ func _test_level_crossing() -> void:
 	sim.apply({"op": "build_rail", "from": Vector2i(220, 60), "to": Vector2i(220, 140)})
 	var crossing := Drive.crossings(sim)
 	_expect(crossing.size(), 4, "the crossing is the road's four lane cells under the track")
-	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.cells(sim.rails.segments.keys()[0])), true, "each lies on the track")
+	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.ground(sim.rails.segments.keys()[0])), true, "each lies on the track")
 	# Booked by a train, the crossing holds a lorry back until it is freed.
 	var lorry := Vehicle.new(1, "lorry", [Vector3i(0, 210, 100)] as Array[Vector3i])
 	_expect(Drive.place(sim, lorry), true, "a lorry waits west of the crossing")

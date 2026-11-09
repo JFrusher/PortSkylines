@@ -275,10 +275,11 @@ func show_road_preview(from: Vector2, to: Vector2, type: String, ok: bool, contr
 	if not _road_preview.visible:
 		return
 	var surface := _road_tool()
+	var curve := RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to)
 	if type == "track":
-		_add_track(surface, null, Vector2i(from), Vector2i(to))
+		_add_track(surface, null, curve)
 	else:
-		_add_road(surface, null, RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to), sim.rules.road_types[type])
+		_add_road(surface, null, curve, sim.rules.road_types[type])
 	_road_preview.mesh = surface.commit()
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
@@ -391,9 +392,10 @@ func _draw_roads() -> void:
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
 	_add_road(surface, marks, RoadCurve.straight(Vector2(entry + off_map), Vector2(entry)), sim.rules.road_types.terminal_2_2)
 	# The main line the same way, to the rail entry.
-	_add_track(surface, marks, sim.site_rail_entry() + off_map, sim.site_rail_entry())
+	var rail_entry := Vector2(sim.site_rail_entry()) + Vector2(0.5, 0.5)
+	_add_track(surface, marks, RoadCurve.straight(rail_entry + Vector2(off_map), rail_entry))
 	for id: int in sim.rails.segments:
-		_add_track(surface, marks, sim.rails.grid_point(sim.rails.segments[id].a), sim.rails.grid_point(sim.rails.segments[id].b))
+		_add_track(surface, marks, sim.rails.curve(id))
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
 
@@ -602,17 +604,20 @@ static func _junction_marks(marks: SurfaceTool, edge: Vector2, away: Vector2, si
 
 ## Adds rail track from cell `a` to cell `b`: a ballast bed a cell wide on
 ## the cells' middle line, with two rails to `marks` unless it is null.
-static func _add_track(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i) -> void:
-	var start := (Vector2(a) + Vector2(0.5, 0.5)) * Grid.CELL
-	var end := (Vector2(b) + Vector2(0.5, 0.5)) * Grid.CELL
+static func _add_track(surface: SurfaceTool, marks: Variant, curve: RoadCurve) -> void:
 	surface.set_color(BALLAST)
-	_strip(surface, start, end, Grid.CELL / 2.0, ROAD_TOP)
+	_polyline(surface, curve.offset_points(0.0), Grid.CELL / 2.0, ROAD_TOP)
 	if marks == null:
 		return
-	var side := (end - start).normalized().orthogonal()
 	marks.set_color(STEEL)
 	for gauge: float in [-RAIL_GAUGE, RAIL_GAUGE]:
-		_strip(marks, start + side * gauge, end + side * gauge, RAIL_HALF, ROAD_TOP + MARK_RISE)
+		_polyline(marks, curve.offset_points(gauge / Grid.CELL), RAIL_HALF, ROAD_TOP + MARK_RISE)
+
+
+## Strips `half` either side of each piece of `points`, in cells.
+static func _polyline(tool: SurfaceTool, points: PackedVector2Array, half: float, height: float) -> void:
+	for i in points.size() - 1:
+		_strip(tool, points[i] * Grid.CELL, points[i + 1] * Grid.CELL, half, height)
 
 
 ## A flat strip `half` either side of the line from `from` to `to`, in metres.

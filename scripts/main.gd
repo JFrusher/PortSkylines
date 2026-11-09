@@ -128,7 +128,7 @@ func _process(dt: float) -> void:
 	# Before a road drag, the hover shows where the drag would start, a road's
 	# width across: on a road it snaps to, else at the point under the mouse.
 	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "" and not _upgrading() and _road_from == Vector2.INF and cell != Grid.NONE:
-		view.show_hover_at(_road_start() + (Vector2(0.5, 0.5) if hud.road_type == "track" else Vector2.ZERO), _width(), _order_error(cell) == "")
+		view.show_hover_at(_road_start(), _width(), _order_error(cell) == "")
 	else:
 		view.show_hover(cell, _order_error(cell) == "")
 	view.show_snaps(_snapped_ends(cell), _guide_lines(cell))
@@ -198,7 +198,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# A drag builds on release only if its tool is still the one selected.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Vector2.INF:
 		if hud.tool == Hud.DRAW_ROAD and hud.road_type == "track":
-			_report(sim.apply({"op": "build_rail", "from": Vector2i(_road_from), "to": Vector2i(_road_to())}))
+			_report(sim.apply({"op": "build_rail", "from": Vector2i(_road_from.floor()), "to": Vector2i(_road_to().floor())}))
 		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "roundabout" and hud.road_type != "track":
 			_report(sim.apply({"op": "build_roundabout", "centre": _road_from, "radius": _road_from.distance_to(_hovered_grid_point())}))
 		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "curved" and _road_control == Vector2.INF:
@@ -383,7 +383,7 @@ func _order_error(cell: Vector2i) -> String:
 			if _road_from == Vector2.INF:
 				return ""
 			if hud.road_type == "track":
-				return sim.build_rail_error(Vector2i(_road_from), Vector2i(_road_to()))
+				return sim.build_rail_error(Vector2i(_road_from.floor()), Vector2i(_road_to().floor()))
 			if hud.road_mode == "roundabout":
 				return sim.build_roundabout_error(_road_from, _road_from.distance_to(_hovered_grid_point()))
 			var ends := _road_ends()
@@ -451,22 +451,27 @@ func _lane_to() -> Vector2i:
 
 ## Where a road drag from _road_from ends: onto a road near the mouse, at
 ## any angle (RoadNet.snap_point), with Shift held the point under it. Track
-## keeps the grid: onto a road or guide near the mouse, else straight or to
-## 45°; with Shift held, only straight or 45°.
+## ends in the middle of the cell that point is in.
 func _road_to() -> Vector2:
 	var node := _hovered_node()
 	if _on_grid():
 		return Vector2(RoadNet.snap(Vector2i(_road_from), node) if _raw() else _net().snap_end(Vector2i(_road_from), node))
-	return _hovered_grid_point() if _raw() else sim.roads.snap_drag(_road_from, _hovered_grid_point(), hud.road_type).point
+	return _laid(_hovered_grid_point() if _raw() else _net().snap_drag(_road_from, _hovered_grid_point(), hud.road_type).point)
 
 
 ## Where a road drag would start: on a road near the mouse, or with Shift
-## held the point under it (track: on a road or guide near it).
+## held the point under it. Track starts in the middle of that point's cell.
 func _road_start() -> Vector2:
 	var node := _hovered_node()
 	if _on_grid():
 		return Vector2(node if _raw() else _net().snap_start(node))
-	return _hovered_grid_point() if _raw() else sim.roads.snap_point(_hovered_grid_point())
+	return _laid(_hovered_grid_point() if _raw() else _net().snap_point(_hovered_grid_point()))
+
+
+## `point` as the road tool lays it: track through the middle of its cell
+## (build_rail takes cells), roads where it is.
+func _laid(point: Vector2) -> Vector2:
+	return point.floor() + Vector2(0.5, 0.5) if hud.road_type == "track" else point
 
 
 ## The tooltip beside the cursor while a road is drawn: its length along
@@ -509,10 +514,10 @@ func _move_handle(point: Vector2) -> Dictionary:
 	return best
 
 
-## Whether the road tool works on the grid: always for track (until rail
-## curves), and for roads with the HUD's grid snap on.
+## Whether the road tool works on the grid: for roads with the HUD's grid
+## snap on.
 func _on_grid() -> bool:
-	return hud.road_type == "track" or hud.grid_snap
+	return hud.road_type != "track" and hud.grid_snap
 
 
 ## Whether Shift is held, turning road and guide snapping off.
@@ -528,7 +533,7 @@ func _guide_lines(cell: Vector2i) -> Array[Vector2]:
 		return found
 	if not _on_grid():
 		if _road_from != Vector2.INF:
-			for guide: Array in sim.roads.snap_drag(_road_from, _hovered_grid_point(), hud.road_type).guides:
+			for guide: Array in _net().snap_drag(_road_from, _hovered_grid_point(), hud.road_type).guides:
 				found.append_array(guide)
 		return found
 	var node := _hovered_node()
@@ -537,22 +542,15 @@ func _guide_lines(cell: Vector2i) -> Array[Vector2]:
 	if _net().snaps(node, from):
 		return found
 	for guide: Dictionary in guided.guides:
-		found.append_array([_place(guide.at), _place(guided.point)])
+		found.append_array([Vector2(guide.at), Vector2(guided.point)])
 	return found
 
 
-## The node a road drag would use under the mouse: the nearest grid point,
-## where a road's line runs, or for track the cell, as its line runs through
-## cell middles (see RoadNet); NONE off the ground.
+## The grid point a road drag would use under the mouse; NONE off the ground.
 func _hovered_node() -> Vector2i:
 	if _hovered_point() == null:
 		return Grid.NONE
-	return _hovered_grid_cell() if hud.road_type == "track" else Vector2i(_hovered_grid_point().round())
-
-
-## Node `node` of the road tool's net in grid units, for markers.
-func _place(node: Vector2i) -> Vector2:
-	return Vector2(node) + (Vector2(0.5, 0.5) if hud.road_type == "track" else Vector2.ZERO)
+	return Vector2i(_hovered_grid_point().round())
 
 
 ## How many lanes across the road tool's road type is.
@@ -611,19 +609,19 @@ func _snapped_ends(cell: Vector2i) -> Array[Vector2]:
 	if not _on_grid():
 		# Marked where an end lands on a road, not where it only snaps to an angle or length.
 		var here := _hovered_grid_point()
-		var onto := sim.roads.snap_point(here, _road_from)
+		var onto := _net().snap_point(here, _road_from)
 		if onto != here:
 			found.append(onto)
 		return found
 	var from := Grid.NONE if _road_from == Vector2.INF else Vector2i(_road_from)
 	if from == Grid.NONE:
 		if _net().snaps(node):
-			found.append(_place(Vector2i(_road_start())))
+			found.append(Vector2(Vector2i(_road_start())))
 		return found
 	if _net().snaps(from):
-		found.append(_place(from))
+		found.append(Vector2(from))
 	if _net().snaps(node, from):
-		found.append(_place(Vector2i(_road_to())))
+		found.append(Vector2(Vector2i(_road_to())))
 	return found
 
 

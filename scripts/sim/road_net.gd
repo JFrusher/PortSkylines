@@ -1,20 +1,15 @@
 class_name RoadNet
 extends RefCounted
-## The roads the player draws: nodes on the 4 m grid joined by straight
-## segments at 0°, 45° or 90°. Corners are drawn as arcs by the view; in the
-## sim a road is the cells its lanes cover.
+## The roads the player draws, or the rail track: nodes anywhere, in grid
+## units (point (x, y) is the top-left corner of cell (x, y)), joined by
+## quadratic curves (RoadCurve). In the sim a road is the quads its lanes
+## cover (shape) and the cells under them (ground).
 ##
 ## A road's lanes lie evenly either side of its line, as in Cities: Skylines,
-## so which way it was drawn never moves it. Every road type has an even
-## number of lanes, so its line runs along grid lines, between cells: a node
-## is a grid point, the corner where four cells meet, and point (x, y) is the
-## top-left corner of cell (x, y). Rail track has one lane, so its line runs
-## through cell middles and a node is a cell. A net's types are all one or
-## the other.
+## so which way it was drawn never moves it. Track is laid through cell
+## middles (M10 step 19).
 
-## Node id -> where it is, in grid units: anywhere (M10 step 12). While roads
-## are still drawn on the grid it is a grid point (even-width types) or a
-## cell (odd-width), which grid_point() gives for what still counts cells.
+## Node id -> where it is, in grid units.
 var nodes := {}
 ## Segment id -> {"a": node id, "b": node id, "type": a key of road_types,
 ## "control": its curve's control point, at its middle while it is straight}.
@@ -28,9 +23,6 @@ var junctions: Dictionary
 var version := 0
 var _next_node := 1
 var _next_segment := 1
-## The least room, in cells, a curve leaves inside its inner lane: tighter,
-## and the inside of the bend folds over itself.
-const MIN_INNER_RADIUS := 1.0
 ## How many curves a roundabout's ring is made of.
 const RING_PIECES := 8
 ## How near, in degrees, a drag's way must come to a 15° step to snap to it.
@@ -43,7 +35,7 @@ const SNAP_CELLS := 3
 const GUIDE_CELLS := 60
 ## Cells a drag snaps onto as onto a road's end, though no road is there yet:
 ## where the highway meets the site.
-var anchors: Array[Vector2i] = []
+var anchors: Array[Vector2] = []
 var _next_cells := {}  # cell -> cells a step on along a segment, for path()
 var _shapes := {}  # segment -> [what it is laid from, its AreaShape, its ground as cell -> true]
 var _next_for := -1
@@ -64,8 +56,6 @@ func _init(road_types: Dictionary, junction_rules: Dictionary) -> void:
 ## it there, and where it crosses another road both split at the crossing
 ## point, so junctions form by themselves. Returns "" or why it can't be built.
 func add(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> String:
-	if _odd():
-		return _add_on_grid(Vector2i(from), Vector2i(to), type)
 	var err := add_error(from, to, type, 0, control)
 	if err != "":
 		return err
@@ -143,34 +133,14 @@ func _room_error(from: Vector2, to: Vector2, type: String, skip: int, control: V
 
 
 
-## add() for track, on the grid: straight or at 45°, meeting only at grid cells.
-# shortcut: track keeps today's grid rules until rail curves (M10 step 19).
-func _add_on_grid(from: Vector2i, to: Vector2i, type: String) -> String:
-	var found: Variant = _meets(from, to, type)
-	if found is String:
-		return found
-	var meets: Dictionary = found
-	for cell: Vector2i in meets:
-		_split(meets[cell], cell)
-	var stops: Array[Vector2i] = [from]
-	for cell: Vector2i in line(from, to).slice(1, -1):
-		if cell in meets:
-			stops.append(cell)
-	stops.append(to)
-	for i in stops.size() - 1:
-		segments[_next_segment] = {"a": _node_at(stops[i]), "b": _node_at(stops[i + 1]), "type": type, "control": Vector2(stops[i] + stops[i + 1]) / 2.0}
-		_next_segment += 1
-	version += 1
-	return ""
-
-
 ## Why `add` would refuse this road, or "": as though `skip` weren't built,
 ## so a segment can be checked as another type in its own place.
 func add_error(from: Vector2, to: Vector2, type: String, skip := 0, control := Vector2.INF) -> String:
-	var found: Variant = _meets(Vector2i(from), Vector2i(to), type, skip) if _odd() else _plan(from, to, type, skip, control)
+	var found: Variant = _plan(from, to, type, skip, control)
 	if found is String:
 		return found
-	return "" if _odd() else _room_error(from, to, type, skip, control)
+	# Track has no lanes for traffic, so no junction cuts it back.
+	return "" if _track() else _room_error(from, to, type, skip, control)
 
 
 ## Where a road of `type` from `from` to `to`, curving through `control`
@@ -192,8 +162,8 @@ func _plan(from: Vector2, to: Vector2, type: String, skip := 0, control := Vecto
 		return "A road needs a length"
 	var mine := RoadCurve.new(ends[0], (ends[0] + ends[1]) / 2.0 if control == Vector2.INF else control, ends[1])
 	var half: float = (types[type].forward + types[type].backward) / 2.0
-	if mine.min_radius() < half + MIN_INNER_RADIUS:
-		return "Too tight a curve: its inside lane would turn tighter than %d m" % Grid.metres(MIN_INNER_RADIUS)
+	if mine.min_radius() < types[type].min_radius_cells:
+		return "Too tight a curve: a %s turns no tighter than %d m" % [types[type].name.to_lower(), Grid.metres(types[type].min_radius_cells)]
 	var bounds := Rect2(mine.a, Vector2.ZERO).expand(mine.b).expand(mine.c).grow(half + 1.0)
 	var near: Array[int] = []  # the roads near enough to cross or overlap it
 	for id: int in segments:
@@ -406,8 +376,7 @@ func shape(segment: int) -> AreaShape:
 	return _laid(segment)[1]
 
 
-## The grid cells `segment` stands on: those under its quads' middles.
-# shortcut: track (odd-width types) stands on its lanes' grid cells until rail curves (M10 step 19).
+## The grid cells `segment` stands on (see _ground_of).
 func ground(segment: int) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
 	found.assign(_laid(segment)[2].keys())
@@ -420,31 +389,36 @@ func _laid(segment: int) -> Array:
 	var key := [nodes[road.a], road.control, nodes[road.b], road.type]
 	if segment not in _shapes or _shapes[segment][0] != key:
 		var shape := _shape_of(curve(segment), types[road.type])
-		var under := {}
-		if _odd():
-			for lane in lanes(segment):
-				for cell: Vector2i in lane.cells:
-					under[cell] = true
-		else:
-			for cell: Dictionary in shape.cells:
-				under[Vector2i(cell.centre.floor())] = true
-		_shapes[segment] = [key, shape, under]
+		_shapes[segment] = [key, shape, _ground_of(curve(segment), shape)]
 	return _shapes[segment]
+
+
+## The cells a road with `shape` along `curve` stands on, as a set: a
+## road's, those under its quads' middles; track's, those its line runs
+## through, as track runs through cell middles and its quads' middles fall
+## on cell edges.
+func _ground_of(curve: RoadCurve, shape: AreaShape) -> Dictionary:
+	var under := {}
+	if _track():
+		var steps := maxi(1, ceili(curve.length / 0.25))
+		for n in steps + 1:
+			under[Vector2i(curve.point_at(curve.length * n / steps).floor())] = true
+		return under
+	for cell: Dictionary in shape.cells:
+		under[Vector2i(cell.centre.floor())] = true
+	return under
 
 
 ## A road of type `road` laid along `curve` (see shape).
 static func _shape_of(curve: RoadCurve, road: Dictionary) -> AreaShape:
 	var columns := cells_long(curve.length)
-	var shape := AreaShape.new()
-	for side: int in [1, -1]:
-		shape.cells.append_array(AreaShape.along(curve, side, 0.0, columns, 0.0, (road.forward + road.backward) / 2, curve.length / columns).cells)
-	return shape
+	var width: int = road.forward + road.backward
+	return AreaShape.along(curve, 1, 0.0, columns, -width / 2.0, width, curve.length / columns)
 
 
-## Whether this net's types are odd-width: track, whose line runs through cell middles.
-func _odd() -> bool:
-	var type: Dictionary = types.values()[0]
-	return (type.forward + type.backward) % 2 == 1
+## Whether this net is rail track (its one type is a single lane one way).
+func _track() -> bool:
+	return types.has("track")
 
 
 ## `segment`'s line as a curve, in grid units.
@@ -677,7 +651,8 @@ func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i
 			if score < best_score:
 				best = cell
 				best_score = score
-	for cell in anchors:
+	for anchor in anchors:
+		var cell := Vector2i(anchor)
 		var d := maxi(absi(cell.x - near.x), absi(cell.y - near.y))
 		if cell == from or d > SNAP_CELLS or (from != Grid.NONE and snap(from, cell) != cell):
 			continue
@@ -688,36 +663,75 @@ func _snap_onto(near: Vector2i, from: Vector2i, otherwise: Vector2i) -> Vector2i
 	return best
 
 
-## The cells from `from` to `to` along the segments, both ends included,
-## fewest cells first; [] when no segments join them.
+## The cells a train runs through from cell `from` to cell `to` along the
+## track, both ends included and in order. Fewest cells first; [] when no
+## track joins them.
 func path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
-	if _next_for != version:
-		_next_for = version
-		_next_cells.clear()
-		for id: int in segments:
-			var run := points(id)
-			for i in run.size() - 1:
-				_next_cells[run[i]] = _next_cells.get(run[i], []) + [run[i + 1]]
-				_next_cells[run[i + 1]] = _next_cells.get(run[i + 1], []) + [run[i]]
-	var came := {from: from}
-	var queue: Array[Vector2i] = [from]
-	var head := 0
-	while head < queue.size() and to not in came:
-		var cell := queue[head]
-		head += 1
-		for next: Vector2i in _next_cells.get(cell, []):
-			if next not in came:
-				came[next] = cell
-				queue.append(next)
-	var found: Array[Vector2i] = []
-	if to not in came or from not in _next_cells:
-		return found
-	var at := to
-	while at != from:
-		found.push_front(at)
-		at = came[at]
-	found.push_front(from)
-	return found
+	var start := _on_line(Vector2(from) + Vector2(0.5, 0.5))
+	var goal := _on_line(Vector2(to) + Vector2(0.5, 0.5))
+	if start.is_empty() or goal.is_empty():
+		return [] as Array[Vector2i]
+	# Each state: a piece run one way, arriving at its far end. Search by cells run.
+	var best := {}  # [segment, forward] -> distance run to its far end
+	var came := {}  # [segment, forward] -> the state before, or [] for the first
+	var open: Array = []  # [distance, segment, forward]
+	for forward: bool in [true, false]:
+		var along := curve(start[0])
+		var run: float = along.length - start[1] if forward else start[1]
+		best[[start[0], forward]] = run
+		came[[start[0], forward]] = []
+		open.append([run, start[0], forward])
+	var found := []
+	while not open.is_empty():
+		open.sort_custom(func(p: Array, q: Array) -> bool: return p[0] < q[0])
+		var at: Array = open.pop_front()
+		var state := [at[1], at[2]]
+		if at[0] > best[state] + 0.001:
+			continue
+		if at[1] == goal[0] and (state == [start[0], at[2]] and (goal[1] - start[1]) * (1.0 if at[2] else -1.0) >= 0.0 or state != [start[0], at[2]]):
+			found = state
+			break
+		var road: Dictionary = segments[at[1]]
+		var node: int = road.b if at[2] else road.a
+		for next: int in segments:
+			for forward: bool in [true, false]:
+				var next_road: Dictionary = segments[next]
+				if (next_road.a if forward else next_road.b) != node or (next == at[1] and forward != at[2]):
+					continue
+				var run: float = at[0] + curve(next).length
+				if run < best.get([next, forward], INF) - 0.001:
+					best[[next, forward]] = run
+					came[[next, forward]] = state
+					open.append([run, next, forward])
+	if found.is_empty():
+		return [] as Array[Vector2i]
+	# Back from the goal's piece to the start's, then the cells along each.
+	var chain := [found]
+	while not came[chain[0]].is_empty():
+		chain.push_front(came[chain[0]])
+	var cells: Array[Vector2i] = []
+	for k in chain.size():
+		var piece: int = chain[k][0]
+		var forward: bool = chain[k][1]
+		var along := curve(piece)
+		var from_d: float = start[1] if k == 0 else (0.0 if forward else along.length)
+		var to_d: float = goal[1] if k == chain.size() - 1 else (along.length if forward else 0.0)
+		var steps := maxi(1, ceili(absf(to_d - from_d) / 0.25))
+		for n in steps + 1:
+			var cell := Vector2i(along.point_at(lerpf(from_d, to_d, float(n) / steps)).floor())
+			if cells.is_empty() or cells[-1] != cell:
+				cells.append(cell)
+	return cells
+
+
+## [the track piece through `point`, how far along it], within half a cell; [] when none.
+func _on_line(point: Vector2) -> Array:
+	for id: int in segments:
+		var along := curve(id)
+		var d := along.nearest(point)
+		if along.point_at(d).distance_to(point) < 0.5:
+			return [id, d]
+	return []
 
 
 ## Moves node `change.node` to `change.to` (the straight roads at it stay
@@ -765,80 +779,9 @@ static func from_dict(d: Dictionary, road_types: Dictionary, junction_rules: Dic
 	return net
 
 
-## Where a road from `from` to `to` meets the roads already built, as cell ->
-## the segment it splits; or why it can't be built. Segment `skip` counts as
-## not built.
-func _meets(from: Vector2i, to: Vector2i, type: String, skip := 0) -> Variant:
-	if type not in types:
-		return "Unknown road type \"%s\"" % type
-	var d := to - from
-	if d == Vector2i.ZERO:
-		return "A road needs a length"
-	if d.x != 0 and d.y != 0 and absi(d.x) != absi(d.y):
-		return "Roads run straight or at 45°"
-	var drawn := line(from, to)
-	var on_drawn := {}
-	for cell in drawn:
-		on_drawn[cell] = true
-	var meets := {}
-	for id: int in segments:
-		if id == skip:
-			continue
-		var shared := points(id).filter(func(c: Vector2i) -> bool: return c in on_drawn)
-		if shared.size() > 1:
-			return "A road already runs here"
-		if shared.size() == 1:
-			meets[shared[0]] = id
-		elif _crosses_between_cells(drawn, id):
-			return "Roads must cross at a grid point, not between two"
-	# Lanes may overlap only where roads meet, within a road's width of it; a
-	# cell further where either road runs at 45°, as its lanes sit half a cell
-	# off its line.
-	var width: int = types[type].forward + types[type].backward
-	var mine := footprint(from, to, type)
-	for id: int in segments:
-		if id == skip:
-			continue
-		var road: Dictionary = types[segments[id].type]
-		var theirs_d: Vector2i = grid_point(segments[id].b) - grid_point(segments[id].a)
-		var reach := maxi(width, road.forward + road.backward) + (1 if d.x * d.y != 0 or theirs_d.x * theirs_d.y != 0 else 0)
-		var theirs: Dictionary = _laid(id)[2]
-		for cell in mine:
-			if cell in theirs and not meets.keys().any(func(m: Vector2i) -> bool: return maxi(absi(m.x - cell.x), absi(m.y - cell.y)) < reach):
-				return "A road already runs here"
-	return meets
-
-
 ## How many segments end at `node`: 2 on a bend, 3 at a T, 4 at a crossing.
 func degree(node: int) -> int:
 	return segments.values().filter(func(s: Dictionary) -> bool: return s.a == node or s.b == node).size()
-
-
-## Whether a 45° step of `drawn` passes between two cells of `segment` that
-## are themselves a 45° step across it, so the roads cross with no cell in common.
-func _crosses_between_cells(drawn: Array[Vector2i], segment: int) -> bool:
-	var other := {}
-	for cell in points(segment):
-		other[cell] = true
-	for i in drawn.size() - 1:
-		var p := drawn[i]
-		var q := drawn[i + 1]
-		if p.x != q.x and p.y != q.y and Vector2i(p.x, q.y) in other and Vector2i(q.x, p.y) in other:
-			return true
-	return false
-
-
-## Splits `segment` at `cell` unless it already ends there: it keeps its a
-## end, and a new segment of the same type runs on from `cell` to the b end.
-func _split(segment: int, cell: Vector2i) -> void:
-	var road: Dictionary = segments[segment]
-	if grid_point(road.a) == cell or grid_point(road.b) == cell:
-		return
-	var middle := _node_at(cell)
-	segments[_next_segment] = {"a": middle, "b": road.b, "type": road.type, "control": (Vector2(cell) + nodes[road.b]) / 2.0}
-	_next_segment += 1
-	road.b = middle
-	road.control = (nodes[road.a] + Vector2(cell)) / 2.0
 
 
 ## The grid points (or cells, for odd-width types) `segment`'s line runs
@@ -864,15 +807,9 @@ func lanes(segment: int) -> Array[Dictionary]:
 ## The ground (see ground) a road of `type` from `from` to `to`, curving
 ## through `control` (INF: straight), would stand on.
 func footprint(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> Array[Vector2i]:
+	var along := RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to)
 	var found: Array[Vector2i] = []
-	if _odd():
-		for lane in _lanes(Vector2i(from), Vector2i(to), types[type]):
-			found.append_array(lane.cells)
-		return found
-	var under := {}
-	for cell: Dictionary in _shape_of(RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to), types[type]).cells:
-		under[Vector2i(cell.centre.floor())] = true
-	found.assign(under.keys())
+	found.assign(_ground_of(along, _shape_of(along, types[type])).keys())
 	return found
 
 
@@ -937,12 +874,3 @@ static func line(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 func grid_point(node: int) -> Vector2i:
 	assert(nodes[node] == nodes[node].round(), "node %d is on the grid" % node)
 	return Vector2i(nodes[node])
-
-
-func _node_at(cell: Vector2i) -> int:
-	for id: int in nodes:
-		if nodes[id] == Vector2(cell):
-			return id
-	nodes[_next_node] = Vector2(cell)
-	_next_node += 1
-	return _next_node - 1

@@ -159,7 +159,7 @@ func _test_editing() -> void:
 	_expect(snapping.snap_end(Vector2i(60, 20), Vector2i(61, 30)), Vector2i(60, 30), "away from roads the end snaps straight as before")
 	_expect(snapping.snap_end(Vector2i(10, 80), Vector2i(16, 52)), Vector2i(10, 50), "a drag released off to the side, short of a road, still joins it")
 	_expect(snapping.snap_end(Vector2i(14, 80), Vector2i(19, 48)), Vector2i(14, 50), "and one released just past it ends on it, leaving no stub")
-	snapping.anchors = [Vector2i(100, 70)] as Array[Vector2i]
+	snapping.anchors = [Vector2(100, 70)] as Array[Vector2]
 	_expect(snapping.snap_start(Vector2i(101, 72)), Vector2i(100, 70), "a drag starting near the highway starts on it")
 	_expect(snapping.snap_end(Vector2i(60, 70), Vector2i(98, 72)), Vector2i(100, 70), "and one ending near it ends on it")
 	# Guides run on from road ends, so a new road lines up with an old one.

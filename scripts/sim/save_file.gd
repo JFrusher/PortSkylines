@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 44
+const VERSION := 45
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -108,6 +108,19 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v43(data)
 	if data.version < 44:
 		data = _migrate_v44(data)
+	if data.version < 45:
+		data = _migrate_v45(data)
+	return data
+
+
+## v45 lays track through its cells' middles as points, as roads are laid,
+## so it can curve: each track node and control point moves half a cell on.
+static func _migrate_v45(data: Dictionary) -> Dictionary:
+	for node: int in data.sim.rails.nodes:
+		data.sim.rails.nodes[node] += Vector2(0.5, 0.5)
+	for track: Dictionary in data.sim.rails.segments.values():
+		track.control += Vector2(0.5, 0.5)
+	data.version = 45
 	return data
 
 

@@ -153,8 +153,9 @@ const SCHEMA := {
 	# road's middle, where it leaves lane_change_clear_cells each side (the
 	# longest vehicle and its standstill gap) clear of the next stop line.
 	"junctions": {"min_angle": TYPE_FLOAT, "corner_cells": TYPE_FLOAT, "lane_change_cells": TYPE_FLOAT, "lane_change_clear_cells": TYPE_FLOAT},
+	# The tightest a road of the type may curve, at its line, is min_radius_cells.
 	# A ring type is the roundabout tool's: one-way round a centre, the roads joining it giving way.
-	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "speed_kmh": TYPE_FLOAT, "ring": TYPE_BOOL}},
+	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "speed_kmh": TYPE_FLOAT, "ring": TYPE_BOOL, "min_radius_cells": TYPE_FLOAT}},
 	# Areas dragged along a road edge: how deep they reach from the road and
 	# their shortest length, in 4 m cells, and cost and daily upkeep per cell.
 	"area_types": {"*": {"name": TYPE_STRING, "kind": TYPE_STRING, "depth": TYPE_INT, "max_depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
@@ -169,7 +170,7 @@ const SCHEMA := {
 	# Each dollar of the port's barge discount books share_per_dollar more of
 	# every line's boxes for places up the river onto barges, up to max_share.
 	"barge": {"discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
-	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
+	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "min_radius_cells": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
 	# Off-map places boxes come from and go to: each box's share, and its
 	# distance by road, rail and barge up the river (0 for no link).
 	"hinterland": {"places": {"*": {"name": TYPE_STRING, "share": TYPE_FLOAT, "road_km": TYPE_FLOAT, "rail_km": TYPE_FLOAT, "barge_km": TYPE_FLOAT}}},

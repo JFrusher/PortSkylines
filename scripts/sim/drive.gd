@@ -316,7 +316,7 @@ static func _level_crossings(sim: PortSim) -> Array[Vector2i]:
 				lane_cells[Vector2i(point.floor())] = true
 	var found: Array[Vector2i] = []
 	for id: int in sim.rails.segments:
-		for cell in sim.rails.cells(id):
+		for cell in sim.rails.ground(id):
 			if cell in lane_cells:
 				found.append(cell)
 	return found

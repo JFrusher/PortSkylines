@@ -137,6 +137,8 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 
 ### Rail, water and berths
 19. **Rail curves**, with a larger minimum radius from the data. Trains follow the track's curve.
+
+**19a (9 Nov 2026):** track is laid as roads are, through its cells' middles: its nodes are points (save v45 moves each old node and control point half a cell on), `build_rail` lays it by the same geometric rules (`RoadNet._plan`), and its ground is the cells its line runs through, as its quads' middles fall on cell edges. Trains find their way along the track's pieces (`RoadNet.path`), turning at a node as before. The track tool snaps as the road tool does (`snap_point`, `snap_drag`) and lays each end in the middle of its cell; the view draws ballast and rails along the curve. How tight a road or track may bend is now data, `min_radius_cells` per road type and for rail (12 cells, 48 m), in place of 13's fixed rule (`MIN_INNER_RADIUS`). The grid tool and curved track are 19b and 19c.
 20. **Ship lanes curve**, with a minimum radius from the data. Ships follow lanes; river channels follow rivers.
 21. **Berths at an angle:** a berth is still one straight quay, placed at the angle that adds the least fill, or turned by a button to any angle the coast allows.
 

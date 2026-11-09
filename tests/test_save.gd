@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_area_flow_round_trips()
 	_test_a_removed_apron_saves()
 	_test_v43_positions_off_the_grid()
+	_test_v45_track_through_cell_middles()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -226,3 +227,22 @@ func _test_v43_positions_off_the_grid() -> void:
 	_expect(sim.junctions.signals.keys(), [Vector2(point)], "a signal is kept by its junction's point")
 	_expect(sim.junctions.signals[Vector2(point)].left, 7.0, "and runs on as it was")
 	_expect(sim.junctions.signs[Vector2(point)], {LaneNetwork.arm_key(Vector2(1, 0)): "stop", LaneNetwork.arm_key(Vector2(-1, 1)): "give_way"}, "each sign is kept by its arm's way")
+
+
+## v45 lays track through its cells' middles: a v44 save's track nodes move
+## half a cell on, so the track stands on the same cells and its rail block
+## still takes trains.
+func _test_v45_track_through_cell_middles() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v44.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var old: Dictionary = file.get_var()
+	file.close()
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v44.bin")
+	_expect(loaded.get("error", ""), "", "the v44 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.rails.nodes.size() > 0, true, "it has track")
+	for node: int in sim.rails.nodes:
+		_expect(sim.rails.nodes[node], old.sim.rails.nodes[node] + Vector2(0.5, 0.5), "track node %d is in its cell's middle" % node)
+	_expect(sim.areas.list.keys().any(func(id: int) -> bool: return RailFlow.is_rail_block(sim, id)), true, "its rail block still takes trains")
