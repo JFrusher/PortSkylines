@@ -59,6 +59,8 @@ var upgrade_roads := false
 ## by a drag that carries on along the road it starts from.
 var road_mode := "straight"
 const ROAD_MODES := ["straight", "curved", "freeform"]
+## Roads snap to the 4 m grid, straight or at 45°, as before M10, when on.
+var grid_snap := false
 ## The area type DRAW_AREA drags out, a key of rules.area_types, and for a
 ## gate whether it is built on both sides of the road.
 var area_type := ""
@@ -330,6 +332,14 @@ func _ready() -> void:
 		road_mode = ROAD_MODES[(ROAD_MODES.find(road_mode) + 1) % ROAD_MODES.size()]
 		shape.text = "Shape\n%s" % road_mode)
 	rows.Roads.add_child(shape)
+	var grid := _item(Button.new())
+	grid.text = "Grid snap\noff"
+	grid.toggle_mode = true
+	grid.tooltip_text = "When on, roads snap to the 4 m grid, straight or at 45°, with guides from road ends. When off, they snap onto roads, guide lines and parallel roads, their angle to 15° steps and their length to whole 4 m cells. Hold Shift to place freely."
+	grid.toggled.connect(func(on: bool) -> void:
+		grid_snap = on
+		grid.text = "Grid snap\n%s" % ("on" if on else "off"))
+	rows.Roads.add_child(grid)
 	var upgrade := _item(Button.new())
 	upgrade.text = "Upgrade mode\nclick a road"
 	upgrade.toggle_mode = true

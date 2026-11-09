@@ -31,6 +31,10 @@ var _next_segment := 1
 ## The least room, in cells, a curve leaves inside its inner lane: tighter,
 ## and the inside of the bend folds over itself.
 const MIN_INNER_RADIUS := 1.0
+## How near, in degrees, a drag's way must come to a 15° step to snap to it.
+const ANGLE_SNAP := 5.0
+## How near, in cells, a drag's end must come to a guide line to snap onto it.
+const GUIDE_SNAP := 1.0
 ## How near, in cells, a drawn road's ends must come to a road to snap onto it.
 const SNAP_CELLS := 3
 ## How far a guide runs on from a road's end, in cells.
@@ -434,6 +438,71 @@ static func snap(from: Vector2i, to: Vector2i) -> Vector2i:
 		return from + Vector2i(0, d.y)
 	var run := roundi((absi(d.x) + absi(d.y)) / 2.0)
 	return from + d.sign() * run
+
+
+## Where a drag from `from` toward `to` for a road of `type` ends, as Cities:
+## Skylines snaps it: onto a road near `to` (snap_point); else onto a guide
+## line within GUIDE_SNAP of it, on from a road's end or parallel to a
+## nearby straight road at the gap where both roads' lanes just clear; else
+## its way snaps to the nearest 15° step from east or from the road it
+## starts on, within ANGLE_SNAP, and its length to whole cells. {"point",
+## "guides": [from, to] of each guide line it lies on, to draw}.
+func snap_drag(from: Vector2, to: Vector2, type: String) -> Dictionary:
+	var onto := snap_point(to, from)
+	if onto != to:
+		return {"point": onto, "guides": []}
+	var found := {}
+	var nearest := GUIDE_SNAP
+	for line: Array in _guide_lines(from, to, type):
+		var along: float = (to - line[0]).dot(line[1])
+		if along < line[2] or along > line[3]:
+			continue
+		var on: Vector2 = line[0] + line[1] * along
+		if on.distance_to(to) <= nearest:
+			nearest = on.distance_to(to)
+			found = {"point": on, "guides": [[line[0], on]]}
+	if not found.is_empty():
+		return found
+	var way := to - from
+	if way.length() < 0.5:
+		return {"point": to, "guides": []}
+	var steps: Array[float] = [0.0]
+	for id: int in segments:
+		var along := curve(id)
+		var at := along.nearest(from)
+		if along.point_at(at).distance_to(from) < 0.01:
+			steps.append(along.direction_at(at).angle())
+	var angle := way.angle()
+	var closest := deg_to_rad(ANGLE_SNAP)
+	for step in steps:
+		for k in 24:
+			var snapped := step + deg_to_rad(15.0 * k)
+			if absf(angle_difference(way.angle(), snapped)) <= closest:
+				closest = absf(angle_difference(way.angle(), snapped))
+				angle = snapped
+	return {"point": from + Vector2.from_angle(angle) * maxf(1.0, roundf(way.length())), "guides": []}
+
+
+## The guide lines a drag from `from` for a road of `type` can snap onto
+## near `to`: [origin, unit way, least and most distance along it]. Each
+## road's dead end leads on along its way GUIDE_CELLS; each straight road
+## near `to` has a line either side, parallel to it at the gap where both
+## roads' lanes just clear, along its length and GUIDE_CELLS beyond.
+func _guide_lines(from: Vector2, to: Vector2, type: String) -> Array:
+	var half: float = (types[type].forward + types[type].backward) / 2.0
+	var found := []
+	for id: int in segments:
+		var road: Dictionary = segments[id]
+		var along := curve(id)
+		for end: String in ["a", "b"]:
+			if degree(road[end]) == 1 and nodes[road[end]] != from:
+				var out := -along.direction_at(0.0) if end == "a" else along.direction_at(along.length)
+				found.append([nodes[road[end]], out, 1.0, float(GUIDE_CELLS)])
+		if road.control.is_equal_approx((nodes[road.a] + nodes[road.b]) / 2.0) and _hull(id).grow(half + GUIDE_SNAP + _half(id)).has_point(to):
+			var way := along.direction_at(0.0)
+			for side: int in [1, -1]:
+				found.append([nodes[road.a] + along.right_at(0.0) * (_half(id) + half) * side, way, -float(GUIDE_CELLS), along.length + GUIDE_CELLS])
+	return found
 
 
 ## Where a road drag's end at `near` snaps onto the roads, as Cities:
