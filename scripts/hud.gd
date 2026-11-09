@@ -1021,7 +1021,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 ## What the inspect panel's buttons were drawn for; they are drawn again when it changes.
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
-	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
+	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
 	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
 
 
@@ -1044,6 +1044,14 @@ func _draw_junction_actions(point: Vector2) -> void:
 		var sign: String = junctions.signs.get(point, {}).get(arm, "")
 		var button := _action_button(_inspect_actions, "From the %s: %s" % [Inspect.arm_name(arm), label[sign]], {"op": "set_sign", "point": point, "arm": arm, "sign": next[sign]})
 		button.tooltip_text = "Press for %s. Give way: traffic from here waits for a gap; stop: it also stops at the line first." % label[next[sign]]
+	# Lane arrows, each lane coming in (lane 1 nearest the middle) cycling through the turns it may take.
+	var presets := [[], ["left"], ["straight"], ["right"], ["left", "straight"], ["straight", "right"], ["left", "straight", "right"]]
+	for arm: Vector2i in Drive.arms(sim, point):
+		for lane: int in Drive.junction_lanes(sim).approach(point, arm).size():
+			var turns: Array = junctions.arrows.get(point, {}).get(arm, {}).get(lane, [])
+			var after: Array = presets[(presets.find(turns) + 1) % presets.size()]
+			var button := _action_button(_inspect_actions, "From the %s, lane %d: %s" % [Inspect.arm_name(arm), lane + 1, " + ".join(turns) if not turns.is_empty() else "as usual"], {"op": "set_lane_arrows", "point": point, "arm": arm, "lane": lane, "turns": after})
+			button.tooltip_text = "Press for %s. Lane arrows set the turns a lane takes at the junction; as usual, the inner lane turns left and goes straight on, the outer turns right." % (" + ".join(after) if not after.is_empty() else "as usual")
 
 
 func _action_button(row: Container, text: String, command: Dictionary) -> Button:

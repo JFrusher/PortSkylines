@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 43
+const VERSION := 44
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -106,6 +106,15 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v42(data)
 	if data.version < 43:
 		data = _migrate_v43(data)
+	if data.version < 44:
+		data = _migrate_v44(data)
+	return data
+
+
+## v44 keeps lane arrows at junctions; none were set before.
+static func _migrate_v44(data: Dictionary) -> Dictionary:
+	data.sim.junctions.arrows = {}
+	data.version = 44
 	return data
 
 
@@ -453,8 +462,11 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 	if not data.traffic.is_empty() and not (_has_fields(data.traffic, {"pieces": TYPE_INT, "traffic": TYPE_DICTIONARY, "weighed": TYPE_DICTIONARY}) and _has_fields(data.traffic.traffic, {"cars": TYPE_DICTIONARY, "on": TYPE_DICTIONARY, "booked": TYPE_DICTIONARY, "crossings": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY})):
 		return false
-	if not _has_fields(data.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY}):
+	if not _has_fields(data.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY, "arrows": TYPE_DICTIONARY}):
 		return false
+	for point: Variant in data.junctions.arrows:
+		if not (point is Vector2 and _valid_arrows(data.junctions.arrows[point])):
+			return false
 	for point: Variant in data.junctions.signals:
 		var at: Variant = data.junctions.signals[point]
 		if not (point is Vector2 and at is Dictionary and _has_fields(at, {"green": TYPE_ARRAY, "phase": TYPE_INT, "left": TYPE_FLOAT})):
@@ -484,6 +496,20 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 		if not stacks.where.keys().all(func(box: Variant) -> bool: return box in data.boxes):
 			return false
+	return true
+
+
+## One junction's lane arrows: arm -> {lane: turns}, every turn a known one.
+static func _valid_arrows(arms: Variant) -> bool:
+	if not arms is Dictionary:
+		return false
+	for arm: Variant in arms:
+		if not (arm is Vector2i and arms[arm] is Dictionary):
+			return false
+		for lane: Variant in arms[arm]:
+			var turns: Variant = arms[arm][lane]
+			if not (lane is int and turns is Array and turns.all(func(turn: Variant) -> bool: return turn in Junctions.TURNS)):
+				return false
 	return true
 
 

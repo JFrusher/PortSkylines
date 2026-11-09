@@ -16,6 +16,12 @@ extends RefCounted
 var signals := {}
 ## Point -> {arm: "give_way" or "stop"}.
 var signs := {}
+## Point -> {arm: {lane coming in, 0 nearest the middle: the turns it takes,
+## of "left", "straight" and "right"}}; a lane without takes M7's.
+var arrows := {}
+## Bumped when arrows change, so the lane network is built again.
+var version := 0
+const TURNS := ["left", "straight", "right"]
 var _rules: Dictionary
 
 
@@ -107,14 +113,36 @@ func tick(lanes: Object, traffic: Object, seconds: float) -> void:
 	for point: Vector2 in signs.keys():
 		if lanes.arms(point).is_empty():
 			signs.erase(point)
+	for point: Vector2 in arrows.keys():
+		if lanes.arms(point).is_empty():
+			arrows.erase(point)
+			version += 1
+
+
+## Gives lane `lane` (0 nearest the middle) coming into junction `point` by
+## arm `arm` the turns `turns`, or with none, M7's again.
+func set_arrows(lanes: Object, point: Vector2, arm: Vector2i, lane: int, turns: Array) -> String:
+	if arm not in lanes.arms(point):
+		return "No road there"
+	if lane < 0 or lane >= lanes.approach(point, arm).size():
+		return "No such lane"
+	if not turns.all(func(turn: Variant) -> bool: return turn in TURNS):
+		return "Lanes turn left, straight or right"
+	if turns.is_empty():
+		arrows.get(point, {}).get(arm, {}).erase(lane)
+	else:
+		arrows.get_or_add(point, {}).get_or_add(arm, {})[lane] = turns.duplicate()
+	version += 1
+	return ""
 
 
 func to_dict() -> Dictionary:
-	return {"signals": signals.duplicate(true), "signs": signs.duplicate(true)}
+	return {"signals": signals.duplicate(true), "signs": signs.duplicate(true), "arrows": arrows.duplicate(true)}
 
 
 static func from_dict(d: Dictionary, traffic_rules: Dictionary) -> Junctions:
 	var junctions := Junctions.new(traffic_rules)
 	junctions.signals = d.signals.duplicate(true)
 	junctions.signs = d.signs.duplicate(true)
+	junctions.arrows = d.arrows.duplicate(true)
 	return junctions

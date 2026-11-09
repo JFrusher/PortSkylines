@@ -128,6 +128,7 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 15. **Tooltip** with length, cost and angle beside the cursor.
 **Step 15 (9 Nov 2026):** while a road is drawn, the tooltip beside the cursor gives its length along its curve, its price and its heading as a compass bearing (north 0°); over a built road, an upgrade's price is for its own curve.
 16. **Lane-arrow editing** at a junction.
+**Step 16 (9 Nov 2026):** each lane coming into a junction can be given the turns it takes (left, straight, right) from the junction's Inspect panel, by a button per lane that cycles them. Its connections across the junction follow its arrows in place of M7's turn rules (`RoadJunction.connections`); a lane turns back only with a left arrow. Arrows are kept with the junction's signals and signs (`Junctions.arrows`, save v44), and changing them builds the lane network again.
 17. **Roundabouts:** a circle tool that builds a one-way ring with yield entries.
 18. **Move It-style editing:** drag a built road's node or control point to reshape it, moving its areas with it, or refuse with the reason.
 

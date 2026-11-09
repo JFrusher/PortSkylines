@@ -108,7 +108,7 @@ var junctions: Junctions
 ## game builds them from its vehicles.
 var network: LaneNetwork
 var traffic: Traffic
-var _drive_for := Vector3i(-1, -1, -1)
+var _drive_for := Vector4i(-1, -1, -1, -1)
 var _delays := {}
 ## Whether a piece reaches a spot for a lorry or a tractor: [piece, spot,
 ## lorry] -> bool, kept by Drive while the network stands.
@@ -629,6 +629,8 @@ func apply(command: Dictionary) -> String:
 			return Drive.junctions(self).set_signals(Drive.junction_lanes(self), command.point, command.on)
 		"set_green":
 			return Drive.junctions(self).set_green(command.point, command.phase, command.seconds)
+		"set_lane_arrows":
+			return Drive.junctions(self).set_arrows(Drive.junction_lanes(self), command.point, command.arm, command.lane, command.turns)
 		"set_sign":
 			return Drive.junctions(self).set_sign(Drive.junction_lanes(self), command.point, command.arm, command.sign)
 		"build_area":

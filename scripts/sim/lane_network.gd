@@ -47,7 +47,9 @@ const SEGMENT := 1.5
 const STRAIGHT_ON := 10.0
 
 
-func _init(net: RoadNet, rules: Dictionary) -> void:
+## `arrows`: the junctions' lane arrows (Junctions.arrows), point -> arm ->
+## lane -> its turns.
+func _init(net: RoadNet, rules: Dictionary, arrows := {}) -> void:
 	var arms_at := _arms(net)
 	var trims := _trims(arms_at, rules)
 	var lane_pieces := {}  # [segment, lane] -> its last piece
@@ -107,7 +109,7 @@ func _init(net: RoadNet, rules: Dictionary) -> void:
 		elif arms.size() == 2:
 			pairs = _carry_on(arms)
 		else:
-			for link: Dictionary in RoadJunction.connections(arms, rules):
+			for link: Dictionary in RoadJunction.connections(arms, rules, arrows.get(net.nodes[node], {})):
 				pairs.append([link.from, link.to])
 		for pair: Array in pairs:
 			var into: Dictionary = arms[pair[0][0]]

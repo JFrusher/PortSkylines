@@ -270,12 +270,12 @@ static func to_dict(sim: PortSim) -> Dictionary:
 ## stood at) and sending it on to where it was heading; or, first thing in a
 ## loaded game, puts back the traffic it saved.
 static func _refresh(sim: PortSim) -> void:
-	var now := Vector3i(sim.roads.version, sim.areas.version, sim.rails.version)
+	var now := Vector4i(sim.roads.version, sim.areas.version, sim.rails.version, sim.junctions.version)
 	if now == sim._drive_for and sim.traffic != null:
 		return
 	var old := sim.traffic
 	sim._drive_for = now
-	sim.network = LaneNetwork.new(sim.roads, sim.rules.junctions)
+	sim.network = LaneNetwork.new(sim.roads, sim.rules.junctions, sim.junctions.arrows)
 	sim.network.add_driveways(sim.areas, sim.rules.traffic.area_kmh)
 	for cell in edge_cells(sim):
 		sim.network.split_at(Vector2(cell) + Vector2(0.5, 0.5))

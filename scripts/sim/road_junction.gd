@@ -57,9 +57,11 @@ static func lane_point(arm: Dictionary, lane: int, trim: float) -> Vector2:
 
 ## How lanes join across a junction of `arms` (as footprints takes them):
 ## [{"from": [arm, lane] arriving, "to": [arm, lane] leaving, "curve"}], by
-## M7's turn rules. A turn joins every lane leaving by its road; straight on
-## joins the lane in line with it, so the curve leaves and arrives straight.
-static func connections(arms: Array[Dictionary], rules: Dictionary) -> Array[Dictionary]:
+## M7's turn rules, or for a lane given arrows (`arrows`: arm key -> {lane,
+## 0 nearest the middle -> its turns}), those turns; a lane turns back only
+## with a left arrow. A turn joins every lane leaving by its road; straight
+## on joins the lane in line with it, so the curve leaves and arrives straight.
+static func connections(arms: Array[Dictionary], rules: Dictionary, arrows := {}) -> Array[Dictionary]:
 	var shape := shape(footprints(arms), rules)
 	assert(not shape.has("error"), "a junction's arms part by its minimum angle")
 	var trims: Array = shape.trims
@@ -77,7 +79,8 @@ static func connections(arms: Array[Dictionary], rules: Dictionary) -> Array[Dic
 			var start := lane_point(arms[i], lane, trims[i])
 			for j in arms.size():
 				var kind := _kind(heading, arms, i, j)
-				if not _may(kind, n, inbound.size() - 1, kinds):
+				var marked: Array = arrows.get(LaneNetwork.arm_key(arms[i].direction), {}).get(n, [])
+				if not (_may(kind, n, inbound.size() - 1, kinds) if marked.is_empty() else ("left" if kind == "back" else kind) in marked):
 					continue
 				var outbound := _lanes(arms[j], true)
 				# A one-way road coming in has no lane out to join.
