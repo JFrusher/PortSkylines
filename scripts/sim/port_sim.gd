@@ -135,6 +135,8 @@ func _dg_refusal() -> String:
 
 ## The road a berth brings along its back.
 const BERTH_ROAD := "terminal_1_1"
+## The road type roundabouts are built of.
+const RING_ROAD := "roundabout"
 ## How far past an apron's deepest reach a berth click looks for the water, in cells.
 const BERTH_SEARCH := 30
 ## How many calls the ship log keeps, which milestones' on-time and
@@ -629,6 +631,8 @@ func apply(command: Dictionary) -> String:
 			return Drive.junctions(self).set_signals(Drive.junction_lanes(self), command.point, command.on)
 		"set_green":
 			return Drive.junctions(self).set_green(command.point, command.phase, command.seconds)
+		"build_roundabout":
+			return build_roundabout(command.centre, command.radius)
 		"set_lane_arrows":
 			return Drive.junctions(self).set_arrows(Drive.junction_lanes(self), command.point, command.arm, command.lane, command.turns)
 		"set_sign":
@@ -689,6 +693,31 @@ func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fi
 			err = _crossing_error(from, to, ground, _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.cells(track))
 	if err == "" and not _afford(road_price(from, to, type, control)):
 		err = "Not enough money"
+	return err
+
+
+## Why a roundabout round `centre`, `radius` cells out, can't be built, or
+## "": its ring laid against the roads, and each piece of it on owned dry
+## land clear of areas and track, at the price of all of them.
+func build_roundabout_error(centre: Vector2, radius: float) -> String:
+	var err := roads.ring_error(centre, radius, RING_ROAD)
+	var price := 0
+	for piece: Array in RoadNet.ring_pieces(centre, radius):
+		if err == "":
+			err = build_road_error(piece[0], piece[2], RING_ROAD, 0, false, piece[1]).replace("Not enough money", "")
+		price += road_price(piece[0], piece[2], RING_ROAD, piece[1])
+	if err == "" and not _afford(price):
+		err = "Not enough money"
+	return err
+
+
+## Builds a roundabout round `centre`, `radius` cells out; "" or why not.
+func build_roundabout(centre: Vector2, radius: float) -> String:
+	var err := build_roundabout_error(centre, radius)
+	if err == "":
+		for piece: Array in RoadNet.ring_pieces(centre, radius):
+			ledger.post("construction", -road_price(piece[0], piece[2], RING_ROAD, piece[1]))
+		roads.add_ring(centre, radius, RING_ROAD)
 	return err
 
 

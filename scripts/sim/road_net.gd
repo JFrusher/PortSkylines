@@ -31,6 +31,8 @@ var _next_segment := 1
 ## The least room, in cells, a curve leaves inside its inner lane: tighter,
 ## and the inside of the bend folds over itself.
 const MIN_INNER_RADIUS := 1.0
+## How many curves a roundabout's ring is made of.
+const RING_PIECES := 8
 ## How near, in degrees, a drag's way must come to a 15° step to snap to it.
 const ANGLE_SNAP := 5.0
 ## How near, in cells, a drag's end must come to a guide line to snap onto it.
@@ -69,6 +71,41 @@ func add(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> St
 		return err
 	_place(_plan(from, to, type, 0, control), type)
 	return ""
+
+
+## Adds a roundabout of `type` round `centre`, `radius` cells out: a ring of
+## RING_PIECES curves, each a piece of the circle, running anticlockwise as
+## seen from above (with y down, the way angles fall), so traffic on it keeps
+## right; "" or why it can't be built, when nothing of it is.
+func add_ring(centre: Vector2, radius: float, type: String) -> String:
+	var err := ring_error(centre, radius, type)
+	if err == "":
+		for piece: Array in ring_pieces(centre, radius):
+			add(piece[0], piece[2], type, piece[1])
+	return err
+
+
+## Why add_ring would refuse this ring, or "": its pieces tried on a copy.
+func ring_error(centre: Vector2, radius: float, type: String) -> String:
+	if type not in types or not types[type].ring:
+		return "Roundabouts are built of roundabout road"
+	var trial := RoadNet.from_dict(to_dict(), types, junctions)
+	for piece: Array in ring_pieces(centre, radius):
+		var err := trial.add(piece[0], piece[2], type, piece[1])
+		if err != "":
+			return err
+	return ""
+
+
+## [start, control, end] of each piece of a ring round `centre`, `radius`
+## cells out, in order round it; each end is the next one's start exactly.
+static func ring_pieces(centre: Vector2, radius: float) -> Array:
+	var step := TAU / RING_PIECES
+	var at := func(k: int) -> Vector2: return centre + Vector2.from_angle(-step * (k % RING_PIECES)) * radius
+	var found := []
+	for k in RING_PIECES:
+		found.append([at.call(k), centre + Vector2.from_angle(-step * (k + 0.5)) * radius / cos(step / 2.0), at.call(k + 1)])
+	return found
 
 
 ## Builds what _plan laid out: splits the roads it meets, then its pieces.

@@ -168,7 +168,10 @@ func _process(dt: float) -> void:
 	elif berth.has("line"):
 		ends = [Vector2(berth.line[0]), Vector2(berth.line[1])] as Array[Vector2]
 		road_type = PortSim.BERTH_ROAD
-	view.show_road_preview(ends[0], ends[1], road_type, ok, _road_bend() if _road_from != Vector2.INF else (sim.roads.segments[picked[1]].control if not picked.is_empty() and picked[0] == sim.roads else Vector2.INF))
+	if _road_from != Vector2.INF and hud.road_mode == "roundabout" and hud.road_type != "track":
+		view.show_ring_preview(_road_from, _road_from.distance_to(_hovered_grid_point()), ok)
+	else:
+		view.show_road_preview(ends[0], ends[1], road_type, ok, _road_bend() if _road_from != Vector2.INF else (sim.roads.segments[picked[1]].control if not picked.is_empty() and picked[0] == sim.roads else Vector2.INF))
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_painting = false
@@ -183,6 +186,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Vector2.INF:
 		if hud.tool == Hud.DRAW_ROAD and hud.road_type == "track":
 			_report(sim.apply({"op": "build_rail", "from": Vector2i(_road_from), "to": Vector2i(_road_to())}))
+		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "roundabout" and hud.road_type != "track":
+			_report(sim.apply({"op": "build_roundabout", "centre": _road_from, "radius": _road_from.distance_to(_hovered_grid_point())}))
 		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "curved" and _road_control == Vector2.INF:
 			# A curved road's second click places the point it bends toward; the third ends it.
 			if _road_to() != _road_from:
@@ -363,6 +368,8 @@ func _order_error(cell: Vector2i) -> String:
 				return ""
 			if hud.road_type == "track":
 				return sim.build_rail_error(Vector2i(_road_from), Vector2i(_road_to()))
+			if hud.road_mode == "roundabout":
+				return sim.build_roundabout_error(_road_from, _road_from.distance_to(_hovered_grid_point()))
 			var ends := _road_ends()
 			return sim.build_road_error(ends[0], ends[1], hud.road_type, 0, false, _road_bend())
 		Hud.DRAW_AREA:
@@ -455,6 +462,12 @@ func _drag_hint() -> String:
 	var metres := roundi(along.length * Grid.CELL)
 	if hud.road_type == "track" or to == _road_from:
 		return "%d m" % metres
+	if hud.road_mode == "roundabout":
+		var radius := _road_from.distance_to(_hovered_grid_point())
+		var price := 0
+		for piece: Array in RoadNet.ring_pieces(_road_from, radius):
+			price += sim.road_price(piece[0], piece[2], PortSim.RING_ROAD, piece[1])
+		return "Roundabout, %d m across, %s" % [roundi(radius * 2.0 * Grid.CELL), HudDetails.dollars(price)]
 	var bearing := posmod(roundi(rad_to_deg((to - _road_from).angle()) + 90.0), 360)
 	return "%d m, %s, %d°" % [metres, HudDetails.dollars(sim.road_price(_road_from, to, hud.road_type, bend)), bearing]
 

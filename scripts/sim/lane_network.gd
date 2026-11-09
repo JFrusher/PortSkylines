@@ -24,6 +24,7 @@ const NO_SLOT := Vector2i(-1, -1)
 ## arriving by it. Signals and signs are kept by these.
 var _junctions := {}
 var _arm_of := {}  # arriving lane piece -> [junction point, arm]
+var _rings := {}  # junction point -> {arm: true} for the arms that are a roundabout's ring
 var _node_at := {}  # junction point -> node
 ## How near, in cells, two connections may pass without conflicting: two
 ## lanes side by side, a cell apart, don't.
@@ -95,6 +96,8 @@ func _init(net: RoadNet, rules: Dictionary, arrows := {}) -> void:
 		_node_at[point] = node
 		for arm: Dictionary in arms_at[node]:
 			var way := arm_key(arm.direction)
+			if arm.road.ring:
+				_rings.get_or_add(point, {})[way] = true
 			var lanes := RoadCurve.lanes(arm.road)
 			for k in lanes.size():
 				if not lanes[k].forward:
@@ -124,6 +127,11 @@ func arms(point: Vector2) -> Array:
 	var found: Array = _junctions.get(point, {}).keys()
 	found.sort()
 	return found
+
+
+## The arms of junction `point` that are a roundabout's ring.
+func ring_arms(point: Vector2) -> Array:
+	return _rings.get(point, {}).keys()
 
 
 ## The lane pieces arriving at junction `point` by arm `arm`.

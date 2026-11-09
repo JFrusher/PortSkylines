@@ -254,6 +254,19 @@ func show_hover_at(centre: Vector2, cells: int, ok: bool) -> void:
 	(_hover.mesh.material as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
+## Shows the roundabout a drag would build round `centre`, `radius` cells
+## out, green if it can be built, else red.
+func show_ring_preview(centre: Vector2, radius: float, ok: bool) -> void:
+	_road_preview.visible = radius > 0.0
+	if not _road_preview.visible:
+		return
+	var surface := _road_tool()
+	for piece: Array in RoadNet.ring_pieces(centre, radius):
+		_add_road(surface, null, RoadCurve.new(piece[0], piece[1], piece[2]), sim.rules.road_types[PortSim.RING_ROAD])
+	_road_preview.mesh = surface.commit()
+	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
+
+
 ## Shows the road a drag would build from `from` to `to`, curving through
 ## `control` (INF: straight), green if it can be built, else red; hidden
 ## when `from` is INF.

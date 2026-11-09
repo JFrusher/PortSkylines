@@ -84,7 +84,7 @@ func may_enter(lanes: Object, traffic: Object, point: Vector2, arm: Vector2i, id
 		var at: Dictionary = signals[point]
 		if at.left <= 0.0 or arm not in phases(lanes, point)[at.phase]:
 			return false
-	var sign: String = signs.get(point, {}).get(arm, "")
+	var sign := sign_at(lanes, point, arm)
 	if sign == "":
 		return true
 	if sign == "stop" and waited < _rules.stop_seconds:
@@ -92,9 +92,17 @@ func may_enter(lanes: Object, traffic: Object, point: Vector2, arm: Vector2i, id
 	if traffic.box_busy(point, id):
 		return false
 	for other: Vector2i in lanes.arms(point):
-		if not signs.get(point, {}).has(other) and traffic.approach_busy(point, other):
+		if sign_at(lanes, point, other) == "" and traffic.approach_busy(point, other):
 			return false
 	return true
+
+
+## The sign arm `arm` of junction `point` has: its own, else give way where
+## it joins a roundabout's ring and isn't the ring.
+func sign_at(lanes: Object, point: Vector2, arm: Vector2i) -> String:
+	if signs.get(point, {}).has(arm):
+		return signs[point][arm]
+	return "give_way" if not lanes.ring_arms(point).is_empty() and arm not in lanes.ring_arms(point) else ""
 
 
 ## One tick of every signal, `seconds` of traffic (real seconds, as cars

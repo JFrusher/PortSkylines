@@ -56,9 +56,10 @@ var road_type := ""
 var upgrade_roads := false
 ## How DRAW_ROAD lays a road, as Cities: Skylines' road tools: "straight" by
 ## a drag; "curved" by three clicks, start, control point, end; "freeform"
-## by a drag that carries on along the road it starts from.
+## by a drag that carries on along the road it starts from; "roundabout" by
+## a drag from its centre out to its ring.
 var road_mode := "straight"
-const ROAD_MODES := ["straight", "curved", "freeform"]
+const ROAD_MODES := ["straight", "curved", "freeform", "roundabout"]
 ## Roads snap to the 4 m grid, straight or at 45°, as before M10, when on.
 var grid_snap := false
 ## The area type DRAW_AREA drags out, a key of rules.area_types, and for a
@@ -317,6 +318,9 @@ func _ready() -> void:
 	# Build tool item buttons
 	for key: String in sim.rules.road_types:
 		var road: Dictionary = sim.rules.road_types[key]
+		# Ring road comes only as a roundabout, from the Shape button.
+		if road.ring:
+			continue
 		_item(_button(rows.Roads, "%s\n%s, $%d" % [road.name, _lanes_of(road), road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
 			road_type = key)).tooltip_text = _road_tip(road)
@@ -327,7 +331,7 @@ func _ready() -> void:
 	rows.Roads.add_child(VSeparator.new())
 	var shape := _item(Button.new())
 	shape.text = "Shape\nstraight"
-	shape.tooltip_text = "How roads are laid: straight by a drag; curved by three clicks (start, a point the curve bends toward, end); freeform by a drag that carries on smoothly from the road it starts on. Click to change."
+	shape.tooltip_text = "How roads are laid: straight by a drag; curved by three clicks (start, a point the curve bends toward, end); freeform by a drag that carries on smoothly from the road it starts on; roundabout by a drag from its centre out to its ring, which roads joining it give way to. Click to change."
 	shape.pressed.connect(func() -> void:
 		road_mode = ROAD_MODES[(ROAD_MODES.find(road_mode) + 1) % ROAD_MODES.size()]
 		shape.text = "Shape\n%s" % road_mode)

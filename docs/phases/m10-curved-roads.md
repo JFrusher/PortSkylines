@@ -130,6 +130,7 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 16. **Lane-arrow editing** at a junction.
 **Step 16 (9 Nov 2026):** each lane coming into a junction can be given the turns it takes (left, straight, right) from the junction's Inspect panel, by a button per lane that cycles them. Its connections across the junction follow its arrows in place of M7's turn rules (`RoadJunction.connections`); a lane turns back only with a left arrow. Arrows are kept with the junction's signals and signs (`Junctions.arrows`, save v44), and changing them builds the lane network again.
 17. **Roundabouts:** a circle tool that builds a one-way ring with yield entries.
+**Step 17 (9 Nov 2026):** the Shape button's roundabout mode builds a ring by a drag from its centre out to it (`build_roundabout`): eight curves of "roundabout" road (a ring type in the data, one-way, two lanes), each a piece of the circle, running anticlockwise as seen from above so traffic keeps right; it is laid on a trial copy first, so a ring that can't be built leaves nothing. A road joining a ring gives way to traffic on it unless it has a sign of its own (`Junctions.sign_at`), so roads joined later yield too. The ring previews whole while dragged, with its width and price.
 18. **Move It-style editing:** drag a built road's node or control point to reshape it, moving its areas with it, or refuse with the reason.
 
 ### Rail, water and berths
