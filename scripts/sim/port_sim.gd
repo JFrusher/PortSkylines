@@ -700,7 +700,7 @@ func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fi
 		err = "Something is already built here"
 	for track: int in rails.segments:
 		if err == "":
-			err = _crossing_error(from, to, ground, _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.ground(track))
+			err = _planned_crossing_error(roads, from, to, type, skip, control, rails.curve(track), rails.ground(track))
 	if err == "" and not _afford(road_price(from, to, type, control)):
 		err = "Not enough money"
 	return err
@@ -732,6 +732,17 @@ func move_road(change: Dictionary, keep: bool) -> String:
 				err = areas.refit(area, id)
 			elif err == "" and roads.curve(id).nearest(areas_before[area].curve[0]) > 0.0 and _along(areas_before[area].curve, curves[id]):
 				err = "An area along this road was built before it was split: rebuild it to move the road"
+	for id in moved:
+		if err != "":
+			break
+		var curve := roads.curve(id)
+		for area: int in areas.list:
+			# Refit checks the areas attached to this curve against its lane quads.
+			if areas.list[area].curve == [curve.a, curve.c, curve.b]:
+				continue
+			var cells: Array = areas.shape(area).cells
+			if roads.ground(id).any(func(c: Vector2i) -> bool: return cells.any(func(cell: Dictionary) -> bool: return Areas.overlap(Areas.square(c), PackedVector2Array(cell.corners)))):
+				err = "Something is already built here"
 	if err != "" or not keep:
 		roads.restore(roads_before)
 		areas.list = areas_before
@@ -769,7 +780,7 @@ func _moved_road_error(segment: int) -> String:
 		return "Buy this land first"
 	for track: int in rails.segments:
 		if err == "":
-			err = _crossing_error(a, b, ground, _track_end(rails.segments[track].a), _track_end(rails.segments[track].b), rails.ground(track))
+			err = _crossing_error(roads.curve(segment), ground, rails.curve(track), rails.ground(track))
 	return err
 
 
@@ -864,7 +875,7 @@ func build_rail_error(from: Vector2i, to: Vector2i, control := Vector2.INF) -> S
 		err = "Something is already built here"
 	for road: int in roads.segments:
 		if err == "":
-			err = _crossing_error(roads.nodes[roads.segments[road].a], roads.nodes[roads.segments[road].b], roads.ground(road), a, b, ground)
+			err = _planned_crossing_error(rails, a, b, "track", 0, control, roads.curve(road), roads.ground(road), true)
 	if err == "" and not _afford(_rail_price(a, b, control)):
 		err = "Not enough money"
 	return err
@@ -928,17 +939,35 @@ func remove_rail(segment: int) -> String:
 ## from `track_a` to `track_b` on `track_cells` can't both be: where they
 ## share ground they must cross, at min_angle or more, so neither runs along
 ## or ends on the other; "" when they can.
-# shortcut: a road is the straight line between its ends here; curved roads cross track by their curve when roads bend (M10 step 13).
-func _crossing_error(road_a: Vector2, road_b: Vector2, road_cells: Array, track_a: Vector2, track_b: Vector2, track_cells: Array) -> String:
+## Check the geometry selected by planning, including snapped ends and splits.
+func _planned_crossing_error(net: RoadNet, a: Vector2, b: Vector2, type: String, skip: int, control: Vector2, other: RoadCurve, other_cells: Array, track := false) -> String:
+	var plan: Dictionary = net._plan(a, b, type, skip, control)
+	for piece: Array in plan.pieces:
+		var curve := RoadCurve.new(piece[0], piece[1], piece[2])
+		var ground := net.footprint(piece[0], piece[2], type, piece[1])
+		var err := _crossing_error(other, other_cells, curve, ground) if track else _crossing_error(curve, ground, other, other_cells)
+		if err != "":
+			return err
+	return ""
+
+
+func _crossing_error(road: RoadCurve, road_cells: Array, track: RoadCurve, track_cells: Array) -> String:
 	if not road_cells.any(func(c: Vector2i) -> bool: return c in track_cells):
 		return ""
-	if Geometry2D.segment_intersects_segment(road_a, road_b, track_a, track_b) == null:
-		return "Something is already built here"
-	var apart := absf(rad_to_deg((road_b - road_a).angle_to(track_b - track_a)))
-	apart = minf(apart, 180.0 - apart)
-	if apart < rules.junctions.min_angle - 0.001:
-		return "Road and track cross at %d°; they need at least %d°" % [roundi(apart), roundi(rules.junctions.min_angle)]
-	return ""
+	var road_points := road.offset_points(0.0)
+	var track_points := track.offset_points(0.0)
+	var crossed := false
+	for i in range(1, road_points.size()):
+		for j in range(1, track_points.size()):
+			var hit: Variant = Geometry2D.segment_intersects_segment(road_points[i - 1], road_points[i], track_points[j - 1], track_points[j])
+			if hit == null:
+				continue
+			crossed = true
+			var apart := absf(rad_to_deg(road.direction_at(road.nearest(hit)).angle_to(track.direction_at(track.nearest(hit)))))
+			apart = minf(apart, 180.0 - apart)
+			if apart < rules.junctions.min_angle - 0.001:
+				return "Road and track cross at %d°; they need at least %d°" % [roundi(apart), roundi(rules.junctions.min_angle)]
+	return "" if crossed else "Something is already built here"
 
 
 ## The point track node `node` is at: the middle of its cell.

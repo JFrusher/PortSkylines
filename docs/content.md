@@ -17,6 +17,13 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `lines.<key>.tranship_share`, `.connection_hours` | number, number | The share of the boxes a line's big ships land that go on with its next feeder within the window, and of its feeders' boxes that go on with its next big ship |
 | `transhipment.price_factor`, `.missed_fine`, `.missed_reputation` | number, int, number | A transhipment move pays the move price times this; a box not loaded within its connection window costs the fine and this much of its line's reputation (times the line's sensitivity), and waits a further window for the next ship |
 | `transfers.share`, `.cost_per_box` | number, int | Of the imports a line lands at one terminal while it has a service at another, the share that leave on its ship there; each is driven between the terminals at this cost, an internal move |
+| `road_types.<key>.ring` | true/false | Marks a one-way roundabout ring road; joining roads give way to it <!-- coderabbit-ai-generated:v1 --> <!-- coderabbit-ai-generated-section:v1:1403ec659508fbef18491e78cc0db0eca0160fdf3bdf0e763f79f05fd3b35b0c --> |
+| `road_types.<key>.min_radius_cells` | number >0 (POSITIVE) | Smallest radius of the road's centre curve, in cells; must be greater than zero |
+| `junctions.lane_change_cells` | number | Distance in cells over which vehicles change between lanes running the same way |
+| `junctions.lane_change_clear_cells` | number | Clearance in cells kept on each side of a lane change near the road's middle |
+| `traffic.stuck_minutes` | number | Game minutes stopped before a vehicle may be moved on to its destination |
+| `rail.min_radius_cells` | number >0 (POSITIVE) | Smallest track curve radius in cells; must be greater than zero |
+| `water.lanes.<key>.min_radius_cells` | number >0 (POSITIVE) | Smallest ship lane curve radius in cells; must be greater than zero <!-- /coderabbit-ai-generated:v1 --> |
 | `road_types.<key>.name` | text | The road's name in the build menu |
 | `junctions.min_angle`, `.corner_cells` | number, number | Roads meeting at a node must part by at least this many degrees; each is cut back from the node far enough to clear its neighbours' edges, plus this corner radius in cells |
 | `road_types.<key>.forward`, `.backward` | int | Lanes along and against the drawn direction; forward at least backward, and at least one lane |

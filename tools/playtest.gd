@@ -15,7 +15,7 @@ var _sim: PortSim
 var _worst_gate_queue := 0
 ## Game minutes lorries spent in each state between gate in and gate out.
 var _turn_minutes := {}
-## Each moving lorry's [path, t] at the last sample, and cells and minutes moved.
+## Each moving lorry's [route, distance] at the last sample, and cells and minutes moved.
 var _last := {}
 var _moved := Vector2.ZERO
 
@@ -54,11 +54,12 @@ func _initialize() -> void:
 func _build(mode: String) -> void:
 	var entry := _sim.site_entry()
 	_do({"op": "build_road", "from": Vector2i(88, 200), "to": Vector2i(88, 340), "type": "terminal_1_1"})
-	var from := _sim.roads.snap_start(entry)
-	var to := _sim.roads.snap_end(from, Vector2i(90, entry.y + 1))
+	var from := _sim.roads.snap_point(entry)
+	var to: Vector2 = _sim.roads.snap_drag(from, Vector2(90, entry.y + 1), "terminal_1_1").point
 	print("snapping: terminal road dragged to (90, %d) ends at %s" % [entry.y + 1, to])
 	_do({"op": "build_road", "from": from, "to": to, "type": "terminal_1_1"})
-	print("snapping: the meeting is a %d-way junction" % _sim.roads.degree(_sim.roads.nodes.find_key(Vector2(to))))
+	var node: Variant = _sim.roads.nodes.find_key(Vector2(to))
+	print("snapping: the meeting is a %d-way junction" % (_sim.roads.degree(node) if node != null else 0))
 	var north := _sim.roads.segment_at(Vector2i(88, 250))
 	var south := _sim.roads.segment_at(Vector2i(88, 320))
 	var east := _sim.roads.segment_at(Vector2i(300, entry.y))
@@ -88,13 +89,13 @@ func _print_routes() -> void:
 	var blocks := _sim.areas.list.keys().filter(func(id: int) -> bool: return _sim.areas.kind_of(_sim.areas.list[id]) == "yard_block")
 	var entry := AreaFlow._entry_cell(_sim)
 	for gate: int in gates:
-		print("routes via gate %d (%s side):" % [gate, "north" if _sim.areas.list[gate].out.y < 0 else "south"])
-		print("  entry to gate: %d cells" % _sim.lanes.route(entry, AreaFlow._buffer_start(_sim, gate), true).size())
+		print("routes via gate %d (%s side):" % [gate, "north" if _sim.areas.out_at(gate, 0).y < 0 else "south"])
+		print("  entry to gate: %d cells" % _route_length(entry, AreaFlow._buffer_start(_sim, gate)))
 		for block: int in blocks:
-			var there := _sim.lanes.route(AreaFlow._buffer_end(_sim, gate), AreaFlow._buffer_start(_sim, block), true)
-			var back := _sim.lanes.route(AreaFlow._buffer_end(_sim, block), AreaFlow._buffer_start(_sim, gate), true)
-			var straight := RoadNet.length(_sim.areas.list[gate].start, _sim.areas.list[block].start)
-			print("  gate to %s block %d: %d cells, back %d cells (straight line %d)" % [_sim.areas.list[block].settings.role, block, there.size(), back.size(), straight])
+			var there := _route_length(AreaFlow._buffer_end(_sim, gate), AreaFlow._buffer_start(_sim, block))
+			var back := _route_length(AreaFlow._buffer_end(_sim, block), AreaFlow._buffer_start(_sim, gate))
+			var straight := _sim.areas.cell_at(gate, 0, 0).distance_to(_sim.areas.cell_at(block, 0, 0))
+			print("  gate to %s block %d: %d cells, back %d cells (straight line %d)" % [_sim.areas.list[block].settings.role, block, there, back, straight])
 
 
 func _watch() -> void:
@@ -104,10 +105,15 @@ func _watch() -> void:
 	# Sampled every 20 ticks, so each sample is one game minute.
 	for v: Vehicle in _sim.vehicles:
 		if v.kind == "lorry" and v.gate_in >= 0.0:
-			if v.state == "arriving" and v.id in _last and _last[v.id][0] == v.path:
-				_moved += Vector2(v.t - _last[v.id][1], 1)
-			_last[v.id] = [v.path, v.t]
-			var doing := v.state + (" (stopped in traffic)" if v.waited > 0 else "")
+			if v.id in _sim.traffic.cars:
+				var car: Dictionary = _sim.traffic.cars[v.id]
+				var distance: float = car.s
+				for i: int in car.i:
+					distance += _sim.network.pieces[car.route[i]].length
+				if v.state == "arriving" and v.id in _last and _last[v.id][0] == car.route:
+					_moved += Vector2(maxf(0.0, distance - _last[v.id][1]), 1)
+				_last[v.id] = [car.route.duplicate(), distance]
+			var doing := v.state + (" (stopped in traffic)" if Drive.waited(_sim, v) > 0 and not _sim.traffic.arrived(v.id) else "")
 			_turn_minutes[doing] = _turn_minutes.get(doing, 0) + 1
 	for id: int in _sim.areas.list:
 		if _sim.areas.kind_of(_sim.areas.list[id]) == "gate":
@@ -136,3 +142,15 @@ func _do(command: Dictionary) -> void:
 func _area(command: Dictionary) -> int:
 	_do(command)
 	return _sim.areas.list.keys().max()
+
+
+## Route length in cells, from Drive's current lane pieces.
+func _route_length(from: Vector3i, to: Vector3i) -> float:
+	Drive.reaches(_sim, from, to, true)
+	var start: int = _sim.network.nearest(_sim.areas.centre(from), true)[0]
+	if start == 0:
+		return 0.0
+	var length := 0.0
+	for piece in Drive._best_route(_sim, start, to, true):
+		length += _sim.network.pieces[piece].length
+	return length

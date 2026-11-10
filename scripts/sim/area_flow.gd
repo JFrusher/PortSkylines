@@ -118,6 +118,8 @@ static func sts_error(sim: PortSim, apron: int, along: int, kind: String) -> Str
 	# A crane works over a handover slot, and slots cover whole pairs of bays only.
 	if along < 0 or along >= _length(sim, apron) / AreaLayout.SLOT * AreaLayout.SLOT:
 		return "STS cranes stand on a quay apron's rails"
+	if _slot_at_column(sim, apron, along) < 0:
+		return "STS cranes stand on a quay apron's rails"
 	var spots := crane_spots(sim, apron)
 	if not spots.is_empty() and along not in spots:
 		return "Cranes stand at the berth's crane spots"
@@ -424,7 +426,16 @@ static func _surplus_empty(sim: PortSim, ship: PortSim.Ship) -> int:
 
 ## Where a tractor stands in the apron slot under `crane`.
 static func _crane_slot(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> Vector3i:
-	return _stand(sim, ship.apron, crane.along / AreaLayout.SLOT)
+	var slot := _slot_at_column(sim, ship.apron, crane.along)
+	return _stand(sim, ship.apron, slot) if slot >= 0 else Areas.NO_SPOT
+
+
+static func _slot_at_column(sim: PortSim, apron: int, column: int) -> int:
+	var slots: Array = sim.areas.layout(apron).slots
+	for i in slots.size():
+		if slots[i].any(func(cell: Vector3i) -> bool: return cell.y == column):
+			return i
+	return -1
 
 
 ## Where a vehicle stands in `area`'s slot `slot`: its last cell in driving

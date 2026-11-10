@@ -189,6 +189,7 @@ func refit(id: int, segment: int) -> String:
 	var area: Dictionary = list[id]
 	var from := int(area.from)
 	list.erase(id)
+	version += 1
 	var err := add_error(area.type, segment, area.side, from, from + area.columns - 1)
 	list[id] = area
 	if err == "":

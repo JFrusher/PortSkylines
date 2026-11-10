@@ -240,7 +240,7 @@ static func weigh(sim: PortSim) -> void:
 ## game builds the same one from the same roads, areas and track.
 static func to_dict(sim: PortSim) -> Dictionary:
 	_refresh(sim)
-	return {"pieces": sim.network.pieces.size(), "traffic": sim.traffic.to_dict(), "weighed": sim._delays.duplicate()}
+	return {"pieces": sim.network.pieces.size(), "network": _identity(sim), "traffic": sim.traffic.to_dict(), "weighed": sim._delays.duplicate()}
 
 
 ## Builds the lane network and its traffic again when the roads, areas or
@@ -263,11 +263,12 @@ static func _refresh(sim: PortSim) -> void:
 	sim._delays.clear()
 	sim._reach.clear()
 	if not sim._loaded_traffic.is_empty():
-		assert(sim._loaded_traffic.pieces == sim.network.pieces.size(), "a loaded game builds the network it saved")
-		sim.traffic.restore(sim._loaded_traffic.traffic)
-		sim._delays = sim._loaded_traffic.weighed.duplicate()
+		var saved: Dictionary = sim._loaded_traffic
 		sim._loaded_traffic = {}
-		return
+		if saved.get("network", {}) == _identity(sim):
+			sim.traffic.restore(saved.traffic)
+			sim._delays = saved.weighed.duplicate()
+			return
 	for vehicle: Vehicle in sim.vehicles:
 		# Where its car was; only a vehicle with no car yet goes by its spot.
 		var at: Vector2 = old.pose(vehicle.id)[0] if old != null and vehicle.id in old.cars else sim.areas.centre(vehicle.path[0])
@@ -347,3 +348,8 @@ static func _top(sim: PortSim, vehicle: Vehicle) -> float:
 ## `vehicle`'s length, cells.
 static func _length(sim: PortSim, vehicle: Vehicle) -> float:
 	return (sim.rules.traffic.lorry_m if vehicle.kind == "lorry" else sim.rules.traffic.tractor_m) / Grid.CELL
+
+
+## Piece IDs must retain geometry, connections and junction/crossing meaning.
+static func _identity(sim: PortSim) -> Dictionary:
+	return {"pieces": sim.network.pieces.duplicate(true), "conflicts": sim.network._conflicts.duplicate(true), "arms": sim.network._arm_of.duplicate(true), "crossings": sim._crossing_cells.duplicate()}

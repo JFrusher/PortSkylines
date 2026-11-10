@@ -511,6 +511,30 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 	if not data.traffic.is_empty() and not (_has_fields(data.traffic, {"pieces": TYPE_INT, "traffic": TYPE_DICTIONARY, "weighed": TYPE_DICTIONARY}) and _has_fields(data.traffic.traffic, {"cars": TYPE_DICTIONARY, "on": TYPE_DICTIONARY, "booked": TYPE_DICTIONARY, "crossings": TYPE_DICTIONARY, "delays": TYPE_DICTIONARY, "stuck": TYPE_DICTIONARY, "entered": TYPE_DICTIONARY})):
 		return false
+	if not data.traffic.is_empty():
+		var known := {}
+		if data.traffic.has("network"):
+			if not data.traffic.network is Dictionary or not data.traffic.network.get("pieces") is Dictionary:
+				return false
+			known = data.traffic.network.pieces
+		# Older saves used consecutive piece IDs; their traffic will be discarded.
+		var known_piece := func(piece: Variant) -> bool: return piece is int and (piece in known if data.traffic.has("network") else piece > 0 and piece <= data.traffic.pieces)
+		var vehicles := {}
+		for vehicle: Dictionary in data.vehicles:
+			vehicles[vehicle.id] = true
+		for id: Variant in data.traffic.traffic.cars:
+			var car: Variant = data.traffic.traffic.cars[id]
+			if not (id is int and id in vehicles and car is Dictionary and _has_fields(car, {"route": TYPE_ARRAY, "i": TYPE_INT, "s": TYPE_FLOAT, "v": TYPE_FLOAT, "top": TYPE_FLOAT, "length": TYPE_FLOAT, "booked": TYPE_ARRAY, "waited": TYPE_FLOAT})):
+				return false
+			if car.route.is_empty() or car.i < 0 or car.i >= car.route.size() or not car.route.all(known_piece):
+				return false
+			if not car.booked.all(known_piece):
+				return false
+			if car.has("behind"):
+				if not car.behind is Array:
+					return false
+				if not car.behind.is_empty() and not (car.behind.size() == 3 and car.behind[0] is int and known_piece.call(car.behind[1]) and _has_fields({"s": car.behind[2]}, {"s": TYPE_FLOAT})):
+					return false
 	if not _has_fields(data.junctions, {"signals": TYPE_DICTIONARY, "signs": TYPE_DICTIONARY, "arrows": TYPE_DICTIONARY}):
 		return false
 	for point: Variant in data.junctions.arrows:

@@ -15,6 +15,7 @@ var _rules: Dictionary = Content.base()
 
 
 func _initialize() -> void:
+	_test_split_moves_approach()
 	_test_red_holds_a_lorry()
 	_test_stop_stops()
 	_test_give_way_waits_for_the_approach()
@@ -276,3 +277,16 @@ func _test_room_past_short_pieces() -> void:
 	_send(traffic, 1, true)
 	_run(traffic, 30.0)
 	_expect(_across(traffic, 1), true, "the lorry crosses into the cut-up road")
+
+
+func _test_split_moves_approach() -> void:
+	var network := _crossroads().network
+	var id: int = network._arm_of.keys()[0]
+	var arm: Array = network.arm_of(id).duplicate()
+	var point := network.point_along(id, network.pieces[id].length / 2.0)[0]
+	_expect(network.split_at(point), id, "split returns first half")
+	var rest: int = network.pieces[id].next[0]
+	_expect(network.arm_of(id), [], "first half no longer an approach")
+	_expect(network.arm_of(rest), arm, "last half owns approach")
+	_expect(id in network.approach(arm[0], arm[1]), false, "old approach removed")
+	_expect(rest in network.approach(arm[0], arm[1]), true, "new approach registered")

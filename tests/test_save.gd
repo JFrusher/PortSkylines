@@ -10,6 +10,8 @@ var _failures := 0
 
 func _initialize() -> void:
 	_test_save_load_save_is_identical()
+	_test_traffic_cars_are_validated()
+	_test_network_identity_required()
 	_test_bad_files_are_refused()
 	_test_save_replaces_existing()
 	_test_failed_save_preserves_destination()
@@ -306,3 +308,50 @@ func _test_v48_areas_lose_their_grid_ends() -> void:
 		var before: Dictionary = old.sim.areas.list[id]
 		_expect(["start", "end", "out"].any(func(key: String) -> bool: return area.has(key)), false, "area %d has no grid ends" % id)
 		_expect([sim.areas.cell_at(id, 0, 0), sim.areas.cell_at(id, area.columns - 1, 0)], [before.start, before.end], "and its shape finds them where they were")
+
+
+func _test_traffic_cars_are_validated() -> void:
+	var sim := AreaPort.base()
+	for i in 500:
+		sim.tick()
+	var data := sim.to_dict()
+	_expect(data.traffic.traffic.cars.is_empty(), false, "test has saved cars")
+	if data.traffic.traffic.cars.is_empty():
+		return
+	var id: int = data.traffic.traffic.cars.keys()[0]
+	for field: String in ["route", "i", "s", "v", "top", "length", "booked", "waited"]:
+		var bad := data.duplicate(true)
+		bad.traffic.traffic.cars[id].erase(field)
+		_expect(SaveFile._valid_area_flow(bad), false, "missing car %s refused" % field)
+	for field: String in ["s", "v", "top", "length", "waited"]:
+		var bad := data.duplicate(true)
+		bad.traffic.traffic.cars[id][field] = NAN
+		_expect(SaveFile._valid_area_flow(bad), false, "nonfinite car %s refused" % field)
+	var bad := data.duplicate(true)
+	bad.traffic.traffic.cars[id].route = [999999] as Array[int]
+	_expect(SaveFile._valid_area_flow(bad), false, "unknown route piece refused")
+	bad = data.duplicate(true)
+	bad.traffic.traffic.cars[999999] = bad.traffic.traffic.cars[id]
+	_expect(SaveFile._valid_area_flow(bad), false, "unknown vehicle refused")
+
+
+func _test_network_identity_required() -> void:
+	var sim := AreaPort.base()
+	for i in 500:
+		sim.tick()
+	var data := sim.to_dict()
+	var saved: Dictionary = data.traffic.duplicate(true)
+	# Same count, different geometry/meaning of one piece ID.
+	var id: int = saved.network.pieces.keys()[0]
+	saved.network.pieces[id].kmh += 1.0
+	saved.weighed = {id: 123456.0}
+	sim._loaded_traffic = saved
+	sim._drive_for = Vector4i(-1, -1, -1, -1)
+	Drive._refresh(sim)
+	_expect(sim._loaded_traffic.is_empty(), true, "mismatched traffic consumed")
+	_expect(sim._delays.is_empty(), true, "mismatched saved delays discarded")
+	sim._loaded_traffic = data.traffic.duplicate(true)
+	sim._loaded_traffic.erase("network")
+	sim._drive_for = Vector4i(-1, -1, -1, -1)
+	Drive._refresh(sim)
+	_expect(sim._loaded_traffic.is_empty(), true, "legacy traffic discarded without asserting")

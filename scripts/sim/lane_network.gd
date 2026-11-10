@@ -410,6 +410,12 @@ func split_at(position: Vector2) -> int:
 				after.insert(0, position)
 			var rest := _add(after, piece.segment, piece.lane, piece.lorries, 0, piece.kmh)
 			pieces[rest].next = piece.next
+			if id in _arm_of:
+				var arm: Array = _arm_of[id]
+				var approach: Array = _junctions[arm[0]][arm[1]]
+				approach[approach.find(id)] = rest
+				_arm_of[rest] = arm
+				_arm_of.erase(id)
 			if not _cells.is_empty():
 				_unindex(id)
 			piece.points = before

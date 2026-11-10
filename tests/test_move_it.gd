@@ -14,6 +14,8 @@ var _failures := 0
 func _initialize() -> void:
 	_test_a_control_point_bends_a_road_and_its_area()
 	_test_a_node_drags_its_roads()
+	_test_moved_road_hits_an_unrelated_area()
+	_test_refit_with_a_warm_cache()
 	_test_bad_moves_are_refused()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -76,3 +78,23 @@ func _test_bad_moves_are_refused() -> void:
 	_expect(err.begins_with("Too tight a curve"), true, "a hairpin is refused (%s)" % err)
 	_expect(sim.roads.to_dict(), before, "and the roads are as they were")
 	_expect(sim.apply({"op": "move_road_node", "node": 99, "to": Vector2(1, 1)}), "No road there", "a node that isn't there is refused")
+
+
+func _test_refit_with_a_warm_cache() -> void:
+	var sim := _port()
+	sim.apply({"op": "build_road", "from": Vector2(100, 250), "to": Vector2(160, 250), "type": "terminal_2_2"})
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": 1, "from": 10, "to": 49})
+	var id: int = sim.areas.list.keys()[0]
+	sim.areas.area_over(Areas.square(sim.areas.cell_at(id, 20, 1)))
+	_expect(sim.areas.refit(id, 1), "", "refit ignores its removed cached quads")
+
+
+func _test_moved_road_hits_an_unrelated_area() -> void:
+	var sim := _port()
+	sim.apply({"op": "build_road", "from": Vector2(100, 250), "to": Vector2(180, 250), "type": "terminal_1_1"})
+	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": 1, "from": 10, "to": 49})
+	sim.apply({"op": "build_road", "from": Vector2(110, 280), "to": Vector2(160, 280), "type": "terminal_1_1"})
+	var id := sim.roads.segment_at(Vector2i(130, 280))
+	var before := sim.roads.to_dict()
+	_expect(sim.move_road({"segment": id, "control": Vector2(135, 234)}, true), "Something is already built here", "a moved road cannot cut through an unrelated yard")
+	_expect(sim.roads.to_dict(), before, "rejected move restores roads")

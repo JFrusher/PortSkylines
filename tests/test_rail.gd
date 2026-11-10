@@ -10,6 +10,7 @@ var _failures := 0
 
 
 func _initialize() -> void:
+	_test_curved_crossing_geometry()
 	_test_track_is_its_own_graph()
 	_test_level_crossing()
 	_test_rmg_siding()
@@ -269,3 +270,17 @@ func _test_trains_follow_curves() -> void:
 			turn = maxf(turn, rad_to_deg(absf(bend.direction_at(n).angle_to(pose[1]))))
 	_expect(off < 0.05, true, "a train on the curve keeps to it (%.3f cells off)" % off)
 	_expect(turn < 5.0, true, "and to its way (%.1f° off)" % turn)
+
+
+func _test_curved_crossing_geometry() -> void:
+	var sim := _port()
+	var occupied: Array = [Vector2i(0, 0)]
+	# Its chord lies at y=0, but its curve reaches y=5 and crosses this track twice.
+	var road := RoadCurve.new(Vector2(0, 0), Vector2(10, 10), Vector2(20, 0))
+	var track := RoadCurve.straight(Vector2(0, 2), Vector2(20, 2))
+	_expect(sim._crossing_error(road, occupied, track, occupied), "", "curve crossings found away from the chord")
+	# At its apex the tangent is horizontal, though the endpoint chord of the track is vertical.
+	track = RoadCurve.new(Vector2(10, -10), Vector2(10, 10), Vector2(10, 20))
+	_expect(sim._crossing_error(road, occupied, track, occupied), "", "angle uses the curve tangent")
+	track = RoadCurve.straight(Vector2(0, 5), Vector2(20, 5))
+	_expect(sim._crossing_error(road, occupied, track, occupied).begins_with("Road and track cross at"), true, "shallow tangent crossing refused")
