@@ -594,7 +594,7 @@ func apply(command: Dictionary) -> String:
 		"dredge_berth":
 			return dredge_berth(command.apron, command.metres)
 		"build_ship_lane":
-			return build_ship_lane(command.from, command.to, command.type)
+			return build_ship_lane(command.from, command.to, command.type, command.get("control", Vector2.INF))
 		"remove_ship_lane":
 			return remove_ship_lane(command.segment)
 		"widen_ship_lane":
@@ -1370,25 +1370,26 @@ func buy_land(tile: Vector2i) -> String:
 	return err
 
 
-## Why a ship lane of `type` can't run from `from` to `to`, or "".
-func build_ship_lane_error(from: Vector2i, to: Vector2i, type: String) -> String:
-	var err := ship_lanes.add_error(from, to, type, areas.is_water)
-	if err == "" and not _afford(ship_lane_price(from, to, type)):
+## Why a ship lane of `type` can't run from `from` to `to`, curving through
+## `control` (INF: straight), or "".
+func build_ship_lane_error(from: Vector2i, to: Vector2i, type: String, control := Vector2.INF) -> String:
+	var err := ship_lanes.add_error(from, to, type, areas.is_water, control)
+	if err == "" and not _afford(ship_lane_price(from, to, type, control)):
 		err = "Not enough money"
 	return err
 
 
-func build_ship_lane(from: Vector2i, to: Vector2i, type: String) -> String:
-	var err := build_ship_lane_error(from, to, type)
+func build_ship_lane(from: Vector2i, to: Vector2i, type: String, control := Vector2.INF) -> String:
+	var err := build_ship_lane_error(from, to, type, control)
 	if err == "":
-		ledger.post("construction", -ship_lane_price(from, to, type))
-		ship_lanes.add(from, to, type, areas.is_water)
+		ledger.post("construction", -ship_lane_price(from, to, type, control))
+		ship_lanes.add(from, to, type, areas.is_water, control)
 	return err
 
 
 ## A lane's price: the water it covers, at its type's price a cell.
-func ship_lane_price(from: Vector2i, to: Vector2i, type: String) -> int:
-	return ship_lanes.footprint(from, to, type).size() * rules.water.lanes[type].cost_per_cell
+func ship_lane_price(from: Vector2i, to: Vector2i, type: String, control := Vector2.INF) -> int:
+	return ship_lanes.footprint(from, to, type, control).size() * rules.water.lanes[type].cost_per_cell
 
 
 ## Why an anchorage can't cover the rectangle from `from` to `to`, or "".
@@ -1535,7 +1536,7 @@ func build_breakwater_error(from: Vector2i, to: Vector2i) -> String:
 	var lanes := {}
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
-		for cell in ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type):
+		for cell in ship_lanes.area(segment):
 			lanes[cell] = true
 	if Areas.breakwater_cells(from, to).any(func(c: Vector2i) -> bool: return c in lanes):
 		return "A ship lane runs here"
@@ -1568,9 +1569,11 @@ func widen_ship_lane_error(segment: int) -> String:
 		return "This lane is wide already"
 	var a: Vector2i = ship_lanes.nodes[lane.a]
 	var b: Vector2i = ship_lanes.nodes[lane.b]
-	if not ship_lanes.footprint(a, b, "wide").all(areas.is_water):
+	if ship_lanes.curve(segment).min_radius() < rules.water.lanes.wide.min_radius_cells:
+		return "Too tight a bend for a wide lane: it turns no tighter than %d m" % roundi(rules.water.lanes.wide.min_radius_cells * Grid.CELL)
+	if not ship_lanes.footprint(a, b, "wide", lane.control).all(areas.is_water):
 		return "A wide lane needs open water %d m across all along" % Grid.metres(rules.water.lanes.wide.half_width * 2 + 1)
-	if not _afford(ship_lane_price(a, b, "wide")):
+	if not _afford(ship_lane_price(a, b, "wide", lane.control)):
 		return "Not enough money"
 	return ""
 
@@ -1581,7 +1584,7 @@ func widen_ship_lane(segment: int) -> String:
 	var err := widen_ship_lane_error(segment)
 	if err == "":
 		var lane: Dictionary = ship_lanes.segments[segment]
-		ledger.post("construction", -ship_lane_price(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], "wide"))
+		ledger.post("construction", -ship_lane_price(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], "wide", lane.control))
 		lane.type = "wide"
 		ship_lanes.version += 1
 	return err
@@ -1601,7 +1604,7 @@ func dredge_lane(segment: int, metres: int) -> String:
 	if segment not in ship_lanes.segments:
 		return "No ship lane there"
 	var lane: Dictionary = ship_lanes.segments[segment]
-	var cells := ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size()
+	var cells := ship_lanes.area(segment).size()
 	var err := _dredge_error(ship_lanes.depth(segment, areas.coast), metres, cells)
 	if err == "":
 		ledger.post("dredging", -metres * cells * rules.water.dredge.cost_per_cell_metre)
@@ -1645,7 +1648,7 @@ func dredged_cell_metres() -> float:
 	var total := 0.0
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
-		total += lane.dredged * ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size()
+		total += lane.dredged * ship_lanes.area(segment).size()
 	for apron: int in pocket_dredged:
 		if apron in areas.list:
 			total += pocket_dredged[apron] * Marine.pocket(self, apron).size()
@@ -1746,7 +1749,7 @@ func upkeep_parts() -> Dictionary:
 	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
-		parts[0] += ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size() * rules.water.lanes[lane.type].upkeep_per_cell
+		parts[0] += ship_lanes.area(segment).size() * rules.water.lanes[lane.type].upkeep_per_cell
 	for station: Dictionary in pilot_stations.values():
 		parts[0] += station.pilots * rules.water.pilots.upkeep_per_pilot
 	for wall: Dictionary in areas.breakwaters.values():

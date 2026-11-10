@@ -6,6 +6,9 @@ extends RefCounted
 ## ends lies in the berth's pocket; it reaches the open sea when one of its
 ## ends is on the site's edge.
 
+## How far apart, in cells, a ship's course has points along a lane.
+const SAIL_STEP := 2.0
+
 
 ## The water a ship lies in off quay apron `apron`: `water.pocket` rows out
 ## from its quay, all along it.
@@ -100,8 +103,10 @@ static func _starts(sim: PortSim, kind: String, anchorage: int) -> Array[int]:
 	return anchorage_nodes(sim, anchorage) if anchorage else ways_in(sim, kind)
 
 
-## Lane ends from `starts` to `ends` through lanes a ship of `kind` may
-## sail at least `deep` metres deep, in cells.
+## The way from `starts` to `ends` through lanes a ship of `kind` may sail
+## at least `deep` metres deep, in cells: each lane end's middle, and between
+## them points SAIL_STEP cells apart along the lane, so a ship follows its
+## curves.
 static func _find(sim: PortSim, kind: String, deep: float, starts: Array[int], ends: Array[int]) -> Array[Vector2]:
 	var coast := sim.areas.coast
 	var inland: bool = sim.rules.ship_classes[kind].inland
@@ -109,8 +114,15 @@ static func _find(sim: PortSim, kind: String, deep: float, starts: Array[int], e
 	var usable := func(segment: int) -> bool: return sim.ship_lanes.depth(segment, coast) >= deep and (inland or not lanes[sim.ship_lanes.segments[segment].type].barges_only)
 	var nodes := sim.ship_lanes.route(starts, ends, usable)
 	var points: Array[Vector2] = []
-	for node in nodes:
-		points.append(Vector2(sim.ship_lanes.nodes[node]) + Vector2(0.5, 0.5))
+	for i in nodes.size():
+		if i > 0:
+			var segment := sim.ship_lanes.between(nodes[i - 1], nodes[i])
+			var line := sim.ship_lanes.curve(segment)
+			var forward: bool = sim.ship_lanes.segments[segment].a == nodes[i - 1]
+			var steps := ceili(line.length / SAIL_STEP)
+			for n in range(1, steps):
+				points.append(line.point_at(line.length * (n if forward else steps - n) / steps))
+		points.append(Vector2(sim.ship_lanes.nodes[nodes[i]]) + Vector2(0.5, 0.5))
 	return points
 
 
@@ -338,20 +350,26 @@ static func _windows(sim: PortSim, ship: PortSim.Ship, way: int, sets_off: float
 	var per_cell: float = Grid.CELL / sim.rules.water.ship_speed
 	var found: Array[Dictionary] = []
 	var at := 0.0
+	# From the last lane end passed, and how far along the course it was.
+	var last := _node_at(sim, points[0])
+	var last_at := 0.0
 	for i in range(1, points.size()):
-		var leg: float = points[i - 1].distance_to(points[i])
-		var segment := sim.ship_lanes.between(_node_at(sim, points[i - 1]), _node_at(sim, points[i]))
+		at += points[i - 1].distance_to(points[i])
+		var node := _node_at(sim, points[i])
+		if node == 0:
+			continue
+		var segment := sim.ship_lanes.between(last, node)
 		if segment and not sim.rules.water.lanes[sim.ship_lanes.segments[segment].type].two_way:
-			found.append({"segment": segment, "from": sets_off + at * per_cell, "to": sets_off + (at + leg) * per_cell})
-		at += leg
+			found.append({"segment": segment, "from": sets_off + last_at * per_cell, "to": sets_off + at * per_cell})
+		last = node
+		last_at = at
 	return found
 
 
-## The lane end at `point` (a cell's middle), or 0.
+## The lane end whose cell's middle is `point`, or 0 (for points along a lane, between its ends).
 static func _node_at(sim: PortSim, point: Vector2) -> int:
-	var cell := Vector2i(point.floor())
 	for node: int in sim.ship_lanes.nodes:
-		if sim.ship_lanes.nodes[node] == cell:
+		if Vector2(sim.ship_lanes.nodes[node]) + Vector2(0.5, 0.5) == point:
 			return node
 	return 0
 

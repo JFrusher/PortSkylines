@@ -499,13 +499,11 @@ func _draw_ship_lanes() -> void:
 			_cell_quad(tool, Vector2i(spot.floor()), LANE_HEIGHT + 0.01)
 	for segment: int in sim.ship_lanes.segments:
 		var lane: Dictionary = sim.ship_lanes.segments[segment]
-		var a: Vector2i = sim.ship_lanes.nodes[lane.a]
-		var b: Vector2i = sim.ship_lanes.nodes[lane.b]
 		tool.set_color(Color(0.75, 0.9, 1.0, 0.12))
-		for cell in sim.ship_lanes.footprint(a, b, lane.type):
+		for cell in sim.ship_lanes.area(segment):
 			_cell_quad(tool, cell, LANE_HEIGHT)
 		tool.set_color(Color(1, 1, 1, 0.55) if lane.dredged > 0.0 else Color(0.7, 0.85, 1.0, 0.45))
-		for cell in RoadNet.line(a, b):
+		for cell in sim.ship_lanes.cells(segment):
 			_cell_quad(tool, cell, LANE_HEIGHT + 0.01)
 	_ship_lanes.mesh = tool.commit()
 

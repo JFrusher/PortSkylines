@@ -117,7 +117,7 @@ const SCHEMA := {
 	# Ships sail ship_speed metres a minute along ship lanes drawn on the
 	# water: a lane takes one ship at a time unless it is two_way, and only
 	# barges sail a barges_only one (a river channel); each covers half_width
-	# cells either side of its line. A ship lies in its
+	# cells either side of its line, and bends no tighter than min_radius_cells. A ship lies in its
 	# berth's pocket, `pocket` cells out from the quay. Lanes and pockets are
 	# as deep as their shallowest water plus what is dredged there, at most
 	# dredge.max_depth; dredging costs per cell and metre, then maintenance
@@ -131,7 +131,7 @@ const SCHEMA := {
 	# clear of the next ship's booking. Breakwaters are walls on the water,
 	# at a price and upkeep per cell, that no lane crosses. As port authority the port charges
 	# each call its class's port_dues, and each piloted passage pilots.fee.
-	"water": {"ship_speed": TYPE_FLOAT, "lanes": {"*": {"name": TYPE_STRING, "half_width": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "two_way": TYPE_BOOL, "barges_only": TYPE_BOOL}}, "pocket": TYPE_INT,
+	"water": {"ship_speed": TYPE_FLOAT, "lanes": {"*": {"name": TYPE_STRING, "min_radius_cells": TYPE_FLOAT, "half_width": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "two_way": TYPE_BOOL, "barges_only": TYPE_BOOL}}, "pocket": TYPE_INT,
 		"anchorage": {"cost_per_cell": TYPE_INT, "spacing": TYPE_INT}, "max_wait_hours": TYPE_FLOAT,
 		"pilots": {"station_cost": TYPE_INT, "pilot_cost": TYPE_INT, "upkeep_per_pilot": TYPE_INT, "boat_speed": TYPE_FLOAT, "fee": TYPE_INT},
 		"tugs": {"depot_cost": TYPE_INT, "tug_cost": TYPE_INT, "upkeep_per_tug": TYPE_INT, "speed": TYPE_FLOAT}, "slot_margin_minutes": TYPE_FLOAT,
@@ -187,7 +187,7 @@ const SCHEMA := {
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
+const POSITIVE := ["min_radius_cells", "width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
 
 static var _base := {}
 

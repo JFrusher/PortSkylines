@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_v43_positions_off_the_grid()
 	_test_v45_track_through_cell_middles()
 	_test_v46_trains_on_points()
+	_test_v47_lanes_get_a_control_point()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -265,3 +266,22 @@ func _test_v46_trains_on_points() -> void:
 	for k in sim.trains.size():
 		var cells: Array = old.sim.trains[k].path
 		_expect(sim.trains[k].path, cells.map(func(c: Vector2i) -> Vector2: return Vector2(c) + Vector2(0.5, 0.5)), "train %d runs through its cells' middles" % sim.trains[k].id)
+
+
+## v47 lets ship lanes curve: a v46 save's lanes get a control point at
+## their middle, so they stay straight, cover the same water and still take
+## ships to the berth.
+func _test_v47_lanes_get_a_control_point() -> void:
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v46.bin")
+	_expect(loaded.get("error", ""), "", "the v46 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.ship_lanes.segments.size() > 0, true, "it has ship lanes")
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		var a: Vector2i = sim.ship_lanes.nodes[lane.a]
+		var b: Vector2i = sim.ship_lanes.nodes[lane.b]
+		_expect(lane.control, (Vector2(a) + Vector2(b)) / 2.0 + Vector2(0.5, 0.5), "lane %d bends toward its own middle: straight" % segment)
+		_expect(sim.ship_lanes.cells(segment), RoadNet.line(a, b), "and its line runs through the cells it did")
+	_expect(Marine.reaches(sim, "feeder", sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.list[id].type == "quay_apron")[0]), true, "a feeder still reaches the berth")

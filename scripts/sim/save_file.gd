@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 46
+const VERSION := 47
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -112,6 +112,18 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v45(data)
 	if data.version < 46:
 		data = _migrate_v46(data)
+	if data.version < 47:
+		data = _migrate_v47(data)
+	return data
+
+
+## v47 lets ship lanes curve: each lane runs through its end cells' middles
+## and gets a control point, at its middle as it is straight.
+static func _migrate_v47(data: Dictionary) -> Dictionary:
+	var lanes: Dictionary = data.sim.ship_lanes
+	for lane: Dictionary in lanes.segments.values():
+		lane.control = (Vector2(lanes.nodes[lane.a]) + Vector2(lanes.nodes[lane.b])) / 2.0 + Vector2(0.5, 0.5)
+	data.version = 47
 	return data
 
 
@@ -579,7 +591,7 @@ static func _valid_ship_lanes(lanes: Dictionary) -> bool:
 	var types: Dictionary = Content.base().water.lanes
 	return lanes.segments.keys().all(func(id: Variant) -> bool:
 		var lane: Variant = lanes.segments[id]
-		return id is int and lane is Dictionary and _has_fields(lane, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING, "dredged": TYPE_FLOAT}) and lane.a in lanes.nodes and lane.b in lanes.nodes and lane.type in types)
+		return id is int and lane is Dictionary and _has_fields(lane, {"a": TYPE_INT, "b": TYPE_INT, "type": TYPE_STRING, "dredged": TYPE_FLOAT, "control": TYPE_VECTOR2}) and lane.a in lanes.nodes and lane.b in lanes.nodes and lane.type in types)
 
 
 ## True when `cells` holds only Vector2i, and some unless `may_be_empty`.
