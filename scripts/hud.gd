@@ -61,6 +61,8 @@ var upgrade_roads := false
 ## by a drag that carries on along the road it starts from; "roundabout" by
 ## a drag from its centre out to its ring.
 var road_mode := "straight"
+## The Shape buttons (Roads and Water rows), which show and change road_mode.
+var _shapes: Array[Button] = []
 const ROAD_MODES := ["straight", "curved", "freeform", "roundabout"]
 ## Roads snap to the 4 m grid, straight or at 45°, as before M10, when on.
 var grid_snap := false
@@ -331,13 +333,7 @@ func _ready() -> void:
 		tool = DRAW_ROAD
 		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge, straight or curved (Shape), bending no tighter than %d m; it crosses roads at level crossings. $%d per 4 m, $%.1f a day upkeep." % [roundi(rail.min_radius_cells * Grid.CELL), rail.cost_per_cell, rail.upkeep_per_cell]
 	rows.Roads.add_child(VSeparator.new())
-	var shape := _item(Button.new())
-	shape.text = "Shape\nstraight"
-	shape.tooltip_text = "How roads are laid: straight by a drag; curved by three clicks (start, a point the curve bends toward, end); freeform by a drag that carries on smoothly from the road it starts on; roundabout by a drag from its centre out to its ring, which roads joining it give way to. Click to change."
-	shape.pressed.connect(func() -> void:
-		road_mode = ROAD_MODES[(ROAD_MODES.find(road_mode) + 1) % ROAD_MODES.size()]
-		shape.text = "Shape\n%s" % road_mode)
-	rows.Roads.add_child(shape)
+	_shape_button(rows.Roads)
 	var grid := _item(Button.new())
 	grid.text = "Grid snap\noff"
 	grid.toggle_mode = true
@@ -386,7 +382,9 @@ func _ready() -> void:
 		var lane: Dictionary = sim.rules.water.lanes[key]
 		_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_LANE
-			lane_type = key)).tooltip_text = "Drag a ship lane over open water, straight or at 45°. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % ["One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
+			lane_type = key)).tooltip_text = "Draw a ship lane over open water, straight or curved (Shape), bending no tighter than %d m. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % [roundi(lane.min_radius_cells * Grid.CELL), "One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
+	_shape_button(rows.Water)
+	rows.Water.add_child(VSeparator.new())
 	var anchorage: Dictionary = sim.rules.water.anchorage
 	_item(_button(rows.Water, "Anchorage\n$%d a cell" % anchorage.cost_per_cell, tools, false, func() -> void: tool = BUILD_ANCHORAGE)).tooltip_text = "Drag out an anchorage over open water, with a ship lane ending in it. Ships that find no free berth wait here, one every %d m each way; with no room at anchor a ship waits out at sea %.0f hours, then goes elsewhere." % [Grid.metres(anchorage.spacing), sim.rules.water.max_wait_hours]
 	var water: Dictionary = sim.rules.water
@@ -1075,3 +1073,17 @@ func _action(row: HBoxContainer, text: String, pressed_signal: Signal) -> void:
 	button.text = text
 	button.pressed.connect(pressed_signal.emit)
 	row.add_child(button)
+
+
+## A Shape button in `row`: how roads, track and ship lanes are laid
+## (road_mode), the same setting wherever it is shown.
+func _shape_button(row: Control) -> void:
+	var shape := _item(Button.new())
+	shape.text = "Shape\n%s" % road_mode
+	shape.tooltip_text = "How roads, track and ship lanes are laid: straight by a drag; curved by three clicks (start, a point the curve bends toward, end); freeform by a drag that carries on smoothly from the end it starts on; roundabout (roads only) by a drag from its centre out to its ring, which roads joining it give way to. Click to change."
+	shape.pressed.connect(func() -> void:
+		road_mode = ROAD_MODES[(ROAD_MODES.find(road_mode) + 1) % ROAD_MODES.size()]
+		for button: Button in _shapes:
+			button.text = "Shape\n%s" % road_mode)
+	_shapes.append(shape)
+	row.add_child(shape)

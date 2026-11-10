@@ -27,6 +27,8 @@ var _moving := {}
 const LANE_SNAP := 4
 ## Where a ship lane drag started, or Grid.NONE.
 var _lane_from := Grid.NONE
+## A curved lane's second click: the point it bends toward, or INF.
+var _lane_control := Vector2.INF
 ## Where an anchorage drag started, or Grid.NONE.
 var _anchor_from := Grid.NONE
 ## Where a breakwater drag started, or Grid.NONE.
@@ -96,6 +98,7 @@ func _use(new_sim: PortSim) -> void:
 	_road_from = Vector2.INF
 	_road_control = Vector2.INF
 	_lane_from = Grid.NONE
+	_lane_control = Vector2.INF
 	_anchor_from = Grid.NONE
 	_wall_from = Grid.NONE
 	_area_from = {}
@@ -145,14 +148,14 @@ func _process(dt: float) -> void:
 	if hud.tool == Hud.BUILD_ANCHORAGE and _anchor_from != Grid.NONE and cell != Grid.NONE:
 		dragged = sim.anchorage_cells(_anchor_from, cell)
 	if hud.tool == Hud.DRAW_LANE and _lane_from != Grid.NONE and cell != Grid.NONE:
-		dragged = sim.ship_lanes.footprint(_lane_from, _lane_to(), hud.lane_type)
+		dragged = sim.ship_lanes.footprint(_lane_from, _lane_to(), hud.lane_type, _lane_bend())
 	view.show_area_preview(dragged, _order_error(cell) == "")
 	var ends: Array[Vector2] = [Vector2.INF, Vector2.INF]
 	var road_type := hud.road_type
 	var ok := _order_error(cell) == ""
 	var picked := _picked_segment(cell)
 	if hud.tool == Hud.DRAW_LANE:
-		hud.hint("%d m, %s" % [Grid.metres(RoadNet.length(_lane_from, _lane_to())), HudDetails.dollars(sim.ship_lane_price(_lane_from, _lane_to(), hud.lane_type))] if _lane_from != Grid.NONE and _lane_to() != _lane_from else "")
+		hud.hint("%d m, %s" % [roundi(ShipLanes.line_of(_lane_from, _lane_to(), _lane_bend()).length * Grid.CELL), HudDetails.dollars(sim.ship_lane_price(_lane_from, _lane_to(), hud.lane_type, _lane_bend()))] if _lane_from != Grid.NONE and _lane_to() != _lane_from else "")
 	else:
 		hud.hint(_segment_hint(picked) if _road_from == Vector2.INF else _drag_hint())
 	if _road_from != Vector2.INF:
@@ -226,9 +229,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		_anchor_from = Grid.NONE
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _lane_from != Grid.NONE:
+		if hud.tool == Hud.DRAW_LANE and hud.road_mode == "curved" and _lane_control == Vector2.INF:
+			# A curved lane's second click places the point it bends toward; the third ends it.
+			if _lane_to() != _lane_from:
+				_lane_control = Vector2(_lane_to()) + Vector2(0.5, 0.5)
+			return
 		if hud.tool == Hud.DRAW_LANE:
-			_report(sim.apply({"op": "build_ship_lane", "from": _lane_from, "to": _lane_to(), "type": hud.lane_type}))
+			var command := {"op": "build_ship_lane", "from": _lane_from, "to": _lane_to(), "type": hud.lane_type}
+			if _lane_bend() != Vector2.INF:
+				command.control = _lane_bend()
+			_report(sim.apply(command))
 		_lane_from = Grid.NONE
+		_lane_control = Vector2.INF
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
 		if hud.tool == Hud.DRAW_AREA:
@@ -248,7 +260,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_order(_hovered_grid_cell(), true)
 			return
 		if hud.tool == Hud.DRAW_LANE:
-			_lane_from = _lane_point(_hovered_grid_cell())
+			if _lane_from == Grid.NONE:
+				_lane_from = _lane_point(_hovered_grid_cell())
 			return
 		if hud.tool == Hud.BUILD_ANCHORAGE:
 			_anchor_from = _hovered_grid_cell()
@@ -406,7 +419,7 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.BUILD_BERTH:
 			return sim.build_berth_error(hud.berth, cell)
 		Hud.DRAW_LANE:
-			return "" if _lane_from == Grid.NONE else sim.build_ship_lane_error(_lane_from, _lane_to(), hud.lane_type)
+			return "" if _lane_from == Grid.NONE else sim.build_ship_lane_error(_lane_from, _lane_to(), hud.lane_type, _lane_bend())
 		Hud.BUILD_ANCHORAGE:
 			return "" if _anchor_from == Grid.NONE else sim.build_anchorage_error(_anchor_from, cell)
 		Hud.BUILD_MARINE:
@@ -442,11 +455,34 @@ func _wall_to() -> Vector2i:
 
 
 ## Where a lane drag from _lane_from ends: at the mouse or a lane end near
-## it, kept straight or at 45°.
+## it; drawn straight (Shape), kept straight or at 45°.
 func _lane_to() -> Vector2i:
 	var to := _lane_point(_hovered_grid_cell())
 	var d := to - _lane_from
-	return to if d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y) else RoadNet.snap(_lane_from, to)
+	if hud.road_mode in ["curved", "freeform"] or d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y):
+		return to
+	return RoadNet.snap(_lane_from, to)
+
+
+## The point the lane being drawn bends toward, or INF while it is straight
+## (as _road_bend): a curved lane's second click, or for a freeform drag
+## from a lane's end, that lane's way out of it carried on half the drag's
+## length.
+func _lane_bend() -> Vector2:
+	if hud.road_mode == "curved":
+		return _lane_control
+	if hud.road_mode != "freeform":
+		return Vector2.INF
+	var from := Vector2(_lane_from) + Vector2(0.5, 0.5)
+	var to := Vector2(_lane_to()) + Vector2(0.5, 0.5)
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		for end: String in ["a", "b"]:
+			if sim.ship_lanes.nodes[lane[end]] == _lane_from and sim.ship_lanes.at(lane[end]).size() == 1:
+				var along := sim.ship_lanes.curve(segment)
+				var out := -along.direction_at(0.0) if end == "a" else along.direction_at(along.length)
+				return from + out * from.distance_to(to) / 2.0
+	return Vector2.INF
 
 
 ## Where a road drag from _road_from ends: where RoadNet.snap_drag puts the

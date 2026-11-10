@@ -146,6 +146,8 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 20. **Ship lanes curve**, with a minimum radius from the data. Ships follow lanes; river channels follow rivers.
 
 **20a (10 Nov 2026):** a ship lane runs through its end cells' middles, straight at any angle or curved through a control point (`ShipLanes.curve`), no tighter than its type's `min_radius_cells` (narrow 50 cells, 200 m; wide 75, 300 m; river 20, 80 m: picked for play, in the data); widening checks the wide lane's radius too. A lane covers the cells within half_width of its line, square across at its ends (`footprint`, kept per lane as `area`): a straight lane along the grid covers exactly the cells it did, a 45° one a true band in place of the stepped one. A ship's course has a point every `SAIL_STEP` (2) cells along each lane, so it follows the curves; booking a narrow lane reads the lane ends on the course and skips the points between. Save v47 gives each lane a control point at its middle. The lane tool still draws straight lanes; curves are 20b's.
+
+**20b (10 Nov 2026):** the Water row has a Shape button, the same setting as the Roads row's (the user's call, 10 Nov 2026): straight draws a lane by a drag, kept straight or at 45°; curved by three clicks (start, the point it bends toward, end); freeform by a drag that carries on smoothly from the lane end it starts on; roundabout lays lanes straight. The preview, its length and price, and its refusal ("Too tight a bend") follow the curve. A river channel follows a river by curved pieces drawn one after another.
 21. **Berths at an angle:** a berth is still one straight quay, placed at the angle that adds the least fill, or turned by a button to any angle the coast allows.
 
 ### Close
