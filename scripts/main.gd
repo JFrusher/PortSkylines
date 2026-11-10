@@ -197,9 +197,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# A drag builds on release only if its tool is still the one selected.
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Vector2.INF:
-		if hud.tool == Hud.DRAW_ROAD and hud.road_type == "track":
-			_report(sim.apply({"op": "build_rail", "from": Vector2i(_road_from.floor()), "to": Vector2i(_road_to().floor())}))
-		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "roundabout" and hud.road_type != "track":
+		if hud.tool == Hud.DRAW_ROAD and hud.road_mode == "roundabout" and hud.road_type != "track":
 			_report(sim.apply({"op": "build_roundabout", "centre": _road_from, "radius": _road_from.distance_to(_hovered_grid_point())}))
 		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "curved" and _road_control == Vector2.INF:
 			# A curved road's second click places the point it bends toward; the third ends it.
@@ -209,6 +207,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif hud.tool == Hud.DRAW_ROAD:
 			var ends := _road_ends()
 			var command := {"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}
+			if hud.road_type == "track":
+				command = {"op": "build_rail", "from": Vector2i(ends[0].floor()), "to": Vector2i(ends[1].floor())}
 			if _road_bend() != Vector2.INF:
 				command.control = _road_bend()
 			_report(sim.apply(command))
@@ -383,7 +383,7 @@ func _order_error(cell: Vector2i) -> String:
 			if _road_from == Vector2.INF:
 				return ""
 			if hud.road_type == "track":
-				return sim.build_rail_error(Vector2i(_road_from.floor()), Vector2i(_road_to().floor()))
+				return sim.build_rail_error(Vector2i(_road_from.floor()), Vector2i(_road_to().floor()), _road_bend())
 			if hud.road_mode == "roundabout":
 				return sim.build_roundabout_error(_road_from, _road_from.distance_to(_hovered_grid_point()))
 			var ends := _road_ends()
@@ -610,18 +610,16 @@ func _road_ends() -> Array[Vector2]:
 ## a curved road's second click, or for a freeform drag from a road's end,
 ## that road's way out of it carried on half the drag's length.
 func _road_bend() -> Vector2:
-	if hud.road_type == "track":
-		return Vector2.INF
 	if hud.road_mode == "curved":
 		return _road_control
 	if hud.road_mode != "freeform":
 		return Vector2.INF
 	var to := _road_to()
-	for id: int in sim.roads.segments:
-		var road: Dictionary = sim.roads.segments[id]
+	for id: int in _net().segments:
+		var road: Dictionary = _net().segments[id]
 		for end: String in ["a", "b"]:
-			if sim.roads.nodes[road[end]] == _road_from and sim.roads.degree(road[end]) == 1:
-				var along := sim.roads.curve(id)
+			if _net().nodes[road[end]] == _road_from and _net().degree(road[end]) == 1:
+				var along := _net().curve(id)
 				var out := -along.direction_at(0.0) if end == "a" else along.direction_at(along.length)
 				return _road_from + out * _road_from.distance_to(to) / 2.0
 	return Vector2.INF

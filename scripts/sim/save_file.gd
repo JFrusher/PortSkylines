@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 45
+const VERSION := 46
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -110,6 +110,17 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v44(data)
 	if data.version < 45:
 		data = _migrate_v45(data)
+	if data.version < 46:
+		data = _migrate_v46(data)
+	return data
+
+
+## v46 runs trains along points on the track (RoadNet.path), so they follow
+## its curves: a train's path of cells becomes those cells' middles.
+static func _migrate_v46(data: Dictionary) -> Dictionary:
+	for train: Dictionary in data.sim.trains:
+		train.path = train.path.map(func(cell: Vector2i) -> Vector2: return Vector2(cell) + Vector2(0.5, 0.5))
+	data.version = 46
 	return data
 
 
@@ -430,7 +441,7 @@ static func _valid_sim(data: Variant) -> bool:
 			"state": TYPE_STRING, "depart": TYPE_FLOAT, "wagons": TYPE_ARRAY, "busy": TYPE_ARRAY,
 		}):
 			return false
-		if train.block not in data.areas.list or train.path.is_empty() or not train.path.all(func(c: Variant) -> bool: return c is Vector2i):
+		if train.block not in data.areas.list or train.path.is_empty() or not train.path.all(func(c: Variant) -> bool: return c is Vector2):
 			return false
 	for ship: Variant in data.ships:
 		if not ship is Dictionary or not _has_fields(ship, {

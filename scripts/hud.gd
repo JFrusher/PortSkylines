@@ -329,7 +329,7 @@ func _ready() -> void:
 	var rail: Dictionary = sim.rules.rail
 	_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
 		tool = DRAW_ROAD
-		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge; it crosses roads only straight across, at level crossings. $%d per 4 m, $%.1f a day upkeep." % [rail.cost_per_cell, rail.upkeep_per_cell]
+		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge, straight or curved (Shape), bending no tighter than %d m; it crosses roads at level crossings. $%d per 4 m, $%.1f a day upkeep." % [roundi(rail.min_radius_cells * Grid.CELL), rail.cost_per_cell, rail.upkeep_per_cell]
 	rows.Roads.add_child(VSeparator.new())
 	var shape := _item(Button.new())
 	shape.text = "Shape\nstraight"

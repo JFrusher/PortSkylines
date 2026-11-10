@@ -972,9 +972,9 @@ func _draw_trains() -> void:
 			var at := head - AreaLayout.BAY * (k + 0.5)
 			if at < 0.0:
 				break
-			var pose := Drive.path_pose(train.path, at)
+			var pose := train.pose(at)
 			var turned := Basis(Vector3.UP, atan2(-pose[1].y, pose[1].x))
-			var centre := (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+			var centre := pose[0] * Grid.CELL / METRES_PER_UNIT
 			var origin := Vector3(centre.x, ROAD_TOP / METRES_PER_UNIT + 0.02, centre.y)
 			_put(buffers["loco" if k == 0 else "wagon"], Transform3D(turned, origin), Color.WHITE)
 			var box: int = train.wagons[k - 1] if k > 0 else 0

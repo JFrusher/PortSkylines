@@ -45,28 +45,6 @@ static func pose(sim: PortSim, vehicle: Vehicle, _alpha: float) -> Array[Vector2
 	return [at[0] - Vector2(0.5, 0.5), at[1]]
 
 
-## Where along `path` (cells) something `at` cells in is drawn, as [position
-## in grid cells, heading]. Through a cell where the path turns it follows a
-## quarter circle between the middles of the cell's edges, so it never
-## snaps. Trains still run on cells.
-static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
-	var i := clampi(int(at), 0, path.size() - 1)
-	var f := at - i
-	if path.size() < 2:
-		return [Vector2(path[0]), Vector2.ZERO]
-	if i >= path.size() - 1:
-		return [Vector2(path[-1]), Vector2(path[-1] - path[-2])]
-	var corner := i + 1 if f >= 0.5 else i
-	if corner > 0 and corner < path.size() - 1:
-		var d_in := Vector2(path[corner] - path[corner - 1])
-		var d_out := Vector2(path[corner + 1] - path[corner])
-		if d_in != d_out and d_in != -d_out:
-			var u := (f - 0.5 if corner == i + 1 else f + 0.5) * PI / 2
-			var centre := Vector2(path[corner]) + (d_out - d_in) * 0.5
-			return [centre + 0.5 * (d_in * sin(u) - d_out * cos(u)), d_in * cos(u) + d_out * sin(u)]
-	return [Vector2(path[i]).lerp(Vector2(path[i + 1]), f), Vector2(path[i + 1] - path[i])]
-
-
 ## Sets `vehicle` driving from where it is to `to`, in `state` once there.
 ## With no route yet it waits where it is and tries again each tick.
 static func head(sim: PortSim, vehicle: Vehicle, to: Vector3i, state: String) -> void:

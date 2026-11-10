@@ -106,9 +106,9 @@ static func _move(sim: PortSim, train: Train, to: float) -> bool:
 	var past := mini(ceili(maxf(train.t, to)) + ahead, train.path.size() - 1)
 	var crossings := Drive.crossings(sim)
 	var wanted: Array[Vector2i] = []
-	for i in range(from, past + 1):
-		if train.path[i] in crossings:
-			wanted.append(train.path[i])
+	for cell: Vector2i in train.cells(from, past):
+		if cell in crossings and cell not in wanted:
+			wanted.append(cell)
 	if not Drive.rebook(sim, -train.id, wanted):
 		return false
 	train.t = to
@@ -192,7 +192,7 @@ static func _empty_wagon(train: Train) -> int:
 ## siding's far end, and the wagons behind it a bay each.
 static func _wagon_bay(sim: PortSim, train: Train, i: int) -> int:
 	var bays := AreaFlow.siding(sim, train.block).size() / AreaLayout.BAY
-	var head_at_end: bool = train.path[-1] == AreaFlow.siding(sim, train.block)[-1]
+	var head_at_end: bool = Vector2i(train.path[-1].floor()) == AreaFlow.siding(sim, train.block)[-1]
 	return bays - 2 - i if head_at_end else i + 1
 
 

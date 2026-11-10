@@ -551,14 +551,15 @@ func snap_point(near: Vector2, from := Vector2.INF) -> Vector2:
 	return best
 
 
-## The cells a train runs through from cell `from` to cell `to` along the
-## track, both ends included and in order. Fewest cells first; [] when no
+## The way a train runs from cell `from`'s middle to cell `to`'s along the
+## track: points a cell apart along it, following its curves, from the first
+## to the last (the last step may be shorter). Shortest first; [] when no
 ## track joins them.
-func path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+func path(from: Vector2i, to: Vector2i) -> Array[Vector2]:
 	var start := _on_line(Vector2(from) + Vector2(0.5, 0.5))
 	var goal := _on_line(Vector2(to) + Vector2(0.5, 0.5))
 	if start.is_empty() or goal.is_empty():
-		return [] as Array[Vector2i]
+		return [] as Array[Vector2]
 	# Each state: a piece run one way, arriving at its far end. Search by cells run.
 	var best := {}  # [segment, forward] -> distance run to its far end
 	var came := {}  # [segment, forward] -> the state before, or [] for the first
@@ -592,24 +593,30 @@ func path(from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 					came[[next, forward]] = state
 					open.append([run, next, forward])
 	if found.is_empty():
-		return [] as Array[Vector2i]
-	# Back from the goal's piece to the start's, then the cells along each.
+		return [] as Array[Vector2]
+	# Back from the goal's piece to the start's: each run [curve, from, to], in cells along it.
 	var chain := [found]
 	while not came[chain[0]].is_empty():
 		chain.push_front(came[chain[0]])
-	var cells: Array[Vector2i] = []
+	var runs := []
+	var total := 0.0
 	for k in chain.size():
-		var piece: int = chain[k][0]
+		var along := curve(chain[k][0])
 		var forward: bool = chain[k][1]
-		var along := curve(piece)
 		var from_d: float = start[1] if k == 0 else (0.0 if forward else along.length)
 		var to_d: float = goal[1] if k == chain.size() - 1 else (along.length if forward else 0.0)
-		var steps := maxi(1, ceili(absf(to_d - from_d) / 0.25))
-		for n in steps + 1:
-			var cell := Vector2i(along.point_at(lerpf(from_d, to_d, float(n) / steps)).floor())
-			if cells.is_empty() or cells[-1] != cell:
-				cells.append(cell)
-	return cells
+		runs.append([along, from_d, to_d])
+		total += absf(to_d - from_d)
+	var points: Array[Vector2] = []
+	for n in ceili(total - 0.001) + 1:
+		var left := minf(n, total)
+		for run: Array in runs:
+			var span := absf(run[2] - run[1])
+			if left <= span + 0.0001 or run == runs[-1]:
+				points.append(run[0].point_at(run[1] + signf(run[2] - run[1]) * minf(left, span)))
+				break
+			left -= span
+	return points
 
 
 ## [the track piece through `point`, how far along it], within half a cell; [] when none.

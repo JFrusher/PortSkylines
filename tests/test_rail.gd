@@ -18,6 +18,7 @@ func _initialize() -> void:
 	_test_discount()
 	_test_rail_cuts_the_gate_queue()
 	_test_trains_book_crossings()
+	_test_trains_follow_curves()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -237,3 +238,33 @@ func _expect(got: Variant, want: Variant, what: String) -> void:
 	if got != want:
 		_failures += 1
 		printerr("FAIL %s: got %s, want %s" % [what, got, want])
+
+
+## A train runs along points a cell apart on the track (RoadNet.path): on
+## straight track they are its cells' middles, and on a curve they lie on it,
+## so a train drawn along them (Train.pose) keeps to the curve and its way.
+func _test_trains_follow_curves() -> void:
+	var sim := _port()
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(150, 60), "to": Vector2i(170, 60)}), "", "straight track")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(170, 60), "to": Vector2i(190, 80), "control": Vector2(190.5, 60.5)}), "", "and a curve on from it")
+	var straight := sim.rails.path(Vector2i(150, 60), Vector2i(160, 60))
+	var middles := range(150, 161).map(func(x: int) -> Vector2: return Vector2(x + 0.5, 60.5))
+	_expect(straight.size() == middles.size() and range(middles.size()).all(func(i: int) -> bool: return straight[i].distance_to(middles[i]) < 0.001), true, "straight, the path is its cells' middles")
+	var path := sim.rails.path(Vector2i(150, 60), Vector2i(190, 80))
+	var bend := sim.rails.curve(sim.rails.segments.keys().filter(func(id: int) -> bool: return sim.rails.nodes[sim.rails.segments[id].b] == Vector2(190.5, 80.5) or sim.rails.nodes[sim.rails.segments[id].a] == Vector2(190.5, 80.5))[0])
+	_expect(path[-1].distance_to(Vector2(190.5, 80.5)) < 0.001, true, "round the curve to its end")
+	var apart := true
+	for i in path.size() - 2:
+		apart = apart and absf(path[i].distance_to(path[i + 1]) - 1.0) < 0.05
+	_expect(apart, true, "its points a cell apart")
+	var train := Train.new(1, 0, path, 0)
+	var off := 0.0
+	var turn := 0.0
+	for k in range(200, (path.size() - 1) * 10):
+		var pose := train.pose(k / 10.0)
+		var n := bend.nearest(pose[0])
+		if n > 0.5 and n < bend.length - 0.5:
+			off = maxf(off, bend.point_at(n).distance_to(pose[0]))
+			turn = maxf(turn, rad_to_deg(absf(bend.direction_at(n).angle_to(pose[1]))))
+	_expect(off < 0.05, true, "a train on the curve keeps to it (%.3f cells off)" % off)
+	_expect(turn < 5.0, true, "and to its way (%.1f° off)" % turn)

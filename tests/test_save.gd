@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_a_removed_apron_saves()
 	_test_v43_positions_off_the_grid()
 	_test_v45_track_through_cell_middles()
+	_test_v46_trains_on_points()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -246,3 +247,21 @@ func _test_v45_track_through_cell_middles() -> void:
 	for node: int in sim.rails.nodes:
 		_expect(sim.rails.nodes[node], old.sim.rails.nodes[node] + Vector2(0.5, 0.5), "track node %d is in its cell's middle" % node)
 	_expect(sim.areas.list.keys().any(func(id: int) -> bool: return RailFlow.is_rail_block(sim, id)), true, "its rail block still takes trains")
+
+
+## v46 runs trains along points on the track: a v45 save's train path of
+## cells becomes those cells' middles, so it carries on where it was.
+func _test_v46_trains_on_points() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v45.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var old: Dictionary = file.get_var()
+	file.close()
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v45.bin")
+	_expect(loaded.get("error", ""), "", "the v45 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.trains.size() > 0, true, "it has a train")
+	for k in sim.trains.size():
+		var cells: Array = old.sim.trains[k].path
+		_expect(sim.trains[k].path, cells.map(func(c: Vector2i) -> Vector2: return Vector2(c) + Vector2(0.5, 0.5)), "train %d runs through its cells' middles" % sim.trains[k].id)

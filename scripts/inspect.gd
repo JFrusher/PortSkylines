@@ -21,7 +21,7 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 			return vehicle
 	for train: Train in sim.trains:
 		var head := int(train.t)
-		if cell in train.path.slice(maxi(head - train.length(), 0), head + 1):
+		if cell in train.cells(maxi(head - train.length(), 0), mini(head, train.path.size() - 1)):
 			return train
 	for ship in sim.ships:
 		if ship.apron and cell in _ship_water(sim, ship):
