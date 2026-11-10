@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 47
+const VERSION := 48
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -114,6 +114,19 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v46(data)
 	if data.version < 47:
 		data = _migrate_v47(data)
+	if data.version < 48:
+		data = _migrate_v48(data)
+	return data
+
+
+## v48 drops each area's grid "start", "end" and "out": an area is read
+## through its own shape (Areas.point, cell_at, out_at), and those only
+## rounded a turned berth to the grid.
+static func _migrate_v48(data: Dictionary) -> Dictionary:
+	for area: Dictionary in data.sim.areas.list.values():
+		for key: String in ["start", "end", "out"]:
+			area.erase(key)
+	data.version = 48
 	return data
 
 
@@ -576,7 +589,7 @@ static func _valid_areas(areas: Dictionary) -> bool:
 	var levels: Dictionary = Content.base().gate_levels
 	return areas.list.keys().all(func(id: Variant) -> bool:
 		var area: Variant = areas.list[id]
-		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "start": TYPE_VECTOR2I, "end": TYPE_VECTOR2I, "out": TYPE_VECTOR2I, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT, "curve": TYPE_ARRAY, "side": TYPE_INT, "from": TYPE_FLOAT, "columns": TYPE_INT, "edge": TYPE_FLOAT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
+		if not (id is int and area is Dictionary and _has_fields(area, {"type": TYPE_STRING, "settings": TYPE_DICTIONARY, "terminal": TYPE_INT, "curve": TYPE_ARRAY, "side": TYPE_INT, "from": TYPE_FLOAT, "columns": TYPE_INT, "edge": TYPE_FLOAT}) and area.type in types and (area.terminal == 0 or area.terminal in areas.terminals)):
 			return false
 		if types[area.type].kind == "quay_apron" and not area.get("depth") is int:
 			return false

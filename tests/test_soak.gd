@@ -76,7 +76,7 @@ func _add_rail(sim: PortSim) -> void:
 	var block: int = sim.areas.list.keys().max()
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
 	var area: Dictionary = sim.areas.list[block]
-	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var behind: Vector2i = sim.areas.cell_at(block, 0, sim.areas.depth_of(area))
 	var entry := sim.site_rail_entry()
 	var bend := Vector2i(entry.x - 5, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:

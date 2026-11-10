@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_v45_track_through_cell_middles()
 	_test_v46_trains_on_points()
 	_test_v47_lanes_get_a_control_point()
+	_test_v48_areas_lose_their_grid_ends()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -285,3 +286,23 @@ func _test_v47_lanes_get_a_control_point() -> void:
 		_expect(lane.control, (Vector2(a) + Vector2(b)) / 2.0 + Vector2(0.5, 0.5), "lane %d bends toward its own middle: straight" % segment)
 		_expect(sim.ship_lanes.cells(segment), RoadNet.line(a, b), "and its line runs through the cells it did")
 	_expect(Marine.reaches(sim, "feeder", sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.list[id].type == "quay_apron")[0]), true, "a feeder still reaches the berth")
+
+
+## v48 drops an area's grid "start", "end" and "out": a v47 save's areas
+## lose them, and each is found again from its own shape (Areas.cell_at).
+func _test_v48_areas_lose_their_grid_ends() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v47.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var old: Dictionary = file.get_var()
+	file.close()
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v47.bin")
+	_expect(loaded.get("error", ""), "", "the v47 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.areas.list.size() > 0, true, "it has areas")
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		var before: Dictionary = old.sim.areas.list[id]
+		_expect(["start", "end", "out"].any(func(key: String) -> bool: return area.has(key)), false, "area %d has no grid ends" % id)
+		_expect([sim.areas.cell_at(id, 0, 0), sim.areas.cell_at(id, area.columns - 1, 0)], [before.start, before.end], "and its shape finds them where they were")

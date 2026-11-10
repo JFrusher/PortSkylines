@@ -167,7 +167,7 @@ static func tick(sim: PortSim) -> void:
 static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 	var working := cranes_for(sim, ship)
 	if working.is_empty():
-		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, sim.rules.ship_classes[ship.kind].outreach], sim.areas.list[ship.apron].start)
+		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, sim.rules.ship_classes[ship.kind].outreach], sim.areas.cell_at(ship.apron, 0, 0))
 		return
 	for crane in working:
 		var move_minutes := move_minutes_of(sim, crane)
@@ -184,10 +184,10 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		if ship.exports == 0:
 			if ship.empties == 0 or _surplus_empty(sim, ship) == 0:
 				sim._sail(ship, working.size())
-				sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.list[ship.apron].start)
+				sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.cell_at(ship.apron, 0, 0))
 		elif _export_box(sim, ship) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
 			sim._sail(ship, working.size())
-			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.list[ship.apron].start)
+			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.cell_at(ship.apron, 0, 0))
 
 
 ## One crane's tick discharging: a tractor waits in the apron slot below it
@@ -237,7 +237,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 			sim._drop_box(id)
 			crane.tractor = tractor.id
 			ship.boxes -= 1
-			sim._event("A dangerous-goods box was shut out: no dangerous-goods block with room in %s" % sim.areas.terminals[sim.areas.list[ship.apron].terminal].name, sim.areas.list[ship.apron].start)
+			sim._event("A dangerous-goods box was shut out: no dangerous-goods block with room in %s" % sim.areas.terminals[sim.areas.list[ship.apron].terminal].name, sim.areas.cell_at(ship.apron, 0, 0))
 			return
 		sim._set_area(tractor, hazard)
 	elif rail and sim.boxes[id].kind == "import" and not sim.boxes[id].barge and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
@@ -572,11 +572,11 @@ static func _tranship_block(sim: PortSim, ship: PortSim.Ship, onward: String) ->
 	var berths: Array[Vector2i] = []
 	for service: Dictionary in sim.contracts.services:
 		if service.line == ship.line and (service.kind == "feeder") == (onward == "feeder") and service.apron in sim.areas.list:
-			berths.append(sim.areas.list[service.apron].start)
+			berths.append(sim.areas.cell_at(service.apron, 0, 0))
 	var best := 0
 	var nearest := 0
 	for id in _blocks_with_room(sim, "tranship", sim.areas.list[ship.apron].terminal):
-		var start: Vector2i = sim.areas.list[id].start
+		var start: Vector2i = sim.areas.cell_at(id, 0, 0)
 		var distance: int = berths.map(func(b: Vector2i) -> int: return absi(b.x - start.x) + absi(b.y - start.y)).min() if not berths.is_empty() else 0
 		if best == 0 or distance < nearest:
 			best = id
@@ -1135,7 +1135,7 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 		else:
 			# Its blocks filled while it queued, or it has none: it takes its box away.
 			if box.kind == "empty":
-				sim._event("An empty of %s was turned away: no room in an empty block in %s" % [sim.contracts.name_of(box.line), sim.areas.terminals[terminal].name], sim.areas.list[gate].start)
+				sim._event("An empty of %s was turned away: no room in an empty block in %s" % [sim.contracts.name_of(box.line), sim.areas.terminals[terminal].name], sim.areas.cell_at(gate, 0, 0))
 				sim._event_if(sim.contracts.penalise(box.line, sim.rules.empties.refused))
 			vehicle.gate_in = -1.0
 			_go_out(sim, vehicle, 0)

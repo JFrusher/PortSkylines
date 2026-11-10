@@ -432,8 +432,7 @@ func _test_unconnected_areas() -> void:
 	var lines := Inspect.describe(sim, Inspect.pick(sim, sim.areas.cells(1)[5]))
 	# 10 bays by 6 rows of stacks, 4 high with reach stackers; no machines before the first tick.
 	_expect(lines, ["Yard block", "Terminal 1", "Terminal 1 needs a quay apron", "Import block, worked by reach stackers", "0 of 480 TEU (0%), 0 machines", "Working"] as Array[String], "inspecting an area shows its type, its terminal and what that lacks, its rules, its fill and state")
-	var area: Dictionary = sim.areas.list[1]
-	_expect(sim.areas.along(1, area.start + (area.end - area.start).sign() * 7 + area.out * 3), 7, "a cell's place along an area, from any row")
+	_expect(sim.areas.along(1, sim.areas.cell_at(1, 7, 3)), 7, "a cell's place along an area, from any row")
 	_expect(sim.areas.along(1, Vector2i(5, 5)), -1, "and none off it")
 	sim.apply({"op": "remove_road", "segment": 1})
 	_expect(sim.areas.idle_reason(1), "No road runs along this yard block", "with its road gone it does no work, and says why")
@@ -759,7 +758,7 @@ func _test_two_way_gate() -> void:
 	_expect(sim.apply({"op": "build_two_way_gate", "type": "gate_small", "segment": 1, "from": 10, "to": 24}), "", "a two-way gate is built")
 	var gates := sim.areas.list.keys()
 	_expect(gates.size(), 2, "it is a gate on each side of the road")
-	_expect(sim.areas.list[gates[0]].out, -sim.areas.list[gates[1]].out, "facing opposite ways")
+	_expect(sim.areas.out_at(gates[0], 0).is_equal_approx(-sim.areas.out_at(gates[1], 0)), true, "facing opposite ways")
 	_expect(sim.areas.list[gates[0]].terminal, sim.areas.list[gates[1]].terminal, "in one terminal")
 	_expect(money - sim.money, 2 * sim.area_price("gate_small", 1, 1, 10, 24), "both sides are paid for")
 	_expect(sim.apply({"op": "build_two_way_gate", "type": "yard_block", "segment": 1, "from": 30, "to": 50}), "Only gates are built on both sides of a road", "only gates are two-way")

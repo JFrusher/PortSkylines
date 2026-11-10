@@ -46,8 +46,7 @@ func _port(pilot: bool, pilots: int) -> PortSim:
 		sim.apply({"op": "remove_ship_lane", "segment": segment})
 	var rows: Array[int] = []
 	for apron: int in [1, sim.areas.list.keys().max()]:
-		var cells := RoadNet.line(sim.areas.list[apron].start, sim.areas.list[apron].end)
-		rows.append(cells[cells.size() / 2].y)
+		rows.append(sim.areas.cell_at(apron, sim.areas.list[apron].columns / 2, 0).y)
 	_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(30, 0), "to": Vector2i(30, rows[1]), "type": "narrow"}), "", "a long narrow lane in from the north")
 	for row: int in rows:
 		_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(68, row), "to": Vector2i(30, row), "type": "narrow"}), "", "a branch to a berth")

@@ -140,7 +140,7 @@ static func build(refused: Array[String]) -> PortSim:
 	var rail := _area(sim, refused, {"op": "build_area", "type": "yard_block", "segment": highway, "side": 1, "from": 130, "to": 130 + BLOCK - 1})
 	_do(sim, refused, {"op": "set_area", "id": rail, "settings": {"gear": "rmg"}})
 	south.append(rail)
-	var behind: Vector2i = sim.areas.list[rail].start + sim.areas.list[rail].out * sim.areas.depth_of(sim.areas.list[rail])
+	var behind: Vector2i = sim.areas.cell_at(rail, 0, sim.areas.depth_of(sim.areas.list[rail]))
 	var entry := sim.site_rail_entry()
 	var bend := Vector2i(entry.x - 9, behind.y)
 	# The first corner on a curve 20 cells each way (14 cells' radius at its tightest), the last square.

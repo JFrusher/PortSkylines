@@ -74,7 +74,7 @@ static func _send(sim: PortSim, block: int) -> void:
 		train.wagons[i] = box
 	_pay_discount(sim, exports)
 	sim.trains.append(train)
-	sim._event("A train is coming for %s" % sim.areas.terminals[sim.areas.list[block].terminal].name, sim.areas.list[block].start)
+	sim._event("A train is coming for %s" % sim.areas.terminals[sim.areas.list[block].terminal].name, sim.areas.cell_at(block, 0, 0))
 
 
 ## Cells a train moves a tick: the data gives its speed in metres a vehicle second.

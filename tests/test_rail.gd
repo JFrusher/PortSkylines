@@ -81,11 +81,12 @@ func _test_rmg_siding() -> void:
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": road, "side": 1, "from": 0, "to": 29}), "", "a yard block south of the road")
 	var block: int = sim.areas.list.keys().max()
 	var area: Dictionary = sim.areas.list[block]
-	var behind: int = area.start.y + sim.areas.depth_of(area) * area.out.y
+	var behind: int = sim.areas.cell_at(block, 0, sim.areas.depth_of(area)).y
+	var first: int = sim.areas.cell_at(block, 0, 0).x
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(area.start.x, behind), "to": Vector2i(area.start.x + 20, behind)}), "", "track along part of its back")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(first, behind), "to": Vector2i(first + 20, behind)}), "", "track along part of its back")
 	_expect(AreaFlow.siding(sim, block), [] as Array[Vector2i], "covering part of the block is no siding")
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(area.start.x + 20, behind), "to": Vector2i(area.end.x + 10, behind)}), "", "track along the rest")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(first + 20, behind), "to": Vector2i(sim.areas.cell_at(block, area.columns - 1, 0).x + 10, behind)}), "", "track along the rest")
 	_expect(AreaFlow.siding(sim, block).size(), 30, "covering all of it is a siding, a cell per cell of the block")
 	_expect(Inspect.describe(sim, {"area": block}).has("Siding for 10 wagons"), true, "a wagon per bay, shown by Inspect")
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rtg"}})
@@ -210,7 +211,7 @@ func _test_trains_book_crossings() -> void:
 	var block: int = sim.areas.list.keys().max()
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
 	var area: Dictionary = sim.areas.list[block]
-	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var behind: Vector2i = sim.areas.cell_at(block, 0, sim.areas.depth_of(area))
 	var entry := sim.site_rail_entry()
 	var bend := Vector2i(entry.x - 5, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:

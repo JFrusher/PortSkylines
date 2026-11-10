@@ -1256,7 +1256,7 @@ func _deliver_cranes() -> void:
 		crane_orders.erase(order)
 		if order.apron in areas.list:
 			cranes.append(Crane.new(order.apron, order.along, order.kind))
-			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminal_name(areas.list[order.apron].terminal)], areas.list[order.apron].start)
+			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminal_name(areas.list[order.apron].terminal)], areas.cell_at(order.apron, 0, 0))
 		else:
 			ledger.post("equipment", rules.sts_cranes[order.kind].cost)
 			_event("A crane arrived with no quay apron to stand on; it went back, refunded")
@@ -2083,7 +2083,7 @@ func _work(ship: Ship) -> void:
 				Marine.release(ship)
 				ship.state = Ship.State.WORKING
 				ship.berthed = clock.calendar_minutes()
-				_event("A %s is unloading" % ship.kind, areas.list[ship.apron].start)
+				_event("A %s is unloading" % ship.kind, areas.cell_at(ship.apron, 0, 0))
 		Ship.State.WORKING:
 			AreaFlow.work(self, ship)
 		Ship.State.LEAVING:

@@ -100,9 +100,7 @@ func _test_ships_never_pass_in_a_narrow_lane() -> void:
 	# past both berths, with a branch off it to each.
 	var rows: Array[int] = []
 	for apron: int in [1, sim.areas.list.keys().max()]:
-		var area: Dictionary = sim.areas.list[apron]
-		var cells := RoadNet.line(area.start, area.end)
-		rows.append(cells[cells.size() / 2].y)
+		rows.append(sim.areas.cell_at(apron, sim.areas.list[apron].columns / 2, 0).y)
 	var fork := Vector2i(30, rows[1])
 	_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(fork.x, 0), "to": fork, "type": "narrow"}), "", "a narrow lane in from the sea")
 	for row: int in rows:

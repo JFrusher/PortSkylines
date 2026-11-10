@@ -7,8 +7,7 @@ extends RefCounted
 ## except a quay apron, which fills the water behind its straight quay.
 ## It keeps its own cells once built, so later road edits never move it.
 
-## Area id -> {"type": a key of area_types, "start" and "end": the ends of
-## its front row, beside the road, "out": one cell away from the road,
+## Area id -> {"type": a key of area_types,
 ## "settings": the player's rules for it, checked by PortSim.set_area,
 ## "terminal": the terminal it belongs to}; a quay apron also has "depth",
 ## the rows from its road to its quay, fixed when it is built. Its shape
@@ -173,7 +172,7 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 	# Blocked where its cells' quads overlap a road's lane quads, a breakwater's cells or another area's cells.
 	var lanes := _lane_quads()
 	var depth: int = placed.depth if types[type].kind == "quay_apron" else types[type].depth
-	var curve := RoadCurve.new(placed.curve[0], placed.curve[1], placed.curve[2])
+	var curve := _curve_of(placed)
 	for cell: Dictionary in AreaShape.along(curve, placed.side, placed.from, placed.columns, placed.edge, depth).cells:
 		var quad := PackedVector2Array(cell.corners)
 		if area_over(quad) != 0 or _grid_under(quad).any(func(under: Vector2i) -> bool: return (under in _breakwater_cells and overlap(quad, square(under))) or lanes.get(under, []).any(func(lane: PackedVector2Array) -> bool: return overlap(quad, lane))):
@@ -315,6 +314,11 @@ func shape(id: int) -> AreaShape:
 ## are cell (k, r)'s middle), and the way its rows run there, along its curve.
 func point(id: int, k: float, r: float) -> Vector2:
 	return _point_of(list[id], k, r)
+
+
+## The grid cell column `k`, row `r` of area `id` stands in (point()'s cell).
+func cell_at(id: int, k: float, r: float) -> Vector2i:
+	return Vector2i(point(id, k, r).floor())
 
 
 ## point() for an area's dictionary, built or not.
@@ -628,10 +632,6 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	var curve := _roads.curve(segment)
 	# Column k is k cells along the curve; rows start where the road's lanes end.
 	var placed := {"type": type, "curve": [curve.a, curve.c, curve.b], "side": side, "from": float(from), "columns": to - from + 1, "edge": (road.forward + road.backward) / 2.0}
-	# Its front's first and last grid cells and its way out, for quay aprons and berths, which stay on grid roads until berths turn (M10 step 21).
-	placed.start = Vector2i(_point_of(placed, 0.0, 0.0).floor())
-	placed.end = Vector2i(_point_of(placed, placed.columns - 1.0, 0.0).floor())
-	placed.out = Vector2i((curve.right_at(from + 0.5) * side).round())
 	if types[type].kind == "quay_apron":
 		placed.depth = _reach(placed)
 	return placed

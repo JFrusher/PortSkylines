@@ -75,7 +75,7 @@ func _test_a_berth_fills_behind_its_quay() -> void:
 	_expect(money - sim.money, sim.road_price(road[0], road[1], PortSim.BERTH_ROAD) + cells.size() * sim.rules.area_types.quay_apron.cost_per_cell + fill.size() * sim.rules.reclaim.cost_per_cell, "it costs its road, its apron and the water it fills")
 	_expect(sim.areas.filled.size(), fill.size(), "that water is filled")
 	_expect(sim.areas.cells(apron).any(sim.areas.is_water), false, "the apron stands on land")
-	var quay := RoadNet.line(sim.areas.list[apron].start, sim.areas.list[apron].end).map(func(c: Vector2i) -> Vector2i: return c + sim.areas.list[apron].out * sim.areas.depth_of(sim.areas.list[apron]))
+	var quay := range(sim.areas.list[apron].columns).map(func(k: int) -> Vector2i: return sim.areas.cell_at(apron, k, sim.areas.depth_of(sim.areas.list[apron])))
 	_expect(quay.all(sim.areas.is_water), true, "and its straight quay faces water all along")
 	var loaded := PortSim.from_dict(sim.to_dict())
 	_expect([loaded.map, loaded.areas.filled], [sim.map, sim.areas.filled], "the map and the filled water are saved")
