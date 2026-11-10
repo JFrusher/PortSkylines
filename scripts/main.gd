@@ -27,6 +27,9 @@ var _moving := {}
 const LANE_SNAP := 4
 ## Where a ship lane drag started, or Grid.NONE.
 var _lane_from := Grid.NONE
+## The berth tool's last plan and what it was found for (see _berth_plan).
+var _berth_planned := {}
+var _berth_key := []
 ## A curved lane's second click: the point it bends toward, or INF.
 var _lane_control := Vector2.INF
 ## Where an anchorage drag started, or Grid.NONE.
@@ -140,7 +143,9 @@ func _process(dt: float) -> void:
 		var area := _area_command()
 		for side: int in ([1, -1] if hud.both_sides() else [area.side]):
 			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
-	var berth: Dictionary = sim.berth_plan(hud.berth, cell) if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE else {}
+	var berth: Dictionary = _berth_plan(cell) if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE else {}
+	if berth.has("angle") and hud.berth_angle == PortSim.AUTO_ANGLE:
+		hud.berth_auto = berth.angle
 	if berth.has("cells"):
 		dragged = berth.cells
 	if hud.tool == Hud.BUILD_BREAKWATER and _wall_from != Grid.NONE and cell != Grid.NONE:
@@ -359,7 +364,7 @@ func _command(cell: Vector2i) -> Dictionary:
 			var apron := _apron_at(cell)
 			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell), "kind": hud.crane_kind}
 		Hud.BUILD_BERTH:
-			return {"op": "build_berth", "kind": hud.berth, "cell": cell}
+			return {"op": "build_berth", "kind": hud.berth, "cell": cell, "angle": _berth_plan(cell).get("angle", hud.berth_angle)}
 	assert(false, "no command for tool %d" % hud.tool)
 	return {}
 
@@ -417,7 +422,8 @@ func _order_error(cell: Vector2i) -> String:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
 		Hud.BUILD_BERTH:
-			return sim.build_berth_error(hud.berth, cell)
+			var plan := _berth_plan(cell)
+			return plan.error if plan.has("error") else sim.build_berth_error(hud.berth, cell, plan.angle)
 		Hud.DRAW_LANE:
 			return "" if _lane_from == Grid.NONE else sim.build_ship_lane_error(_lane_from, _lane_to(), hud.lane_type, _lane_bend())
 		Hud.BUILD_ANCHORAGE:
@@ -428,6 +434,17 @@ func _order_error(cell: Vector2i) -> String:
 			return "" if _wall_from == Grid.NONE else sim.build_breakwater_error(_wall_from, _wall_to())
 	assert(false, "no error check for tool %d" % hud.tool)
 	return ""
+
+
+## The berth tool's plan at `cell` (PortSim.berth_plan), found again only
+## when the cell, the berth, its angle or the areas change: finding the way
+## that fills least tries every BERTH_TURN step.
+func _berth_plan(cell: Vector2i) -> Dictionary:
+	var key := [hud.berth, cell, hud.berth_angle, sim.areas.version]
+	if key != _berth_key:
+		_berth_key = key
+		_berth_planned = sim.berth_plan(hud.berth, cell, hud.berth_angle)
+	return _berth_planned
 
 
 ## The 4 m grid cell under the mouse, or NONE.

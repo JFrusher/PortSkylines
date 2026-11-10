@@ -369,6 +369,15 @@ func segment_at(cell: Vector2i) -> int:
 	return 0
 
 
+## The road joining the nodes at points `p` and `q`, either way round, or 0.
+func segment_between(p: Vector2, q: Vector2) -> int:
+	for id: int in segments:
+		var ends: Array = [nodes[segments[id].a], nodes[segments[id].b]]
+		if (ends[0].distance_to(p) < 0.01 and ends[1].distance_to(q) < 0.01) or (ends[0].distance_to(q) < 0.01 and ends[1].distance_to(p) < 0.01):
+			return id
+	return 0
+
+
 ## `segment`'s lanes as quads along its curve, as an area's cells are laid
 ## (AreaShape): half its lanes either side of its line, in columns a cell
 ## long, or a little less so a whole number of them run its length.

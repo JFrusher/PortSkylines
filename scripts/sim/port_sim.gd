@@ -142,6 +142,9 @@ const BERTH_ROAD := "terminal_1_1"
 const RING_ROAD := "roundabout"
 ## How far past an apron's deepest reach a berth click looks for the water, in cells.
 const BERTH_SEARCH := 30
+## berth_plan's angle for "the one that fills least", and the steps it tries, in degrees.
+const AUTO_ANGLE := -1.0
+const BERTH_TURN := 15
 ## How many calls the ship log keeps, which milestones' on-time and
 ## productivity gates look back over.
 const SHIP_LOG_CALLS := 20
@@ -647,7 +650,7 @@ func apply(command: Dictionary) -> String:
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
-			return build_berth(command.kind, command.cell)
+			return build_berth(command.kind, command.cell, command.get("angle", AUTO_ANGLE))
 		"build_two_way_gate":
 			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
@@ -991,71 +994,103 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 	return ""
 
 
-## Where a berth of `kind` clicked at `cell` goes: {"line": its road's two
-## grid points, "out": the way its quay faces, "cells": its apron's cells,
-## "fill": the water between its quay and the shore, filled to make land},
-## or {"error"}. It faces the nearest water in the four directions; its quay
-## is one straight wall at the most seaward land along it, and the apron
-## reaches back from it to the road, filling the water behind the wall. The
-## road runs so its right side faces the water, as long as the apron, so a
-## berth placed end to end with another shares its road's end.
-func berth_plan(kind: String, cell: Vector2i) -> Dictionary:
+## Where a berth of `kind` clicked at `cell` goes, facing the water at
+## `angle` degrees (0 east, 90 south), or with `angle` AUTO_ANGLE at the
+## BERTH_TURN step that fills the least water (grid ways first, so a coast
+## along the grid gets a berth along it): {"line": its road's two ends,
+## "angle", "cells": its apron's cells, "fill": the water between its quay
+## and the shore, filled to make land}, or {"error"}. Its quay is one
+## straight wall at the most seaward land along it, and the apron reaches
+## back from it to the road, filling the water behind the wall. The road
+## runs so its right side faces the water, as long as the apron, so a berth
+## placed end to end with another shares its road's end.
+func berth_plan(kind: String, cell: Vector2i, angle := AUTO_ANGLE) -> Dictionary:
+	if angle != AUTO_ANGLE:
+		return _berth_at(kind, cell, angle)
+	var best := {}
+	var nearest := {"error": "Click the coast: there's no water within %d m" % Grid.metres(rules.area_types.quay_apron.max_depth + BERTH_SEARCH)}
+	var turns := range(0, 360, BERTH_TURN)
+	turns.sort_custom(func(p: int, q: int) -> bool: return [p % 90 != 0, p] < [q % 90 != 0, q])
+	for turn: int in turns:
+		var plan := _berth_at(kind, cell, float(turn))
+		if plan.has("error"):
+			if plan.has("water") and plan.water < nearest.get("water", INF):
+				nearest = plan
+		elif best.is_empty() or plan.fill.size() < best.fill.size():
+			best = plan
+	if best.is_empty():
+		return {"error": nearest.error}
+	return best
+
+
+## berth_plan facing `angle` degrees; an error may say how many steps off
+## its middle's water is ("water"), so auto can say why of the nearest.
+func _berth_at(kind: String, cell: Vector2i, angle: float) -> Dictionary:
 	var length: int = rules.berths[kind].length
 	var depth: int = rules.area_types.quay_apron.depth
 	var reach: int = rules.area_types.quay_apron.max_depth + BERTH_SEARCH
-	var out := Vector2i.ZERO
-	var nearest := reach + 1
-	for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-		var steps := _to_water(cell, d, reach)
-		if steps < nearest:
-			nearest = steps
-			out = d
-	if out == Vector2i.ZERO:
-		return {"error": "Click the coast: there's no water within %d m" % Grid.metres(reach)}
-	var along := Vector2i(out.y, -out.x)
-	var first := cell - along * (length / 2)
+	var out := Vector2.from_angle(deg_to_rad(angle))
+	var along := Vector2(out.y, -out.x)
+	# Column k's middle, the cell middle k cells along from the berth's first.
+	var first := Vector2(cell) + Vector2(0.5, 0.5) - along * (length / 2)
+	var at := func(k: float, r: float) -> Vector2i: return Vector2i((first + along * k + out * r).floor())
+	var middle := _to_water_at(first + along * (length / 2), out, reach)
+	if middle > reach:
+		return {"error": "Click the coast: there's no water within %d m" % Grid.metres(reach), "water": INF}
 	var quay := 0
 	for k in length:
-		var steps := _to_water(first + along * k, out, reach * 2)
+		var steps := _to_water_at(first + along * k, out, reach * 2)
 		if steps > reach * 2:
-			return {"error": "The water isn't straight out from the whole berth here"}
+			return {"error": "The water isn't straight out from the whole berth here", "water": middle}
 		quay = maxi(quay, steps)
-	var line := first + out * (quay - depth - 2)
+	# Each cell is read at four points inside it, so a berth off the grid
+	# misses none of the cells it crosses; along the grid they are its own.
+	var quarters: Array[Vector2] = [Vector2(-0.25, -0.25), Vector2(-0.25, 0.25), Vector2(0.25, -0.25), Vector2(0.25, 0.25)]
 	var cells: Array[Vector2i] = []
-	var fill: Array[Vector2i] = []
 	for k in length:
 		for r in range(quay - depth, quay):
-			cells.append(first + along * k + out * r)
+			for q: Vector2 in quarters:
+				if at.call(k + q.x, r + q.y) not in cells:
+					cells.append(at.call(k + q.x, r + q.y))
 	# Back from the quay to the shore, so no water is left between the berth
-	# and the land, along the road's whole span: one cell past the apron.
+	# and the land, along the road's whole span (one cell past the apron) and
+	# at least under the road, which runs to `back`, a row past its back edge.
+	var back := quay - depth - 4
+	var fill: Array[Vector2i] = []
 	for k in length + 1:
-		var r := quay - 1
-		while areas.is_water(first + along * k + out * r):
-			if quay - r > reach * 2:
-				return {"error": "The shore is too far behind the quay here"}
-			fill.append(first + along * k + out * r)
-			r -= 1
-	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells, "fill": fill}
+		for q: Vector2 in quarters:
+			var r := quay - 1
+			while r >= back or areas.is_water(at.call(k + q.x, r + q.y)):
+				if quay - r > reach * 2:
+					return {"error": "The shore is too far behind the quay here", "water": middle}
+				var under: Vector2i = at.call(k + q.x, r + q.y)
+				if areas.is_water(under) and under not in fill:
+					fill.append(under)
+				r -= 1
+	# The road's line starts at the top-left corner of the cell two rows in
+	# from the apron's first column, as berths along the grid always have.
+	var line := first + out * (quay - depth - 2) - Vector2(0.5, 0.5)
+	return {"line": [line, line + along * length] as Array[Vector2], "angle": angle, "cells": cells, "fill": fill}
 
 
-## Steps from `cell` along `step` to the first water, or more than `limit`.
-func _to_water(cell: Vector2i, step: Vector2i, limit: int) -> int:
+## Steps of a cell from `point` along `way` to the first water, or more than `limit`.
+func _to_water_at(point: Vector2, way: Vector2, limit: int) -> int:
 	var steps := 0
-	while steps <= limit and not areas.is_water(cell + step * steps):
+	while steps <= limit and not areas.is_water(Vector2i((point + way * steps).floor())):
 		steps += 1
 	return steps
 
 
-func build_berth_error(kind: String, cell: Vector2i) -> String:
+func build_berth_error(kind: String, cell: Vector2i, angle := AUTO_ANGLE) -> String:
 	if kind not in rules.berths:
 		return "Unknown berth: %s" % kind
 	var locked := lock_error(kind)
 	if locked:
 		return locked
-	var plan := berth_plan(kind, cell)
+	var plan := berth_plan(kind, cell, angle)
 	if plan.has("error"):
 		return plan.error
-	var line: Array[Vector2i] = plan.line
+	var line: Array[Vector2] = plan.line
 	var cells: Array[Vector2i] = plan.cells
 	if not cells.all(owns):
 		return "Buy this land first"
@@ -1069,7 +1104,7 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
 	# A road meeting the berth's road part-way would split it under the apron.
-	var step: Vector2i = (line[1] - line[0]).sign()
+	var step := (line[1] - line[0]).normalized()
 	if roads.footprint(line[0] + step, line[1] - step, BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
 		return "A road already runs here: place the berth clear of it, it brings its own"
 	var err := build_road_error(line[0], line[1], BERTH_ROAD, 0, true)
@@ -1083,19 +1118,19 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 
 ## Places a berth of `kind` clicked at `cell` (see berth_plan): its road,
 ## then its apron along the road's water side.
-func build_berth(kind: String, cell: Vector2i) -> String:
-	var err := build_berth_error(kind, cell)
+func build_berth(kind: String, cell: Vector2i, angle := AUTO_ANGLE) -> String:
+	var err := build_berth_error(kind, cell, angle)
 	if err:
 		return err
-	var plan := berth_plan(kind, cell)
-	var line: Array[Vector2i] = plan.line
+	var plan := berth_plan(kind, cell, angle)
+	var line: Array[Vector2] = plan.line
 	# All the water between the quay and the shore is filled first, so the
 	# road and apron stand on land and the berth meets the shore.
 	ledger.post("construction", -plan.fill.size() * rules.reclaim.cost_per_cell)
 	areas.fill(plan.fill)
 	build_road(line[0], line[1], BERTH_ROAD)
 	# The road runs so its right, side 1, faces the water.
-	err = build_area("quay_apron", roads.segment_at((line[0] + line[1]) / 2), 1, 0, rules.berths[kind].length - 1)
+	err = build_area("quay_apron", roads.segment_between(line[0], line[1]), 1, 0, rules.berths[kind].length - 1)
 	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
 	# A barge berth takes only barges, and a barge only a barge berth.
 	areas.list[areas.list.keys().max()].settings.barge = rules.ship_classes[kind].inland

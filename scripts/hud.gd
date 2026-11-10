@@ -73,6 +73,10 @@ var two_way := false
 ## The gate tool builds on both sides of the road when this is on.
 ## The berth BUILD_BERTH places, a key of rules.berths.
 var berth := ""
+## The way it faces in degrees, or PortSim.AUTO_ANGLE for the way that fills
+## least; and that way where the mouse is, which main sets, for Turn to turn from.
+var berth_angle := PortSim.AUTO_ANGLE
+var berth_auto := 0.0
 ## The ship lane DRAW_LANE draws, a key of rules.water.lanes.
 var lane_type := ""
 ## What BUILD_MARINE places: "pilot_station" or "tug_depot".
@@ -371,7 +375,22 @@ func _ready() -> void:
 		var apron: Dictionary = sim.rules.area_types.quay_apron
 		_gate(key, _item(_button(rows.Quay, "%s\n%d m, %d crane spots" % [spec.name, Grid.metres(spec.length), spec.crane_spots], tools, false, func() -> void:
 			tool = BUILD_BERTH
-			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
+			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. It turns to the way that fills the least water, or Turn it. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
+	rows.Quay.add_child(VSeparator.new())
+	var turn := _item(Button.new())
+	turn.text = "Turn\nauto"
+	turn.tooltip_text = "Turns the berth %d° anticlockwise from the way it faces now; Auto turns it back to the way that fills the least water." % PortSim.BERTH_TURN
+	turn.pressed.connect(func() -> void:
+		berth_angle = fposmod((berth_auto if berth_angle == PortSim.AUTO_ANGLE else berth_angle) - PortSim.BERTH_TURN, 360.0)
+		turn.text = "Turn\n%d°" % roundi(berth_angle))
+	rows.Quay.add_child(turn)
+	var auto := _item(Button.new())
+	auto.text = "Auto"
+	auto.tooltip_text = turn.tooltip_text
+	auto.pressed.connect(func() -> void:
+		berth_angle = PortSim.AUTO_ANGLE
+		turn.text = "Turn\nauto")
+	rows.Quay.add_child(auto)
 	for key: String in sim.rules.sts_cranes:
 		var crane: Dictionary = sim.rules.sts_cranes[key]
 		_gate(key, _item(_button(rows.Cranes, "%s\n%s" % [crane.name, HudDetails.dollars(crane.cost)], tools, false, func() -> void:

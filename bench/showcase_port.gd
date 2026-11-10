@@ -83,19 +83,21 @@ static func build(refused: Array[String]) -> PortSim:
 	_do(sim, refused, {"op": "build_road", "from": Vector2i(SPINE, sim.site_entry().y), "to": sim.site_entry_point(), "type": "terminal_2_2"})
 	for berth: Dictionary in berths:
 		var click := _shore(sim, berth.row) + Vector2i(8, 0)
-		var plan := sim.berth_plan(berth.kind, click)
+		# Laid out for berths facing west, as they did before berths turned (M10 step 21).
+		var plan := sim.berth_plan(berth.kind, click, 180.0)
 		if plan.has("error"):
 			refused.append("%s berth at %s: %s" % [berth.kind, click, plan.error])
 			continue
-		_do(sim, refused, {"op": "build_berth", "kind": berth.kind, "cell": click})
+		_do(sim, refused, {"op": "build_berth", "kind": berth.kind, "cell": click, "angle": 180.0})
 		berth.apron = sim.areas.list.keys().max()
 		berth.road_x = plan.line[0].x
 		for offset: int in [0] + LANES[berths.find(berth)]:
 			_do(sim, refused, {"op": "build_road", "from": Vector2i(berth.road_x, berth.row + offset), "to": Vector2i(SPINE, berth.row + offset), "type": "terminal_1_1"})
 	var north: Array[int] = [berths[0].apron]
 	# The barge berth, its road run on from the spine's north end.
-	var barge_road: int = sim.berth_plan("barge", BARGE_CLICK).line[0].y
-	_do(sim, refused, {"op": "build_berth", "kind": "barge", "cell": BARGE_CLICK})
+	# Facing north onto the river, as before berths turned.
+	var barge_road: int = sim.berth_plan("barge", BARGE_CLICK, 270.0).line[0].y
+	_do(sim, refused, {"op": "build_berth", "kind": "barge", "cell": BARGE_CLICK, "angle": 270.0})
 	var barge: int = sim.areas.list.keys().max()
 	north.append(barge)
 	_do(sim, refused, {"op": "build_road", "from": Vector2i(SPINE, barge_road), "to": Vector2i(SPINE, SPINE_ROWS.x), "type": "terminal_2_2"})
