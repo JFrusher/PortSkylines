@@ -63,6 +63,9 @@ var _ship_routes := {}  # [kind, apron] -> lane ends in cells, see Marine.route
 var _lorries := {}  # see AreaFlow._lorries
 var _lorries_for := []
 var _ship_routes_for := []
+## Quay apron id -> its pocket's cells (Marine.pocket), kept while areas.version is _pockets_for; not saved.
+var _pockets := {}
+var _pockets_for := -1
 ## STS cranes ordered and not yet delivered: {"cell", "due" (calendar minute)}.
 var crane_orders: Array[Dictionary] = []
 ## TEU moved across the quay so far; milestones unlock content as it grows.
@@ -1617,7 +1620,7 @@ func dredge_lane(segment: int, metres: int) -> String:
 func dredge_berth(apron: int, metres: int) -> String:
 	if apron not in areas.list or areas.kind_of(areas.list[apron]) != "quay_apron":
 		return "No quay apron there"
-	var cells := Marine.pocket(self, apron).size()
+	var cells := Marine.pocket_size(self, apron)
 	var depth := Marine.pocket_depth(self, apron)
 	if depth == 0.0:
 		return "Land or a quay blocks this berth's water"
@@ -1651,7 +1654,7 @@ func dredged_cell_metres() -> float:
 		total += lane.dredged * ship_lanes.area(segment).size()
 	for apron: int in pocket_dredged:
 		if apron in areas.list:
-			total += pocket_dredged[apron] * Marine.pocket(self, apron).size()
+			total += pocket_dredged[apron] * Marine.pocket_size(self, apron)
 	return total
 
 

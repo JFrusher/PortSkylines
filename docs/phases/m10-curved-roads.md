@@ -152,6 +152,8 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 
 **21a (10 Nov 2026):** everything about a quay reads its apron's own shape (`Areas.point`, `out_at`, `columns`) in place of its grid ends and way out (`start`, `end`, `out`): how deep it reaches to the water, its pocket, where a ship lies alongside, the cells Inspect picks for a ship or crane, the ship's and cranes' poses in the view, and the guide's berth and yard lengths. Berths still face along the grid, so nothing changes: the tests pass unchanged and a berthed ship and its crane draw to within one colour level of before. `start`, `end` and `out` stay stored for now; 21b decides them.
 
+21a's first cut raised the bench's worst tick from 11–21 ms to 90–120 ms: building an area's curve measures its length, and `Areas.point` built one per call, so a pocket (720 points) cost 13.6 ms. A probe on the bench put a 35 ms tick's 24.6 ms in six pocket calls as ship routes were found again. Areas now build each curve once (`_curve_of`), pockets are kept per apron until the areas change, and counts read `Marine.pocket_size`; the worst tick is back to 9–12 ms.
+
 ### Close
 22. Showcase port rebuilt with curves (a curving spine, a roundabout, yards on a bend, a curved river channel), fixture, soak, playtest notes in `docs/playtests/m10.md`, tag.
 

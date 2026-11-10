@@ -15,6 +15,8 @@ extends RefCounted
 ## (M10) is laid from "curve" ([a, control, b] in grid units) on "side",
 ## "columns" cells along it from "from" cells, starting "edge" cells off it.
 var list := {}
+## Curve points [a, control, b] -> its RoadCurve (see _curve_of); a few per road, never stale.
+static var _curves := {}
 ## Terminal id -> {"name", "colour": an index into TERMINAL_COLOURS}. The
 ## player paints terminals on the map: each area belongs to the terminal
 ## holding most of its painted cells, or to none (0), and then it is idle.
@@ -317,7 +319,7 @@ func point(id: int, k: float, r: float) -> Vector2:
 
 ## point() for an area's dictionary, built or not.
 static func _point_of(area: Dictionary, k: float, r: float) -> Vector2:
-	var along := RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
+	var along := _curve_of(area)
 	return along.point_at(area.from + k + 0.5) + along.right_at(area.from + k + 0.5) * (area.edge + r + 0.5) * area.side
 
 
@@ -334,8 +336,15 @@ func heading(id: int, k: float) -> Vector2:
 
 ## Area `id`'s road curve, along which its cells lie.
 func curve(id: int) -> RoadCurve:
-	var area: Dictionary = list[id]
-	return RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
+	return _curve_of(list[id])
+
+
+## The curve `area` (built or not) is laid along, built once per curve:
+## building one measures its length, which point() would otherwise repeat.
+static func _curve_of(area: Dictionary) -> RoadCurve:
+	if area.curve not in _curves:
+		_curves[area.curve.duplicate()] = RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
+	return _curves[area.curve]
 
 
 ## Why area `id` does no work, or "": a road must still run along its front,
@@ -660,7 +669,7 @@ func depth_of(area: Dictionary) -> int:
 func _cells(area: Dictionary) -> Array[Vector2i]:
 	var seen := {}
 	var found: Array[Vector2i] = []
-	var curve := RoadCurve.new(area.curve[0], area.curve[1], area.curve[2])
+	var curve := _curve_of(area)
 	for cell: Dictionary in AreaShape.along(curve, area.side, area.from, area.columns, area.edge, depth_of(area)).cells:
 		var under := Vector2i(cell.centre.floor())
 		if under not in seen:

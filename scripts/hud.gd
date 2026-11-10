@@ -878,7 +878,7 @@ func _draw_inspect_actions() -> void:
 		return
 	var id: int = _inspected.area
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
-		_dredge_button(Marine.pocket(sim, id).size(), {"op": "dredge_berth", "apron": id, "metres": 1})
+		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
 		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment"}

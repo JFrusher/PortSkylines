@@ -13,13 +13,23 @@ const SAIL_STEP := 2.0
 ## The water a ship lies in off quay apron `apron`: `water.pocket` rows out
 ## from its quay, all along it.
 static func pocket(sim: PortSim, apron: int) -> Array[Vector2i]:
-	var area: Dictionary = sim.areas.list[apron]
-	var depth := sim.areas.depth_of(area)
-	var cells: Array[Vector2i] = []
-	for k: int in area.columns:
-		for j: int in sim.rules.water.pocket:
-			cells.append(Vector2i(sim.areas.point(apron, k, depth + j).floor()))
-	return cells
+	if sim._pockets_for != sim.areas.version:
+		sim._pockets.clear()
+		sim._pockets_for = sim.areas.version
+	if apron not in sim._pockets:
+		var depth := sim.areas.depth_of(sim.areas.list[apron])
+		var cells: Array[Vector2i] = []
+		for k: int in sim.areas.list[apron].columns:
+			for j: int in sim.rules.water.pocket:
+				cells.append(Vector2i(sim.areas.point(apron, k, depth + j).floor()))
+		sim._pockets[apron] = cells
+	return sim._pockets[apron]
+
+
+## How many cells `apron`'s pocket holds, as pocket() lists them: a row of
+## water.pocket cells out from each of its columns.
+static func pocket_size(sim: PortSim, apron: int) -> int:
+	return sim.areas.list[apron].columns * sim.rules.water.pocket
 
 
 ## How deep `apron`'s pocket is: its shallowest water plus what is dredged
