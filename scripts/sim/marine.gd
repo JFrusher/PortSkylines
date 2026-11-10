@@ -16,9 +16,9 @@ static func pocket(sim: PortSim, apron: int) -> Array[Vector2i]:
 	var area: Dictionary = sim.areas.list[apron]
 	var depth := sim.areas.depth_of(area)
 	var cells: Array[Vector2i] = []
-	for cell in RoadNet.line(area.start, area.end):
-		for k: int in sim.rules.water.pocket:
-			cells.append(cell + area.out * (depth + k))
+	for k: int in area.columns:
+		for j: int in sim.rules.water.pocket:
+			cells.append(Vector2i(sim.areas.point(apron, k, depth + j).floor()))
 	return cells
 
 
@@ -198,10 +198,8 @@ static func wait(sim: PortSim, ship: PortSim.Ship) -> void:
 ## along the quay, half its pocket out from the quay.
 static func alongside(sim: PortSim, ship: PortSim.Ship) -> Vector2:
 	var area: Dictionary = sim.areas.list[ship.apron]
-	var along := Vector2((area.end - area.start).sign())
 	var span := AreaFlow.ship_cells(sim, ship.kind)
-	var quay := Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * sim.areas.depth_of(area)
-	return quay + Vector2(area.out) * (sim.rules.water.pocket / 2.0) + Vector2(0.5, 0.5)
+	return sim.areas.point(ship.apron, ship.from + (span - 1) / 2.0, sim.areas.depth_of(area) + sim.rules.water.pocket / 2.0)
 
 
 ## Sets `ship`'s course to its berth: from its spot at anchor if it waits

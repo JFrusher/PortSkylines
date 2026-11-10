@@ -128,23 +128,19 @@ static func _train(sim: PortSim, train: Train) -> Array[String]:
 
 ## The water an apron ship lies in: its length of the quay edge, out to its beam.
 static func _ship_water(sim: PortSim, ship: PortSim.Ship) -> Array[Vector2i]:
-	var area: Dictionary = sim.areas.list[ship.apron]
-	var along: Vector2i = (area.end - area.start).sign()
-	var depth := sim.areas.depth_of(area)
+	var depth := sim.areas.depth_of(sim.areas.list[ship.apron])
 	var found: Array[Vector2i] = []
 	for k in range(ship.from, ship.from + AreaFlow.ship_cells(sim, ship.kind)):
 		for beam in range(depth, depth + 8):
-			found.append(area.start + along * k + area.out * beam)
+			found.append(Vector2i(sim.areas.point(ship.apron, k, beam).floor()))
 	return found
 
 
 ## The cells an apron crane stands across, between its rails.
 static func _crane_cells(sim: PortSim, crane: PortSim.Crane) -> Array[Vector2i]:
-	var area: Dictionary = sim.areas.list[crane.apron]
-	var along: Vector2i = (area.end - area.start).sign()
 	var found: Array[Vector2i] = []
-	for row in range(1, sim.areas.depth_of(area) - 1):
-		found.append(area.start + along * crane.along + area.out * row)
+	for row in range(1, sim.areas.depth_of(sim.areas.list[crane.apron]) - 1):
+		found.append(Vector2i(sim.areas.point(crane.apron, crane.along, row).floor()))
 	return found
 
 
@@ -210,7 +206,7 @@ static func _yard_fill(sim: PortSim, id: int) -> String:
 ## A quay apron's size, the ships it fits, its cranes and the ship alongside.
 static func _apron(sim: PortSim, id: int) -> Array[String]:
 	var area: Dictionary = sim.areas.list[id]
-	var length := RoadNet.length(area.start, area.end) + 1
+	var length: int = area.columns
 	var fits: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return AreaFlow.ship_cells(sim, kind) <= length)
 	var lines: Array[String] = ["%d m long, %d m deep: berths %s" % [Grid.metres(length), Grid.metres(sim.areas.depth_of(area)), ", ".join(fits) if not fits.is_empty() else "no ship yet"]]
 	var cranes := sim.cranes.filter(func(c: PortSim.Crane) -> bool: return c.apron == id).size()

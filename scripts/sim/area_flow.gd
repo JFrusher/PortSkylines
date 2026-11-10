@@ -142,8 +142,7 @@ static func crane_spots(sim: PortSim, apron: int) -> Array[int]:
 
 
 static func _length(sim: PortSim, apron: int) -> int:
-	var area: Dictionary = sim.areas.list[apron]
-	return RoadNet.length(area.start, area.end) + 1
+	return sim.areas.list[apron].columns
 
 
 ## A tractor's speed on the grid, in cells a vehicle second: the data gives

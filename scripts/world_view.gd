@@ -772,12 +772,11 @@ static func beam(rows: int) -> float:
 ## Where `ship` lies alongside in world units, and the way out to sea:
 ## [middle, side]. Its hull lies QUAY_GAP out from the quay's edge.
 func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
-	var area: Dictionary = sim.areas.list[ship.apron]
-	var along := Vector2((area.end - area.start).sign())
-	var side := Vector2(area.out).normalized()
 	var span := AreaFlow.ship_cells(sim, ship.kind)
-	var depth := sim.areas.depth_of(area)
-	var edge := (Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * (depth - 1) + Vector2(0.5, 0.5)) * Grid.CELL
+	var middle := ship.from + (span - 1) / 2.0
+	var side := sim.areas.out_at(ship.apron, middle)
+	var depth := sim.areas.depth_of(sim.areas.list[ship.apron])
+	var edge := sim.areas.point(ship.apron, middle, depth - 1) * Grid.CELL
 	# `edge` is the outer row's middle, half a cell inside the quay's edge.
 	var out := (Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(sim.rules.ship_classes[ship.kind].outreach) / 2.0
 	return [edge / METRES_PER_UNIT + side * out, side]
@@ -868,11 +867,11 @@ func _draw_cranes() -> void:
 func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var model := Node3D.new()
 	# Between its apron's rails, facing the water.
-	var area: Dictionary = sim.areas.list[crane.apron]
-	var depth := sim.areas.depth_of(area)
-	var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+	var depth := sim.areas.depth_of(sim.areas.list[crane.apron])
+	var at := sim.areas.point(crane.apron, crane.along, (depth - 1) / 2.0) * Grid.CELL / METRES_PER_UNIT
 	model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
-	model.rotation.y = atan2(area.out.x, area.out.y)
+	var out := sim.areas.out_at(crane.apron, crane.along)
+	model.rotation.y = atan2(out.x, out.y)
 	var spec: Dictionary = sim.rules.sts_cranes[crane.kind]
 	# Out from the water-side rail: the quay's edge, the gap and its outreach in rows, plus hull.
 	var reach: float = CRANE_GAUGE / 2.0 + (Grid.CELL * depth / 2.0 - Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(spec.outreach)

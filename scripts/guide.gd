@@ -17,7 +17,7 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 	var feeder := AreaFlow.ship_cells(sim, "feeder")
 	return [
 		{"text": "Place a feeder berth: pick it under Quay (key 2) and click the coast. It brings its own road along its back.", "done": func() -> bool:
-			return _areas(sim, "quay_apron").any(func(id: int) -> bool: return RoadNet.length(sim.areas.list[id].start, sim.areas.list[id].end) + 1 >= feeder)},
+			return _areas(sim, "quay_apron").any(func(id: int) -> bool: return sim.areas.list[id].columns >= feeder)},
 		{"text": "Ships need a way in: draw a ship lane from the map's west edge into the water in front of your berth (Water, key 7).", "done": func() -> bool:
 			return _areas(sim, "quay_apron").any(func(id: int) -> bool: return Marine.reaches(sim, "feeder", id))},
 		{"text": "Draw a two-lane road from the highway at the middle of the east edge to the berth's road (Roads, key 1).", "done": func() -> bool:
@@ -29,7 +29,7 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 		{"text": "Drag a yard block at least %d m long along the road from the highway, inside your terminal's paint. A feeder unloads hundreds of boxes, so a short block fills and stops the cranes. It starts as an import block (Yard, key 4)." % Grid.metres(YARD_LENGTH), "done": func() -> bool:
 			return _areas(sim, "yard_block").any(func(id: int) -> bool:
 				var block: Dictionary = sim.areas.list[id]
-				return RoadNet.length(block.start, block.end) + 1 >= YARD_LENGTH and sim.areas.terminal_error(block.terminal) == "" and sim.areas.idle_reason(id) == "")},
+				return block.columns >= YARD_LENGTH and sim.areas.terminal_error(block.terminal) == "" and sim.areas.idle_reason(id) == "")},
 		{"text": "Place STS cranes on both of the berth's marked crane spots: one crane alone can't work a feeder within its window (Cranes, key 3).", "done": func() -> bool:
 			return sim.cranes.size() + sim.crane_orders.size() >= sim.rules.berths.feeder.crane_spots},
 		{"text": "Buy tractors to carry boxes between crane and yard (Cranes, key 3).", "done": func() -> bool:

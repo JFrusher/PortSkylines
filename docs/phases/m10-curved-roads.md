@@ -150,6 +150,8 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 **20b (10 Nov 2026):** the Water row has a Shape button, the same setting as the Roads row's (the user's call, 10 Nov 2026): straight draws a lane by a drag, kept straight or at 45°; curved by three clicks (start, the point it bends toward, end); freeform by a drag that carries on smoothly from the lane end it starts on; roundabout lays lanes straight. The preview, its length and price, and its refusal ("Too tight a bend") follow the curve. A river channel follows a river by curved pieces drawn one after another.
 21. **Berths at an angle:** a berth is still one straight quay, placed at the angle that adds the least fill, or turned by a button to any angle the coast allows.
 
+**21a (10 Nov 2026):** everything about a quay reads its apron's own shape (`Areas.point`, `out_at`, `columns`) in place of its grid ends and way out (`start`, `end`, `out`): how deep it reaches to the water, its pocket, where a ship lies alongside, the cells Inspect picks for a ship or crane, the ship's and cranes' poses in the view, and the guide's berth and yard lengths. Berths still face along the grid, so nothing changes: the tests pass unchanged and a berthed ship and its crane draw to within one colour level of before. `start`, `end` and `out` stay stored for now; 21b decides them.
+
 ### Close
 22. Showcase port rebuilt with curves (a curving spine, a roundabout, yards on a bend, a curved river channel), fixture, soak, playtest notes in `docs/playtests/m10.md`, tag.
 

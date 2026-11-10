@@ -321,6 +321,12 @@ static func _point_of(area: Dictionary, k: float, r: float) -> Vector2:
 	return along.point_at(area.from + k + 0.5) + along.right_at(area.from + k + 0.5) * (area.edge + r + 0.5) * area.side
 
 
+## The way out from area `id`'s road, `k` columns along it: across its
+## rows, toward its far edge (for a quay apron, toward the water).
+func out_at(id: int, k: float) -> Vector2:
+	return curve(id).right_at(list[id].from + k + 0.5) * list[id].side
+
+
 ## The way area `id`'s rows run `k` columns along it (its curve's way).
 func heading(id: int, k: float) -> Vector2:
 	return curve(id).direction_at(list[id].from + k + 0.5)
@@ -629,9 +635,9 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 func _reach(placed: Dictionary) -> int:
 	var type: Dictionary = types[placed.type]
 	var rows: int = type.depth
-	for cell in RoadNet.line(placed.start, placed.end):
+	for k: int in placed.columns:
 		var d := 0
-		while d <= type.max_depth and not is_water(cell + placed.out * d):
+		while d <= type.max_depth and not is_water(Vector2i(_point_of(placed, k, d).floor())):
 			d += 1
 		rows = maxi(rows, d)
 	return rows
@@ -678,4 +684,4 @@ func _lane_quads() -> Dictionary:
 
 ## Whether the row just past an apron's quay is water all along it.
 func _on_the_water(placed: Dictionary) -> bool:
-	return RoadNet.line(placed.start, placed.end).all(func(c: Vector2i) -> bool: return is_water(c + placed.out * placed.depth))
+	return range(placed.columns).all(func(k: int) -> bool: return is_water(Vector2i(_point_of(placed, k, placed.depth).floor())))
