@@ -10,7 +10,10 @@ extends RefCounted
 ## it, and the highway road from the spine to the site entry, with the
 ## gates and truck park. Yards line the connectors and the yard lanes
 ## between them, parallel lanes from each quay road to the spine. A barge
-## berth on the river's south bank joins the spine's north end.
+## berth on the river's south bank joins the spine's north end. M10's curves:
+## a yard road curving south off the spine to a roundabout, with blocks on
+## its bend, the track's corner to the rail block on a curve, and the river
+## channel curving down the river.
 
 ## The grid line the spine road runs down, and the rows it spans.
 const SPINE := 300
@@ -26,6 +29,16 @@ const BERTHS: Array[Dictionary] = [
 
 ## Where the barge berth is clicked, on the river's south bank.
 const BARGE_CLICK := Vector2i(310, 110)
+
+## The curved yard road east of the spine: straight out to BEND_FROM, then
+## curving through BEND_CONTROL to BEND_TO, ending in a roundabout of
+## BEND_RING cells' radius; and its blocks along the bend, as for YARDS.
+const BEND_START := Vector2(SPINE, 420)
+const BEND_FROM := Vector2(400, 420)
+const BEND_CONTROL := Vector2(460, 420)
+const BEND_TO := Vector2(460, 480)
+const BEND_RING := 8.0
+const BEND_YARDS: Array = [[1, 4, "import", "rtg"], [1, 50, "export", "rtg"], [-1, 4, "export", "rtg"], [-1, 50, "empty", "empty_handler"]]
 
 ## Imports stacked in the yards at the start.
 const BOXES := 3000
@@ -130,8 +143,22 @@ static func build(refused: Array[String]) -> PortSim:
 	var behind: Vector2i = sim.areas.list[rail].start + sim.areas.list[rail].out * sim.areas.depth_of(sim.areas.list[rail])
 	var entry := sim.site_rail_entry()
 	var bend := Vector2i(entry.x - 9, behind.y)
-	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
+	# The first corner on a curve 20 cells each way (14 cells' radius at its tightest), the last square.
+	var into := bend - Vector2i(20, 0)
+	var out_of := bend + Vector2i(0, 20 * signi(entry.y - bend.y))
+	_do(sim, refused, {"op": "build_rail", "from": behind, "to": into})
+	_do(sim, refused, {"op": "build_rail", "from": into, "to": out_of, "control": Vector2(bend) + Vector2(0.5, 0.5)})
+	for leg: Array in [[out_of, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
 		_do(sim, refused, {"op": "build_rail", "from": leg[0], "to": leg[1]})
+	# The curved yard road, its blocks on the bend and the roundabout at its end.
+	_do(sim, refused, {"op": "build_road", "from": BEND_START, "to": BEND_FROM, "type": "terminal_1_1"})
+	_do(sim, refused, {"op": "build_road", "from": BEND_FROM, "to": BEND_TO, "type": "terminal_1_1", "control": BEND_CONTROL})
+	var curve := sim.roads.segment_between(BEND_FROM, BEND_TO)
+	for plan: Array in BEND_YARDS:
+		var block := _area(sim, refused, {"op": "build_area", "type": "yard_block", "segment": curve, "side": plan[0], "from": plan[1], "to": plan[1] + BLOCK - 1})
+		_do(sim, refused, {"op": "set_area", "id": block, "settings": {"role": plan[2], "gear": plan[3]}})
+		south.append(block)
+	_do(sim, refused, {"op": "build_roundabout", "centre": BEND_TO + Vector2(0, BEND_RING), "radius": BEND_RING})
 	# The North Terminal's dangerous goods, apart on the spine's run north to
 	# the barge berth.
 	var north_hazard := _area(sim, refused, {"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(SPINE, (SPINE_ROWS.x + barge_road) / 2)), "side": 1, "from": 20, "to": 20 + BLOCK - 1})
@@ -248,14 +275,18 @@ static func _water(sim: PortSim, refused: Array[String], berths: Array) -> void:
 
 
 ## River channels from the river's inland end down to the barge berth's
-## pocket: straight in from the site's edge, then at 45° down the river.
+## pocket: straight in from the site's edge, then curving down the river
+## through a control point, whose middle passes the river's own bend.
 ## The river bends, so these points were found to fit inside it.
-const RIVER_LANES: Array = [[Vector2i(396, 0), Vector2i(396, 7)], [Vector2i(396, 7), Vector2i(318, 85)]]
+const RIVER_LANES: Array = [[Vector2i(396, 0), Vector2i(396, 7)], [Vector2i(396, 7), Vector2i(318, 85), Vector2(350.5, 66.5)]]
 
 
 static func _river(sim: PortSim, refused: Array[String]) -> void:
 	for lane: Array in RIVER_LANES:
-		_do(sim, refused, {"op": "build_ship_lane", "from": lane[0], "to": lane[1], "type": "river"})
+		var command := {"op": "build_ship_lane", "from": lane[0], "to": lane[1], "type": "river"}
+		if lane.size() > 2:
+			command.control = lane[2]
+		_do(sim, refused, command)
 
 
 static func _area(sim: PortSim, refused: Array[String], command: Dictionary) -> int:

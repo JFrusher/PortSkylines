@@ -603,3 +603,12 @@ ms) on the ticks it dispatches. What is left: traffic 6.6 ms, of which
 nearly every car is stopped behind one that hasn't moved and is still
 visited each tick (about 2.7 µs a car); waking followers only when the car
 ahead moves would take most of that.
+
+## M10 close: the gate again (2026-11-10)
+
+`profile_sim.gd -- 200` on the endgame save, after rail, ship lanes and
+berths went off the grid (steps 19–21): **12.2 and 14.3 ms** a tick over
+two runs (1,532 vehicles at the end), against the 19.5 ms gate and step
+11's 15.65. The sim bench: about 2.3–2.6 ms a tick on average, worst 9–13
+ms, once step 21a's curve rebuilding was fixed (it had raised the worst
+tick to 90–120 ms; see the M10 notes).

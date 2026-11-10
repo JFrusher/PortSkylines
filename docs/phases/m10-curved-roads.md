@@ -159,6 +159,8 @@ The soak's random roads, drawn at any angle, were all refused before; now they b
 ### Close
 22. Showcase port rebuilt with curves (a curving spine, a roundabout, yards on a bend, a curved river channel), fixture, soak, playtest notes in `docs/playtests/m10.md`, tag.
 
+**Step 22 (10 Nov 2026):** the developer chose to add the curves to the showcase rather than rebuild it (10 Nov 2026), keeping its layout and throughput: a yard road curves south off the spine to a roundabout, with four blocks on its bend (all at work, the import block holding 74 boxes within four hours); the track's first corner to the rail block is a curve, which trains take; the river channel curves down the river, and barges follow it. The berths still face west for the grid connectors. Save fixtures run to v47 (no format change since). The soak and every test pass; the endgame gate runs 12.2–14.3 ms a tick against 19.5. Playtest notes: `docs/playtests/m10.md`.
+
 ## Risks
 
 - **This touches the core of the sim.** The lane graph, traffic, areas, stacking layout and saves all change. Steps 1–5 change nothing the player sees, so a bad turn can be caught before traffic moves onto the new model.
