@@ -182,7 +182,7 @@ func _test_rail_cuts_the_gate_queue() -> void:
 		var gates: Array = sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "gate")
 		var total := 0
 		var imports := {}
-		for i in SimClock.TICKS_PER_DAY:
+		for i in 14400:
 			sim.tick()
 			for gate: int in gates:
 				total += sim.lorries_bound_for(gate)
