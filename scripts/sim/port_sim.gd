@@ -1474,13 +1474,15 @@ func build_anchorage(from: Vector2i, to: Vector2i) -> String:
 
 
 ## Why a pilot station or tug depot (`kind`) can't stand at `cell`, or "":
-## on open water, near enough the shore for its boats' crews, clear of
-## another base.
+## on open water, near enough the shore for its boats' crews and with a
+## road nearby, clear of another base.
 func build_marine_base_error(kind: String, cell: Vector2i) -> String:
 	if not areas.is_water(cell):
 		return "Pilot stations and tug depots stand on the water"
 	if not _near_land(cell, MARINE_BASE_SHORE):
 		return "Place it near the shore, within %d m of land" % Grid.metres(MARINE_BASE_SHORE)
+	if not _near_road(cell, MARINE_BASE_SHORE):
+		return "Needs a road nearby to connect land access"
 	if marine_base_at(cell, MARINE_BASE_GAP):
 		return "Too close to another pilot station or tug depot"
 	var cost: int = rules.water.pilots.station_cost if kind == "pilot_station" else rules.water.tugs.depot_cost
@@ -1539,6 +1541,14 @@ func _near_land(cell: Vector2i, reach: int) -> bool:
 		for dy: int in range(-reach, reach + 1):
 			var near := cell + Vector2i(dx, dy)
 			if areas.coast.inside(near) and not areas.is_water(near):
+				return true
+	return false
+
+
+func _near_road(cell: Vector2i, reach: int) -> bool:
+	for dx: int in range(-reach, reach + 1):
+		for dy: int in range(-reach, reach + 1):
+			if roads.segment_at(cell + Vector2i(dx, dy)):
 				return true
 	return false
 
