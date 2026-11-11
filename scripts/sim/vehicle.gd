@@ -30,6 +30,12 @@ var slot := -1
 ## The straddle block a straddle carrier belongs to, or 0 for anything
 ## else: a carrier is a tractor that never counts against the pool.
 var straddle := 0
+## Distance travelled along `path`, in cells.
+var t := 0.0
+## `t` at the start of this tick, for drawing between ticks.
+var prev_t := 0.0
+## Ticks spent waiting for the next cell.
+var waited := 0
 
 
 func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector3i]) -> void:
@@ -38,11 +44,39 @@ func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector3i]) -> voi
 	path = route
 
 
+## Position in grid cells, `alpha` of the way from the last tick to this one.
+## Through a cell where the path turns it follows the quarter circle between
+## the middles of that cell's edges, so a lorry waiting in a corner never
+## points diagonally across it.
+func position(alpha: float) -> Vector2:
+	var at := lerpf(prev_t, t, alpha)
+	var i := clampi(int(at), 0, path.size() - 1)
+	var f := at - i
+	if path.size() < 2:
+		return Vector2(path[0].x, path[0].y)
+	if i >= path.size() - 1:
+		return Vector2(path[-1].x, path[-1].y)
+	var corner := i + 1 if f >= 0.5 else i
+	if corner > 0 and corner < path.size() - 1:
+		var d_in := Vector2(path[corner].x - path[corner - 1].x, path[corner].y - path[corner - 1].y)
+		var d_out := Vector2(path[corner + 1].x - path[corner].x, path[corner + 1].y - path[corner].y)
+		if d_in != d_out and d_in != -d_out:
+			var u := (f - 0.5 if corner == i + 1 else f + 0.5) * PI / 2
+			var centre := Vector2(path[corner].x, path[corner].y) + (d_out - d_in) * 0.5
+			return centre + 0.5 * (d_in * sin(u) - d_out * cos(u))
+	return Vector2(path[i].x, path[i].y).lerp(Vector2(path[i + 1].x, path[i + 1].y), clampf(f, 0.0, 1.0))
+
+
+func at_end() -> bool:
+	return t >= path.size() - 1
+
+
 func to_dict() -> Dictionary:
 	return {
 		"id": id, "kind": kind, "path": path.duplicate(),
 		"state": state, "box": box, "loaded": loaded, "target": target, "home": home, "timer": timer,
 		"gate_in": gate_in, "booked": booked, "area": area, "slot": slot, "straddle": straddle,
+		"t": t, "prev_t": prev_t, "waited": waited,
 	}
 
 
