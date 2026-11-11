@@ -729,7 +729,9 @@ func _sail(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
 		_to_anchor(model, ship, sail)
 		return
 	var frame := _berth_frame(ship)
-	var quay_heading := atan2(-frame[1].y, frame[1].x)
+	# The ship lies along the quay, so its heading is the apron's direction,
+	# not the water side: `side` is perpendicular to it.
+	var quay_heading := atan2(frame[2].x, frame[2].y)
 	if ship.path.size() < 2:
 		model.position = Vector3(frame[0].x, 0.0, frame[0].y)
 		model.rotation.y = quay_heading
@@ -772,8 +774,9 @@ static func beam(rows: int) -> float:
 	return rows * DECK_ROW + 2.0 * HULL_MARGIN / METRES_PER_UNIT
 
 
-## Where `ship` lies alongside in world units, and the way out to sea:
-## [middle, side]. Its hull lies QUAY_GAP out from the quay's edge.
+## Where `ship` lies alongside in world units: [middle, side, along]. Its
+## hull lies QUAY_GAP out from the quay's edge, and `along` is the way its bow
+## faces when berthed, so it lies parallel to the quay instead of across it.
 func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
 	var area: Dictionary = sim.areas.list[ship.apron]
 	var along := Vector2((area.end - area.start).sign())
@@ -783,7 +786,7 @@ func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
 	var edge := (Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * (depth - 1) + Vector2(0.5, 0.5)) * Grid.CELL
 	# `edge` is the outer row's middle, half a cell inside the quay's edge.
 	var out := (Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(sim.rules.ship_classes[ship.kind].outreach) / 2.0
-	return [edge / METRES_PER_UNIT + side * out, side]
+	return [edge / METRES_PER_UNIT + side * out, side, along]
 
 
 ## Where the first `count` boxes on deck of a ship `length` world units long

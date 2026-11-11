@@ -738,8 +738,8 @@ func _fit_left_panels() -> void:
 			if below.visible and rect.position.x < across.end.x and rect.end.x > across.position.x:
 				limit = minf(limit, rect.position.y)
 		var wanted := (scroll.get_child(0) as Control).get_combined_minimum_size().y
-		var room := limit - 12 - scroll.get_global_rect().position.y - 16
-		scroll.custom_minimum_size.y = clampf(room, 48.0, wanted)
+		var room := limit - scroll.get_global_rect().position.y - 16
+		scroll.custom_minimum_size.y = clampf(room, 32.0, wanted)
 
 
 ## A button in `row` that asks `question` and calls `then` if confirmed.
@@ -893,12 +893,12 @@ func _label(text: String) -> Label:
 	return label
 
 
-## A column pinned to a corner of the screen that grows away from it.
+## A column flush against an edge/corner of the screen that grows away from it.
 func _corner(preset: Control.LayoutPreset) -> VBoxContainer:
 	var column := VBoxContainer.new()
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(column)
-	column.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, 12)
+	column.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, 0)
 	column.grow_horizontal = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH}[preset]
 	column.grow_vertical = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_END, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH}[preset]
 	return column
