@@ -698,9 +698,10 @@ func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fi
 		err = "Buy this land first"
 	if err == "" and ground.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
 		err = "Something is already built here"
+	var road_curve := RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to)
 	for track: int in rails.segments:
 		if err == "":
-			err = _planned_crossing_error(roads, from, to, type, skip, control, rails.curve(track), rails.ground(track))
+			err = _crossing_error(road_curve, ground, rails.curve(track), rails.ground(track))
 	if err == "" and not _afford(road_price(from, to, type, control)):
 		err = "Not enough money"
 	return err
@@ -873,9 +874,10 @@ func build_rail_error(from: Vector2i, to: Vector2i, control := Vector2.INF) -> S
 		err = "Buy this land first"
 	if err == "" and ground.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
 		err = "Something is already built here"
+	var track_curve := RoadCurve.straight(a, b) if control == Vector2.INF else RoadCurve.new(a, control, b)
 	for road: int in roads.segments:
 		if err == "":
-			err = _planned_crossing_error(rails, a, b, "track", 0, control, roads.curve(road), roads.ground(road), true)
+			err = _crossing_error(roads.curve(road), roads.ground(road), track_curve, ground)
 	if err == "" and not _afford(_rail_price(a, b, control)):
 		err = "Not enough money"
 	return err
@@ -939,18 +941,6 @@ func remove_rail(segment: int) -> String:
 ## from `track_a` to `track_b` on `track_cells` can't both be: where they
 ## share ground they must cross, at min_angle or more, so neither runs along
 ## or ends on the other; "" when they can.
-## Check the geometry selected by planning, including snapped ends and splits.
-func _planned_crossing_error(net: RoadNet, a: Vector2, b: Vector2, type: String, skip: int, control: Vector2, other: RoadCurve, other_cells: Array, track := false) -> String:
-	var plan: Dictionary = net._plan(a, b, type, skip, control)
-	for piece: Array in plan.pieces:
-		var curve := RoadCurve.new(piece[0], piece[1], piece[2])
-		var ground := net.footprint(piece[0], piece[2], type, piece[1])
-		var err := _crossing_error(other, other_cells, curve, ground) if track else _crossing_error(curve, ground, other, other_cells)
-		if err != "":
-			return err
-	return ""
-
-
 func _crossing_error(road: RoadCurve, road_cells: Array, track: RoadCurve, track_cells: Array) -> String:
 	if not road_cells.any(func(c: Vector2i) -> bool: return c in track_cells):
 		return ""
