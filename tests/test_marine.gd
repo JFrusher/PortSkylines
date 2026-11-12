@@ -34,7 +34,7 @@ func _port(pilots: int, depot := Vector2i(66, 240)) -> PortSim:
 	sim.creative = true
 	var entry := sim.site_entry()
 	for y in range(180, entry.y + 90):
-		sim.apply({"op": "paint_terminal", "cells": [Vector2i(86, y), Vector2i(76, y)], "terminal": 1})
+		sim.apply({"op": "paint_terminal", "cells": [Vector2i(75, y), Vector2i(76, y), Vector2i(86, y)], "terminal": 1})
 	sim.apply({"op": "build_road", "from": Vector2i(86, 180), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
 	sim.apply({"op": "build_road", "from": Vector2i(76, 170), "to": Vector2i(76, 190), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
