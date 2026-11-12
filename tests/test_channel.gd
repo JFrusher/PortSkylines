@@ -38,7 +38,7 @@ func _port(pilot: bool, pilots: int) -> PortSim:
 	var sim := AreaPort.base(rules, "")
 	sim.creative = true
 	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, 590), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 5, "to": 84}), "", "a second apron")
 	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": sim.areas.list.keys().max(), "along": 30}), "", "with a crane")
@@ -51,8 +51,7 @@ func _port(pilot: bool, pilots: int) -> PortSim:
 	for row: int in rows:
 		_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(68, row), "to": Vector2i(30, row), "type": "narrow"}), "", "a branch to a berth")
 	_expect(sim.apply({"op": "build_anchorage", "from": Vector2i(0, rows[0] - 50), "to": Vector2i(49, rows[0] + 49)}), "", "an anchorage where the first branch leaves the lane")
-	sim.apply({"op": "build_road", "from": Vector2i(76, 580), "to": Vector2i(76, 590), "type": "terminal_1_1"})
-	_expect(sim.apply({"op": "build_pilot_station", "cell": Vector2i(66, 590)}), "", "a pilot station by the south edge")
+	_expect(sim.apply({"op": "build_pilot_station", "cell": Vector2i(76, 590)}), "", "a pilot station by the south edge")
 	if pilots > 0:
 		sim.apply({"op": "hire_pilots", "station": 1, "count": pilots})
 	sim.buy_tractors(6)
