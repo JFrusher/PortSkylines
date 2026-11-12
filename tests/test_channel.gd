@@ -38,7 +38,7 @@ func _port(pilot: bool, pilots: int) -> PortSim:
 	var sim := AreaPort.base(rules, "")
 	sim.creative = true
 	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, 580), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 5, "to": 84}), "", "a second apron")
 	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": sim.areas.list.keys().max(), "along": 30}), "", "with a crane")
