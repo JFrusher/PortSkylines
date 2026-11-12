@@ -63,6 +63,9 @@ var _ship_routes := {}  # [kind, apron] -> lane ends in cells, see Marine.route
 var _lorries := {}  # see AreaFlow._lorries
 var _lorries_for := []
 var _ship_routes_for := []
+## Quay apron id -> its pocket's cells (Marine.pocket), kept while areas.version is _pockets_for; not saved.
+var _pockets := {}
+var _pockets_for := -1
 ## STS cranes ordered and not yet delivered: {"cell", "due" (calendar minute)}.
 var crane_orders: Array[Dictionary] = []
 ## TEU moved across the quay so far; milestones unlock content as it grows.
@@ -89,7 +92,7 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
-var _fetching := {}  # apron slot cell -> tractors fetching exports to it, oldest first
+var _fetching := {}  # apron slot spot -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
 var _straddles_out := {}  # straddle block id -> its carriers on the road
 ## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
@@ -100,10 +103,28 @@ var _until_train := {}
 ## RailFlow.rail_blocks, kept for the area, road and rail versions in _rail_blocks_for; not saved.
 var _rail_blocks := {}
 var _rail_blocks_for := Vector3i(-1, -1, -1)
-## The area flow's state: who holds each lane cell, each area's handover
-## slots and queues, the yard machines and what each is carrying, and the
-## boxes stacked in each yard block (area id -> AreaStacks).
-var lane_traffic: LaneTraffic
+## Signals and priority signs at the junctions.
+var junctions: Junctions
+## The lane network built from the roads, areas and track, and the cars on
+## it, built again by Drive when those change (their versions in
+## _drive_for); and the delays routes weigh, per piece. Not saved: a loaded
+## game builds them from its vehicles.
+var network: LaneNetwork
+var traffic: Traffic
+var _drive_for := Vector4i(-1, -1, -1, -1)
+var _delays := {}
+## Whether a piece reaches a spot for a lorry or a tractor: [piece, spot,
+## lorry] -> bool, kept by Drive while the network stands.
+var _reach := {}
+## The level crossings of the network Drive built last (Drive.crossings).
+var _crossing_cells: Array[Vector2i] = []
+## A loaded game's saved traffic (Drive.to_dict), put back when Drive first
+## builds the network; {} for a save from before v40, whose cars go back to
+## their vehicles' cells.
+var _loaded_traffic := {}
+## The area flow's state: each area's handover slots and queues, the yard
+## machines and what each is carrying, and the boxes stacked in each yard
+## block (area id -> AreaStacks).
 var handovers: Handovers
 var machines: Machines
 var machine_jobs := {}
@@ -117,8 +138,13 @@ func _dg_refusal() -> String:
 
 ## The road a berth brings along its back.
 const BERTH_ROAD := "terminal_1_1"
+## The road type roundabouts are built of.
+const RING_ROAD := "roundabout"
 ## How far past an apron's deepest reach a berth click looks for the water, in cells.
 const BERTH_SEARCH := 30
+## berth_plan's angle for "the one that fills least", and the steps it tries, in degrees.
+const AUTO_ANGLE := -1.0
+const BERTH_TURN := 15
 ## How many calls the ship log keeps, which milestones' on-time and
 ## productivity gates look back over.
 const SHIP_LOG_CALLS := 20
@@ -135,12 +161,11 @@ const AREA_SETTINGS := {
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
-## The roads drawn on the 4 m grid, and the lanes routed over them.
+## The roads drawn on the 4 m grid.
 var roads: RoadNet
 ## Rail track, a graph of its own: where it crosses a road straight across,
 ## the cells are level crossings, in both.
 var rails: RoadNet
-var lanes: LaneGraph
 ## The areas dragged along those roads.
 var areas: Areas
 ## Every box in the port by id: {"kind": "import", "export" or "empty", "due": the
@@ -157,6 +182,8 @@ var exports := 0
 var tractors := 0
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
 var gave_up := 0
+## Tractors moved on to where they were heading after being stuck in traffic.
+var moved_on := 0
 ## Gate-in to gate-out minutes of the latest lorries, newest last.
 var turn_times: Array[float] = []
 ## The same per terminal, by the terminal of the gate a lorry left by.
@@ -204,17 +231,14 @@ var _berths_seen := Vector2i(-1, -1)
 func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false) -> void:
 	rules = game_rules
 	creative = creative_mode
-	roads = RoadNet.new(rules.road_types)
-	roads.anchors = [site_entry_point()]
-	rails = RoadNet.new(rail_types())
-	rails.anchors = [site_rail_entry()]
-	lanes = LaneGraph.new(roads)
-	lanes.rails = rails
+	roads = RoadNet.new(rules.road_types, rules.junctions)
+	roads.anchors = [Vector2(site_entry_point())]
+	rails = RoadNet.new(rail_types(), rules.junctions)
+	rails.anchors = [Vector2(site_rail_entry()) + Vector2(0.5, 0.5)]
 	map = rules.map
 	areas = Areas.new(rules.area_types, roads, Coast.of(MapGen.of(rules, map), rules.site))
-	lanes.areas = areas
-	lane_traffic = LaneTraffic.new(lanes, Junctions.new(rules.traffic))
-	handovers = Handovers.new(areas)
+	junctions = Junctions.new(rules.traffic)
+	handovers = Handovers.new(areas, waiting_cells())
 	machines = Machines.new(rules.yard_gear)
 	ledger = Ledger.new(rules.ledger_categories, rules.start_money)
 	contracts = Contracts.new(rules)
@@ -400,6 +424,7 @@ func to_dict() -> Dictionary:
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
 		"gave_up": gave_up,
+		"moved_on": moved_on,
 		"turn_times": turn_times.duplicate(),
 		"terminal_turns": terminal_turns.duplicate(true),
 		"dwell_times": dwell_times.duplicate(),
@@ -417,7 +442,8 @@ func to_dict() -> Dictionary:
 		"bookings": bookings.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
-		"lane_traffic": lane_traffic.to_dict(),
+		"junctions": junctions.to_dict(),
+		"traffic": Drive.to_dict(self),
 		"handovers": handovers.to_dict(),
 		"machines": machines.to_dict(),
 		"machine_jobs": machine_jobs.duplicate(true),
@@ -434,15 +460,12 @@ func _area_stacks_dict() -> Dictionary:
 
 static func from_dict(d: Dictionary) -> PortSim:
 	var sim := PortSim.new()
-	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types)
-	sim.roads.anchors = [sim.site_entry_point()]
-	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types())
-	sim.rails.anchors = [sim.site_rail_entry()]
-	sim.lanes = LaneGraph.new(sim.roads)
-	sim.lanes.rails = sim.rails
+	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types, sim.rules.junctions)
+	sim.roads.anchors = [Vector2(sim.site_entry_point())]
+	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types(), sim.rules.junctions)
+	sim.rails.anchors = [Vector2(sim.site_rail_entry()) + Vector2(0.5, 0.5)]
 	sim.map = d.map
 	sim.areas = Areas.from_dict(d.areas, sim.rules.area_types, sim.roads, Coast.of(MapGen.of(sim.rules, sim.map), sim.rules.site))
-	sim.lanes.areas = sim.areas
 	sim.clock.ticks = d.ticks
 	sim.rng.seed = d.rng_seed
 	sim.rng.state = d.rng_state
@@ -487,6 +510,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
 	sim.gave_up = d.gave_up
+	sim.moved_on = d.moved_on
 	sim.turn_times.assign(d.turn_times)
 	sim.terminal_turns = d.terminal_turns.duplicate(true)
 	sim.dwell_times.assign(d.dwell_times)
@@ -506,17 +530,37 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
 		sim._add_vehicle(Vehicle.from_dict(data))
-	sim.lane_traffic = LaneTraffic.from_dict(d.lane_traffic, sim.lanes, sim.rules.traffic)
-	sim._weigh_routes()
-	sim.handovers = Handovers.from_dict(d.handovers, sim.areas)
+	sim.junctions = Junctions.from_dict(d.junctions, sim.rules.traffic)
+	sim._loaded_traffic = d.traffic
+	sim.handovers = Handovers.from_dict(d.handovers, sim.areas, sim.waiting_cells())
 	sim.machines = Machines.from_dict(d.machines, sim.rules.yard_gear)
 	sim.machine_jobs = d.machine_jobs.duplicate(true)
 	for area: int in d.area_stacks:
 		sim.area_stacks[area] = AreaStacks.from_dict(d.area_stacks[area])
+	# A vehicle bound for a slot, or fetching for a crane's slot, heads for
+	# where it stands there: a no-op for a save that pointed it there itself,
+	# and for one migrated to v41 (whose slots came from grid cells) the fix.
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.state.trim_prefix("no_route:") == "to_slot" and vehicle.slot >= 0:
+			vehicle.target = AreaFlow._stand(sim, vehicle.area, vehicle.slot)
+		if vehicle.home != Areas.NO_SPOT and vehicle.home.x in sim.areas.list:
+			var slots: Array = sim.areas.layout(vehicle.home.x).get("slots", [])
+			var s := slots.find_custom(func(cells: Array) -> bool: return vehicle.home in cells)
+			if s >= 0:
+				sim._fetching[vehicle.home].erase(vehicle)
+				vehicle.home = AreaFlow._stand(sim, vehicle.home.x, s)
+				sim._fetching.get_or_add(vehicle.home, [] as Array[Vehicle]).append(vehicle)
+				if vehicle.state.trim_prefix("no_route:") == "to_crane":
+					vehicle.target = vehicle.home
 	return sim
 
 
 ## Identical for identical states; used by the replay and save tests.
+## Cells of buffer strip a waiting lorry takes: its length and the standstill gap.
+func waiting_cells() -> float:
+	return (rules.traffic.lorry_m + rules.traffic.standstill_gap_m) / Grid.CELL
+
+
 func state_hash() -> int:
 	return hash(var_to_bytes(to_dict()))
 
@@ -556,7 +600,7 @@ func apply(command: Dictionary) -> String:
 		"dredge_berth":
 			return dredge_berth(command.apron, command.metres)
 		"build_ship_lane":
-			return build_ship_lane(command.from, command.to, command.type)
+			return build_ship_lane(command.from, command.to, command.type, command.get("control", Vector2.INF))
 		"remove_ship_lane":
 			return remove_ship_lane(command.segment)
 		"widen_ship_lane":
@@ -580,9 +624,9 @@ func apply(command: Dictionary) -> String:
 		"remove_marine_base":
 			return remove_marine_base(command.id)
 		"build_road":
-			return build_road(command.from, command.to, command.type)
+			return build_road(command.from, command.to, command.type, command.get("control", Vector2.INF))
 		"build_rail":
-			return build_rail(command.from, command.to)
+			return build_rail(command.from, command.to, command.get("control", Vector2.INF))
 		"remove_rail":
 			return remove_rail(command.segment)
 		"remove_road":
@@ -590,15 +634,23 @@ func apply(command: Dictionary) -> String:
 		"change_road":
 			return change_road(command.segment, command.type)
 		"set_signals":
-			return lane_traffic.junctions.set_signals(lanes, command.point, command.on)
+			return Drive.junctions(self).set_signals(Drive.junction_lanes(self), command.point, command.on)
 		"set_green":
-			return lane_traffic.junctions.set_green(command.point, command.phase, command.seconds)
+			return Drive.junctions(self).set_green(command.point, command.phase, command.seconds)
+		"move_road_node":
+			return move_road({"node": command.node, "to": command.to}, true)
+		"move_road_control":
+			return move_road({"segment": command.segment, "control": command.control}, true)
+		"build_roundabout":
+			return build_roundabout(command.centre, command.radius)
+		"set_lane_arrows":
+			return Drive.junctions(self).set_arrows(Drive.junction_lanes(self), command.point, command.arm, command.lane, command.turns)
 		"set_sign":
-			return lane_traffic.junctions.set_sign(lanes, command.point, command.arm, command.sign)
+			return Drive.junctions(self).set_sign(Drive.junction_lanes(self), command.point, command.arm, command.sign)
 		"build_area":
 			return build_area(command.type, command.segment, command.side, command.from, command.to)
 		"build_berth":
-			return build_berth(command.kind, command.cell)
+			return build_berth(command.kind, command.cell, command.get("angle", AUTO_ANGLE))
 		"build_two_way_gate":
 			return build_two_way_gate(command.type, command.segment, command.from, command.to)
 		"remove_area":
@@ -635,33 +687,136 @@ func site_entry_point() -> Vector2i:
 
 ## Why a road can't be built, or "": as though segment `skip` weren't built,
 ## and (`on_fill`) as though the water under it were filled, as a berth does.
-func build_road_error(from: Vector2i, to: Vector2i, type: String, skip := 0, on_fill := false) -> String:
-	var err := roads.add_error(from, to, type, skip)
-	if err == "" and not on_fill and roads.footprint(from, to, type).any(areas.is_water):
+func build_road_error(from: Vector2, to: Vector2, type: String, skip := 0, on_fill := false, control := Vector2.INF) -> String:
+	var err := roads.add_error(from, to, type, skip, control)
+	var ground := roads.footprint(from, to, type, control)
+	if err == "" and not on_fill and ground.any(areas.is_water):
 		err = "Roads can't be built on water"
-	if err == "" and roads.footprint(from, to, type).any(areas.breakwater_at):
+	if err == "" and ground.any(areas.breakwater_at):
 		err = "A breakwater is in the way"
-	if err == "" and not roads.footprint(from, to, type).all(owns):
+	if err == "" and not ground.all(owns):
 		err = "Buy this land first"
-	if err == "":
-		var built := {}
-		for id: int in areas.list:
-			for cell in areas.cells(id):
-				built[cell] = true
-		if roads.footprint(from, to, type).any(func(c: Vector2i) -> bool: return c in built):
-			err = "Something is already built here"
-	if err == "":
-		err = _crossing_error(RoadNet.line(from, to), roads.footprint(from, to, type), rails.segments.keys().map(func(s: int) -> Array: return rails.cells(s)))
-	if err == "" and not _afford(road_price(from, to, type)):
+	if err == "" and ground.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+		err = "Something is already built here"
+	var road_curve := RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to)
+	for track: int in rails.segments:
+		if err == "":
+			err = _crossing_error(road_curve, ground, rails.curve(track), rails.ground(track))
+	if err == "" and not _afford(road_price(from, to, type, control)):
 		err = "Not enough money"
 	return err
 
 
-func build_road(from: Vector2i, to: Vector2i, type: String) -> String:
-	var err := build_road_error(from, to, type)
+## Moves a road node (`change.node` to `change.to`) or a road's control
+## point (`change.segment`'s to `change.control`), as Cities: Skylines' Move
+## It mod does, and the areas built along the roads it reshapes with them;
+## with `keep` false, only checks. "" or why not, the port then as it was:
+## a reshaped road must still meet the others where it did and nowhere new,
+## and stand where a road could be built; its areas must still fit.
+# shortcut: an area moves with a road only if it was laid along that road's whole curve; one laid before the road was split is refused, until areas know their road.
+func move_road(change: Dictionary, keep: bool) -> String:
+	if not (change.get("node", 0) in roads.nodes or change.get("segment", 0) in roads.segments):
+		return "No road there"
+	var roads_before := roads.to_dict()
+	var areas_before := areas.list.duplicate(true)
+	var curves := {}  # road -> its curve before
+	for id: int in roads.segments:
+		var road: Dictionary = roads.segments[id]
+		curves[id] = [roads.nodes[road.a], road.control, roads.nodes[road.b]]
+	var moved := roads.move(change)
+	var err := ""
+	for id in moved:
+		if err == "":
+			err = _moved_road_error(id)
+		for area: int in areas.list.keys():
+			if err == "" and areas_before[area].curve == curves[id]:
+				err = areas.refit(area, id)
+			elif err == "" and roads.curve(id).nearest(areas_before[area].curve[0]) > 0.0 and _along(areas_before[area].curve, curves[id]):
+				err = "An area along this road was built before it was split: rebuild it to move the road"
+	for id in moved:
+		if err != "":
+			break
+		var curve := roads.curve(id)
+		for area: int in areas.list:
+			# Refit checks the areas attached to this curve against its lane quads.
+			if areas.list[area].curve == [curve.a, curve.c, curve.b]:
+				continue
+			var cells: Array = areas.shape(area).cells
+			if roads.ground(id).any(func(c: Vector2i) -> bool: return cells.any(func(cell: Dictionary) -> bool: return Areas.overlap(Areas.square(c), PackedVector2Array(cell.corners)))):
+				err = "Something is already built here"
+	if err != "" or not keep:
+		roads.restore(roads_before)
+		areas.list = areas_before
+		areas.version += 1
+	return err
+
+
+## Whether area curve `area` lies along road curve `road` (both [a, c, b]), as one built on part of it.
+static func _along(area: Array, road: Array) -> bool:
+	var along := RoadCurve.new(road[0], road[1], road[2])
+	return [area[0], area[2]].all(func(p: Vector2) -> bool: return along.point_at(along.nearest(p)).distance_to(p) < 0.01)
+
+
+## Why road `segment`, as it now lies after a move, couldn't be there: it
+## must meet the roads only at its own ends, by the junction rules, and
+## stand on owned dry land clear of breakwaters, areas and track.
+func _moved_road_error(segment: int) -> String:
+	var road: Dictionary = roads.segments[segment]
+	var a: Vector2 = roads.nodes[road.a]
+	var b: Vector2 = roads.nodes[road.b]
+	var err := roads.add_error(a, b, road.type, segment, road.control)
+	if err != "":
+		return err
+	var plan: Dictionary = roads._plan(a, b, road.type, segment, road.control)
+	if plan.pieces.size() > 1 or not plan.splits.is_empty():
+		return "A road would cross another: draw it again instead"
+	if plan.pieces[0][0] != a or plan.pieces[0][2] != b:
+		return "Too close to another road"
+	var ground := roads.ground(segment)
+	if ground.any(areas.is_water):
+		return "Roads can't be built on water"
+	if ground.any(areas.breakwater_at):
+		return "A breakwater is in the way"
+	if not ground.all(owns):
+		return "Buy this land first"
+	for track: int in rails.segments:
+		if err == "":
+			err = _crossing_error(roads.curve(segment), ground, rails.curve(track), rails.ground(track))
+	return err
+
+
+## Why a roundabout round `centre`, `radius` cells out, can't be built, or
+## "": its ring laid against the roads, and each piece of it on owned dry
+## land clear of areas and track, at the price of all of them.
+func build_roundabout_error(centre: Vector2, radius: float) -> String:
+	var err := roads.ring_error(centre, radius, RING_ROAD)
+	var price := 0
+	for piece: Array in RoadNet.ring_pieces(centre, radius):
+		if err == "":
+			err = build_road_error(piece[0], piece[2], RING_ROAD, 0, false, piece[1]).replace("Not enough money", "")
+		price += road_price(piece[0], piece[2], RING_ROAD, piece[1])
+	if err == "" and not _afford(price):
+		err = "Not enough money"
+	return err
+
+
+## Builds a roundabout round `centre`, `radius` cells out; "" or why not.
+func build_roundabout(centre: Vector2, radius: float) -> String:
+	var err := build_roundabout_error(centre, radius)
 	if err == "":
-		ledger.post("construction", -road_price(from, to, type))
-		roads.add(from, to, type)
+		for piece: Array in RoadNet.ring_pieces(centre, radius):
+			ledger.post("construction", -road_price(piece[0], piece[2], RING_ROAD, piece[1]))
+		roads.add_ring(centre, radius, RING_ROAD)
+	return err
+
+
+## Builds a road of `type` from `from` to `to`, curving through `control`
+## (INF: straight); "" or why not.
+func build_road(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> String:
+	var err := build_road_error(from, to, type, 0, false, control)
+	if err == "":
+		ledger.post("construction", -road_price(from, to, type, control))
+		roads.add(from, to, type, control)
 	return err
 
 
@@ -672,7 +827,7 @@ func change_road_error(segment: int, type: String) -> String:
 	var road: Dictionary = roads.segments[segment]
 	if road.type == type:
 		return "This road is already a %s" % rules.road_types[type].name
-	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment)
+	return build_road_error(roads.nodes[road.a], roads.nodes[road.b], type, segment, false, road.control)
 
 
 ## Rebuilds `segment` as a road of `type` on the same line, at the new
@@ -681,13 +836,14 @@ func change_road(segment: int, type: String) -> String:
 	var err := change_road_error(segment, type)
 	if err == "":
 		var road: Dictionary = roads.segments[segment]
-		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type))
+		ledger.post("construction", -road_price(roads.nodes[road.a], roads.nodes[road.b], type, road.control))
 		roads.retype(segment, type)
 	return err
 
 
-func road_price(from: Vector2i, to: Vector2i, type: String) -> int:
-	return RoadNet.length(from, to) * rules.road_types[type].cost_per_cell
+func road_price(from: Vector2, to: Vector2, type: String, control := Vector2.INF) -> int:
+	var along := RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to)
+	return RoadNet.cells_long(along.length) * rules.road_types[type].cost_per_cell
 
 
 ## Where the highway's rail line meets the site, `entry_offset` cells south
@@ -699,38 +855,49 @@ func site_rail_entry() -> Vector2i:
 ## Rail track as RoadNet sees it: one lane, on the drawn line.
 func rail_types() -> Dictionary:
 	var track: Dictionary = rules.rail
-	return {"track": {"name": track.name, "forward": 1, "backward": 0, "lorries": false, "cost_per_cell": track.cost_per_cell, "upkeep_per_cell": track.upkeep_per_cell}}
+	return {"track": {"name": track.name, "forward": 1, "backward": 0, "lorries": false, "cost_per_cell": track.cost_per_cell, "upkeep_per_cell": track.upkeep_per_cell, "min_radius_cells": track.min_radius_cells, "ring": false}}
 
 
-func build_rail_error(from: Vector2i, to: Vector2i) -> String:
+## Why track can't be laid from cell `from` to cell `to` (through their
+## middles, where track runs), curving through point `control` (INF:
+## straight), or "".
+func build_rail_error(from: Vector2i, to: Vector2i, control := Vector2.INF) -> String:
+	var a := Vector2(from) + Vector2(0.5, 0.5)
+	var b := Vector2(to) + Vector2(0.5, 0.5)
 	var err := lock_error("rmg")
 	if err == "":
-		err = rails.add_error(from, to, "track")
-	if err == "" and RoadNet.line(from, to).any(areas.is_water):
+		err = rails.add_error(a, b, "track", 0, control)
+	var ground := rails.footprint(a, b, "track", control)
+	if err == "" and ground.any(areas.is_water):
 		err = "Track can't be laid on water"
-	if err == "" and not RoadNet.line(from, to).all(owns):
+	if err == "" and not ground.all(owns):
 		err = "Buy this land first"
-	if err == "":
-		var track := RoadNet.line(from, to)
-		for id: int in areas.list:
-			if areas.cells(id).any(func(c: Vector2i) -> bool: return c in track):
-				return "Something is already built here"
-		var lanes_of := []
-		for id: int in roads.segments:
-			for lane in roads.lanes(id):
-				lanes_of.append(lane.cells)
-		err = _crossing_error(track, track, lanes_of)
-	if err == "" and not _afford(RoadNet.length(from, to) * rules.rail.cost_per_cell):
+	if err == "" and ground.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+		err = "Something is already built here"
+	var track_curve := RoadCurve.straight(a, b) if control == Vector2.INF else RoadCurve.new(a, control, b)
+	for road: int in roads.segments:
+		if err == "":
+			err = _crossing_error(roads.curve(road), roads.ground(road), track_curve, ground)
+	if err == "" and not _afford(_rail_price(a, b, control)):
 		err = "Not enough money"
 	return err
 
 
-func build_rail(from: Vector2i, to: Vector2i) -> String:
-	var err := build_rail_error(from, to)
+## Lays track from cell `from` to cell `to`, curving through `control`.
+func build_rail(from: Vector2i, to: Vector2i, control := Vector2.INF) -> String:
+	var err := build_rail_error(from, to, control)
 	if err == "":
-		ledger.post("construction", -RoadNet.length(from, to) * rules.rail.cost_per_cell)
-		rails.add(from, to, "track")
+		var a := Vector2(from) + Vector2(0.5, 0.5)
+		var b := Vector2(to) + Vector2(0.5, 0.5)
+		ledger.post("construction", -_rail_price(a, b, control))
+		rails.add(a, b, "track", control)
 	return err
+
+
+## Track's price from point `a` to `b` through `control`: per cell of its length.
+func _rail_price(a: Vector2, b: Vector2, control: Vector2) -> int:
+	var along := RoadCurve.straight(a, b) if control == Vector2.INF else RoadCurve.new(a, control, b)
+	return RoadNet.cells_long(along.length) * rules.rail.cost_per_cell
 
 
 func set_rail_discount(dollars: int) -> String:
@@ -770,19 +937,32 @@ func remove_rail(segment: int) -> String:
 ## Why something drawn along `line`, covering `cells`, can't share cells with
 ## the runs in `others` (each a straight run of cells), or "": road and rail
 ## meet only at level crossings, straight across.
-static func _crossing_error(line: Array, cells: Array, others: Array) -> String:
-	var mine := {}
-	for cell: Vector2i in cells:
-		mine[cell] = true
-	var along: Vector2i = (line[-1] - line[0]).sign()
-	for other: Array in others:
-		if not other.any(func(c: Vector2i) -> bool: return c in mine):
-			continue
-		var theirs: Vector2i = (other[-1] - other[0]).sign()
-		var straight := along.x * along.y == 0 and theirs.x * theirs.y == 0
-		if not straight or along.x * theirs.x + along.y * theirs.y != 0:
-			return "Road and track cross only straight across"
-	return ""
+## Why a road from `road_a` to `road_b` standing on `road_cells` and track
+## from `track_a` to `track_b` on `track_cells` can't both be: where they
+## share ground they must cross, at min_angle or more, so neither runs along
+## or ends on the other; "" when they can.
+func _crossing_error(road: RoadCurve, road_cells: Array, track: RoadCurve, track_cells: Array) -> String:
+	if not road_cells.any(func(c: Vector2i) -> bool: return c in track_cells):
+		return ""
+	var road_points := road.offset_points(0.0)
+	var track_points := track.offset_points(0.0)
+	var crossed := false
+	for i in range(1, road_points.size()):
+		for j in range(1, track_points.size()):
+			var hit: Variant = Geometry2D.segment_intersects_segment(road_points[i - 1], road_points[i], track_points[j - 1], track_points[j])
+			if hit == null:
+				continue
+			crossed = true
+			var apart := absf(rad_to_deg(road.direction_at(road.nearest(hit)).angle_to(track.direction_at(track.nearest(hit)))))
+			apart = minf(apart, 180.0 - apart)
+			if apart < rules.junctions.min_angle - 0.001:
+				return "Road and track cross at %d°; they need at least %d°" % [roundi(apart), roundi(rules.junctions.min_angle)]
+	return "" if crossed else "Something is already built here"
+
+
+## The point track node `node` is at: the middle of its cell.
+func _track_end(node: int) -> Vector2:
+	return rails.nodes[node]
 
 
 func remove_road(segment: int) -> String:
@@ -801,7 +981,7 @@ func build_area_error(type: String, segment: int, side: int, from: int, to: int)
 	if err == "":
 		var track := {}
 		for id: int in rails.segments:
-			for cell in rails.cells(id):
+			for cell in rails.ground(id):
 				track[cell] = true
 		if areas.cells_of(type, segment, side, from, to).any(func(c: Vector2i) -> bool: return c in track):
 			err = "Something is already built here"
@@ -833,86 +1013,117 @@ func build_two_way_gate_error(type: String, segment: int, from: int, to: int) ->
 	return ""
 
 
-## Where a berth of `kind` clicked at `cell` goes: {"line": its road's two
-## grid points, "out": the way its quay faces, "cells": its apron's cells,
-## "fill": the water between its quay and the shore, filled to make land},
-## or {"error"}. It faces the nearest water in the four directions; its quay
-## is one straight wall at the most seaward land along it, and the apron
-## reaches back from it to the road, filling the water behind the wall. The
-## road runs so its right side faces the water, as long as the apron, so a
-## berth placed end to end with another shares its road's end.
-func berth_plan(kind: String, cell: Vector2i) -> Dictionary:
+## Where a berth of `kind` clicked at `cell` goes, facing the water at
+## `angle` degrees (0 east, 90 south), or with `angle` AUTO_ANGLE at the
+## BERTH_TURN step that fills the least water (grid ways first, so a coast
+## along the grid gets a berth along it): {"line": its road's two ends,
+## "angle", "cells": its apron's cells, "fill": the water between its quay
+## and the shore, filled to make land}, or {"error"}. Its quay is one
+## straight wall at the most seaward land along it, and the apron reaches
+## back from it to the road, filling the water behind the wall. The road
+## runs so its right side faces the water, as long as the apron, so a berth
+## placed end to end with another shares its road's end.
+func berth_plan(kind: String, cell: Vector2i, angle := AUTO_ANGLE) -> Dictionary:
+	if angle != AUTO_ANGLE:
+		return _berth_at(kind, cell, angle)
+	var best := {}
+	var nearest := {"error": "Click the coast: there's no water within %d m" % Grid.metres(rules.area_types.quay_apron.max_depth + BERTH_SEARCH)}
+	var turns := range(0, 360, BERTH_TURN)
+	turns.sort_custom(func(p: int, q: int) -> bool: return [p % 90 != 0, p] < [q % 90 != 0, q])
+	for turn: int in turns:
+		var plan := _berth_at(kind, cell, float(turn))
+		if plan.has("error"):
+			if plan.has("water") and plan.water < nearest.get("water", INF):
+				nearest = plan
+		elif best.is_empty() or plan.fill.size() < best.fill.size():
+			best = plan
+	if best.is_empty():
+		return {"error": nearest.error}
+	return best
+
+
+## berth_plan facing `angle` degrees; an error may say how many steps off
+## its middle's water is ("water"), so auto can say why of the nearest.
+func _berth_at(kind: String, cell: Vector2i, angle: float) -> Dictionary:
 	var length: int = rules.berths[kind].length
 	var depth: int = rules.area_types.quay_apron.depth
 	var reach: int = rules.area_types.quay_apron.max_depth + BERTH_SEARCH
-	var out := Vector2i.ZERO
-	var nearest := reach + 1
-	for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-		var steps := _to_water(cell, d, reach)
-		if steps < nearest:
-			nearest = steps
-			out = d
-	if out == Vector2i.ZERO:
-		return {"error": "Click the coast: there's no water within %d m" % Grid.metres(reach)}
-	var along := Vector2i(out.y, -out.x)
-	var first := cell - along * (length / 2)
+	var out := Vector2.from_angle(deg_to_rad(angle))
+	var along := Vector2(out.y, -out.x)
+	# Column k's middle, the cell middle k cells along from the berth's first.
+	var first := Vector2(cell) + Vector2(0.5, 0.5) - along * (length / 2)
+	var at := func(k: float, r: float) -> Vector2i: return Vector2i((first + along * k + out * r).floor())
+	var middle := _to_water_at(first + along * (length / 2), out, reach)
+	if middle > reach:
+		return {"error": "Click the coast: there's no water within %d m" % Grid.metres(reach), "water": INF}
 	var quay := 0
 	for k in length:
-		var steps := _to_water(first + along * k, out, reach * 2)
+		var steps := _to_water_at(first + along * k, out, reach * 2)
 		if steps > reach * 2:
-			return {"error": "The water isn't straight out from the whole berth here"}
+			return {"error": "The water isn't straight out from the whole berth here", "water": middle}
 		quay = maxi(quay, steps)
-	var line := first + out * (quay - depth - 2)
+	# Each cell is read at four points inside it, so a berth off the grid
+	# misses none of the cells it crosses; along the grid they are its own.
+	var quarters: Array[Vector2] = [Vector2(-0.25, -0.25), Vector2(-0.25, 0.25), Vector2(0.25, -0.25), Vector2(0.25, 0.25)]
 	var cells: Array[Vector2i] = []
-	var fill: Array[Vector2i] = []
 	for k in length:
 		for r in range(quay - depth, quay):
-			cells.append(first + along * k + out * r)
+			for q: Vector2 in quarters:
+				if at.call(k + q.x, r + q.y) not in cells:
+					cells.append(at.call(k + q.x, r + q.y))
 	# Back from the quay to the shore, so no water is left between the berth
-	# and the land, along the road's whole span: one cell past the apron.
+	# and the land, along the road's whole span (one cell past the apron) and
+	# at least under the road, which runs to `back`, a row past its back edge.
+	var back := quay - depth - 4
+	var fill: Array[Vector2i] = []
 	for k in length + 1:
-		var r := quay - 1
-		while areas.is_water(first + along * k + out * r):
-			if quay - r > reach * 2:
-				return {"error": "The shore is too far behind the quay here"}
-			fill.append(first + along * k + out * r)
-			r -= 1
-	return {"line": [line, line + along * length] as Array[Vector2i], "out": out, "cells": cells, "fill": fill}
+		for q: Vector2 in quarters:
+			var r := quay - 1
+			while r >= back or areas.is_water(at.call(k + q.x, r + q.y)):
+				if quay - r > reach * 2:
+					return {"error": "The shore is too far behind the quay here", "water": middle}
+				var under: Vector2i = at.call(k + q.x, r + q.y)
+				if areas.is_water(under) and under not in fill:
+					fill.append(under)
+				r -= 1
+	# The road's line starts at the top-left corner of the cell two rows in
+	# from the apron's first column, as berths along the grid always have.
+	var line := first + out * (quay - depth - 2) - Vector2(0.5, 0.5)
+	return {"line": [line, line + along * length] as Array[Vector2], "angle": angle, "cells": cells, "fill": fill}
 
 
-## Steps from `cell` along `step` to the first water, or more than `limit`.
-func _to_water(cell: Vector2i, step: Vector2i, limit: int) -> int:
+## Steps of a cell from `point` along `way` to the first water, or more than `limit`.
+func _to_water_at(point: Vector2, way: Vector2, limit: int) -> int:
 	var steps := 0
-	while steps <= limit and not areas.is_water(cell + step * steps):
+	while steps <= limit and not areas.is_water(Vector2i((point + way * steps).floor())):
 		steps += 1
 	return steps
 
 
-func build_berth_error(kind: String, cell: Vector2i) -> String:
+func build_berth_error(kind: String, cell: Vector2i, angle := AUTO_ANGLE) -> String:
 	if kind not in rules.berths:
 		return "Unknown berth: %s" % kind
 	var locked := lock_error(kind)
 	if locked:
 		return locked
-	var plan := berth_plan(kind, cell)
+	var plan := berth_plan(kind, cell, angle)
 	if plan.has("error"):
 		return plan.error
-	var line: Array[Vector2i] = plan.line
+	var line: Array[Vector2] = plan.line
 	var cells: Array[Vector2i] = plan.cells
 	if not cells.all(owns):
 		return "Buy this land first"
+	if cells.any(func(c: Vector2i) -> bool: return areas.area_over(Areas.square(c)) != 0):
+		return "Something is already built here"
 	var built := {}
-	for id: int in areas.list:
-		for c in areas.cells(id):
-			built[c] = true
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		for c in roads.footprint(roads.nodes[road.a], roads.nodes[road.b], road.type):
+		for c in roads.ground(segment):
 			built[c] = true
 	if cells.any(func(c: Vector2i) -> bool: return c in built):
 		return "Something is already built here"
 	# A road meeting the berth's road part-way would split it under the apron.
-	var step: Vector2i = (line[1] - line[0]).sign()
+	var step := (line[1] - line[0]).normalized()
 	if roads.footprint(line[0] + step, line[1] - step, BERTH_ROAD).any(func(c: Vector2i) -> bool: return c in built):
 		return "A road already runs here: place the berth clear of it, it brings its own"
 	var err := build_road_error(line[0], line[1], BERTH_ROAD, 0, true)
@@ -926,19 +1137,19 @@ func build_berth_error(kind: String, cell: Vector2i) -> String:
 
 ## Places a berth of `kind` clicked at `cell` (see berth_plan): its road,
 ## then its apron along the road's water side.
-func build_berth(kind: String, cell: Vector2i) -> String:
-	var err := build_berth_error(kind, cell)
+func build_berth(kind: String, cell: Vector2i, angle := AUTO_ANGLE) -> String:
+	var err := build_berth_error(kind, cell, angle)
 	if err:
 		return err
-	var plan := berth_plan(kind, cell)
-	var line: Array[Vector2i] = plan.line
+	var plan := berth_plan(kind, cell, angle)
+	var line: Array[Vector2] = plan.line
 	# All the water between the quay and the shore is filled first, so the
 	# road and apron stand on land and the berth meets the shore.
 	ledger.post("construction", -plan.fill.size() * rules.reclaim.cost_per_cell)
 	areas.fill(plan.fill)
 	build_road(line[0], line[1], BERTH_ROAD)
 	# The road runs so its right, side 1, faces the water.
-	err = build_area("quay_apron", roads.segment_at((line[0] + line[1]) / 2), 1, 0, rules.berths[kind].length - 1)
+	err = build_area("quay_apron", roads.segment_between(line[0], line[1]), 1, 0, rules.berths[kind].length - 1)
 	assert(err == "", "a berth's apron fits where its error check said: %s" % err)
 	# A barge berth takes only barges, and a barge only a barge berth.
 	areas.list[areas.list.keys().max()].settings.barge = rules.ship_classes[kind].inland
@@ -1064,7 +1275,7 @@ func _deliver_cranes() -> void:
 		crane_orders.erase(order)
 		if order.apron in areas.list:
 			cranes.append(Crane.new(order.apron, order.along, order.kind))
-			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminal_name(areas.list[order.apron].terminal)], areas.list[order.apron].start)
+			_event("A new %s is up on %s" % [rules.sts_cranes[order.kind].name, areas.terminal_name(areas.list[order.apron].terminal)], areas.cell_at(order.apron, 0, 0))
 		else:
 			ledger.post("equipment", rules.sts_cranes[order.kind].cost)
 			_event("A crane arrived with no quay apron to stand on; it went back, refunded")
@@ -1216,25 +1427,26 @@ func buy_land(tile: Vector2i) -> String:
 	return err
 
 
-## Why a ship lane of `type` can't run from `from` to `to`, or "".
-func build_ship_lane_error(from: Vector2i, to: Vector2i, type: String) -> String:
-	var err := ship_lanes.add_error(from, to, type, areas.is_water)
-	if err == "" and not _afford(ship_lane_price(from, to, type)):
+## Why a ship lane of `type` can't run from `from` to `to`, curving through
+## `control` (INF: straight), or "".
+func build_ship_lane_error(from: Vector2i, to: Vector2i, type: String, control := Vector2.INF) -> String:
+	var err := ship_lanes.add_error(from, to, type, areas.is_water, control)
+	if err == "" and not _afford(ship_lane_price(from, to, type, control)):
 		err = "Not enough money"
 	return err
 
 
-func build_ship_lane(from: Vector2i, to: Vector2i, type: String) -> String:
-	var err := build_ship_lane_error(from, to, type)
+func build_ship_lane(from: Vector2i, to: Vector2i, type: String, control := Vector2.INF) -> String:
+	var err := build_ship_lane_error(from, to, type, control)
 	if err == "":
-		ledger.post("construction", -ship_lane_price(from, to, type))
-		ship_lanes.add(from, to, type, areas.is_water)
+		ledger.post("construction", -ship_lane_price(from, to, type, control))
+		ship_lanes.add(from, to, type, areas.is_water, control)
 	return err
 
 
 ## A lane's price: the water it covers, at its type's price a cell.
-func ship_lane_price(from: Vector2i, to: Vector2i, type: String) -> int:
-	return ship_lanes.footprint(from, to, type).size() * rules.water.lanes[type].cost_per_cell
+func ship_lane_price(from: Vector2i, to: Vector2i, type: String, control := Vector2.INF) -> int:
+	return ship_lanes.footprint(from, to, type, control).size() * rules.water.lanes[type].cost_per_cell
 
 
 ## Why an anchorage can't cover the rectangle from `from` to `to`, or "".
@@ -1391,7 +1603,7 @@ func build_breakwater_error(from: Vector2i, to: Vector2i) -> String:
 	var lanes := {}
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
-		for cell in ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type):
+		for cell in ship_lanes.area(segment):
 			lanes[cell] = true
 	if Areas.breakwater_cells(from, to).any(func(c: Vector2i) -> bool: return c in lanes):
 		return "A ship lane runs here"
@@ -1424,9 +1636,11 @@ func widen_ship_lane_error(segment: int) -> String:
 		return "This lane is wide already"
 	var a: Vector2i = ship_lanes.nodes[lane.a]
 	var b: Vector2i = ship_lanes.nodes[lane.b]
-	if not ship_lanes.footprint(a, b, "wide").all(areas.is_water):
+	if ship_lanes.curve(segment).min_radius() < rules.water.lanes.wide.min_radius_cells:
+		return "Too tight a bend for a wide lane: it turns no tighter than %d m" % roundi(rules.water.lanes.wide.min_radius_cells * Grid.CELL)
+	if not ship_lanes.footprint(a, b, "wide", lane.control).all(areas.is_water):
 		return "A wide lane needs open water %d m across all along" % Grid.metres(rules.water.lanes.wide.half_width * 2 + 1)
-	if not _afford(ship_lane_price(a, b, "wide")):
+	if not _afford(ship_lane_price(a, b, "wide", lane.control)):
 		return "Not enough money"
 	return ""
 
@@ -1437,7 +1651,7 @@ func widen_ship_lane(segment: int) -> String:
 	var err := widen_ship_lane_error(segment)
 	if err == "":
 		var lane: Dictionary = ship_lanes.segments[segment]
-		ledger.post("construction", -ship_lane_price(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], "wide"))
+		ledger.post("construction", -ship_lane_price(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], "wide", lane.control))
 		lane.type = "wide"
 		ship_lanes.version += 1
 	return err
@@ -1457,7 +1671,7 @@ func dredge_lane(segment: int, metres: int) -> String:
 	if segment not in ship_lanes.segments:
 		return "No ship lane there"
 	var lane: Dictionary = ship_lanes.segments[segment]
-	var cells := ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size()
+	var cells := ship_lanes.area(segment).size()
 	var err := _dredge_error(ship_lanes.depth(segment, areas.coast), metres, cells)
 	if err == "":
 		ledger.post("dredging", -metres * cells * rules.water.dredge.cost_per_cell_metre)
@@ -1470,7 +1684,7 @@ func dredge_lane(segment: int, metres: int) -> String:
 func dredge_berth(apron: int, metres: int) -> String:
 	if apron not in areas.list or areas.kind_of(areas.list[apron]) != "quay_apron":
 		return "No quay apron there"
-	var cells := Marine.pocket(self, apron).size()
+	var cells := Marine.pocket_size(self, apron)
 	var depth := Marine.pocket_depth(self, apron)
 	if depth == 0.0:
 		return "Land or a quay blocks this berth's water"
@@ -1501,10 +1715,10 @@ func dredged_cell_metres() -> float:
 	var total := 0.0
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
-		total += lane.dredged * ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size()
+		total += lane.dredged * ship_lanes.area(segment).size()
 	for apron: int in pocket_dredged:
 		if apron in areas.list:
-			total += pocket_dredged[apron] * Marine.pocket(self, apron).size()
+			total += pocket_dredged[apron] * Marine.pocket_size(self, apron)
 	return total
 
 
@@ -1573,13 +1787,10 @@ func tick() -> void:
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
-	lane_traffic.junctions.tick(lanes, lane_traffic)
+	Drive.signals(self)
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
-	if clock.ticks % roundi(rules.traffic.epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		lane_traffic.settle(rules.traffic.smoothing)
-	if clock.ticks % roundi(rules.traffic.route_epoch_seconds / SimClock.TICK_SECONDS) == 0:
-		_weigh_routes()
+	Drive.settle(self)
 
 
 ## What the port costs to keep each day: roads, areas, cranes, tractors,
@@ -1599,13 +1810,13 @@ func upkeep_parts() -> Dictionary:
 	var parts := {0: 0.0}
 	for segment: int in roads.segments:
 		var road: Dictionary = roads.segments[segment]
-		parts[0] += RoadNet.length(roads.nodes[road.a], roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		parts[0] += RoadNet.cells_long(roads.curve(segment).length) * rules.road_types[road.type].upkeep_per_cell
 	for segment: int in rails.segments:
-		parts[0] += RoadNet.length(rails.nodes[rails.segments[segment].a], rails.nodes[rails.segments[segment].b]) * rules.rail.upkeep_per_cell
+		parts[0] += RoadNet.cells_long(rails.curve(segment).length) * rules.rail.upkeep_per_cell
 	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
-		parts[0] += ship_lanes.footprint(ship_lanes.nodes[lane.a], ship_lanes.nodes[lane.b], lane.type).size() * rules.water.lanes[lane.type].upkeep_per_cell
+		parts[0] += ship_lanes.area(segment).size() * rules.water.lanes[lane.type].upkeep_per_cell
 	for station: Dictionary in pilot_stations.values():
 		parts[0] += station.pilots * rules.water.pilots.upkeep_per_pilot
 	for wall: Dictionary in areas.breakwaters.values():
@@ -1901,7 +2112,7 @@ func _work(ship: Ship) -> void:
 				Marine.release(ship)
 				ship.state = Ship.State.WORKING
 				ship.berthed = clock.calendar_minutes()
-				_event("A %s is unloading" % ship.kind, areas.list[ship.apron].start)
+				_event("A %s is unloading" % ship.kind, areas.cell_at(ship.apron, 0, 0))
 		Ship.State.WORKING:
 			AreaFlow.work(self, ship)
 		Ship.State.LEAVING:
@@ -2022,12 +2233,6 @@ func _new_empty(line: String, teu: int) -> int:
 	return id
 
 
-## Routes from now on go round the lane cells vehicles wait in, by the delays
-## LaneTraffic last settled.
-func _weigh_routes() -> void:
-	lanes.set_delays(lane_traffic.delays(), rules.lorry_speed / Grid.CELL, AreaFlow.tractor_speed(self))
-
-
 ## Takes box `id` out of the port: delivered, loaded aboard, or lost.
 func _drop_box(id: int) -> void:
 	exports -= 1 if boxes[id].kind in ["export", "tranship"] else 0
@@ -2063,7 +2268,7 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
 	_count_bound(vehicle, 1)
-	if vehicle.home != Grid.NONE:
+	if vehicle.home != Areas.NO_SPOT:
 		if vehicle.home not in _fetching:
 			_fetching[vehicle.home] = [] as Array[Vehicle]
 		_fetching[vehicle.home].append(vehicle)
@@ -2071,14 +2276,14 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 
 ## Takes `vehicle` off the roads and out of the port.
 func _drop_vehicle(vehicle: Vehicle) -> void:
-	lane_traffic.leave(vehicle)
+	Drive.leave(self, vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
 	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] -= 1
 	_count_bound(vehicle, -1)
-	if vehicle.home != Grid.NONE:
+	if vehicle.home != Areas.NO_SPOT:
 		_fetching[vehicle.home].erase(vehicle)
 
 
@@ -2105,5 +2310,5 @@ func vehicle_by_id(id: int) -> Vehicle:
 
 
 ## The tractors fetching exports to apron slot `home`, oldest first.
-func fetching_to(home: Vector2i) -> Array[Vehicle]:
+func fetching_to(home: Vector3i) -> Array[Vehicle]:
 	return _fetching.get(home, [] as Array[Vehicle])

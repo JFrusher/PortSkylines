@@ -46,7 +46,13 @@ const SCHEMA := {
 	# delays every route_epoch_seconds, dropping every kept route.
 	# Signals: each phase is green signal_green_seconds by default, which the
 	# player sets between min and max; a stop sign stands stop_seconds.
-	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT, "signal_green_seconds": TYPE_FLOAT, "min_green_seconds": TYPE_FLOAT, "max_green_seconds": TYPE_FLOAT, "stop_seconds": TYPE_FLOAT},
+	# Continuous traffic (M10): vehicles keep standstill_gap_m plus
+	# headway_seconds of travel behind the one ahead, speed up and brake at
+	# accel and decel (m/s²), take a curve no faster than lateral_accel (m/s²)
+	# allows, and are lorry_m and tractor_m long; one stuck stuck_minutes is
+	# moved on to where it was heading.
+	"traffic": {"epoch_seconds": TYPE_FLOAT, "smoothing": TYPE_FLOAT, "route_epoch_seconds": TYPE_FLOAT, "signal_green_seconds": TYPE_FLOAT, "min_green_seconds": TYPE_FLOAT, "max_green_seconds": TYPE_FLOAT, "stop_seconds": TYPE_FLOAT,
+		"standstill_gap_m": TYPE_FLOAT, "headway_seconds": TYPE_FLOAT, "accel": TYPE_FLOAT, "decel": TYPE_FLOAT, "lateral_accel": TYPE_FLOAT, "lorry_m": TYPE_FLOAT, "tractor_m": TYPE_FLOAT, "area_kmh": TYPE_FLOAT, "give_way_seconds": TYPE_FLOAT, "stuck_minutes": TYPE_FLOAT},
 	# Empties: return_share of imports come back as empties return_days after
 	# leaving, the rest going to inland depots; one
 	# turned away for want of room costs its line `refused` reputation; one
@@ -111,7 +117,7 @@ const SCHEMA := {
 	# Ships sail ship_speed metres a minute along ship lanes drawn on the
 	# water: a lane takes one ship at a time unless it is two_way, and only
 	# barges sail a barges_only one (a river channel); each covers half_width
-	# cells either side of its line. A ship lies in its
+	# cells either side of its line, and bends no tighter than min_radius_cells. A ship lies in its
 	# berth's pocket, `pocket` cells out from the quay. Lanes and pockets are
 	# as deep as their shallowest water plus what is dredged there, at most
 	# dredge.max_depth; dredging costs per cell and metre, then maintenance
@@ -125,7 +131,7 @@ const SCHEMA := {
 	# clear of the next ship's booking. Breakwaters are walls on the water,
 	# at a price and upkeep per cell, that no lane crosses. As port authority the port charges
 	# each call its class's port_dues, and each piloted passage pilots.fee.
-	"water": {"ship_speed": TYPE_FLOAT, "lanes": {"*": {"name": TYPE_STRING, "half_width": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "two_way": TYPE_BOOL, "barges_only": TYPE_BOOL}}, "pocket": TYPE_INT,
+	"water": {"ship_speed": TYPE_FLOAT, "lanes": {"*": {"name": TYPE_STRING, "min_radius_cells": TYPE_FLOAT, "half_width": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "two_way": TYPE_BOOL, "barges_only": TYPE_BOOL}}, "pocket": TYPE_INT,
 		"anchorage": {"cost_per_cell": TYPE_INT, "spacing": TYPE_INT}, "max_wait_hours": TYPE_FLOAT,
 		"pilots": {"station_cost": TYPE_INT, "pilot_cost": TYPE_INT, "upkeep_per_pilot": TYPE_INT, "boat_speed": TYPE_FLOAT, "fee": TYPE_INT},
 		"tugs": {"depot_cost": TYPE_INT, "tug_cost": TYPE_INT, "upkeep_per_tug": TYPE_INT, "speed": TYPE_FLOAT}, "slot_margin_minutes": TYPE_FLOAT,
@@ -141,7 +147,15 @@ const SCHEMA := {
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
 	# Roads the player draws: lanes each way along the drawn direction, whether
 	# lorries may use it (tractors and AGVs always may), and cost and daily upkeep per 4 m cell.
-	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
+	# Roads meeting at a node must part by at least min_angle degrees; each is
+	# trimmed back to clear its neighbours' edges, plus corner_cells. Lanes
+	# beside one running the same way change over lane_change_cells at a
+	# road's middle, where it leaves lane_change_clear_cells each side (the
+	# longest vehicle and its standstill gap) clear of the next stop line.
+	"junctions": {"min_angle": TYPE_FLOAT, "corner_cells": TYPE_FLOAT, "lane_change_cells": TYPE_FLOAT, "lane_change_clear_cells": TYPE_FLOAT},
+	# The tightest a road of the type may curve, at its line, is min_radius_cells.
+	# A ring type is the roundabout tool's: one-way round a centre, the roads joining it giving way.
+	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "speed_kmh": TYPE_FLOAT, "ring": TYPE_BOOL, "min_radius_cells": TYPE_FLOAT}},
 	# Areas dragged along a road edge: how deep they reach from the road and
 	# their shortest length, in 4 m cells, and cost and daily upkeep per cell.
 	"area_types": {"*": {"name": TYPE_STRING, "kind": TYPE_STRING, "depth": TYPE_INT, "max_depth": TYPE_INT, "min_length": TYPE_INT, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT}},
@@ -156,7 +170,7 @@ const SCHEMA := {
 	# Each dollar of the port's barge discount books share_per_dollar more of
 	# every line's boxes for places up the river onto barges, up to max_share.
 	"barge": {"discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
-	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
+	"rail": {"name": TYPE_STRING, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "min_radius_cells": TYPE_FLOAT, "entry_offset": TYPE_INT, "train": {"wagons": TYPE_INT, "interval_minutes": TYPE_FLOAT, "dwell_minutes": TYPE_FLOAT, "speed": TYPE_FLOAT}, "discount": {"max": TYPE_INT, "share_per_dollar": TYPE_FLOAT, "max_share": TYPE_FLOAT}},
 	# Off-map places boxes come from and go to: each box's share, and its
 	# distance by road, rail and barge up the river (0 for no link).
 	"hinterland": {"places": {"*": {"name": TYPE_STRING, "share": TYPE_FLOAT, "road_km": TYPE_FLOAT, "rail_km": TYPE_FLOAT, "barge_km": TYPE_FLOAT}}},
@@ -173,7 +187,7 @@ const SCHEMA := {
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
-const POSITIVE := ["width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
+const POSITIVE := ["min_radius_cells", "width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
 
 static var _base := {}
 

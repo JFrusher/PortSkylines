@@ -17,11 +17,11 @@ const TRAIN_STATES := {"arriving": "Coming in to its siding", "working": "At its
 ## segment} there, else null.
 static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for vehicle in sim.vehicles:
-		if Vector2i(vehicle.position(1.0).round()) == cell:
+		if Vector2i(Drive.where(sim, vehicle).round()) == cell:
 			return vehicle
 	for train: Train in sim.trains:
 		var head := int(train.t)
-		if cell in train.path.slice(maxi(head - train.length(), 0), head + 1):
+		if cell in train.cells(maxi(head - train.length(), 0), mini(head, train.path.size() - 1)):
 			return train
 	for ship in sim.ships:
 		if ship.apron and cell in _ship_water(sim, ship):
@@ -29,8 +29,8 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 	for crane in sim.cranes:
 		if cell in _crane_cells(sim, crane):
 			return crane
-	var junction := sim.lanes.box_of(cell)
-	if junction != Grid.NONE:
+	var junction := Drive.junction_at(sim, cell)
+	if junction != Vector2.INF:
 		return {"junction": junction}
 	var area := sim.areas.area_at(cell)
 	if area:
@@ -49,7 +49,7 @@ static func pick(sim: PortSim, cell: Vector2i) -> Variant:
 static func lane_at(sim: PortSim, cell: Vector2i) -> int:
 	for segment: int in sim.ship_lanes.segments:
 		var lane: Dictionary = sim.ship_lanes.segments[segment]
-		if cell in sim.ship_lanes.footprint(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], lane.type):
+		if cell in sim.ship_lanes.area(segment):
 			return segment
 	return 0
 
@@ -84,7 +84,7 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 	if thing is Dictionary and thing.has("lane"):
 		return _lane(sim, thing.lane) if thing.lane in sim.ship_lanes.segments else nothing
 	if thing is Dictionary and thing.has("junction"):
-		return _junction(sim, thing.junction) if not sim.lanes.arms(thing.junction).is_empty() else nothing
+		return _junction(sim, thing.junction) if not Drive.arms(sim, thing.junction).is_empty() else nothing
 	if thing is Dictionary:
 		return _area(sim, thing.area) if thing.area in sim.areas.list else nothing
 	return nothing
@@ -92,20 +92,16 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 
 ## The name of the arm leaving a junction towards `arm`: "north", "south-east"...
 static func arm_name(arm: Vector2i) -> String:
-	var parts: Array[String] = []
-	if arm.y != 0:
-		parts.append("north" if arm.y < 0 else "south")
-	if arm.x != 0:
-		parts.append("west" if arm.x < 0 else "east")
-	return "-".join(parts)
+	var names := ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
+	return names[posmod(roundi(atan2(arm.y, arm.x) / (PI / 4.0)), 8)]
 
 
-static func _junction(sim: PortSim, point: Vector2i) -> Array[String]:
-	var junctions := sim.lane_traffic.junctions
-	var lines: Array[String] = ["Junction of %d roads" % sim.lanes.arms(point).size()]
+static func _junction(sim: PortSim, point: Vector2) -> Array[String]:
+	var junctions := Drive.junctions(sim)
+	var lines: Array[String] = ["Junction of %d roads" % Drive.arms(sim, point).size()]
 	if point in junctions.signals:
 		var at: Dictionary = junctions.signals[point]
-		var phases := junctions.phases(sim.lanes, point)
+		var phases := junctions.phases(Drive.junction_lanes(sim), point)
 		for i in phases.size():
 			var arms: Array = phases[i].map(func(arm: Vector2i) -> String: return arm_name(arm))
 			var now := ", green now (%d s left)" % ceili(at.left) if i == at.phase and at.left > 0.0 else ""
@@ -113,7 +109,7 @@ static func _junction(sim: PortSim, point: Vector2i) -> Array[String]:
 	else:
 		lines.append("No signals")
 	var signs: Dictionary = junctions.signs.get(point, {})
-	for arm: Vector2i in sim.lanes.arms(point):
+	for arm: Vector2i in Drive.arms(sim, point):
 		if arm in signs:
 			lines.append("From the %s: %s" % [arm_name(arm), "give way" if signs[arm] == "give_way" else "stop"])
 	return lines
@@ -132,23 +128,19 @@ static func _train(sim: PortSim, train: Train) -> Array[String]:
 
 ## The water an apron ship lies in: its length of the quay edge, out to its beam.
 static func _ship_water(sim: PortSim, ship: PortSim.Ship) -> Array[Vector2i]:
-	var area: Dictionary = sim.areas.list[ship.apron]
-	var along: Vector2i = (area.end - area.start).sign()
-	var depth := sim.areas.depth_of(area)
+	var depth := sim.areas.depth_of(sim.areas.list[ship.apron])
 	var found: Array[Vector2i] = []
 	for k in range(ship.from, ship.from + AreaFlow.ship_cells(sim, ship.kind)):
 		for beam in range(depth, depth + 8):
-			found.append(area.start + along * k + area.out * beam)
+			found.append(Vector2i(sim.areas.point(ship.apron, k, beam).floor()))
 	return found
 
 
 ## The cells an apron crane stands across, between its rails.
 static func _crane_cells(sim: PortSim, crane: PortSim.Crane) -> Array[Vector2i]:
-	var area: Dictionary = sim.areas.list[crane.apron]
-	var along: Vector2i = (area.end - area.start).sign()
 	var found: Array[Vector2i] = []
-	for row in range(1, sim.areas.depth_of(area) - 1):
-		found.append(area.start + along * crane.along + area.out * row)
+	for row in range(1, sim.areas.depth_of(sim.areas.list[crane.apron]) - 1):
+		found.append(Vector2i(sim.areas.point(crane.apron, crane.along, row).floor()))
 	return found
 
 
@@ -181,7 +173,7 @@ static func _lane(sim: PortSim, segment: int) -> Array[String]:
 	var spec: Dictionary = sim.rules.water.lanes[lane.type]
 	var lines: Array[String] = [spec.name]
 	lines.append("%.1f m deep at its shallowest%s" % [sim.ship_lanes.depth(segment, sim.areas.coast), ", %.0f m of it dredged" % lane.dredged if lane.dredged > 0.0 else ""])
-	lines.append("%d m long, %d m wide, %s" % [Grid.metres(RoadNet.length(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b])), Grid.metres(spec.half_width * 2 + 1), "ships pass both ways" if spec.two_way else "one ship at a time"] + ("; barges only" if spec.barges_only else ""))
+	lines.append("%d m long, %d m wide, %s" % [roundi(sim.ship_lanes.curve(segment).length * Grid.CELL), Grid.metres(spec.half_width * 2 + 1), "ships pass both ways" if spec.two_way else "one ship at a time"] + ("; barges only" if spec.barges_only else ""))
 	var drafts: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return sim.ship_lanes.depth(segment, sim.areas.coast) >= sim.rules.ship_classes[kind].draft)
 	lines.append("Deep enough for %s" % (", ".join(drafts) if not drafts.is_empty() else "no ship yet"))
 	return lines
@@ -214,7 +206,7 @@ static func _yard_fill(sim: PortSim, id: int) -> String:
 ## A quay apron's size, the ships it fits, its cranes and the ship alongside.
 static func _apron(sim: PortSim, id: int) -> Array[String]:
 	var area: Dictionary = sim.areas.list[id]
-	var length := RoadNet.length(area.start, area.end) + 1
+	var length: int = area.columns
 	var fits: Array = sim.rules.ship_classes.keys().filter(func(kind: String) -> bool: return AreaFlow.ship_cells(sim, kind) <= length)
 	var lines: Array[String] = ["%d m long, %d m deep: berths %s" % [Grid.metres(length), Grid.metres(sim.areas.depth_of(area)), ", ".join(fits) if not fits.is_empty() else "no ship yet"]]
 	var cranes := sim.cranes.filter(func(c: PortSim.Crane) -> bool: return c.apron == id).size()

@@ -18,11 +18,20 @@ var _accumulated := 0.0
 var _painting := false
 var _last_cell := Grid.NONE
 ## Where a road drag started on the 4 m grid, or NONE.
-var _road_from := Grid.NONE
+var _road_from := Vector2.INF
+## A curved road's control point once its second click has placed it, or INF.
+var _road_control := Vector2.INF
+## What a Move It drag holds: {"node": id} or {"segment": id}, or {}.
+var _moving := {}
 ## How near a lane end a lane drag has to start or end to join it, in cells.
 const LANE_SNAP := 4
 ## Where a ship lane drag started, or Grid.NONE.
 var _lane_from := Grid.NONE
+## The berth tool's last plan and what it was found for (see _berth_plan).
+var _berth_planned := {}
+var _berth_key := []
+## A curved lane's second click: the point it bends toward, or INF.
+var _lane_control := Vector2.INF
 ## Where an anchorage drag started, or Grid.NONE.
 var _anchor_from := Grid.NONE
 ## Where a breakwater drag started, or Grid.NONE.
@@ -89,8 +98,10 @@ func _new_game(creative: bool, generated: bool) -> void:
 func _use(new_sim: PortSim) -> void:
 	sim = new_sim
 	_painting = false
-	_road_from = Grid.NONE
+	_road_from = Vector2.INF
+	_road_control = Vector2.INF
 	_lane_from = Grid.NONE
+	_lane_control = Vector2.INF
 	_anchor_from = Grid.NONE
 	_wall_from = Grid.NONE
 	_area_from = {}
@@ -122,8 +133,8 @@ func _process(dt: float) -> void:
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would start, a road's
 	# width across: on a road it snaps to, else at the point under the mouse.
-	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "" and not _upgrading() and _road_from == Grid.NONE and cell != Grid.NONE:
-		view.show_hover_at(_place(_road_start()), _width(), _order_error(cell) == "")
+	if hud.tool == Hud.DRAW_ROAD and hud.road_type != "" and not _upgrading() and _road_from == Vector2.INF and cell != Grid.NONE:
+		view.show_hover_at(_road_start(), _width(), _order_error(cell) == "")
 	else:
 		view.show_hover(cell, _order_error(cell) == "")
 	view.show_snaps(_snapped_ends(cell), _guide_lines(cell))
@@ -132,7 +143,9 @@ func _process(dt: float) -> void:
 		var area := _area_command()
 		for side: int in ([1, -1] if hud.both_sides() else [area.side]):
 			dragged.append_array(sim.areas.cells_of(area.type, area.segment, side, area.from, area.to))
-	var berth: Dictionary = sim.berth_plan(hud.berth, cell) if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE else {}
+	var berth: Dictionary = _berth_plan(cell) if hud.tool == Hud.BUILD_BERTH and cell != Grid.NONE else {}
+	if berth.has("angle") and hud.berth_angle == PortSim.AUTO_ANGLE:
+		hud.berth_auto = berth.angle
 	if berth.has("cells"):
 		dragged = berth.cells
 	if hud.tool == Hud.BUILD_BREAKWATER and _wall_from != Grid.NONE and cell != Grid.NONE:
@@ -140,32 +153,35 @@ func _process(dt: float) -> void:
 	if hud.tool == Hud.BUILD_ANCHORAGE and _anchor_from != Grid.NONE and cell != Grid.NONE:
 		dragged = sim.anchorage_cells(_anchor_from, cell)
 	if hud.tool == Hud.DRAW_LANE and _lane_from != Grid.NONE and cell != Grid.NONE:
-		dragged = sim.ship_lanes.footprint(_lane_from, _lane_to(), hud.lane_type)
+		dragged = sim.ship_lanes.footprint(_lane_from, _lane_to(), hud.lane_type, _lane_bend())
 	view.show_area_preview(dragged, _order_error(cell) == "")
-	var ends: Array[Vector2i] = [Grid.NONE, Grid.NONE]
+	var ends: Array[Vector2] = [Vector2.INF, Vector2.INF]
 	var road_type := hud.road_type
 	var ok := _order_error(cell) == ""
 	var picked := _picked_segment(cell)
 	if hud.tool == Hud.DRAW_LANE:
-		hud.hint("%d m, %s" % [Grid.metres(RoadNet.length(_lane_from, _lane_to())), HudDetails.dollars(sim.ship_lane_price(_lane_from, _lane_to(), hud.lane_type))] if _lane_from != Grid.NONE and _lane_to() != _lane_from else "")
+		hud.hint("%d m, %s" % [roundi(ShipLanes.line_of(_lane_from, _lane_to(), _lane_bend()).length * Grid.CELL), HudDetails.dollars(sim.ship_lane_price(_lane_from, _lane_to(), hud.lane_type, _lane_bend()))] if _lane_from != Grid.NONE and _lane_to() != _lane_from else "")
 	else:
-		hud.hint(_segment_hint(picked) if _road_from == Grid.NONE else "%d m" % Grid.metres(RoadNet.length(_road_from, _road_to())))
-	if _road_from != Grid.NONE:
+		hud.hint(_segment_hint(picked) if _road_from == Vector2.INF else _drag_hint())
+	if _road_from != Vector2.INF:
 		ends = _road_ends()
 	elif not picked.is_empty():
 		# The one segment, junction to junction, that a click would remove or change.
 		var net: RoadNet = picked[0]
 		var road: Dictionary = net.segments[picked[1]]
-		ends = [net.nodes[road.a], net.nodes[road.b]] as Array[Vector2i]
+		ends = [net.nodes[road.a], net.nodes[road.b]] as Array[Vector2]
 		road_type = "track" if net == sim.rails else road.type
 		if _upgrading():
 			road_type = hud.road_type
 		else:
 			ok = false
 	elif berth.has("line"):
-		ends = berth.line
+		ends = [Vector2(berth.line[0]), Vector2(berth.line[1])] as Array[Vector2]
 		road_type = PortSim.BERTH_ROAD
-	view.show_road_preview(ends[0], ends[1], road_type, ok)
+	if _road_from != Vector2.INF and hud.road_mode == "roundabout" and hud.road_type != "track":
+		view.show_ring_preview(_road_from, _road_from.distance_to(_hovered_grid_point()), ok)
+	else:
+		view.show_road_preview(ends[0], ends[1], road_type, ok, _road_bend() if _road_from != Vector2.INF else (sim.roads.segments[picked[1]].control if not picked.is_empty() and picked[0] == sim.roads else Vector2.INF))
 	if _painting:
 		if not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
 			_painting = false
@@ -176,14 +192,36 @@ func _process(dt: float) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if _following and event is InputEventKey and event.pressed and event.keycode in [KEY_ESCAPE, KEY_W, KEY_A, KEY_S, KEY_D, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT]:
 		_following = 0
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _moving.is_empty():
+		if hud.tool == Hud.MOVE_ROAD:
+			var to := _hovered_grid_point()
+			if _moving.has("node"):
+				_report(sim.apply({"op": "move_road_node", "node": _moving.node, "to": to}))
+			else:
+				# The road's middle follows the mouse: a curve's middle is (a + 2 control + b) / 4.
+				var road: Dictionary = sim.roads.segments[_moving.segment]
+				_report(sim.apply({"op": "move_road_control", "segment": _moving.segment, "control": to * 2.0 - (sim.roads.nodes[road.a] + sim.roads.nodes[road.b]) / 2.0}))
+		_moving = {}
+		return
 	# A drag builds on release only if its tool is still the one selected.
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Grid.NONE:
-		if hud.tool == Hud.DRAW_ROAD and hud.road_type == "track":
-			_report(sim.apply({"op": "build_rail", "from": _road_from, "to": _road_to()}))
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _road_from != Vector2.INF:
+		if hud.tool == Hud.DRAW_ROAD and hud.road_mode == "roundabout" and hud.road_type != "track":
+			_report(sim.apply({"op": "build_roundabout", "centre": _road_from, "radius": _road_from.distance_to(_hovered_grid_point())}))
+		elif hud.tool == Hud.DRAW_ROAD and hud.road_mode == "curved" and _road_control == Vector2.INF:
+			# A curved road's second click places the point it bends toward; the third ends it.
+			if _road_to() != _road_from:
+				_road_control = _road_to()
+			return
 		elif hud.tool == Hud.DRAW_ROAD:
 			var ends := _road_ends()
-			_report(sim.apply({"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}))
-		_road_from = Grid.NONE
+			var command := {"op": "build_road", "from": ends[0], "to": ends[1], "type": hud.road_type}
+			if hud.road_type == "track":
+				command = {"op": "build_rail", "from": Vector2i(ends[0].floor()), "to": Vector2i(ends[1].floor())}
+			if _road_bend() != Vector2.INF:
+				command.control = _road_bend()
+			_report(sim.apply(command))
+		_road_from = Vector2.INF
+		_road_control = Vector2.INF
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _wall_from != Grid.NONE:
 		if hud.tool == Hud.BUILD_BREAKWATER:
@@ -196,9 +234,18 @@ func _unhandled_input(event: InputEvent) -> void:
 		_anchor_from = Grid.NONE
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and _lane_from != Grid.NONE:
+		if hud.tool == Hud.DRAW_LANE and hud.road_mode == "curved" and _lane_control == Vector2.INF:
+			# A curved lane's second click places the point it bends toward; the third ends it.
+			if _lane_to() != _lane_from:
+				_lane_control = Vector2(_lane_to()) + Vector2(0.5, 0.5)
+			return
 		if hud.tool == Hud.DRAW_LANE:
-			_report(sim.apply({"op": "build_ship_lane", "from": _lane_from, "to": _lane_to(), "type": hud.lane_type}))
+			var command := {"op": "build_ship_lane", "from": _lane_from, "to": _lane_to(), "type": hud.lane_type}
+			if _lane_bend() != Vector2.INF:
+				command.control = _lane_bend()
+			_report(sim.apply(command))
 		_lane_from = Grid.NONE
+		_lane_control = Vector2.INF
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed and not _area_from.is_empty():
 		if hud.tool == Hud.DRAW_AREA:
@@ -218,7 +265,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_order(_hovered_grid_cell(), true)
 			return
 		if hud.tool == Hud.DRAW_LANE:
-			_lane_from = _lane_point(_hovered_grid_cell())
+			if _lane_from == Grid.NONE:
+				_lane_from = _lane_point(_hovered_grid_cell())
 			return
 		if hud.tool == Hud.BUILD_ANCHORAGE:
 			_anchor_from = _hovered_grid_cell()
@@ -233,7 +281,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			_report(sim.apply({"op": "change_road", "segment": sim.roads.segment_at(_hovered_grid_cell()), "type": hud.road_type}))
 			return
 		if hud.tool == Hud.DRAW_ROAD:
-			_road_from = _road_start()
+			if _road_from == Vector2.INF:
+				_road_from = _road_start()
+			return
+		if hud.tool == Hud.MOVE_ROAD:
+			_moving = _move_handle(_hovered_grid_point())
 			return
 		if hud.tool == Hud.INSPECT:
 			var box := AreaFlow.box_at(sim, _hovered_grid_cell())
@@ -312,7 +364,7 @@ func _command(cell: Vector2i) -> Dictionary:
 			var apron := _apron_at(cell)
 			return {"op": "place_sts", "apron": apron, "along": _crane_along(apron, cell), "kind": hud.crane_kind}
 		Hud.BUILD_BERTH:
-			return {"op": "build_berth", "kind": hud.berth, "cell": cell}
+			return {"op": "build_berth", "kind": hud.berth, "cell": cell, "angle": _berth_plan(cell).get("angle", hud.berth_angle)}
 	assert(false, "no command for tool %d" % hud.tool)
 	return {}
 
@@ -346,12 +398,14 @@ func _order_error(cell: Vector2i) -> String:
 		Hud.DRAW_ROAD:
 			if _upgrading():
 				return sim.change_road_error(sim.roads.segment_at(cell), hud.road_type)
-			if _road_from == Grid.NONE:
+			if _road_from == Vector2.INF:
 				return ""
 			if hud.road_type == "track":
-				return sim.build_rail_error(_road_from, _road_to())
+				return sim.build_rail_error(Vector2i(_road_from.floor()), Vector2i(_road_to().floor()), _road_bend())
+			if hud.road_mode == "roundabout":
+				return sim.build_roundabout_error(_road_from, _road_from.distance_to(_hovered_grid_point()))
 			var ends := _road_ends()
-			return sim.build_road_error(ends[0], ends[1], hud.road_type)
+			return sim.build_road_error(ends[0], ends[1], hud.road_type, 0, false, _road_bend())
 		Hud.DRAW_AREA:
 			if _area_from.is_empty():
 				return ""
@@ -368,9 +422,10 @@ func _order_error(cell: Vector2i) -> String:
 			var apron := _apron_at(cell)
 			return AreaFlow.sts_error(sim, apron, _crane_along(apron, cell), hud.crane_kind)
 		Hud.BUILD_BERTH:
-			return sim.build_berth_error(hud.berth, cell)
+			var plan := _berth_plan(cell)
+			return plan.error if plan.has("error") else sim.build_berth_error(hud.berth, cell, plan.angle)
 		Hud.DRAW_LANE:
-			return "" if _lane_from == Grid.NONE else sim.build_ship_lane_error(_lane_from, _lane_to(), hud.lane_type)
+			return "" if _lane_from == Grid.NONE else sim.build_ship_lane_error(_lane_from, _lane_to(), hud.lane_type, _lane_bend())
 		Hud.BUILD_ANCHORAGE:
 			return "" if _anchor_from == Grid.NONE else sim.build_anchorage_error(_anchor_from, cell)
 		Hud.BUILD_MARINE:
@@ -379,6 +434,17 @@ func _order_error(cell: Vector2i) -> String:
 			return "" if _wall_from == Grid.NONE else sim.build_breakwater_error(_wall_from, _wall_to())
 	assert(false, "no error check for tool %d" % hud.tool)
 	return ""
+
+
+## The berth tool's plan at `cell` (PortSim.berth_plan), found again only
+## when the cell, the berth, its angle or the areas change: finding the way
+## that fills least tries every BERTH_TURN step.
+func _berth_plan(cell: Vector2i) -> Dictionary:
+	var key := [hud.berth, cell, hud.berth_angle, sim.areas.version]
+	if key != _berth_key:
+		_berth_key = key
+		_berth_planned = sim.berth_plan(hud.berth, cell, hud.berth_angle)
+	return _berth_planned
 
 
 ## The 4 m grid cell under the mouse, or NONE.
@@ -406,25 +472,105 @@ func _wall_to() -> Vector2i:
 
 
 ## Where a lane drag from _lane_from ends: at the mouse or a lane end near
-## it, kept straight or at 45°.
+## it; drawn straight (Shape), kept straight or at 45°.
 func _lane_to() -> Vector2i:
 	var to := _lane_point(_hovered_grid_cell())
 	var d := to - _lane_from
-	return to if d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y) else RoadNet.snap(_lane_from, to)
+	if hud.road_mode in ["curved", "freeform"] or d.x == 0 or d.y == 0 or absi(d.x) == absi(d.y):
+		return to
+	return RoadNet.snap(_lane_from, to)
 
 
-## Where a road drag from _road_from ends: snapped onto a road or guide near
-## the mouse, else straight or to 45°; with Shift held, only straight or 45°.
-func _road_to() -> Vector2i:
+## The point the lane being drawn bends toward, or INF while it is straight
+## (as _road_bend): a curved lane's second click, or for a freeform drag
+## from a lane's end, that lane's way out of it carried on half the drag's
+## length.
+func _lane_bend() -> Vector2:
+	if hud.road_mode == "curved":
+		return _lane_control
+	if hud.road_mode != "freeform":
+		return Vector2.INF
+	var from := Vector2(_lane_from) + Vector2(0.5, 0.5)
+	var to := Vector2(_lane_to()) + Vector2(0.5, 0.5)
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		for end: String in ["a", "b"]:
+			if sim.ship_lanes.nodes[lane[end]] == _lane_from and sim.ship_lanes.at(lane[end]).size() == 1:
+				var along := sim.ship_lanes.curve(segment)
+				var out := -along.direction_at(0.0) if end == "a" else along.direction_at(along.length)
+				return from + out * from.distance_to(to) / 2.0
+	return Vector2.INF
+
+
+## Where a road drag from _road_from ends: where RoadNet.snap_drag puts the
+## point under the mouse, with Shift held that point (on the grid, straight
+## or at 45°). Track ends in the middle of the cell that point is in.
+func _road_to() -> Vector2:
+	var here := _hovered_grid_point()
 	if _raw():
-		return RoadNet.snap(_road_from, _hovered_node())
-	return _net().snap_end(_road_from, _hovered_node())
+		return _laid(Vector2(RoadNet.snap(Vector2i(_road_from.round()), Vector2i(here.round()))) if _on_grid() else here)
+	return _laid(_net().snap_drag(_road_from, here, hud.road_type, _on_grid()).point)
 
 
-## Where a road drag would start: on a road or guide near the mouse, or with
-## Shift held the point under it.
-func _road_start() -> Vector2i:
-	return _hovered_node() if _raw() else _net().snap_start(_hovered_node())
+## Where a road drag would start: on a road near the mouse, else (or with
+## Shift held) the point under it, on the grid the nearest grid point. Track
+## starts in the middle of that point's cell.
+func _road_start() -> Vector2:
+	var here := _hovered_grid_point()
+	var onto := here if _raw() else _net().snap_point(here)
+	return _laid(onto if onto != here or not _on_grid() else here.round())
+
+
+## `point` as the road tool lays it: track through the middle of its cell
+## (build_rail takes cells), roads where it is.
+func _laid(point: Vector2) -> Vector2:
+	return point.floor() + Vector2(0.5, 0.5) if hud.road_type == "track" else point
+
+
+## The tooltip beside the cursor while a road is drawn: its length along
+## its curve, its price and its heading as a compass bearing (north 0°).
+func _drag_hint() -> String:
+	var to := _road_to()
+	var bend := _road_bend()
+	var along := RoadCurve.straight(_road_from, to) if bend == Vector2.INF else RoadCurve.new(_road_from, bend, to)
+	var metres := roundi(along.length * Grid.CELL)
+	if hud.road_type == "track" or to == _road_from:
+		return "%d m" % metres
+	if hud.road_mode == "roundabout":
+		var radius := _road_from.distance_to(_hovered_grid_point())
+		var price := 0
+		for piece: Array in RoadNet.ring_pieces(_road_from, radius):
+			price += sim.road_price(piece[0], piece[2], PortSim.RING_ROAD, piece[1])
+		return "Roundabout, %d m across, %s" % [roundi(radius * 2.0 * Grid.CELL), HudDetails.dollars(price)]
+	var bearing := posmod(roundi(rad_to_deg((to - _road_from).angle()) + 90.0), 360)
+	return "%d m, %s, %d°" % [metres, HudDetails.dollars(sim.road_price(_road_from, to, hud.road_type, bend)), bearing]
+
+
+## The Move It handle nearest `point` within two cells: a road's end or
+## junction first, else the point a road bends toward (its control point);
+## {} when none is that near.
+func _move_handle(point: Vector2) -> Dictionary:
+	var best := {}
+	var nearest := 2.0
+	for node: int in sim.roads.nodes:
+		if sim.roads.nodes[node].distance_to(point) < nearest:
+			nearest = sim.roads.nodes[node].distance_to(point)
+			best = {"node": node}
+	if not best.is_empty():
+		return best
+	for id: int in sim.roads.segments:
+		var along := sim.roads.curve(id)
+		var middle := along.point_at(along.length / 2.0)
+		if middle.distance_to(point) < nearest:
+			nearest = middle.distance_to(point)
+			best = {"segment": id}
+	return best
+
+
+## Whether the road tool works on the grid: for roads with the HUD's grid
+## snap on.
+func _on_grid() -> bool:
+	return hud.road_type != "track" and hud.grid_snap
 
 
 ## Whether Shift is held, turning road and guide snapping off.
@@ -432,33 +578,15 @@ func _raw() -> bool:
 	return Input.is_key_pressed(KEY_SHIFT)
 
 
-## The guides the road drag's start or end lies on, unless it joins a road
-## there: pairs of [guide's road end, the drag's point] in grid units.
+## The guide lines the road drag's end lies on, as pairs of points in grid
+## units (RoadNet.snap_drag).
 func _guide_lines(cell: Vector2i) -> Array[Vector2]:
 	var found: Array[Vector2] = []
-	if hud.tool != Hud.DRAW_ROAD or hud.road_type == "" or _upgrading() or cell == Grid.NONE or _raw():
+	if hud.tool != Hud.DRAW_ROAD or hud.road_type == "" or _upgrading() or cell == Grid.NONE or _raw() or _road_from == Vector2.INF:
 		return found
-	var node := _hovered_node()
-	var guided := _net().guide_start(node) if _road_from == Grid.NONE else _net().guide_end(_road_from, node)
-	if _net().snaps(node, _road_from):
-		return found
-	for guide: Dictionary in guided.guides:
-		found.append_array([_place(guide.at), _place(guided.point)])
+	for guide: Array in _net().snap_drag(_road_from, _hovered_grid_point(), hud.road_type, _on_grid()).guides:
+		found.append_array(guide)
 	return found
-
-
-## The node a road drag would use under the mouse: the nearest grid point,
-## where a road's line runs, or for track the cell, as its line runs through
-## cell middles (see RoadNet); NONE off the ground.
-func _hovered_node() -> Vector2i:
-	if _hovered_point() == null:
-		return Grid.NONE
-	return _hovered_grid_cell() if hud.road_type == "track" else Vector2i(_hovered_grid_point().round())
-
-
-## Node `node` of the road tool's net in grid units, for markers.
-func _place(node: Vector2i) -> Vector2:
-	return Vector2(node) + (Vector2(0.5, 0.5) if hud.road_type == "track" else Vector2.ZERO)
 
 
 ## How many lanes across the road tool's road type is.
@@ -495,33 +623,29 @@ func _segment_hint(picked: Array) -> String:
 		return ""
 	var net: RoadNet = picked[0]
 	var road: Dictionary = net.segments[picked[1]]
-	var a: Vector2i = net.nodes[road.a]
-	var b: Vector2i = net.nodes[road.b]
+	var a: Vector2 = net.nodes[road.a]
+	var b: Vector2 = net.nodes[road.b]
 	var name: String = sim.rules.rail.name if net == sim.rails else sim.rules.road_types[road.type].name
-	var text := "%s, %d m" % [name, Grid.metres(RoadNet.length(a, b))]
+	var text := "%s, %d m" % [name, roundi(net.curve(picked[1]).length * Grid.CELL)]
 	if not _upgrading():
 		return "Remove " + text
 	var err := sim.change_road_error(picked[1], hud.road_type)
 	if err != "":
 		return "%s\n%s" % [text, err]
-	return "%s\nto %s: %s" % [text, sim.rules.road_types[hud.road_type].name, Hud.HudDetails.dollars(sim.road_price(a, b, hud.road_type))]
+	return "%s\nto %s: %s" % [text, sim.rules.road_types[hud.road_type].name, Hud.HudDetails.dollars(sim.road_price(a, b, hud.road_type, road.control))]
 
 
 ## Where the ends of the road being drawn, or about to be, join a road, in
 ## grid units.
 func _snapped_ends(cell: Vector2i) -> Array[Vector2]:
 	var found: Array[Vector2] = []
-	var node := _hovered_node()
 	if hud.tool != Hud.DRAW_ROAD or _upgrading() or cell == Grid.NONE or _raw():
 		return found
-	if _road_from == Grid.NONE:
-		if _net().snaps(node):
-			found.append(_place(_road_start()))
-		return found
-	if _net().snaps(_road_from):
-		found.append(_place(_road_from))
-	if _net().snaps(node, _road_from):
-		found.append(_place(_road_to()))
+	# Marked where an end lands on a road, not where it only snaps to an angle or length.
+	var here := _hovered_grid_point()
+	var onto := _net().snap_point(here, _road_from)
+	if onto != here:
+		found.append(onto)
 	return found
 
 
@@ -530,9 +654,28 @@ func _net() -> RoadNet:
 	return sim.rails if hud.road_type == "track" else sim.roads
 
 
-## The grid points a road drag builds between.
-func _road_ends() -> Array[Vector2i]:
-	return [_road_from, _road_to()] as Array[Vector2i]
+## The points a road drag builds between.
+func _road_ends() -> Array[Vector2]:
+	return [_road_from, _road_to()] as Array[Vector2]
+
+
+## The point the road being drawn bends toward, or INF while it is straight:
+## a curved road's second click, or for a freeform drag from a road's end,
+## that road's way out of it carried on half the drag's length.
+func _road_bend() -> Vector2:
+	if hud.road_mode == "curved":
+		return _road_control
+	if hud.road_mode != "freeform":
+		return Vector2.INF
+	var to := _road_to()
+	for id: int in _net().segments:
+		var road: Dictionary = _net().segments[id]
+		for end: String in ["a", "b"]:
+			if _net().nodes[road[end]] == _road_from and _net().degree(road[end]) == 1:
+				var along := _net().curve(id)
+				var out := -along.direction_at(0.0) if end == "a" else along.direction_at(along.length)
+				return _road_from + out * _road_from.distance_to(to) / 2.0
+	return Vector2.INF
 
 
 ## The grid point under the mouse, in cells with their fractions.

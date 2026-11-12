@@ -36,6 +36,8 @@ const BUILD_ANCHORAGE := -12
 const BUILD_MARINE := -13
 ## Drags a breakwater across the water.
 const BUILD_BREAKWATER := -14
+## Drags a road's node, or the point it bends toward, to reshape it (Move It).
+const MOVE_ROAD := -15
 ## The build menu row each area type sits in.
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
@@ -54,6 +56,16 @@ var tool := DRAW_ROAD
 var road_type := ""
 ## With DRAW_ROAD, clicking a road changes it to road_type instead of drawing.
 var upgrade_roads := false
+## How DRAW_ROAD lays a road, as Cities: Skylines' road tools: "straight" by
+## a drag; "curved" by three clicks, start, control point, end; "freeform"
+## by a drag that carries on along the road it starts from; "roundabout" by
+## a drag from its centre out to its ring.
+var road_mode := "straight"
+## The Shape buttons (Roads and Water rows), which show and change road_mode.
+var _shapes: Array[Button] = []
+const ROAD_MODES := ["straight", "curved", "freeform", "roundabout"]
+## Roads snap to the 4 m grid, straight or at 45°, as before M10, when on.
+var grid_snap := false
 ## The area type DRAW_AREA drags out, a key of rules.area_types, and for a
 ## gate whether it is built on both sides of the road.
 var area_type := ""
@@ -61,6 +73,10 @@ var two_way := false
 ## The gate tool builds on both sides of the road when this is on.
 ## The berth BUILD_BERTH places, a key of rules.berths.
 var berth := ""
+## The way it faces in degrees, or PortSim.AUTO_ANGLE for the way that fills
+## least; and that way where the mouse is, which main sets, for Turn to turn from.
+var berth_angle := PortSim.AUTO_ANGLE
+var berth_auto := 0.0
 ## The ship lane DRAW_LANE draws, a key of rules.water.lanes.
 var lane_type := ""
 ## What BUILD_MARINE places: "pilot_station" or "tug_depot".
@@ -310,14 +326,27 @@ func _ready() -> void:
 	# Build tool item buttons
 	for key: String in sim.rules.road_types:
 		var road: Dictionary = sim.rules.road_types[key]
+		# Ring road comes only as a roundabout, from the Shape button.
+		if road.ring:
+			continue
 		_item(_button(rows.Roads, "%s\n%s, $%d" % [road.name, _lanes_of(road), road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
 			road_type = key)).tooltip_text = _road_tip(road)
 	var rail: Dictionary = sim.rules.rail
 	_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
 		tool = DRAW_ROAD
-		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge; it crosses roads only straight across, at level crossings. $%d per 4 m, $%.1f a day upkeep." % [rail.cost_per_cell, rail.upkeep_per_cell]
+		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge, straight or curved (Shape), bending no tighter than %d m; it crosses roads at level crossings. $%d per 4 m, $%.1f a day upkeep." % [roundi(rail.min_radius_cells * Grid.CELL), rail.cost_per_cell, rail.upkeep_per_cell]
 	rows.Roads.add_child(VSeparator.new())
+	_shape_button(rows.Roads)
+	var grid := _item(Button.new())
+	grid.text = "Grid snap\noff"
+	grid.toggle_mode = true
+	grid.tooltip_text = "When on, roads snap to the 4 m grid, straight or at 45°, with guides from road ends. When off, they snap onto roads, guide lines and parallel roads, their angle to 15° steps and their length to whole 4 m cells. Hold Shift to place freely."
+	grid.toggled.connect(func(on: bool) -> void:
+		grid_snap = on
+		grid.text = "Grid snap\n%s" % ("on" if on else "off"))
+	rows.Roads.add_child(grid)
+	_item(_button(rows.Roads, "Move It\ndrag a node or bend", tools, false, func() -> void: tool = MOVE_ROAD)).tooltip_text = "Drag a road's end or junction to move it, or drag from the middle of a road to bend it. Areas along a road move with it. A move that would cross another road, meet one too sharply or leave an area without room is refused."
 	var upgrade := _item(Button.new())
 	upgrade.text = "Upgrade mode\nclick a road"
 	upgrade.toggle_mode = true
@@ -346,7 +375,22 @@ func _ready() -> void:
 		var apron: Dictionary = sim.rules.area_types.quay_apron
 		_gate(key, _item(_button(rows.Quay, "%s\n%d m, %d crane spots" % [spec.name, Grid.metres(spec.length), spec.crane_spots], tools, false, func() -> void:
 			tool = BUILD_BERTH
-			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
+			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. It turns to the way that fills the least water, or Turn it. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
+	rows.Quay.add_child(VSeparator.new())
+	var turn := _item(Button.new())
+	turn.text = "Turn\nauto"
+	turn.tooltip_text = "Turns the berth %d° anticlockwise from the way it faces now; Auto turns it back to the way that fills the least water." % PortSim.BERTH_TURN
+	turn.pressed.connect(func() -> void:
+		berth_angle = fposmod((berth_auto if berth_angle == PortSim.AUTO_ANGLE else berth_angle) - PortSim.BERTH_TURN, 360.0)
+		turn.text = "Turn\n%d°" % roundi(berth_angle))
+	rows.Quay.add_child(turn)
+	var auto := _item(Button.new())
+	auto.text = "Auto"
+	auto.tooltip_text = turn.tooltip_text
+	auto.pressed.connect(func() -> void:
+		berth_angle = PortSim.AUTO_ANGLE
+		turn.text = "Turn\nauto")
+	rows.Quay.add_child(auto)
 	for key: String in sim.rules.sts_cranes:
 		var crane: Dictionary = sim.rules.sts_cranes[key]
 		_gate(key, _item(_button(rows.Cranes, "%s\n%s" % [crane.name, HudDetails.dollars(crane.cost)], tools, false, func() -> void:
@@ -357,7 +401,9 @@ func _ready() -> void:
 		var lane: Dictionary = sim.rules.water.lanes[key]
 		_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_LANE
-			lane_type = key)).tooltip_text = "Drag a ship lane over open water, straight or at 45°. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % ["One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
+			lane_type = key)).tooltip_text = "Draw a ship lane over open water, straight or curved (Shape), bending no tighter than %d m. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % [roundi(lane.min_radius_cells * Grid.CELL), "One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
+	_shape_button(rows.Water)
+	rows.Water.add_child(VSeparator.new())
 	var anchorage: Dictionary = sim.rules.water.anchorage
 	_item(_button(rows.Water, "Anchorage\n$%d a cell" % anchorage.cost_per_cell, tools, false, func() -> void: tool = BUILD_ANCHORAGE)).tooltip_text = "Drag out an anchorage over open water, with a ship lane ending in it. Ships that find no free berth wait here, one every %d m each way; with no room at anchor a ship waits out at sea %.0f hours, then goes elsewhere." % [Grid.metres(anchorage.spacing), sim.rules.water.max_wait_hours]
 	var water: Dictionary = sim.rules.water
@@ -841,17 +887,17 @@ func _draw_inspect_actions() -> void:
 	if _inspected is Dictionary and _inspected.has("lane"):
 		if _inspected.lane in sim.ship_lanes.segments:
 			var lane: Dictionary = sim.ship_lanes.segments[_inspected.lane]
-			var cells := sim.ship_lanes.footprint(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], lane.type).size()
+			var cells := sim.ship_lanes.area(_inspected.lane).size()
 			_dredge_button(cells, {"op": "dredge_lane", "segment": _inspected.lane, "metres": 1})
 			if lane.type == "narrow":
-				var widen := _action_button(_inspect_actions, "Widen, %s" % HudDetails.dollars(sim.ship_lane_price(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], "wide")), {"op": "widen_ship_lane", "segment": _inspected.lane})
+				var widen := _action_button(_inspect_actions, "Widen, %s" % HudDetails.dollars(sim.ship_lane_price(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], "wide", lane.control)), {"op": "widen_ship_lane", "segment": _inspected.lane})
 				widen.tooltip_text = "Rebuilds it as a wide lane, %d m across, where ships pass both ways instead of booking it one at a time." % Grid.metres(sim.rules.water.lanes.wide.half_width * 2 + 1)
 		return
 	if not (_inspected is Dictionary and _inspected.has("area") and _inspected.area in sim.areas.list):
 		return
 	var id: int = _inspected.area
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
-		_dredge_button(Marine.pocket(sim, id).size(), {"op": "dredge_berth", "apron": id, "metres": 1})
+		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
 		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment"}
@@ -998,15 +1044,15 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 ## A plain button that issues `command` on each press.
 ## What the inspect panel's buttons were drawn for; they are drawn again when it changes.
 func _actions_key() -> Array:
-	var junctions := sim.lane_traffic.junctions
-	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
+	var junctions := Drive.junctions(sim)
+	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
 	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,
 ## and each arm's sign, which a press moves on: none, give way, stop.
-func _draw_junction_actions(point: Vector2i) -> void:
-	var junctions := sim.lane_traffic.junctions
+func _draw_junction_actions(point: Vector2) -> void:
+	var junctions := Drive.junctions(sim)
 	var signalled := point in junctions.signals
 	_action_button(_inspect_actions, "Signals off" if signalled else "Signals on", {"op": "set_signals", "point": point, "on": not signalled})
 	if signalled:
@@ -1018,10 +1064,18 @@ func _draw_junction_actions(point: Vector2i) -> void:
 					_action_button(_inspect_actions, "Phase %d %+d s" % [i + 1, change], {"op": "set_green", "point": point, "phase": i, "seconds": seconds})
 	var next := {"": "give_way", "give_way": "stop", "stop": ""}
 	var label := {"": "no sign", "give_way": "give way", "stop": "stop"}
-	for arm: Vector2i in sim.lanes.arms(point):
+	for arm: Vector2i in Drive.arms(sim, point):
 		var sign: String = junctions.signs.get(point, {}).get(arm, "")
 		var button := _action_button(_inspect_actions, "From the %s: %s" % [Inspect.arm_name(arm), label[sign]], {"op": "set_sign", "point": point, "arm": arm, "sign": next[sign]})
 		button.tooltip_text = "Press for %s. Give way: traffic from here waits for a gap; stop: it also stops at the line first." % label[next[sign]]
+	# Lane arrows, each lane coming in (lane 1 nearest the middle) cycling through the turns it may take.
+	var presets := [[], ["left"], ["straight"], ["right"], ["left", "straight"], ["straight", "right"], ["left", "straight", "right"]]
+	for arm: Vector2i in Drive.arms(sim, point):
+		for lane: int in Drive.junction_lanes(sim).approach(point, arm).size():
+			var turns: Array = junctions.arrows.get(point, {}).get(arm, {}).get(lane, [])
+			var after: Array = presets[(presets.find(turns) + 1) % presets.size()]
+			var button := _action_button(_inspect_actions, "From the %s, lane %d: %s" % [Inspect.arm_name(arm), lane + 1, " + ".join(turns) if not turns.is_empty() else "as usual"], {"op": "set_lane_arrows", "point": point, "arm": arm, "lane": lane, "turns": after})
+			button.tooltip_text = "Press for %s. Lane arrows set the turns a lane takes at the junction; as usual, the inner lane turns left and goes straight on, the outer turns right." % (" + ".join(after) if not after.is_empty() else "as usual")
 
 
 func _action_button(row: Container, text: String, command: Dictionary) -> Button:
@@ -1038,3 +1092,17 @@ func _action(row: HBoxContainer, text: String, pressed_signal: Signal) -> void:
 	button.text = text
 	button.pressed.connect(pressed_signal.emit)
 	row.add_child(button)
+
+
+## A Shape button in `row`: how roads, track and ship lanes are laid
+## (road_mode), the same setting wherever it is shown.
+func _shape_button(row: Control) -> void:
+	var shape := _item(Button.new())
+	shape.text = "Shape\n%s" % road_mode
+	shape.tooltip_text = "How roads, track and ship lanes are laid: straight by a drag; curved by three clicks (start, a point the curve bends toward, end); freeform by a drag that carries on smoothly from the end it starts on; roundabout (roads only) by a drag from its centre out to its ring, which roads joining it give way to. Click to change."
+	shape.pressed.connect(func() -> void:
+		road_mode = ROAD_MODES[(ROAD_MODES.find(road_mode) + 1) % ROAD_MODES.size()]
+		for button: Button in _shapes:
+			button.text = "Shape\n%s" % road_mode)
+	_shapes.append(shape)
+	row.add_child(shape)

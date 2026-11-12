@@ -33,7 +33,10 @@ func _port(pilots: int, depot := Vector2i(66, 240)) -> PortSim:
 	var sim := AreaPort.base(rules, "")
 	sim.creative = true
 	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
+	for y in range(180, entry.y + 90):
+		sim.apply({"op": "paint_terminal", "cells": [Vector2i(75, y), Vector2i(76, y), Vector2i(86, y)], "terminal": 1})
+	sim.apply({"op": "build_road", "from": Vector2i(86, 180), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(76, 170), "to": Vector2i(76, 190), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 5, "to": 84}), "", "a second apron")
 	AreaPort.add_lane(sim, sim.areas.list.keys().max())
@@ -100,9 +103,7 @@ func _test_ships_never_pass_in_a_narrow_lane() -> void:
 	# past both berths, with a branch off it to each.
 	var rows: Array[int] = []
 	for apron: int in [1, sim.areas.list.keys().max()]:
-		var area: Dictionary = sim.areas.list[apron]
-		var cells := RoadNet.line(area.start, area.end)
-		rows.append(cells[cells.size() / 2].y)
+		rows.append(sim.areas.cell_at(apron, sim.areas.list[apron].columns / 2, 0).y)
 	var fork := Vector2i(30, rows[1])
 	_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(fork.x, 0), "to": fork, "type": "narrow"}), "", "a narrow lane in from the sea")
 	for row: int in rows:

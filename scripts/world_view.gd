@@ -6,6 +6,8 @@ extends Node3D
 ## A deck box's height and its length by TEU (20 ft and 40 ft) on a ship
 ## model, in world units, stretched a little so boxes aboard read at a distance.
 const BOX_HEIGHT := 0.3
+## A junction's approach marking is drawn every this many cells along a lane.
+const APPROACH_MARK := 3
 const BOX_LENGTH := {1: 0.4, 2: 0.8}
 ## Boxes not yet booked on a line.
 const PLAIN_BOX := Color(0.72, 0.72, 0.68)
@@ -252,17 +254,32 @@ func show_hover_at(centre: Vector2, cells: int, ok: bool) -> void:
 	(_hover.mesh.material as StandardMaterial3D).albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
 
-## Shows the road a drag would build from `from` to `to`, green if it can be
-## built, else red; hidden when `from` is NONE.
-func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> void:
-	_road_preview.visible = from != Grid.NONE and from != to
+## Shows the roundabout a drag would build round `centre`, `radius` cells
+## out, green if it can be built, else red.
+func show_ring_preview(centre: Vector2, radius: float, ok: bool) -> void:
+	_road_preview.visible = radius > 0.0
 	if not _road_preview.visible:
 		return
 	var surface := _road_tool()
+	for piece: Array in RoadNet.ring_pieces(centre, radius):
+		_add_road(surface, null, RoadCurve.new(piece[0], piece[1], piece[2]), sim.rules.road_types[PortSim.RING_ROAD])
+	_road_preview.mesh = surface.commit()
+	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
+
+
+## Shows the road a drag would build from `from` to `to`, curving through
+## `control` (INF: straight), green if it can be built, else red; hidden
+## when `from` is INF.
+func show_road_preview(from: Vector2, to: Vector2, type: String, ok: bool, control := Vector2.INF) -> void:
+	_road_preview.visible = from != Vector2.INF and from != to
+	if not _road_preview.visible:
+		return
+	var surface := _road_tool()
+	var curve := RoadCurve.straight(from, to) if control == Vector2.INF else RoadCurve.new(from, control, to)
 	if type == "track":
-		_add_track(surface, null, from, to)
+		_add_track(surface, null, curve)
 	else:
-		_add_road(surface, null, from, to, sim.rules.road_types[type])
+		_add_road(surface, null, curve, sim.rules.road_types[type])
 	_road_preview.mesh = surface.commit()
 	_road_preview.material_override.albedo_color = Color(0.3, 1, 0.4, 0.5) if ok else Color(1, 0.25, 0.2, 0.5)
 
@@ -270,21 +287,21 @@ func show_road_preview(from: Vector2i, to: Vector2i, type: String, ok: bool) -> 
 ## Marks the head of each lane into a junction with signals or a sign, when
 ## they or the phases showing green have changed.
 func _draw_junctions() -> void:
-	var junctions := sim.lane_traffic.junctions
+	var junctions := Drive.junctions(sim)
 	var green := {}
-	for point: Vector2i in junctions.signals:
+	for point: Vector2 in junctions.signals:
 		var at: Dictionary = junctions.signals[point]
-		green[point] = junctions.phases(sim.lanes, point)[at.phase] if at.left > 0.0 else []
+		green[point] = junctions.phases(Drive.junction_lanes(sim), point)[at.phase] if at.left > 0.0 else []
 	var now := [sim.roads.version, green, junctions.signs.duplicate(true)]
 	if now == _junctions_drawn:
 		return
 	_junctions_drawn = now
 	var tool := _road_tool()
 	var points := {}
-	for point: Vector2i in junctions.signals.keys() + junctions.signs.keys():
+	for point: Vector2 in junctions.signals.keys() + junctions.signs.keys():
 		points[point] = true
-	for point: Vector2i in points:
-		for arm: Vector2i in sim.lanes.arms(point):
+	for point: Vector2 in points:
+		for arm: Vector2i in Drive.arms(sim, point):
 			var color := Color.TRANSPARENT
 			if point in green:
 				color = Color(0.2, 0.9, 0.3) if arm in green[point] else Color(0.95, 0.2, 0.15)
@@ -294,10 +311,11 @@ func _draw_junctions() -> void:
 				continue
 			tool.set_color(color)
 			# The approach lists each lane's last cells, nearest the box last.
-			var cells := sim.lanes.approach(point, arm)
-			for i in range(LaneGraph.APPROACH_CELLS - 1, cells.size(), LaneGraph.APPROACH_CELLS):
+			var cells := Drive.approach_cells(sim, point, arm)
+			for i in range(APPROACH_MARK - 1, cells.size(), APPROACH_MARK):
 				var middle := (Vector2(cells[i]) + Vector2(0.5, 0.5)) * Grid.CELL
-				_strip(tool, middle - Vector2(arm) * Grid.CELL * 0.3, middle + Vector2(arm) * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
+				var way := Vector2(arm).normalized()
+				_strip(tool, middle - way * Grid.CELL * 0.3, middle + way * Grid.CELL * 0.3, Grid.CELL * 0.35, ROAD_TOP + MARK_RISE * 3)
 	_junction_signs.mesh = tool.commit()
 
 
@@ -363,25 +381,21 @@ func _draw_roads() -> void:
 	_roads_drawn = [sim.roads.version, sim.rails.version]
 	var surface := _road_tool()
 	var marks := _road_tool()
-	# Markings stop where a junction's widest road begins.
-	var trims := {}
+	# Markings stop where a junction's shape cuts each road back, as its lanes do (LaneNetwork).
+	var cut := LaneNetwork._trims(LaneNetwork._arms(sim.roads), sim.rules.junctions)
+	var trim := func(id: int, end: String) -> float: return cut[[id, end]] * Grid.CELL if sim.roads.degree(sim.roads.segments[id][end]) >= 3 else 0.0
 	for id: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[id]
-		var lanes: int = sim.rules.road_types[road.type].forward + sim.rules.road_types[road.type].backward
-		for node: int in [road.a, road.b]:
-			if sim.roads.degree(node) >= 3:
-				trims[node] = maxf(trims.get(node, 0.0), lanes * Grid.CELL / 2.0)
-	for id: int in sim.roads.segments:
-		var road: Dictionary = sim.roads.segments[id]
-		_add_road(surface, marks, sim.roads.nodes[road.a], sim.roads.nodes[road.b], sim.rules.road_types[road.type], trims.get(road.a, 0.0), trims.get(road.b, 0.0))
+		_add_road(surface, marks, sim.roads.curve(id), sim.rules.road_types[road.type], trim.call(id, "a"), trim.call(id, "b"))
 	# The highway, from off the map to the site entry, so the player sees where to join it.
 	var entry := sim.site_entry_point()
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
-	_add_road(surface, marks, entry + off_map, entry, sim.rules.road_types.terminal_2_2)
+	_add_road(surface, marks, RoadCurve.straight(Vector2(entry + off_map), Vector2(entry)), sim.rules.road_types.terminal_2_2)
 	# The main line the same way, to the rail entry.
-	_add_track(surface, marks, sim.site_rail_entry() + off_map, sim.site_rail_entry())
+	var rail_entry := Vector2(sim.site_rail_entry()) + Vector2(0.5, 0.5)
+	_add_track(surface, marks, RoadCurve.straight(rail_entry + Vector2(off_map), rail_entry))
 	for id: int in sim.rails.segments:
-		_add_track(surface, marks, sim.rails.nodes[sim.rails.segments[id].a], sim.rails.nodes[sim.rails.segments[id].b])
+		_add_track(surface, marks, sim.rails.curve(id))
 	_roads.mesh = surface.commit()
 	_road_marks.mesh = marks.commit()
 
@@ -390,31 +404,32 @@ func _draw_areas() -> void:
 	_areas_drawn = [sim.areas.version, sim.roads.version]
 	var tool := _road_tool()
 	for id: int in sim.areas.list:
-		var colors := {}
-		for cell in sim.areas.cells(id):
-			colors[cell] = AREA_COLOR[sim.areas.kind_of(sim.areas.list[id])]
-		var layout := sim.areas.layout(id)
-		for cell: Vector2i in layout.get("buffer", []):
-			colors[cell] = BUFFER_COLOR
-		for lane: Array in layout.get("lanes", []):
-			for cell: Vector2i in lane:
-				colors[cell] = ASPHALT
-		for rail: Array in layout.get("rails", []):
-			for cell: Vector2i in rail:
-				colors[cell] = RAIL_COLOR
-		for cell: Vector2i in layout.get("edge", []):
-			colors[cell] = EDGE_COLOR
 		var area: Dictionary = sim.areas.list[id]
-		for spot in AreaFlow.crane_spots(sim, id) if area.type == "quay_apron" else ([] as Array[int]):
+		# Each of the area's own cells (k, r) coloured by the part of its layout it holds.
+		var colors := {}
+		var layout := sim.areas.layout(id)
+		var paint := func(spot: Vector3i, color: Color) -> void: colors[Vector2i(spot.y, spot.z)] = color
+		for spot: Vector3i in layout.get("buffer", []):
+			paint.call(spot, BUFFER_COLOR)
+		for lane: Array in layout.get("lanes", []):
+			for spot: Vector3i in lane:
+				paint.call(spot, ASPHALT)
+		for rail: Array in layout.get("rails", []):
+			for spot: Vector3i in rail:
+				paint.call(spot, RAIL_COLOR)
+		for spot: Vector3i in layout.get("edge", []):
+			paint.call(spot, EDGE_COLOR)
+		for k in AreaFlow.crane_spots(sim, id) if area.type == "quay_apron" else ([] as Array[int]):
 			for d in sim.areas.depth_of(area):
-				colors[area.start + (area.end - area.start).sign() * spot + area.out * d] = SPOT_COLOR
+				colors[Vector2i(k, d)] = SPOT_COLOR
 		for i: int in layout.get("slots", []).size():
-			for cell: Vector2i in layout.slots[i]:
-				colors[cell] = SLOT_COLORS[i % 2]
+			for spot: Vector3i in layout.slots[i]:
+				paint.call(spot, SLOT_COLORS[i % 2])
 		var idle := sim.areas.idle_reason(id) != ""
-		for cell: Vector2i in colors:
-			tool.set_color(colors[cell].lerp(IDLE_TINT, 0.4) if idle else colors[cell])
-			_cell_quad(tool, cell, AREA_TOP)
+		for cell: Dictionary in sim.areas.shape(id).cells:
+			var color: Color = colors.get(Vector2i(cell.k, cell.r), AREA_COLOR[sim.areas.kind_of(area)])
+			tool.set_color(color.lerp(IDLE_TINT, 0.4) if idle else color)
+			_quad(tool, cell.corners, AREA_TOP)
 	_areas.mesh = tool.commit()
 
 
@@ -439,7 +454,7 @@ func _draw_info() -> void:
 static func info_shares(sim: PortSim, view: String) -> Dictionary:
 	var shares := {}
 	if view == HudDetails.GROUP_TRAFFIC:
-		var delays := sim.lane_traffic.delays()
+		var delays := Drive.delays(sim)
 		for cell: Vector2i in delays:
 			shares[[cell]] = minf(delays[cell] / JAM_SECONDS, 1.0)
 	else:
@@ -484,23 +499,24 @@ func _draw_ship_lanes() -> void:
 			_cell_quad(tool, Vector2i(spot.floor()), LANE_HEIGHT + 0.01)
 	for segment: int in sim.ship_lanes.segments:
 		var lane: Dictionary = sim.ship_lanes.segments[segment]
-		var a: Vector2i = sim.ship_lanes.nodes[lane.a]
-		var b: Vector2i = sim.ship_lanes.nodes[lane.b]
 		tool.set_color(Color(0.75, 0.9, 1.0, 0.12))
-		for cell in sim.ship_lanes.footprint(a, b, lane.type):
+		for cell in sim.ship_lanes.area(segment):
 			_cell_quad(tool, cell, LANE_HEIGHT)
 		tool.set_color(Color(1, 1, 1, 0.55) if lane.dredged > 0.0 else Color(0.7, 0.85, 1.0, 0.45))
-		for cell in RoadNet.line(a, b):
+		for cell in sim.ship_lanes.cells(segment):
 			_cell_quad(tool, cell, LANE_HEIGHT + 0.01)
 	_ship_lanes.mesh = tool.commit()
 
 
 ## One 4 m cell as a flat square `height` metres up.
 static func _cell_quad(tool: SurfaceTool, cell: Vector2i, height: float) -> void:
-	var corner := Vector2(cell) * Grid.CELL
-	var corners: Array[Vector2] = [corner, corner + Vector2(Grid.CELL, 0), corner + Vector2(Grid.CELL, Grid.CELL), corner + Vector2(0, Grid.CELL)]
+	_quad(tool, [Vector2(cell), Vector2(cell) + Vector2(1, 0), Vector2(cell) + Vector2(1, 1), Vector2(cell) + Vector2(0, 1)], height)
+
+
+## The quad with corners `corners`, in cells.
+static func _quad(tool: SurfaceTool, corners: Array, height: float) -> void:
 	for i: int in [0, 1, 2, 0, 2, 3]:
-		tool.add_vertex(_world(corners[i], height))
+		tool.add_vertex(_world(corners[i] * Grid.CELL, height))
 
 
 static func _road_tool() -> SurfaceTool:
@@ -519,57 +535,56 @@ static func _road_tool() -> SurfaceTool:
 ## bend; ends at a junction (a trim) are left square. Markings go to `marks` unless it is null: a solid line between the
 ## two directions, dashes between lanes going the same way, stopping `trim_a`
 ## and `trim_b` metres short of the ends.
-static func _add_road(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
+static func _add_road(surface: SurfaceTool, marks: Variant, curve: RoadCurve, road: Dictionary, trim_a := 0.0, trim_b := 0.0) -> void:
 	var lanes: int = road.forward + road.backward
-	var across := Vector2(RoadNet.right_of(b - a))
-	var along := Vector2(b - a).normalized()
-	var side := Vector2(-along.y, along.x)
-	# A lane's width across the road: a cell, or less on 45° roads, where lanes step straight across.
-	var lane_width := Grid.CELL * absf(across.dot(side))
-	# The lanes lie evenly either side of the line between grid points a and b;
-	# a 45° road's sit half a cell south of it (see RoadNet._row).
-	var middle := Vector2(0, 0.5) if (b - a).x * (b - a).y != 0 else Vector2.ZERO
-	var start: Vector2 = (Vector2(a) + middle) * Grid.CELL
-	var end: Vector2 = (Vector2(b) + middle) * Grid.CELL
-	var half := lanes * lane_width / 2.0
+	var half := lanes * Grid.CELL / 2.0
 	surface.set_color(ASPHALT if road.lorries else TRACTOR_ONLY)
 	var top := ROAD_TOP + (ASPHALT_RISE if road.lorries else 0.0)
-	_strip(surface, start, end, half, top)
+	# The asphalt is the road's own lane quads, as the sim lays them (RoadNet.shape), so it bends with the road.
+	for cell: Dictionary in RoadNet._shape_of(curve, road).cells:
+		# Cells left of the line are laid the other way round; face them all up.
+		var corners: Array = cell.corners.duplicate()
+		if (corners[1] - corners[0]).cross(corners[2] - corners[0]) < 0.0:
+			corners.reverse()
+		_quad(surface, corners, top)
 	# A junction's widest road covers its middle, so an end there gets no round cap to poke out past it.
 	if trim_a == 0.0:
-		_disc(surface, start, half, top)
+		_disc(surface, curve.a * Grid.CELL, half, top)
 	if trim_b == 0.0:
-		_disc(surface, end, half, top)
+		_disc(surface, curve.b * Grid.CELL, half, top)
 	if marks == null:
 		return
 	marks.set_color(MARKING)
-	var length: float = start.distance_to(end) - trim_a - trim_b
+	var total := curve.length * Grid.CELL
+	var length := total - trim_a - trim_b
 	if length <= 0.0:
 		return
+	# The point `d` metres along the road and `offset` metres right of its line, in metres.
+	var at := func(d: float, offset: float) -> Vector2: return (curve.point_at(d / Grid.CELL) + curve.right_at(d / Grid.CELL) * offset / Grid.CELL) * Grid.CELL
 	# Where a road meets a junction: a zebra crossing at its edge, a stop line
 	# behind it across the lanes driving in, then the lane markings, if they fit.
 	var ends := int(trim_a > 0.0) + int(trim_b > 0.0)
 	if ends > 0 and length >= JUNCTION_MARKS * ends + DASH:
-		var middle_line: float = road.backward * lane_width - half
+		var middle_line: float = road.backward * Grid.CELL - half
 		if trim_a > 0.0:
-			_junction_marks(marks, start + along * trim_a, along, side, half, -half, middle_line)
+			_junction_marks(marks, at.call(trim_a, 0.0), curve.direction_at(trim_a / Grid.CELL), curve.right_at(trim_a / Grid.CELL), half, -half, middle_line)
 			trim_a += JUNCTION_MARKS
 		if trim_b > 0.0:
-			_junction_marks(marks, end - along * trim_b, -along, side, half, middle_line, half)
+			_junction_marks(marks, at.call(total - trim_b, 0.0), -curve.direction_at((total - trim_b) / Grid.CELL), curve.right_at((total - trim_b) / Grid.CELL), half, middle_line, half)
 			trim_b += JUNCTION_MARKS
-		length = start.distance_to(end) - trim_a - trim_b
-	start += along * trim_a
-	end = start + along * length
 	for k in range(1, lanes):
-		var offset := side * (k * lane_width - half)
-		if k == road.backward:
-			_strip(marks, start + offset, end + offset, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
-			continue
-		var at := 0.0
-		while at < length:
-			var dash_end := minf(at + DASH, length)
-			_strip(marks, start + offset + along * at, start + offset + along * dash_end, MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
-			at += DASH + DASH_GAP
+		var offset := k * Grid.CELL - half
+		var solid: bool = k == road.backward
+		var d := trim_a
+		while d < total - trim_b:
+			var dash_end := total - trim_b if solid else minf(d + DASH, total - trim_b)
+			# In half-cell steps, so a mark bends with the road.
+			var step := d
+			while step < dash_end:
+				var next := minf(step + Grid.CELL / 2.0, dash_end)
+				_strip(marks, at.call(step, offset), at.call(next, offset), MARK_WIDTH / 2.0, ROAD_TOP + MARK_RISE)
+				step = next
+			d = dash_end + (0.0 if solid else DASH_GAP)
 
 
 ## A zebra crossing across a road `half` metres wide each side of `edge`,
@@ -587,17 +602,20 @@ static func _junction_marks(marks: SurfaceTool, edge: Vector2, away: Vector2, si
 
 ## Adds rail track from cell `a` to cell `b`: a ballast bed a cell wide on
 ## the cells' middle line, with two rails to `marks` unless it is null.
-static func _add_track(surface: SurfaceTool, marks: Variant, a: Vector2i, b: Vector2i) -> void:
-	var start := (Vector2(a) + Vector2(0.5, 0.5)) * Grid.CELL
-	var end := (Vector2(b) + Vector2(0.5, 0.5)) * Grid.CELL
+static func _add_track(surface: SurfaceTool, marks: Variant, curve: RoadCurve) -> void:
 	surface.set_color(BALLAST)
-	_strip(surface, start, end, Grid.CELL / 2.0, ROAD_TOP)
+	_polyline(surface, curve.offset_points(0.0), Grid.CELL / 2.0, ROAD_TOP)
 	if marks == null:
 		return
-	var side := (end - start).normalized().orthogonal()
 	marks.set_color(STEEL)
 	for gauge: float in [-RAIL_GAUGE, RAIL_GAUGE]:
-		_strip(marks, start + side * gauge, end + side * gauge, RAIL_HALF, ROAD_TOP + MARK_RISE)
+		_polyline(marks, curve.offset_points(gauge / Grid.CELL), RAIL_HALF, ROAD_TOP + MARK_RISE)
+
+
+## Strips `half` either side of each piece of `points`, in cells.
+static func _polyline(tool: SurfaceTool, points: PackedVector2Array, half: float, height: float) -> void:
+	for i in points.size() - 1:
+		_strip(tool, points[i] * Grid.CELL, points[i + 1] * Grid.CELL, half, height)
 
 
 ## A flat strip `half` either side of the line from `from` to `to`, in metres.
@@ -666,27 +684,6 @@ static func coast_image(sim: PortSim) -> Image:
 ## The 4 m grid cell at world point `at`.
 static func grid_cell(at: Vector3) -> Vector2i:
 	return Vector2i(floori(at.x * METRES_PER_UNIT / Grid.CELL), floori(at.z * METRES_PER_UNIT / Grid.CELL))
-
-
-## Where along `path` a vehicle `at` cells in is drawn, as [position in grid
-## cells, heading]. Through a cell where the path turns it follows a quarter
-## circle between the middles of the cell's edges, so it never snaps.
-static func path_pose(path: Array[Vector2i], at: float) -> Array[Vector2]:
-	var i := clampi(int(at), 0, path.size() - 1)
-	var f := at - i
-	if path.size() < 2:
-		return [Vector2(path[0]), Vector2.ZERO]
-	if i >= path.size() - 1:
-		return [Vector2(path[-1]), Vector2(path[-1] - path[-2])]
-	var corner := i + 1 if f >= 0.5 else i
-	if corner > 0 and corner < path.size() - 1:
-		var d_in := Vector2(path[corner] - path[corner - 1])
-		var d_out := Vector2(path[corner + 1] - path[corner])
-		if d_in != d_out and d_in != -d_out:
-			var u := (f - 0.5 if corner == i + 1 else f + 0.5) * PI / 2
-			var centre := Vector2(path[corner]) + (d_out - d_in) * 0.5
-			return [centre + 0.5 * (d_in * sin(u) - d_out * cos(u)), d_in * cos(u) + d_out * sin(u)]
-	return [Vector2(path[i]).lerp(Vector2(path[i + 1]), f), Vector2(path[i + 1] - path[i])]
 
 
 ## `line`'s livery, a touch lighter or darker per box so a stack reads as
@@ -778,12 +775,11 @@ static func beam(rows: int) -> float:
 ## hull lies QUAY_GAP out from the quay's edge, and `along` is the way its bow
 ## faces when berthed, so it lies parallel to the quay instead of across it.
 func _berth_frame(ship: PortSim.Ship) -> Array[Vector2]:
-	var area: Dictionary = sim.areas.list[ship.apron]
-	var along := Vector2((area.end - area.start).sign())
-	var side := Vector2(area.out).normalized()
 	var span := AreaFlow.ship_cells(sim, ship.kind)
-	var depth := sim.areas.depth_of(area)
-	var edge := (Vector2(area.start) + along * (ship.from + (span - 1) / 2.0) + Vector2(area.out) * (depth - 1) + Vector2(0.5, 0.5)) * Grid.CELL
+	var middle := ship.from + (span - 1) / 2.0
+	var side := sim.areas.out_at(ship.apron, middle)
+	var depth := sim.areas.depth_of(sim.areas.list[ship.apron])
+	var edge := sim.areas.point(ship.apron, middle, depth - 1) * Grid.CELL
 	# `edge` is the outer row's middle, half a cell inside the quay's edge.
 	var out := (Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(sim.rules.ship_classes[ship.kind].outreach) / 2.0
 	return [edge / METRES_PER_UNIT + side * out, side, along]
@@ -874,11 +870,11 @@ func _draw_cranes() -> void:
 func _crane_model(crane: PortSim.Crane) -> Node3D:
 	var model := Node3D.new()
 	# Between its apron's rails, facing the water.
-	var area: Dictionary = sim.areas.list[crane.apron]
-	var depth := sim.areas.depth_of(area)
-	var at := (Vector2(area.start + (area.end - area.start).sign() * crane.along) + Vector2(area.out) * ((depth - 1) / 2.0) + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+	var depth := sim.areas.depth_of(sim.areas.list[crane.apron])
+	var at := sim.areas.point(crane.apron, crane.along, (depth - 1) / 2.0) * Grid.CELL / METRES_PER_UNIT
 	model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
-	model.rotation.y = atan2(area.out.x, area.out.y)
+	var out := sim.areas.out_at(crane.apron, crane.along)
+	model.rotation.y = atan2(out.x, out.y)
 	var spec: Dictionary = sim.rules.sts_cranes[crane.kind]
 	# Out from the water-side rail: the quay's edge, the gap and its outreach in rows, plus hull.
 	var reach: float = CRANE_GAUGE / 2.0 + (Grid.CELL * depth / 2.0 - Grid.CELL / 2.0 + QUAY_GAP) / METRES_PER_UNIT + beam(spec.outreach)
@@ -976,9 +972,9 @@ func _draw_trains() -> void:
 			var at := head - AreaLayout.BAY * (k + 0.5)
 			if at < 0.0:
 				break
-			var pose := path_pose(train.path, at)
+			var pose := train.pose(at)
 			var turned := Basis(Vector3.UP, atan2(-pose[1].y, pose[1].x))
-			var centre := (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+			var centre := pose[0] * Grid.CELL / METRES_PER_UNIT
 			var origin := Vector3(centre.x, ROAD_TOP / METRES_PER_UNIT + 0.02, centre.y)
 			_put(buffers["loco" if k == 0 else "wagon"], Transform3D(turned, origin), Color.WHITE)
 			var box: int = train.wagons[k - 1] if k > 0 else 0
@@ -1007,7 +1003,7 @@ func _draw_vehicles() -> void:
 		buffers[part] = PackedFloat32Array()
 	var headings := {}
 	for vehicle: Vehicle in sim.vehicles:
-		var pose := path_pose(vehicle.path, lerpf(vehicle.prev_t, vehicle.t, alpha))
+		var pose := Drive.pose(sim, vehicle, alpha)
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
 		headings[vehicle.id] = heading
 		# Each lane is its own cell, so a vehicle drives down the middle of it.
@@ -1095,13 +1091,12 @@ func _draw_area_stacks() -> void:
 ## The instance buffers, by TEU, of yard area `area`'s stacked boxes.
 func _stack_buffers(area: int, stacks: AreaStacks) -> Dictionary:
 	var buffers := {1: PackedFloat32Array(), 2: PackedFloat32Array()}
-	var geometry: Dictionary = sim.areas.list[area]
-	var along := Vector2((geometry.end - geometry.start).sign())
-	var turned := Basis(Vector3.UP, atan2(-along.normalized().y, along.normalized().x))
 	var layout := sim.areas.layout(area)
 	for position in stacks.stacks.size():
-		var middle: Vector2i = layout.stacks[position].cells[1]
-		var centre := (Vector2(middle) + Vector2(0.5, 0.5)) * Grid.CELL
+		var spot: Vector3i = layout.stacks[position].cells[1]
+		var centre := sim.areas.centre(spot) * Grid.CELL
+		var along := sim.areas.heading(area, spot.y)
+		var turned := Basis(Vector3.UP, atan2(-along.y, along.x))
 		for tier: int in stacks.stacks[position].size():
 			var ids: Array = stacks.stacks[position][tier]
 			for i in ids.size():
@@ -1138,15 +1133,13 @@ func _draw_area_machines() -> void:
 			add_child(node)
 			_area_machines[id] = node
 		var model: MeshInstance3D = _area_machines[id]
-		var area: Dictionary = sim.areas.list[machine.area]
-		var along := Vector2((area.end - area.start).sign())
-		var out := Vector2(area.out)
 		# An RTG spans the stack rows; an RMG spans them and the siding behind.
 		var row: float = {"rtg": (2 + depth - 1) / 2.0, "rmg": (2 + depth) / 2.0}.get(machine.gear, 1.0)
 		var k := sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
-		var at := (Vector2(area.start) + along * k + out * row + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
+		var at := sim.areas.point(machine.area, k, row) * Grid.CELL / METRES_PER_UNIT
+		var out := (sim.areas.point(machine.area, k, 1.0) - sim.areas.point(machine.area, k, 0.0)).normalized()
 		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
-		model.rotation.y = atan2(-out.normalized().y, out.normalized().x)
+		model.rotation.y = atan2(-out.y, out.x)
 		var gantry: bool = machine.gear in ["rtg", "rmg"]
 		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights[machine.gear] if gantry else 1.0
 		var wide: float = (depth - 1.0) / (depth - 2.0) if machine.gear == "rmg" else 1.0

@@ -3,6 +3,7 @@
 		"name": "Rail track",
 		"cost_per_cell": 60.0,
 		"upkeep_per_cell": 3.0,
+		"min_radius_cells": 12.0,
 		"entry_offset": 60.0,
 		"train": {
 			"wagons": 15.0,

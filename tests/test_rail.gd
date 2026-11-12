@@ -10,6 +10,7 @@ var _failures := 0
 
 
 func _initialize() -> void:
+	_test_curved_crossing_geometry()
 	_test_track_is_its_own_graph()
 	_test_level_crossing()
 	_test_rmg_siding()
@@ -18,6 +19,7 @@ func _initialize() -> void:
 	_test_discount()
 	_test_rail_cuts_the_gate_queue()
 	_test_trains_book_crossings()
+	_test_trains_follow_curves()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -32,37 +34,45 @@ func _port() -> PortSim:
 func _test_track_is_its_own_graph() -> void:
 	var sim := _port()
 	var segments := sim.roads.segments.size()
-	var route := sim.lanes.route(Vector2i(150, 100), Vector2i(250, 100), true)
+	var network := LaneNetwork.new(sim.roads, sim.rules.junctions)
+	var route := network.route(network.nearest(Vector2(151, 100.5), true)[0], network.nearest(Vector2(249, 100.5), true)[0], true)
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)}), "", "track is built straight across the road")
 	_expect(sim.roads.segments.size(), segments, "track doesn't split the road it crosses")
 	_expect(sim.rails.segments.size(), 1, "and the road doesn't split the track")
-	_expect(sim.lanes.route(Vector2i(150, 100), Vector2i(250, 100), true), route, "vehicles route as before")
-	_expect(sim.lanes.route(Vector2i(200, 60), Vector2i(200, 140), false), [] as Array[Vector2i], "and never along the track")
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(160, 101), "to": Vector2i(190, 101)}), "Road and track cross only straight across", "track can't run along a road")
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(170, 80), "to": Vector2i(190, 100)}), "Road and track cross only straight across", "or cross it at 45°")
-	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 110), "to": Vector2i(200, 130), "type": "terminal_1_1"}), "Road and track cross only straight across", "nor a road be laid along track")
+	var after := LaneNetwork.new(sim.roads, sim.rules.junctions)
+	_expect(route.is_empty() or after.route(after.nearest(Vector2(151, 100.5), true)[0], after.nearest(Vector2(249, 100.5), true)[0], true) != route, false, "vehicles route as before")
+	var lane_cells := {}
+	for id: int in after.pieces:
+		for point: Vector2 in after.pieces[id].points:
+			lane_cells[Vector2i(point.floor())] = true
+	_expect(sim.rails.ground(sim.rails.segments.keys()[0]).filter(func(c: Vector2i) -> bool: return c in lane_cells).size(), 4, "and no lane runs along the track: lanes touch it only where the road crosses")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(160, 101), "to": Vector2i(190, 101)}), "Something is already built here", "track can't run along a road")
+	_expect(sim.apply({"op": "build_road", "from": Vector2i(200, 110), "to": Vector2i(200, 130), "type": "terminal_1_1"}), "Something is already built here", "nor a road be laid along track")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(175, 85), "to": Vector2i(195, 105)}), "", "track crossing it at 45° is laid: road and track cross down to 30° (M10 12c)")
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(190, 100)), "side": 1, "from": 40, "to": 60}), "Something is already built here", "no area is built over track")
-	_expect(sim.rails.anchors, [sim.site_rail_entry()] as Array[Vector2i], "track snaps onto the main line's end at the site edge")
+	_expect(sim.rails.anchors, [Vector2(sim.site_rail_entry()) + Vector2(0.5, 0.5)] as Array[Vector2], "track snaps onto the main line's end at the site edge")
 
 
 func _test_level_crossing() -> void:
 	var sim := _port()
-	sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)})
-	var crossing := sim.lanes.crossings()
+	# East of the road's middle, where its lanes change (step 9), so a lane piece runs on through it.
+	sim.apply({"op": "build_rail", "from": Vector2i(220, 60), "to": Vector2i(220, 140)})
+	var crossing := Drive.crossings(sim)
 	_expect(crossing.size(), 4, "the crossing is the road's four lane cells under the track")
-	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.cells(sim.rails.segments.keys()[0]) and sim.lanes.is_junction(c)), true, "each is in both graphs, and no vehicle stops on it")
+	_expect(crossing.all(func(c: Vector2i) -> bool: return c in sim.rails.ground(sim.rails.segments.keys()[0])), true, "each lies on the track")
 	# Booked by a train, the crossing holds a lorry back until it is freed.
-	var lorry := Vehicle.new(1, "lorry", sim.lanes.route(Vector2i(190, 100), Vector2i(210, 100), true))
-	_expect(sim.lane_traffic.place(lorry), true, "a lorry waits west of the crossing")
-	_expect(sim.lane_traffic.book(-1, crossing), true, "a train books the crossing")
+	var lorry := Vehicle.new(1, "lorry", [Vector3i(0, 210, 100)] as Array[Vector3i])
+	_expect(Drive.place(sim, lorry), true, "a lorry waits west of the crossing")
+	# Placed, it drives on to its lane's end, past the crossing.
+	_expect(Drive.rebook(sim, -1, crossing), true, "a train books the crossing")
 	for i in 100:
-		sim.lane_traffic.advance(lorry, 5.0)
-	_expect(crossing.any(func(c: Vector2i) -> bool: return sim.lane_traffic.holder(c) == lorry.id), false, "no lorry is on the crossing while the train has it")
-	_expect(lorry.at_end(), false, "so the lorry is still short of it")
-	sim.lane_traffic.release(-1)
+		sim.traffic.tick(Drive.STEP)
+	_expect(crossing.has(Vector2i((Drive.where(sim, lorry) + Vector2(0.5, 0.5)).floor())), false, "no lorry is on the crossing while the train has it")
+	_expect(Drive.advance(sim, lorry, 0.0), false, "so the lorry is still short of it")
+	Drive.release(sim, -1)
 	for i in 100:
-		sim.lane_traffic.advance(lorry, 5.0)
-	_expect(lorry.at_end(), true, "once the train frees it, the lorry crosses")
+		sim.traffic.tick(Drive.STEP)
+	_expect(Drive.advance(sim, lorry, 0.0), true, "once the train frees it, the lorry crosses")
 
 
 ## An RMG block works wagons on the track running along all of its back edge.
@@ -72,11 +82,12 @@ func _test_rmg_siding() -> void:
 	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": road, "side": 1, "from": 0, "to": 29}), "", "a yard block south of the road")
 	var block: int = sim.areas.list.keys().max()
 	var area: Dictionary = sim.areas.list[block]
-	var behind: int = area.start.y + sim.areas.depth_of(area) * area.out.y
+	var behind: int = sim.areas.cell_at(block, 0, sim.areas.depth_of(area)).y
+	var first: int = sim.areas.cell_at(block, 0, 0).x
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(area.start.x, behind), "to": Vector2i(area.start.x + 20, behind)}), "", "track along part of its back")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(first, behind), "to": Vector2i(first + 20, behind)}), "", "track along part of its back")
 	_expect(AreaFlow.siding(sim, block), [] as Array[Vector2i], "covering part of the block is no siding")
-	_expect(sim.apply({"op": "build_rail", "from": Vector2i(area.start.x + 20, behind), "to": Vector2i(area.end.x + 10, behind)}), "", "track along the rest")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(first + 20, behind), "to": Vector2i(sim.areas.cell_at(block, area.columns - 1, 0).x + 10, behind)}), "", "track along the rest")
 	_expect(AreaFlow.siding(sim, block).size(), 30, "covering all of it is a siding, a cell per cell of the block")
 	_expect(Inspect.describe(sim, {"area": block}).has("Siding for 10 wagons"), true, "a wagon per bay, shown by Inspect")
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rtg"}})
@@ -171,7 +182,7 @@ func _test_rail_cuts_the_gate_queue() -> void:
 		var gates: Array = sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "gate")
 		var total := 0
 		var imports := {}
-		for i in SimClock.TICKS_PER_DAY:
+		for i in 14400:
 			sim.tick()
 			for gate: int in gates:
 				total += sim.lorries_bound_for(gate)
@@ -201,21 +212,21 @@ func _test_trains_book_crossings() -> void:
 	var block: int = sim.areas.list.keys().max()
 	sim.apply({"op": "set_area", "id": block, "settings": {"gear": "rmg"}})
 	var area: Dictionary = sim.areas.list[block]
-	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var behind: Vector2i = sim.areas.cell_at(block, 0, sim.areas.depth_of(area))
 	var entry := sim.site_rail_entry()
 	var bend := Vector2i(entry.x - 5, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
 		_expect(sim.apply({"op": "build_rail", "from": leg[0], "to": leg[1]}), "", "track across the road to the rail entry")
-	var crossing := sim.lanes.crossings()
+	var crossing := Drive.crossings(sim)
 	_expect(crossing.size() > 0 and RailFlow.is_rail_block(sim, block), true, "the track crosses the road on its way to the rail block")
 	var booked_ticks := 0
 	var on_while_booked := 0
 	var lorries_across := 0
 	for i in roundi(4 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
-		var train_has := crossing.filter(func(c: Vector2i) -> bool: return sim.lane_traffic.holder(c) < 0)
+		var train_has := crossing.filter(func(c: Vector2i) -> bool: return sim.traffic._crossings.get(c, 0) < 0)
 		for vehicle: Vehicle in sim.vehicles:
-			if vehicle.kind == "lorry" and vehicle.path[int(vehicle.t)] in crossing:
+			if vehicle.kind == "lorry" and Vector2i((Drive.where(sim, vehicle) + Vector2(0.5, 0.5)).floor()) in crossing:
 				lorries_across += 1
 				on_while_booked += 1 if not train_has.is_empty() else 0
 		booked_ticks += 1 if not train_has.is_empty() else 0
@@ -229,3 +240,47 @@ func _expect(got: Variant, want: Variant, what: String) -> void:
 	if got != want:
 		_failures += 1
 		printerr("FAIL %s: got %s, want %s" % [what, got, want])
+
+
+## A train runs along points a cell apart on the track (RoadNet.path): on
+## straight track they are its cells' middles, and on a curve they lie on it,
+## so a train drawn along them (Train.pose) keeps to the curve and its way.
+func _test_trains_follow_curves() -> void:
+	var sim := _port()
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(150, 60), "to": Vector2i(170, 60)}), "", "straight track")
+	_expect(sim.apply({"op": "build_rail", "from": Vector2i(170, 60), "to": Vector2i(190, 80), "control": Vector2(190.5, 60.5)}), "", "and a curve on from it")
+	var straight := sim.rails.path(Vector2i(150, 60), Vector2i(160, 60))
+	var middles := range(150, 161).map(func(x: int) -> Vector2: return Vector2(x + 0.5, 60.5))
+	_expect(straight.size() == middles.size() and range(middles.size()).all(func(i: int) -> bool: return straight[i].distance_to(middles[i]) < 0.001), true, "straight, the path is its cells' middles")
+	var path := sim.rails.path(Vector2i(150, 60), Vector2i(190, 80))
+	var bend := sim.rails.curve(sim.rails.segments.keys().filter(func(id: int) -> bool: return sim.rails.nodes[sim.rails.segments[id].b] == Vector2(190.5, 80.5) or sim.rails.nodes[sim.rails.segments[id].a] == Vector2(190.5, 80.5))[0])
+	_expect(path[-1].distance_to(Vector2(190.5, 80.5)) < 0.001, true, "round the curve to its end")
+	var apart := true
+	for i in path.size() - 2:
+		apart = apart and absf(path[i].distance_to(path[i + 1]) - 1.0) < 0.05
+	_expect(apart, true, "its points a cell apart")
+	var train := Train.new(1, 0, path, 0)
+	var off := 0.0
+	var turn := 0.0
+	for k in range(200, (path.size() - 1) * 10):
+		var pose := train.pose(k / 10.0)
+		var n := bend.nearest(pose[0])
+		if n > 0.5 and n < bend.length - 0.5:
+			off = maxf(off, bend.point_at(n).distance_to(pose[0]))
+			turn = maxf(turn, rad_to_deg(absf(bend.direction_at(n).angle_to(pose[1]))))
+	_expect(off < 0.05, true, "a train on the curve keeps to it (%.3f cells off)" % off)
+	_expect(turn < 5.0, true, "and to its way (%.1f° off)" % turn)
+
+
+func _test_curved_crossing_geometry() -> void:
+	var sim := _port()
+	var occupied: Array = [Vector2i(0, 0)]
+	# Its chord lies at y=0, but its curve reaches y=5 and crosses this track twice.
+	var road := RoadCurve.new(Vector2(0, 0), Vector2(10, 10), Vector2(20, 0))
+	var track := RoadCurve.straight(Vector2(0, 2), Vector2(20, 2))
+	_expect(sim._crossing_error(road, occupied, track, occupied), "", "curve crossings found away from the chord")
+	# At its apex the tangent is horizontal, though the endpoint chord of the track is vertical.
+	track = RoadCurve.new(Vector2(10, -10), Vector2(10, 10), Vector2(10, 20))
+	_expect(sim._crossing_error(road, occupied, track, occupied), "", "angle uses the curve tangent")
+	track = RoadCurve.straight(Vector2(0, 5), Vector2(20, 5))
+	_expect(sim._crossing_error(road, occupied, track, occupied).begins_with("Road and track cross at"), true, "shallow tangent crossing refused")

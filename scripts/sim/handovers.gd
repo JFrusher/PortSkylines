@@ -2,16 +2,19 @@ class_name Handovers
 extends RefCounted
 ## Who is at each area's handover slots, who waits in its buffer strip, and
 ## who queues on the road outside. A vehicle arriving takes the first free
-## slot; with none free it waits in the buffer, which holds one vehicle per
-## bay; with the buffer full it queues on the road. A freed slot goes to the
+## slot; with none free it waits in the buffer, which holds as many as fit
+## at `spacing` cells each; with the buffer full it queues on the road. A freed slot goes to the
 ## first vehicle in the buffer, whose place goes to the first on the road.
 
 var _areas: Areas
 var _at := {}  # area id -> {"slots": vehicle id or 0 per slot, "buffer": ids, "road": ids}
+## Cells of buffer strip a waiting vehicle takes: its length and the gap behind it.
+var spacing: float
 
 
-func _init(areas: Areas) -> void:
+func _init(areas: Areas, cells_each: float) -> void:
 	_areas = areas
+	spacing = cells_each
 
 
 ## Books vehicle `id` into area `area`: "slot", "buffer" or "road".
@@ -21,7 +24,7 @@ func arrive(area: int, id: int) -> String:
 	if free >= 0:
 		at.slots[free] = id
 		return "slot"
-	if at.buffer.size() < _buffer_room(area):
+	if at.buffer.size() < buffer_room(area):
 		at.buffer.append(id)
 		return "buffer"
 	at.road.append(id)
@@ -78,8 +81,8 @@ func to_dict() -> Dictionary:
 	return _at.duplicate(true)
 
 
-static func from_dict(d: Dictionary, areas: Areas) -> Handovers:
-	var handovers := Handovers.new(areas)
+static func from_dict(d: Dictionary, areas: Areas, cells_each: float) -> Handovers:
+	var handovers := Handovers.new(areas, cells_each)
 	handovers._at = d.duplicate(true)
 	return handovers
 
@@ -96,10 +99,10 @@ func _state(area: int) -> Dictionary:
 ## Moves the road queue up into the buffer strip while it has room.
 func _refill(area: int) -> void:
 	var at := _state(area)
-	while not at.road.is_empty() and at.buffer.size() < _buffer_room(area):
+	while not at.road.is_empty() and at.buffer.size() < buffer_room(area):
 		at.buffer.append(at.road.pop_front())
 
 
-## How many vehicles fit in `area`'s buffer strip: one per bay.
-func _buffer_room(area: int) -> int:
-	return _areas.layout(area).buffer.size() / AreaLayout.BAY
+## How many vehicles fit in `area`'s buffer strip at `spacing` cells each.
+func buffer_room(area: int) -> int:
+	return floori(_areas.layout(area).buffer.size() / spacing)

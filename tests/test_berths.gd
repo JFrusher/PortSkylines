@@ -35,6 +35,7 @@ func _initialize() -> void:
 		var rng := RandomNumberGenerator.new()
 		rng.seed = seed
 		_expect(contracts.offer(rng, 0.0, 1, func(_kind: String) -> bool: return true, 1.0).is_empty(), false, "a first offer at the first check (seed %d)" % seed)
+	_test_berths_turn_to_the_coast()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -43,3 +44,32 @@ func _expect(got: Variant, want: Variant, what: String) -> void:
 	if got != want:
 		_failures += 1
 		print("FAIL %s: got %s, want %s" % [what, got, want])
+
+
+## M10 step 21: on a coast off the grid a berth turns, in BERTH_TURN steps,
+## to the angle that fills the least water, or to the one it is turned to;
+## its apron, quay and a ship alongside face that way.
+func _test_berths_turn_to_the_coast() -> void:
+	var sim := PortSim.new(1, preload("res://bench/showcase_port.gd").rules(), true)
+	for x in 3:
+		for y in 3:
+			if not sim.land.has(Vector2i(x, y)):
+				sim.apply({"op": "buy_land", "tile": Vector2i(x, y)})
+	var click := Vector2i(sim.areas.coast.size.x / 2, 470)
+	while not sim.areas.is_water(click):
+		click.x -= 1
+	click += Vector2i(8, 0)
+	var plan := sim.berth_plan("feeder", click)
+	var west := sim.berth_plan("feeder", click, 180.0)
+	_expect(int(plan.angle) % 90 != 0, true, "on this bank it turns off the grid (%d°)" % plan.angle)
+	_expect(plan.fill.size() < west.fill.size(), true, "to fill less than facing west (%d cells against %d)" % [plan.fill.size(), west.fill.size()])
+	_expect(sim.apply({"op": "build_berth", "kind": "feeder", "cell": click}), "", "and is built so")
+	var apron: int = sim.areas.list.keys().max()
+	var faces := sim.areas.out_at(apron, 25.0)
+	_expect(faces.distance_to(Vector2.from_angle(deg_to_rad(plan.angle))) < 0.01, true, "its apron faces that way (%s)" % faces)
+	_expect(sim.areas.cells(apron).any(sim.areas.is_water), false, "and stands on land")
+	var ship := PortSim.Ship.new("feeder", sim.rules.lines.keys()[0], 0.0, 0, 0)
+	ship.apron = apron
+	ship.from = 0
+	_expect(sim.areas.is_water(Vector2i(Marine.alongside(sim, ship).floor())), true, "a ship alongside lies on the water")
+	_expect(sim.build_berth_error("feeder", click + Vector2i(0, 120), fposmod(plan.angle + 180.0, 360.0)) != "", true, "turned to face inland, a berth is refused")

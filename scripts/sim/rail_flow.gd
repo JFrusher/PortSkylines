@@ -74,7 +74,7 @@ static func _send(sim: PortSim, block: int) -> void:
 		train.wagons[i] = box
 	_pay_discount(sim, exports)
 	sim.trains.append(train)
-	sim._event("A train is coming for %s" % sim.areas.terminals[sim.areas.list[block].terminal].name, sim.areas.list[block].start)
+	sim._event("A train is coming for %s" % sim.areas.terminals[sim.areas.list[block].terminal].name, sim.areas.cell_at(block, 0, 0))
 
 
 ## Cells a train moves a tick: the data gives its speed in metres a vehicle second.
@@ -97,19 +97,19 @@ static func _run(sim: PortSim, train: Train) -> void:
 
 
 ## Moves the train's head to `to` cells along its path, booking every level
-## crossing its body will cover, and those just ahead, through LaneTraffic as
+## crossing its body will cover, and those just ahead, through Drive as
 ## the one way onto a crossing; with a vehicle on one, it waits where it is.
 # shortcut: trains book only level crossings, not track, so two trains could share a cell; book track blocks when lines get busy.
 static func _move(sim: PortSim, train: Train, to: float) -> bool:
 	var ahead := ceili(_step(sim)) + 2
 	var from := maxi(floori(minf(train.t, to)) - train.length() - ahead, 0)
 	var past := mini(ceili(maxf(train.t, to)) + ahead, train.path.size() - 1)
-	var crossings := sim.lanes.crossings()
+	var crossings := Drive.crossings(sim)
 	var wanted: Array[Vector2i] = []
-	for i in range(from, past + 1):
-		if train.path[i] in crossings:
-			wanted.append(train.path[i])
-	if not sim.lane_traffic.rebook(-train.id, wanted):
+	for cell: Vector2i in train.cells(from, past):
+		if cell in crossings and cell not in wanted:
+			wanted.append(cell)
+	if not Drive.rebook(sim, -train.id, wanted):
 		return false
 	train.t = to
 	return true
@@ -192,7 +192,7 @@ static func _empty_wagon(train: Train) -> int:
 ## siding's far end, and the wagons behind it a bay each.
 static func _wagon_bay(sim: PortSim, train: Train, i: int) -> int:
 	var bays := AreaFlow.siding(sim, train.block).size() / AreaLayout.BAY
-	var head_at_end: bool = train.path[-1] == AreaFlow.siding(sim, train.block)[-1]
+	var head_at_end: bool = Vector2i(train.path[-1].floor()) == AreaFlow.siding(sim, train.block)[-1]
 	return bays - 2 - i if head_at_end else i + 1
 
 
@@ -230,7 +230,7 @@ static func _gone(sim: PortSim, train: Train) -> void:
 			sim.delivered += 1
 			sim.by_rail += 1
 	_pay_discount(sim, train.wagons.filter(func(box: int) -> bool: return box != 0).size())
-	sim.lane_traffic.release(-train.id)
+	Drive.release(sim, -train.id)
 	sim.trains.erase(train)
 
 
@@ -250,7 +250,7 @@ static func forget(sim: PortSim, id: int) -> int:
 			if box != 0:
 				sim._drop_box(box)
 				lost += 1
-		sim.lane_traffic.release(-train.id)
+		Drive.release(sim, -train.id)
 		sim.trains.erase(train)
 	sim._until_train.erase(id)
 	return lost

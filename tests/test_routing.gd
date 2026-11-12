@@ -32,9 +32,11 @@ func _test_lorries_take_the_way_round_a_jam() -> void:
 		_expect(sim.apply({"op": "build_road", "from": leg[0], "to": leg[1], "type": "terminal_1_1"}), "", "a bypass leg is built")
 	sim.creative = false
 	var east := sim.roads.segment_at(Vector2i(500, y))
-	var westbound: Array = sim.roads.lanes(east).filter(func(lane: Dictionary) -> bool: return not lane.forward)[0].cells
-	var broken := Vehicle.new(999999, "lorry", [westbound.filter(func(c: Vector2i) -> bool: return c.x == 500)[0]] as Array[Vector2i])
-	_expect(sim.lane_traffic.place(broken), true, "the broken-down lorry stands in the westbound lane")
+	# The westbound lane keeps right: half a cell north of the road's line.
+	var stand := Vector2i(500, y - 1)
+	_expect(sim.roads.segment_at(stand), east, "the westbound lane runs over (500, y - 1)")
+	var broken := Vehicle.new(999999, "lorry", [Vector3i(0, stand.x, stand.y)] as Array[Vector3i])
+	_expect(Drive.place(sim, broken), true, "the broken-down lorry stands in the westbound lane")
 	RandomPort.calls(sim, "feeder", 10, 45, 1)
 	var round := {}  # lorry id -> true once it is routed over the bypass
 	var straight := {}
@@ -47,8 +49,9 @@ func _test_lorries_take_the_way_round_a_jam() -> void:
 				continue
 			seen[v.id] = true
 			# Lorries just in from the east, on their first route, once two epochs have seen the jam.
-			if sim.clock.ticks > epoch * 2 and v.kind == "lorry" and v.gate_in < 0.0 and v.path[0].x > 560:
-				if v.path.any(func(c: Vector2i) -> bool: return c.y < y - 5):
+			if sim.clock.ticks > epoch * 2 and v.kind == "lorry" and v.gate_in < 0.0 and sim.areas.centre(v.path[0]).x > 560:
+				var route: Array = sim.traffic.cars[v.id].route
+				if route.any(func(piece: int) -> bool: return Array(sim.network.pieces[piece].points).any(func(p: Vector2) -> bool: return p.y < y - 5)):
 					round[v.id] = true
 				else:
 					straight[v.id] = true

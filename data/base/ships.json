@@ -76,6 +76,7 @@
 		"lanes": {
 			"narrow": {
 				"name": "Narrow channel",
+				"min_radius_cells": 50.0,
 				"half_width": 10,
 				"cost_per_cell": 4,
 				"upkeep_per_cell": 0.02,
@@ -84,6 +85,7 @@
 			},
 			"wide": {
 				"name": "Wide channel",
+				"min_radius_cells": 75.0,
 				"half_width": 20,
 				"cost_per_cell": 6,
 				"upkeep_per_cell": 0.02,
@@ -92,6 +94,7 @@
 			},
 			"river": {
 				"name": "River channel",
+				"min_radius_cells": 20.0,
 				"half_width": 6,
 				"cost_per_cell": 2,
 				"upkeep_per_cell": 0.01,

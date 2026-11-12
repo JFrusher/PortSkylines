@@ -38,7 +38,10 @@ func _port(pilot: bool, pilots: int) -> PortSim:
 	var sim := AreaPort.base(rules, "")
 	sim.creative = true
 	var entry := sim.site_entry()
-	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
+	for y in range(entry.y, 600):
+		sim.apply({"op": "paint_terminal", "cells": [Vector2i(75, y), Vector2i(76, y), Vector2i(86, y)], "terminal": 1})
+	sim.apply({"op": "build_road", "from": Vector2i(86, entry.y), "to": Vector2i(86, 590), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(76, 580), "to": Vector2i(76, 600), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 5, "to": 84}), "", "a second apron")
 	_expect(sim.apply({"op": "place_sts", "kind": "sts", "apron": sim.areas.list.keys().max(), "along": 30}), "", "with a crane")
@@ -46,8 +49,7 @@ func _port(pilot: bool, pilots: int) -> PortSim:
 		sim.apply({"op": "remove_ship_lane", "segment": segment})
 	var rows: Array[int] = []
 	for apron: int in [1, sim.areas.list.keys().max()]:
-		var cells := RoadNet.line(sim.areas.list[apron].start, sim.areas.list[apron].end)
-		rows.append(cells[cells.size() / 2].y)
+		rows.append(sim.areas.cell_at(apron, sim.areas.list[apron].columns / 2, 0).y)
 	_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(30, 0), "to": Vector2i(30, rows[1]), "type": "narrow"}), "", "a long narrow lane in from the north")
 	for row: int in rows:
 		_expect(sim.apply({"op": "build_ship_lane", "from": Vector2i(68, row), "to": Vector2i(30, row), "type": "narrow"}), "", "a branch to a berth")

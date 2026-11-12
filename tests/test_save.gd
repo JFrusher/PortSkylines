@@ -10,6 +10,8 @@ var _failures := 0
 
 func _initialize() -> void:
 	_test_save_load_save_is_identical()
+	_test_traffic_cars_are_validated()
+	_test_network_identity_required()
 	_test_bad_files_are_refused()
 	_test_save_replaces_existing()
 	_test_failed_save_preserves_destination()
@@ -17,6 +19,11 @@ func _initialize() -> void:
 	_test_every_fixture_loads_or_is_refused()
 	_test_area_flow_round_trips()
 	_test_a_removed_apron_saves()
+	_test_v43_positions_off_the_grid()
+	_test_v45_track_through_cell_middles()
+	_test_v46_trains_on_points()
+	_test_v47_lanes_get_a_control_point()
+	_test_v48_areas_lose_their_grid_ends()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -151,10 +158,6 @@ func _test_malformed_payloads_are_refused() -> void:
 	var floating := valid.duplicate(true)
 	floating.cranes[0].apron = 99
 	_expect_payload_refused(floating, "a crane on a quay apron that isn't there")
-	for value: float in [NAN, INF, -INF]:
-		var bad := valid.duplicate(true)
-		bad.vehicles[0].t = value
-		_expect_payload_refused(bad, "non-finite vehicle position")
 
 
 func _section(data: Dictionary, keys: Array) -> Dictionary:
@@ -203,3 +206,152 @@ func _test_a_removed_apron_saves() -> void:
 	_expect(SaveFile.save("user://removed.bin", sim), "", "the port saves")
 	var loaded := SaveFile.load_from("user://removed.bin")
 	_expect(loaded.has("sim"), true, "and loads (%s)" % loaded.get("error", ""))
+
+
+## v43 lets road and track nodes sit anywhere: a v42 save's nodes become
+## points, and its signals and signs are kept by their junction's point and
+## each arm by its way (LaneNetwork.arm_key), so a 45° arm keeps its sign.
+func _test_v43_positions_off_the_grid() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v42.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var data: Dictionary = file.get_var()
+	file.close()
+	var point := Vector2i(120, 250)
+	data.sim.junctions.signals[point] = {"green": [20.0, 20.0], "phase": 1, "left": 7.0}
+	data.sim.junctions.signs[point] = {Vector2i(1, 0): "stop", Vector2i(-1, 1): "give_way"}
+	file = FileAccess.open("user://v42_signs.bin", FileAccess.WRITE)
+	file.store_buffer(SaveFile.MAGIC.to_ascii_buffer())
+	file.store_var(data, false)
+	file.close()
+	var loaded := SaveFile.load_from("user://v42_signs.bin")
+	_expect(loaded.get("error", ""), "", "the v42 save with signs loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.roads.nodes.values().all(func(at: Variant) -> bool: return at is Vector2) and sim.rails.nodes.values().all(func(at: Variant) -> bool: return at is Vector2), true, "road and track nodes are points")
+	_expect(sim.junctions.signals.keys(), [Vector2(point)], "a signal is kept by its junction's point")
+	_expect(sim.junctions.signals[Vector2(point)].left, 7.0, "and runs on as it was")
+	_expect(sim.junctions.signs[Vector2(point)], {LaneNetwork.arm_key(Vector2(1, 0)): "stop", LaneNetwork.arm_key(Vector2(-1, 1)): "give_way"}, "each sign is kept by its arm's way")
+
+
+## v45 lays track through its cells' middles: a v44 save's track nodes move
+## half a cell on, so the track stands on the same cells and its rail block
+## still takes trains.
+func _test_v45_track_through_cell_middles() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v44.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var old: Dictionary = file.get_var()
+	file.close()
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v44.bin")
+	_expect(loaded.get("error", ""), "", "the v44 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.rails.nodes.size() > 0, true, "it has track")
+	for node: int in sim.rails.nodes:
+		_expect(sim.rails.nodes[node], old.sim.rails.nodes[node] + Vector2(0.5, 0.5), "track node %d is in its cell's middle" % node)
+	_expect(sim.areas.list.keys().any(func(id: int) -> bool: return RailFlow.is_rail_block(sim, id)), true, "its rail block still takes trains")
+
+
+## v46 runs trains along points on the track: a v45 save's train path of
+## cells becomes those cells' middles, so it carries on where it was.
+func _test_v46_trains_on_points() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v45.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var old: Dictionary = file.get_var()
+	file.close()
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v45.bin")
+	_expect(loaded.get("error", ""), "", "the v45 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.trains.size() > 0, true, "it has a train")
+	for k in sim.trains.size():
+		var cells: Array = old.sim.trains[k].path
+		_expect(sim.trains[k].path, cells.map(func(c: Vector2i) -> Vector2: return Vector2(c) + Vector2(0.5, 0.5)), "train %d runs through its cells' middles" % sim.trains[k].id)
+
+
+## v47 lets ship lanes curve: a v46 save's lanes get a control point at
+## their middle, so they stay straight, cover the same water and still take
+## ships to the berth.
+func _test_v47_lanes_get_a_control_point() -> void:
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v46.bin")
+	_expect(loaded.get("error", ""), "", "the v46 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.ship_lanes.segments.size() > 0, true, "it has ship lanes")
+	for segment: int in sim.ship_lanes.segments:
+		var lane: Dictionary = sim.ship_lanes.segments[segment]
+		var a: Vector2i = sim.ship_lanes.nodes[lane.a]
+		var b: Vector2i = sim.ship_lanes.nodes[lane.b]
+		_expect(lane.control, (Vector2(a) + Vector2(b)) / 2.0 + Vector2(0.5, 0.5), "lane %d bends toward its own middle: straight" % segment)
+		_expect(sim.ship_lanes.cells(segment), RoadNet.line(a, b), "and its line runs through the cells it did")
+	_expect(Marine.reaches(sim, "feeder", sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.list[id].type == "quay_apron")[0]), true, "a feeder still reaches the berth")
+
+
+## v48 drops an area's grid "start", "end" and "out": a v47 save's areas
+## lose them, and each is found again from its own shape (Areas.cell_at).
+func _test_v48_areas_lose_their_grid_ends() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v47.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var old: Dictionary = file.get_var()
+	file.close()
+	var loaded := SaveFile.load_from("res://tests/fixtures/save_v47.bin")
+	_expect(loaded.get("error", ""), "", "the v47 save loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	_expect(sim.areas.list.size() > 0, true, "it has areas")
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		var before: Dictionary = old.sim.areas.list[id]
+		_expect(["start", "end", "out"].any(func(key: String) -> bool: return area.has(key)), false, "area %d has no grid ends" % id)
+		_expect([sim.areas.cell_at(id, 0, 0), sim.areas.cell_at(id, area.columns - 1, 0)], [before.start, before.end], "and its shape finds them where they were")
+
+
+func _test_traffic_cars_are_validated() -> void:
+	var sim := AreaPort.base()
+	for i in 500:
+		sim.tick()
+	var data := sim.to_dict()
+	_expect(data.traffic.traffic.cars.is_empty(), false, "test has saved cars")
+	if data.traffic.traffic.cars.is_empty():
+		return
+	var id: int = data.traffic.traffic.cars.keys()[0]
+	for field: String in ["route", "i", "s", "v", "top", "length", "booked", "waited"]:
+		var bad := data.duplicate(true)
+		bad.traffic.traffic.cars[id].erase(field)
+		_expect(SaveFile._valid_area_flow(bad), false, "missing car %s refused" % field)
+	for field: String in ["s", "v", "top", "length", "waited"]:
+		var bad := data.duplicate(true)
+		bad.traffic.traffic.cars[id][field] = NAN
+		_expect(SaveFile._valid_area_flow(bad), false, "nonfinite car %s refused" % field)
+	var bad := data.duplicate(true)
+	bad.traffic.traffic.cars[id].route = [999999] as Array[int]
+	_expect(SaveFile._valid_area_flow(bad), false, "unknown route piece refused")
+	bad = data.duplicate(true)
+	bad.traffic.traffic.cars[999999] = bad.traffic.traffic.cars[id]
+	_expect(SaveFile._valid_area_flow(bad), false, "unknown vehicle refused")
+
+
+func _test_network_identity_required() -> void:
+	var sim := AreaPort.base()
+	for i in 500:
+		sim.tick()
+	var data := sim.to_dict()
+	var saved: Dictionary = data.traffic.duplicate(true)
+	# Same count, different geometry/meaning of one piece ID.
+	var id: int = saved.network.pieces.keys()[0]
+	saved.network.pieces[id].kmh += 1.0
+	saved.weighed = {id: 123456.0}
+	sim._loaded_traffic = saved
+	sim._drive_for = Vector4i(-1, -1, -1, -1)
+	Drive._refresh(sim)
+	_expect(sim._loaded_traffic.is_empty(), true, "mismatched traffic consumed")
+	_expect(sim._delays.is_empty(), true, "mismatched saved delays discarded")
+	sim._loaded_traffic = data.traffic.duplicate(true)
+	sim._loaded_traffic.erase("network")
+	sim._drive_for = Vector4i(-1, -1, -1, -1)
+	Drive._refresh(sim)
+	_expect(sim._loaded_traffic.is_empty(), true, "legacy traffic discarded without asserting")
