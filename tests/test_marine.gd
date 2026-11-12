@@ -34,10 +34,11 @@ func _port(pilots: int, depot := Vector2i(66, 240)) -> PortSim:
 	sim.creative = true
 	var entry := sim.site_entry()
 	sim.apply({"op": "build_road", "from": Vector2i(86, 180), "to": Vector2i(86, entry.y + 90), "type": "terminal_1_1"})
+	sim.apply({"op": "build_road", "from": Vector2i(75, 170), "to": Vector2i(75, 190), "type": "terminal_1_1"})
 	var coast := sim.roads.segment_at(Vector2i(85, entry.y + 50))
 	_expect(sim.apply({"op": "build_area", "type": "quay_apron", "segment": coast, "side": 1, "from": 5, "to": 84}), "", "a second apron")
 	AreaPort.add_lane(sim, sim.areas.list.keys().max())
-	_expect(sim.apply({"op": "build_pilot_station", "cell": Vector2i(76, 180)}), "", "a pilot station by the shore")
+	_expect(sim.apply({"op": "build_pilot_station", "cell": Vector2i(66, 180)}), "", "a pilot station by the shore")
 	_expect(sim.apply({"op": "hire_pilots", "station": 1, "count": pilots}), "", "with its pilots")
 	_expect(sim.apply({"op": "build_tug_depot", "cell": depot}), "", "a tug depot")
 	_expect(sim.apply({"op": "buy_tugs", "depot": 2, "count": 4}), "", "with four tugs")
