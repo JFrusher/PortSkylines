@@ -51,6 +51,8 @@ var _next_anchorage := 1
 var pilot_stations := {}
 var tug_depots := {}
 var _next_station := 1
+## Their pilot boats and tugs on the water.
+var boats := Boats.new()
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
 ## minutes), "ship" (its id)}], see Marine.clear.
 var passages: Array[Dictionary] = []
@@ -398,6 +400,7 @@ func to_dict() -> Dictionary:
 		"pilot_stations": pilot_stations.duplicate(true),
 		"tug_depots": tug_depots.duplicate(true),
 		"next_station": _next_station,
+		"boats": boats.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
 		"next_anchorage": _next_anchorage,
@@ -481,6 +484,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.pilot_stations = d.pilot_stations.duplicate(true)
 	sim.tug_depots = d.tug_depots.duplicate(true)
 	sim._next_station = d.next_station
+	sim.boats = Boats.from_dict(d.boats)
 	sim.passages.assign(d.passages.duplicate(true))
 	sim._next_ship = d.next_ship
 	sim._next_anchorage = d.next_anchorage
@@ -1517,6 +1521,9 @@ func add_marine_craft(id: int, count: int) -> String:
 		pilot_stations[id].pilots += count
 	else:
 		tug_depots[id].tugs += count
+	var base: Dictionary = pilot_stations[id] if pilots else tug_depots[id]
+	for i in count:
+		boats.add("pilot" if pilots else "tug", id, base.cell)
 	return ""
 
 
@@ -1524,10 +1531,9 @@ func add_marine_craft(id: int, count: int) -> String:
 func remove_marine_base(id: int) -> String:
 	if id not in pilot_stations and id not in tug_depots:
 		return "No pilot station or tug depot there"
-	if id in tug_depots and ships.any(func(s: Ship) -> bool: return s.tugs > 0 and s.tug_depot == id):
-		return "Wait for its tugs to come back"
-	if id in pilot_stations and Marine.free_pilots(self) < pilot_stations[id].pilots:
-		return "Wait for its pilots to come back"
+	if boats.ready_at(id).size() < boats.of(id).size():
+		return "Wait for its %s to come back" % ("pilots" if id in pilot_stations else "tugs")
+	boats.remove_base(id)
 	pilot_stations.erase(id)
 	tug_depots.erase(id)
 	return ""
@@ -1768,6 +1774,7 @@ func tick() -> void:
 			continue
 		_work(ship)
 	_berths_seen = berths_now
+	boats.tick(self)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
@@ -2093,13 +2100,13 @@ func _work(ship: Ship) -> void:
 			if not Marine.under_way(self, ship, 1):
 				return
 			if Marine.sail(self, ship, 1):
-				Marine.release(ship)
+				Marine.release(self, ship)
 				ship.state = Ship.State.ANCHORED
 		Ship.State.ARRIVING:
 			if not Marine.under_way(self, ship, 1):
 				return
 			if Marine.sail(self, ship, 1, Marine.berthing_limit(self, ship)):
-				Marine.release(ship)
+				Marine.release(self, ship)
 				ship.state = Ship.State.WORKING
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind, areas.cell_at(ship.apron, 0, 0))
@@ -2108,8 +2115,13 @@ func _work(ship: Ship) -> void:
 		Ship.State.LEAVING:
 			if not Marine.under_way(self, ship, -1):
 				return
-			ship.tugs = 0  # they have pushed it off the quay
+			if ship.tugs > 0:
+				# They have pushed it off the quay.
+				boats.release_tugs(self, ship.id)
+				ship.tugs = 0
 			if Marine.sail(self, ship, -1):
+				# Its pilot is taken off where it sails out to sea.
+				Marine.release(self, ship)
 				ships.erase(ship)
 				_departures += 1
 

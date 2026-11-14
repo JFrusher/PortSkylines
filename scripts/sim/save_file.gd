@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 48
+const VERSION := 49
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -116,6 +116,40 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v47(data)
 	if data.version < 48:
 		data = _migrate_v48(data)
+	if data.version < 49:
+		data = _migrate_v49(data)
+	return data
+
+
+## v49 puts the pilot boats and tugs on the water, one boat for each pilot
+## and tug, home at its base. A ship with a pilot keeps them aboard, their
+## boat home to fetch them later; a ship with tugs has them beside it.
+static func _migrate_v49(data: Dictionary) -> Dictionary:
+	var list := {}
+	for bases: Array in [[data.sim.pilot_stations, "pilot", "pilots"], [data.sim.tug_depots, "tug", "tugs"]]:
+		for base: int in bases[0]:
+			for i: int in bases[0][base][bases[2]]:
+				list[list.size() + 1] = {"kind": bases[1], "base": base, "at": Vector2(bases[0][base].cell) + Vector2(0.5, 0.5), "path": [], "ship": 0, "job": "home"}
+	for ship: Dictionary in data.sim.ships:
+		var path: Array[Vector2] = []
+		path.assign(ship.path)
+		var tugs: int = ship.tugs
+		var pilot: bool = ship.pilot
+		for id: int in list:
+			var boat: Dictionary = list[id]
+			if boat.job != "home":
+				continue
+			if pilot and boat.kind == "pilot":
+				boat.job = "ashore"
+				boat.ship = ship.id
+				pilot = false
+			elif tugs > 0 and boat.kind == "tug" and boat.base == ship.tug_depot:
+				boat.job = "with"
+				boat.ship = ship.id
+				boat.at = Marine.point_along(path, ship.sail) if not path.is_empty() else boat.at
+				tugs -= 1
+	data.sim.boats = {"list": list, "next": list.size() + 1}
+	data.version = 49
 	return data
 
 
@@ -410,6 +444,24 @@ static func _migrate_v27(data: Dictionary) -> Dictionary:
 	return data
 
 
+## Whether the boats are well formed: each of a base of its kind, doing
+## a known job, a tug with a ship that ship.
+static func _valid_boats(data: Dictionary) -> bool:
+	if not _has_fields(data.boats, {"list": TYPE_DICTIONARY, "next": TYPE_INT}):
+		return false
+	var ship_ids: Array = data.ships.map(func(s: Variant) -> Variant: return s.get("id") if s is Dictionary else null)
+	for id: Variant in data.boats.list:
+		var boat: Variant = data.boats.list[id]
+		if not (id is int and boat is Dictionary and _has_fields(boat, {"kind": TYPE_STRING, "base": TYPE_INT, "at": TYPE_VECTOR2, "path": TYPE_ARRAY, "ship": TYPE_INT, "job": TYPE_STRING})):
+			return false
+		var bases: Dictionary = data.pilot_stations if boat.kind == "pilot" else data.tug_depots
+		if boat.kind not in ["pilot", "tug"] or boat.base not in bases or boat.job not in ["home", "out", "with", "back", "ashore", "fetch"] or not boat.path.all(func(p: Variant) -> bool: return p is Vector2):
+			return false
+		if boat.job == "with" and (boat.kind != "tug" or boat.ship not in ship_ids):
+			return false
+	return true
+
+
 ## Check the entire payload before any typed deserialiser sees it.
 # shortcut: entries inside boxes, events and ship_log are not checked,
 # only that they are dictionaries/arrays; check them if hand-edited saves matter.
@@ -422,7 +474,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
@@ -454,6 +506,8 @@ static func _valid_sim(data: Variant) -> bool:
 	for bases: Array in [[data.pilot_stations, "pilots"], [data.tug_depots, "tugs"]]:
 		if not bases[0].keys().all(func(id: Variant) -> bool: return id is int and bases[0][id] is Dictionary and _has_fields(bases[0][id], {"cell": TYPE_VECTOR2I, bases[1]: TYPE_INT})):
 			return false
+	if not _valid_boats(data):
+		return false
 	if not data.passages.all(func(p: Variant) -> bool: return p is Dictionary and _has_fields(p, {"segment": TYPE_INT, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "ship": TYPE_INT})):
 		return false
 	if not data.pocket_dredged.keys().all(func(apron: Variant) -> bool: return apron is int and data.pocket_dredged[apron] is float):
