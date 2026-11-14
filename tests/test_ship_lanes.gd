@@ -69,8 +69,8 @@ func _test_ships_keep_to_deep_lanes() -> void:
 
 
 ## A ship sails from the open sea to alongside along its lane: every point
-## of its way lies in a lane or in its berth's pocket, and it lies alongside
-## at the end.
+## of its way lies in a lane, in its berth's pocket or in the water it turns
+## in off its berth, and it lies alongside at the end.
 func _test_ships_sail_the_lanes() -> void:
 	var sim := AreaPort.base()
 	var water := {}
@@ -87,11 +87,12 @@ func _test_ships_sail_the_lanes() -> void:
 		for ship: PortSim.Ship in sim.ships:
 			if ship.state == PortSim.Ship.State.ARRIVING:
 				var at := Vector2i(Marine.point_along(ship.path, ship.sail).floor())
-				if at not in water:
+				var turning := Vector2(at).distance_to(Marine.swing_point(sim, ship.kind, ship.apron, ship.from)) <= AreaFlow.ship_cells(sim, ship.kind) / 2.0
+				if at not in water and not turning:
 					off.append(at)
 			berthed = berthed or ship.state == PortSim.Ship.State.WORKING
 	_expect(berthed, true, "a ship sails in and berths")
-	_expect(off, [], "every point of its way in lies on a lane or in the pocket")
+	_expect(off, [], "every point of its way in lies on a lane, in the pocket or where it turns")
 
 
 ## M8 step N: no lane crosses a breakwater or an island; a breakwater isn't

@@ -718,38 +718,24 @@ func _draw_ships() -> void:
 				deck.set_instance_color(i, _livery(ship.line, i))
 
 
-## Puts `model` a fraction `sail` of the way along `ship`'s course: along the
-## lanes, then in to lie alongside, its bow along its way until the last leg,
-## where it turns to lie along the quay.
+## Puts `model` a fraction `sail` of the way along `ship`'s course, its bow
+## as Marine.bow points it: along the lanes, round to lie along the quay off
+## its berth, then pushed in sideways.
 func _sail(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
 	if ship.anchorage:
 		_to_anchor(model, ship, sail)
 		return
 	var frame := _berth_frame(ship)
-	var quay_heading := atan2(-frame[1].y, frame[1].x)
-	if ship.path.size() < 2:
-		model.position = Vector3(frame[0].x, 0.0, frame[0].y)
-		model.rotation.y = quay_heading
-		return
-	var points: Array[Vector2] = []
-	for point: Vector2 in ship.path.slice(0, -1):
-		points.append(point * Grid.CELL / METRES_PER_UNIT)
-	points.append(frame[0])
-	var at := Marine.point_along(points, sail)
+	var at: Vector2 = frame[0]
+	if ship.path.size() >= 2:
+		var points: Array[Vector2] = []
+		for point: Vector2 in ship.path.slice(0, -1):
+			points.append(point * Grid.CELL / METRES_PER_UNIT)
+		points.append(frame[0])
+		at = Marine.point_along(points, sail)
 	model.position = Vector3(at.x, 0.0, at.y)
-	# Which leg it is on, and how far along it.
-	var length := 0.0
-	for i in range(1, points.size()):
-		length += points[i - 1].distance_to(points[i])
-	var left := sail * length
-	for i in range(1, points.size()):
-		var leg := points[i - 1].distance_to(points[i])
-		if left <= leg or i == points.size() - 1:
-			var way := points[i] - points[i - 1]
-			var heading := atan2(way.x, way.y) if ship.state == PortSim.Ship.State.ARRIVING else atan2(-way.x, -way.y)
-			model.rotation.y = lerp_angle(heading, quay_heading, clampf(left / maxf(leg, 0.001), 0.0, 1.0)) if i == points.size() - 1 else heading
-			return
-		left -= leg
+	var bow := Marine.bow(sim, ship, sail)
+	model.rotation.y = atan2(bow.x, bow.y)
 
 
 ## A ship sailing in to its spot at anchor, or lying there, bow along its

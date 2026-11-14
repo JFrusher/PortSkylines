@@ -2115,8 +2115,8 @@ func _work(ship: Ship) -> void:
 		Ship.State.LEAVING:
 			if not Marine.under_way(self, ship, -1):
 				return
-			if ship.tugs > 0:
-				# They have pushed it off the quay.
+			if ship.tugs > 0 and Marine.clear_of_berth(self, ship):
+				# They have pulled it off the quay to where it turns.
 				boats.release_tugs(self, ship.id)
 				ship.tugs = 0
 			if Marine.sail(self, ship, -1):
