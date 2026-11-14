@@ -139,10 +139,20 @@ func arrived(id: int) -> bool:
 	return car.i == car.route.size() - 1 and car.s >= network.pieces[car.route[-1]].length - 0.001
 
 
-## [where car `id`'s front is, the way it heads], in grid units.
+## [where car `id`'s front is, the way its body points], in grid units. The
+## body runs from its rear, its length back along the way it came, to its
+## front, so through a sharp corner it swings round as a lorry does instead
+## of snapping to the next piece's direction.
 func pose(id: int) -> Array[Vector2]:
 	var car: Dictionary = cars[id]
-	return network.point_along(car.route[car.i], car.s)
+	var front := network.point_along(car.route[car.i], car.s)
+	var i: int = car.i
+	var back: float = car.s - car.length
+	while back < 0.0 and i > 0:
+		i -= 1
+		back += network.pieces[car.route[i]].length
+	var rear: Vector2 = network.point_along(car.route[i], maxf(back, 0.0))[0]
+	return [front[0], front[0] - rear if not front[0].is_equal_approx(rear) else front[1]]
 
 
 ## Everything the traffic holds, for a save: the cars, who is on and has
