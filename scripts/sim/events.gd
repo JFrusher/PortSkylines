@@ -50,6 +50,17 @@ func under_way(kind: String, now: float) -> Array[Dictionary]:
 	return found
 
 
+## The wind at calendar minute `minute`, in km/h: the mean, stronger by day
+## and calmer by night (strongest at 15:00), rising to a storm's peak gust
+## halfway through it and easing off again.
+func wind(rules: Dictionary, minute: float) -> float:
+	var calm: Dictionary = rules.events.wind
+	var speed: float = calm.mean_kmh + calm.daily_swing_kmh * cos(TAU * (minute / 1440.0 - 15.0 / 24.0))
+	for storm: Dictionary in under_way("storms", minute):
+		speed = maxf(speed, lerpf(speed, storm.peak, sin(PI * (minute - storm.from) / (storm.to - storm.from))))
+	return speed
+
+
 ## Switches `kind` on or off for this game.
 func set_kind(kind: String, value: bool) -> String:
 	if kind not in on:

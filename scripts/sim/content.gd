@@ -73,9 +73,10 @@ const SCHEMA := {
 	"max_loans": TYPE_INT,
 	# Events (M11): planned a season of season_days ahead from their own seeded
 	# random numbers, each kind on or off per game (`defaults` for a new one).
-	# Storms: per_season on average, each lasting hours_min to hours_max with
+	# Wind blows at mean_kmh, daily_swing_kmh stronger mid-afternoon and that
+	# much calmer before dawn. Storms: per_season on average, each lasting hours_min to hours_max with
 	# gusts peaking at peak_min_kmh to peak_max_kmh, forecast lead_hours ahead.
-	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
+	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.

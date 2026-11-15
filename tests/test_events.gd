@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_forecast_lead_time()
 	_test_off_forecasts_nothing_and_shifts_nothing()
 	_test_the_plan_is_saved()
+	_test_wind()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -78,3 +79,20 @@ func _test_the_plan_is_saved() -> void:
 	sim.tick()
 	var loaded := PortSim.from_dict(sim.to_dict())
 	_expect(loaded.event_plan.to_dict(), sim.event_plan.to_dict(), "the plan and its switches load as saved")
+
+
+## Calm wind swings with the day, strongest mid-afternoon; a storm lifts it
+## to its peak gust halfway through and lets it down again; with storms off
+## the wind stays calm through it.
+func _test_wind() -> void:
+	var sim := AreaPort.base()
+	var calm: Dictionary = sim.rules.events.wind
+	_expect(is_equal_approx(sim.event_plan.wind(sim.rules, 15 * 60.0), calm.mean_kmh + calm.daily_swing_kmh), true, "strongest at 15:00")
+	_expect(is_equal_approx(sim.event_plan.wind(sim.rules, 3 * 60.0), calm.mean_kmh - calm.daily_swing_kmh), true, "calmest at 03:00")
+	sim.event_plan.tick(sim)
+	var storm: Dictionary = sim.event_plan.list[0]
+	var middle: float = (storm.from + storm.to) / 2.0
+	_expect(is_equal_approx(sim.event_plan.wind(sim.rules, middle), storm.peak), true, "a storm peaks halfway through (%.1f against %.1f)" % [sim.event_plan.wind(sim.rules, middle), storm.peak])
+	_expect(sim.event_plan.wind(sim.rules, storm.to + 1.0) <= calm.mean_kmh + calm.daily_swing_kmh, true, "and is calm again after")
+	sim.apply({"op": "set_event_kind", "kind": "storms", "on": false})
+	_expect(sim.event_plan.wind(sim.rules, middle) <= calm.mean_kmh + calm.daily_swing_kmh, true, "storms off: calm through it")

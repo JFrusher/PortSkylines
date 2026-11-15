@@ -658,6 +658,7 @@ func _process(dt: float) -> void:
 
 	var minute := sim.clock.calendar_minutes()
 	_clock.text = "%s  Day %d  %02d:%02d" % [WEEKDAYS[sim.clock.game_day() % 7], sim.clock.game_day(), sim.clock.game_hour(), int(minute) % 60]
+	_clock.text += "  Wind %d km/h" % roundi(sim.event_plan.wind(sim.rules, minute))
 	if sim.event_plan.on.tides:
 		_clock.text += "  Tide %+.1f m" % Marine.tide(sim, minute)
 
