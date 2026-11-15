@@ -240,6 +240,9 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 			var wagons := AreaFlow.siding(sim, id).size() / AreaLayout.BAY
 			lines.append("Siding for %d wagons" % wagons if wagons else "No siding: draw track along its back edge")
 		lines.append(_yard_fill(sim, id))
+		if area.type == "transfer_block":
+			var racked: Dictionary = sim.racks.get(id, {})
+			lines.append("Racks at its AGV slots: %d holding a box" % racked.values().filter(func(r: Dictionary) -> bool: return r.state in ["in", "ready"]).size() if settings.racks else "No racks: AGVs wait for an ASC at its front")
 		if area.type == "transfer_block" and not sim.areas.road_behind(id):
 			lines.append("No road behind it: lorries can't collect from its back")
 		if AreaFlow.agv_unreachable(sim, id):

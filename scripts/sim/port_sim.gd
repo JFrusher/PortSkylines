@@ -64,6 +64,8 @@ var workshops := Workshops.new()
 var serviced := {}
 ## Each AGV depot's AGVs at home: depot id -> their charges, 1 full to 0 (M11).
 var agv_home := {}
+## Each racked transfer block's racks: see Racks.
+var racks := {}
 ## Fires burning, and the fire engines.
 var fires := Fires.new()
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
@@ -176,7 +178,7 @@ const AREA_SETTINGS := {
 	"workshop": {"mechanics": 0},
 	"fire_station": {"engines": 0},
 	"agv_depot": {"agvs": 0, "chargers": 0},
-	"transfer_block": {"role": "import", "gear": "asc", "lines": [], "inspectors": 0},
+	"transfer_block": {"role": "import", "gear": "asc", "lines": [], "inspectors": 0, "racks": false},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship", "customs"]
 ## The most lorries a gate can book in an hour.
@@ -439,6 +441,7 @@ func to_dict() -> Dictionary:
 		"workshops": workshops.to_dict(),
 		"serviced": serviced.duplicate(),
 		"agv_home": agv_home.duplicate(true),
+		"racks": racks.duplicate(true),
 		"fires": fires.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
@@ -528,6 +531,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.event_plan = Events.from_dict(d.event_plan)
 	sim.workshops = Workshops.from_dict(d.workshops)
 	sim.serviced = d.serviced.duplicate()
+	sim.racks = d.racks.duplicate(true)
 	for depot: int in d.agv_home:
 		var home: Array[float] = []
 		home.assign(d.agv_home[depot])
@@ -683,6 +687,8 @@ func apply(command: Dictionary) -> String:
 			return Customs.buy_scanner(self, command.gate)
 		"hire_inspectors":
 			return Customs.hire(self, command.area, command.count)
+		"buy_racks":
+			return Racks.buy(self, command.area)
 		"buy_chargers":
 			return AreaFlow.buy_chargers(self, command.area, command.count)
 		"buy_agvs":
@@ -1264,7 +1270,7 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		if key not in AREA_SETTINGS.get(areas.kind_of(areas.list[id]), {}):
 			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
 		# Bought, not set: by inspecting the area.
-		if key in ["mechanics", "engines", "inspectors", "scanner", "agvs", "chargers"]:
+		if key in ["mechanics", "engines", "inspectors", "scanner", "agvs", "chargers", "racks"]:
 			return "Buy %s by inspecting it" % ("a scanner" if key == "scanner" else key)
 		if key == "gear" and areas.kind_of(areas.list[id]) == "transfer_block":
 			return "A transfer block is worked by its two ASCs"

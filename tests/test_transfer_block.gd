@@ -13,6 +13,8 @@ var _failures := 0
 func _initialize() -> void:
 	_test_placed_to_the_back_road()
 	_test_agvs_front_lorries_back()
+	_test_racks_take_imports()
+	_test_racks_stage_exports()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -35,9 +37,10 @@ func _paint(sim: PortSim, rect: Rect2i) -> void:
 ## the east road joined to it beyond the zone, a transfer block between the
 ## two, the quay, the front road and the block's front painted into the AGV
 ## zone, and an AGV depot with six AGVs; the transfer block's id.
-func _terminal(sim: PortSim) -> int:
+func _terminal(sim: PortSim, keep_import_block := false) -> int:
 	sim.creative = true
-	_expect(sim.apply({"op": "remove_area", "id": 3}), "", "the import block goes")
+	if not keep_import_block:
+		_expect(sim.apply({"op": "remove_area", "id": 3}), "", "the import block goes")
 	sim.apply({"op": "build_road", "type": "terminal_1_1", "from": Vector2i(200, 300), "to": Vector2i(200, 270)})
 	sim.apply({"op": "build_road", "type": "terminal_1_1", "from": Vector2i(200, 270), "to": Vector2i(130, 270)})
 	var east := sim.roads.segment_at(Vector2i(150, 300))
@@ -93,3 +96,47 @@ func _test_agvs_front_lorries_back() -> void:
 	_expect(doors.has(["agv", 1]) and not doors.has(["agv", -1]), true, "AGVs hand over at the front only %s" % [doors.keys()])
 	_expect(doors.has(["lorry", -1]) and not doors.has(["lorry", 1]), true, "lorries at the back only %s" % [doors.keys()])
 	_expect(worked.size(), 2, "both ASCs work")
+
+
+## With racks, AGVs set imports on them and go; the ASCs stack them later,
+## and no box is lost on the way.
+func _test_racks_take_imports() -> void:
+	var sim := AreaPort.base()
+	var block := _terminal(sim)
+	_expect(sim.apply({"op": "buy_racks", "area": block}), "", "racks bought")
+	_expect(sim.apply({"op": "buy_racks", "area": block}).is_empty(), false, "only once")
+	var racked := 0
+	var lost := false
+	for i in roundi(30 * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		for rack: Dictionary in sim.racks[block].values():
+			racked += 1 if rack.state == "in" else 0
+			lost = lost or rack.box not in sim.boxes
+	_expect(racked > 0, true, "AGVs set imports on the racks")
+	_expect(lost, false, "every box on a rack is still in the port")
+	_expect(sim.area_stacks[block].count() > 0, true, "and the ASCs stack them")
+
+
+## A transfer block taking exports, with racks: export lorries bring them in
+## at the back; for each export an AGV is sent for, an ASC stages it on a
+## rack and the AGV takes it from there to the ship.
+func _test_racks_stage_exports() -> void:
+	var sim := AreaPort.base()
+	var block := _terminal(sim, true)
+	_expect(sim.apply({"op": "set_area", "id": block, "settings": {"role": "export"}}), "", "it takes exports")
+	_expect(sim.apply({"op": "buy_racks", "area": block}), "", "racks bought")
+	var staged := false
+	var taken := false
+	for i in roundi(4 * 24 * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		var ready := {}
+		for rack: Dictionary in sim.racks[block].values():
+			if rack.state == "ready":
+				ready[rack.box] = true
+		staged = staged or not ready.is_empty()
+		sim.tick()
+		for vehicle: Vehicle in sim.vehicles:
+			taken = taken or (vehicle.kind == "agv" and vehicle.loaded and vehicle.box in ready and vehicle.state == "to_crane")
+		if taken:
+			break
+	_expect(staged, true, "an ASC stages an export on a rack")
+	_expect(taken, true, "and an AGV takes it from there to the ship")

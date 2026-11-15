@@ -157,6 +157,7 @@ static func tractor_speed(sim: PortSim) -> float:
 static func tick(sim: PortSim) -> void:
 	_fit_machines(sim)
 	_batteries(sim)
+	Racks.tick(sim)
 	var wind := sim.event_plan.wind(sim.rules, sim.clock.calendar_minutes())
 	var stopped: Array[String] = []
 	for gear: String in sim.rules.yard_gear:
@@ -361,7 +362,10 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	tractor.box = box
 	sim._claimed[box] = true
 	sim._add_vehicle(tractor)
-	_go_to(sim, tractor, _block_of(sim, box))
+	_go_to(sim, tractor, block)
+	# At a racked transfer block the ASC stages it on a rack while the AGV drives over.
+	if tractor.kind == "agv" and Racks.has(sim, block):
+		Racks.stage(sim, block, box)
 
 
 ## The working AGV depots of `terminal`: a terminal with any runs on its
@@ -1357,6 +1361,9 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 ## every machine busy, the vehicle waits in its slot and asks again when one
 ## finishes.
 static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
+	# At a racked transfer block an AGV drops its import or takes its export and goes.
+	if Racks.drop(sim, vehicle) or Racks.take(sim, vehicle):
+		return
 	var stacks := _stacks(sim, vehicle.area)
 	var layout := sim.areas.layout(vehicle.area)
 	# The idle machine nearest the slot goes: a transfer block's twin ASCs
@@ -1389,6 +1396,9 @@ static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
 static func _machine_done(sim: PortSim, machine: int) -> void:
 	if sim.machine_jobs[machine].has("train"):
 		RailFlow.job_done(sim, machine)
+		return
+	if sim.machine_jobs[machine].has("rack"):
+		Racks.job_done(sim, machine)
 		return
 	var job: Dictionary = sim.machine_jobs[machine]
 	sim.machine_jobs.erase(machine)
@@ -1549,6 +1559,10 @@ static func remove(sim: PortSim, id: int) -> void:
 				sim._drop_vehicle(tractor)
 			sim.cranes.erase(crane)
 	lost += RailFlow.forget(sim, id)
+	for box: int in Racks.on_racks(sim, id):
+		sim._drop_box(box)
+		lost += 1
+	sim.racks.erase(id)
 	sim.handovers.forget(id)
 	sim.handovers.forget(-id)
 	sim.areas.remove(id)

@@ -58,6 +58,8 @@ const AREA_TOP := 0.2
 ## A full AGV battery's bar.
 const AGV_CHARGE_FULL := Color(0.2, 0.85, 0.3)
 const AGV_CHARGE_FLAT := Color(0.9, 0.15, 0.1)
+## A rack's top, metres: a lift-AGV slides under a box on it.
+const RACK_HEIGHT := 1.6
 const AGV_LANE := Color(0.55, 0.42, 0.18)
 ## How high ship lanes are drawn: just over the water.
 const LANE_HEIGHT := -0.2
@@ -740,8 +742,13 @@ static func _cell_quad(tool: SurfaceTool, cell: Vector2i, height: float) -> void
 
 
 ## The quad with corners `corners`, in cells.
+## A flat quad through `corners` at `height`, facing up whichever way round
+## its corners run (an area's run one way on one side of its road and the
+## other on the other), so it is never culled from above.
 static func _quad(tool: SurfaceTool, corners: Array, height: float) -> void:
-	for i: int in [0, 1, 2, 0, 2, 3]:
+	var a: Vector2 = corners[0]
+	var turn: float = (corners[1] - a).cross(corners[2] - a)
+	for i: int in ([0, 1, 2, 0, 2, 3] if turn > 0.0 else [0, 2, 1, 0, 3, 2]):
 		tool.add_vertex(_world(corners[i] * Grid.CELL, height))
 
 
@@ -1648,6 +1655,7 @@ func _draw_vehicles() -> void:
 			# A charger: a grey post with a cable arm, and its light on top, tinted by what it is doing.
 			"charger": _vehicle_part(_merged([[Vector3(0.025, 0.11, 0.025), Vector3(0, 0.055, 0), Color(0.55, 0.58, 0.6)], [Vector3(0.012, 0.012, 0.06), Vector3(0, 0.09, 0.03), Color(0.12, 0.12, 0.12)], [Vector3(0.035, 0.025, 0.035), Vector3(0, 0.12, 0), Color(0.3, 0.32, 0.34)]])),
 			"charger_light": _vehicle_part(_merged([[Vector3(0.02, 0.012, 0.02), Vector3(0, 0.138, 0), Color.WHITE]])),
+			"rack": _vehicle_part(_merged(_rack_parts())),
 			1: _vehicle_part(_stack_meshes[1]),
 			2: _vehicle_part(_stack_meshes[2]),
 		}
@@ -1681,6 +1689,7 @@ func _draw_vehicles() -> void:
 			_put_box(buffers, carried, vehicle.box)
 	_headings = headings
 	_park_agvs(buffers)
+	_draw_racks(buffers)
 	for part: Variant in _vehicle_parts:
 		var multimesh: MultiMesh = _vehicle_parts[part].multimesh
 		var buffer: PackedFloat32Array = buffers[part]
@@ -1690,6 +1699,42 @@ func _draw_vehicles() -> void:
 		buffer.resize(multimesh.instance_count * 16)
 		multimesh.buffer = buffer
 		multimesh.visible_instance_count = count
+
+
+## A rack (x along its slot, before any scale): two grey steel beams on four
+## yellow posts, as long as a 40 ft box and a little more, AGV-height.
+static func _rack_parts() -> Array:
+	var length := REAL_BOX_LENGTH[2] * 1.05 / METRES_PER_UNIT
+	var width := REAL_BOX_WIDTH * 1.1 / METRES_PER_UNIT
+	var top := RACK_HEIGHT / METRES_PER_UNIT
+	var parts: Array = []
+	for z: float in [-width / 2.0, width / 2.0]:
+		parts.append([Vector3(length, 0.012, 0.012), Vector3(0, top, z), Color(0.5, 0.52, 0.55)])
+		for x: float in [-length / 2.0, length / 2.0]:
+			parts.append([Vector3(0.014, top, 0.014), Vector3(x, top / 2.0, z), Color(1.0, 0.78, 0.1)])
+	return parts
+
+
+## Each racked transfer block's racks, one at each AGV slot at its front,
+## and the box on each that holds one.
+func _draw_racks(buffers: Dictionary) -> void:
+	for block: int in sim.racks:
+		if block not in sim.areas.list:
+			continue
+		var layout := sim.areas.layout(block)
+		for slot: int in layout.slots.size():
+			var cells: Array = layout.slots[slot]
+			var middle := (sim.areas.centre(cells[0]) + sim.areas.centre(cells[-1])) / 2.0
+			var along := sim.areas.heading(block, cells[cells.size() / 2].y)
+			var turned := Basis(Vector3.UP, atan2(-along.y, along.x))
+			var at := middle * Grid.CELL / METRES_PER_UNIT
+			var origin := Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
+			_put(buffers.rack, Transform3D(turned, origin), Color.WHITE)
+			var rack: Dictionary = sim.racks[block].get(slot, {})
+			if rack.get("state", "") in ["in", "ready"] and rack.box in sim.boxes:
+				var teu: int = sim.boxes[rack.box].teu
+				var lifted := origin + Vector3(0, (RACK_HEIGHT + REAL_BOX_HEIGHT / 2.0) / METRES_PER_UNIT + 0.006, 0)
+				_put_box(buffers, Transform3D(turned.scaled_local(_real_box[teu]), lifted), rack.box)
 
 
 ## An AGV's battery bar on both its sides at `placed`, green full to red flat.

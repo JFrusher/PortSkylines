@@ -940,6 +940,10 @@ func _draw_inspect_actions() -> void:
 		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
 	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
 		_action_button(_inspect_actions, "Buy an AGV, %s" % HudDetails.dollars(sim.rules.agv.cost), {"op": "buy_agvs", "area": id, "count": 1})
+	if sim.areas.kind_of(sim.areas.list[id]) == "transfer_block" and not sim.areas.list[id].settings.racks:
+		var racks := _action_button(_inspect_actions, "Buy racks, %s" % HudDetails.dollars(sim.rules.agv.rack_cost), {"op": "buy_racks", "area": id})
+		racks.tooltip_text = "A rack at each AGV slot: AGVs set imports down and go, and pick up exports the ASCs have staged, without waiting for an ASC."
+	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
 		var charger := _action_button(_inspect_actions, "Buy a charger, %s" % HudDetails.dollars(sim.rules.agv.charger_cost), {"op": "buy_chargers", "area": id, "count": 1})
 		charger.disabled = sim.areas.list[id].settings.chargers >= sim.rules.agv.max_chargers
 		charger.tooltip_text = "One AGV at home charges on each, flat to full in %.1f hours; a full battery lasts %d hours of work." % [sim.rules.agv.charge_hours, roundi(sim.rules.agv.battery_hours)]
