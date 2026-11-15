@@ -225,7 +225,7 @@ func add_driveways(areas: Areas, kmh: float) -> void:
 	var ids := areas.list.keys()
 	ids.sort()
 	for id: int in ids:
-		if areas.kind_of(areas.list[id]) in ["yard_block", "transfer_block", "quay_apron", "gate", "parking"]:
+		if areas.kind_of(areas.list[id]) in ["yard_block", "transfer_block", "quay_apron", "gate", "parking", "agv_depot"]:
 			_add_driveway(id, areas, kmh, made, leaving, false)
 		if areas.kind_of(areas.list[id]) == "transfer_block":
 			_add_driveway(id, areas, kmh, made, leaving, true)
@@ -282,7 +282,7 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 			if end.y in rows:
 				stops[end.y][end.x] = true
 	var slot_runs: Array = []
-	if kind in ["yard_block", "transfer_block", "parking", "quay_apron"]:
+	if kind in ["yard_block", "transfer_block", "parking", "agv_depot", "quay_apron"]:
 		var lane_row := 2 if kind == "quay_apron" else front
 		for s: int in layout.slots.size():
 			var ks: Array = order.call(layout.slots[s])

@@ -257,7 +257,13 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 	if settings.get("scanner", false):
 		lines.append("Scanner: clears most flagged boxes at once")
 	if settings.has("agvs"):
-		lines.append("%d AGVs, %d out" % [settings.agvs, sim._agvs_out.get(id, 0)])
+		var home: Array = sim.agv_home.get(id, [])
+		var low := home.filter(func(c: float) -> bool: return c < sim.rules.agv.low_share).size()
+		lines.append("%d AGVs: %d out, %d home (%d too low to go), %d chargers" % [settings.agvs, sim._agvs_out.get(id, 0), home.size(), low, settings.chargers])
+		if settings.chargers == 0 and settings.agvs > 0:
+			lines.append("No chargers: AGVs that run down can't charge. Buy chargers by inspecting it")
+		if AreaFlow.agv_unreachable(sim, id):
+			lines.append("AGVs can't get home to it from every yard block: give them a loop or a dead end inside the AGV zone to turn in")
 	if settings.has("engines"):
 		lines.append("%d fire engines, %d out" % [settings.engines, sim.fires.engines.values().filter(func(e: Dictionary) -> bool: return e.station == id and e.job != "home").size()])
 	if settings.has("mechanics"):

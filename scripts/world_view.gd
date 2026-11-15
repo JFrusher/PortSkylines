@@ -57,6 +57,7 @@ const AREA_TOP := 0.2
 ## AGV-only lanes, amber over the asphalt.
 ## A full AGV battery's bar.
 const AGV_CHARGE_FULL := Color(0.2, 0.85, 0.3)
+const AGV_CHARGE_FLAT := Color(0.9, 0.15, 0.1)
 const AGV_LANE := Color(0.55, 0.42, 0.18)
 ## How high ship lanes are drawn: just over the water.
 const LANE_HEIGHT := -0.2
@@ -1644,6 +1645,9 @@ func _draw_vehicles() -> void:
 			"straddle": _vehicle_part(_merged(_straddle_frame(Color.WHITE))),
 			"agv": _vehicle_part(_merged(_agv_parts())),
 			"agv_bar": _vehicle_part(_merged([[Vector3(0.004, 0.014, 0.22), Vector3.ZERO, Color.WHITE]])),
+			# A charger: a grey post with a cable arm, and its light on top, tinted by what it is doing.
+			"charger": _vehicle_part(_merged([[Vector3(0.025, 0.11, 0.025), Vector3(0, 0.055, 0), Color(0.55, 0.58, 0.6)], [Vector3(0.012, 0.012, 0.06), Vector3(0, 0.09, 0.03), Color(0.12, 0.12, 0.12)], [Vector3(0.035, 0.025, 0.035), Vector3(0, 0.12, 0), Color(0.3, 0.32, 0.34)]])),
+			"charger_light": _vehicle_part(_merged([[Vector3(0.02, 0.012, 0.02), Vector3(0, 0.138, 0), Color.WHITE]])),
 			1: _vehicle_part(_stack_meshes[1]),
 			2: _vehicle_part(_stack_meshes[2]),
 		}
@@ -1668,9 +1672,7 @@ func _draw_vehicles() -> void:
 			carried = placed * Transform3D(Basis(), Vector3(0, 0.12, 0)) * _vehicle_box
 		elif vehicle.kind == "agv":
 			_put(buffers.agv, placed, Color.WHITE)
-			# The charge left, green full to red flat, on both sides.
-			for side: float in [-1.0, 1.0]:
-				_put(buffers.agv_bar, placed * Transform3D(Basis(), Vector3(side * 0.113, 0.05, 0)), AGV_CHARGE_FULL)
+			_put_agv_bar(buffers, placed, vehicle.charge)
 			carried = placed * Transform3D(_vehicle_box.basis, Vector3(0, 0.215, 0))
 		else:
 			_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
@@ -1690,22 +1692,43 @@ func _draw_vehicles() -> void:
 		multimesh.visible_instance_count = count
 
 
+## An AGV's battery bar on both its sides at `placed`, green full to red flat.
+func _put_agv_bar(buffers: Dictionary, placed: Transform3D, charge: float) -> void:
+	for side: float in [-1.0, 1.0]:
+		_put(buffers.agv_bar, placed * Transform3D(Basis(), Vector3(side * 0.113, 0.05, 0)), AGV_CHARGE_FLAT.lerp(AGV_CHARGE_FULL, charge))
+
+
 ## Each AGV depot's AGVs at home, parked nose-in under its canopy, two to a
-## bay (_agv_depot's four), as many as fit.
+## bay (_agv_depot's four), as many as fit, the ones charging first; and its
+## chargers, a post by each of the first bays' places, lit green while one
+## charges an AGV and amber while it waits.
 func _park_agvs(buffers: Dictionary) -> void:
 	for id: int in _area_buildings:
 		if id not in sim.areas.list or sim.areas.kind_of(sim.areas.list[id]) != "agv_depot":
 			continue
 		var model: Node3D = _area_buildings[id]
-		var home: int = sim.areas.list[id].settings.agvs - sim._agvs_out.get(id, 0)
+		var home: Array = sim.agv_home.get(id, [])
+		var chargers: int = sim.areas.list[id].settings.chargers
+		# Those AreaFlow._batteries charges this tick: home longest, not yet full.
+		var plugged := {}
+		for i in home.size():
+			if plugged.size() < chargers and home[i] < 1.0:
+				plugged[i] = true
 		var size := _building_size(id)
 		var shed := size.x * 0.75
-		for k: int in mini(home, 8):
+		for k: int in maxi(mini(home.size(), 8), chargers):
 			var x := -size.x * 0.125 - shed / 2.0 + (k / 2 + 0.25 + 0.5 * (k % 2)) * shed / 4.0
-			var placed := model.transform * Transform3D(Basis.IDENTITY.scaled(AREA_VEHICLE_SCALE), Vector3(x, 0.0, size.y * 0.05))
-			_put(buffers.agv, placed, Color.WHITE)
-			for side: float in [-1.0, 1.0]:
-				_put(buffers.agv_bar, placed * Transform3D(Basis(), Vector3(side * 0.113, 0.05, 0)), AGV_CHARGE_FULL)
+			var place := model.transform * Transform3D(Basis.IDENTITY, Vector3(x, 0.0, size.y * 0.05))
+			if k < home.size() and k < 8:
+				var placed := place * Transform3D(Basis.IDENTITY.scaled(AREA_VEHICLE_SCALE), Vector3.ZERO)
+				_put(buffers.agv, placed, Color.WHITE)
+				_put_agv_bar(buffers, placed, home[k])
+			if k < chargers:
+				# By the AGV's nose, at the open front of its bay.
+				var post := place * Transform3D(Basis.IDENTITY, Vector3(0.06, 0.0, -size.y * 0.42))
+				_put(buffers.charger, post, Color.WHITE)
+				var charging: bool = k in plugged
+				_put(buffers.charger_light, post, Color(0.2, 1.0, 0.35) if charging else Color(1.0, 0.65, 0.1))
 
 
 ## Appends `placed` and `color` to `buffer` in MultiMesh layout: the

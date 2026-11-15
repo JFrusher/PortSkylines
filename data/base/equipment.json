@@ -36,7 +36,12 @@
 	},
 	"agv": {
 		"cost": 60000.0,
-		"speed": 350.0
+		"speed": 350.0,
+		"battery_hours": 8.0,
+		"charge_hours": 1.5,
+		"low_share": 0.2,
+		"charger_cost": 25000.0,
+		"max_chargers": 8.0
 	},
 	"yard_gear": {
 		"reach_stacker": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 

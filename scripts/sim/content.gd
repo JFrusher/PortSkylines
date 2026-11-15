@@ -181,7 +181,7 @@ const SCHEMA := {
 	# white; each faded and darkened up to weathering, rust_share of them rusty.
 	"box_look": {"own_share": TYPE_FLOAT, "stripe_share": TYPE_FLOAT, "weathering": TYPE_FLOAT, "rust_share": TYPE_FLOAT, "reefer": TYPE_STRING, "rust": TYPE_STRING, "placard": TYPE_STRING, "lessors": TYPE_ARRAY},
 	# An AGV (M11): bought at an AGV depot, driverless, so dear to buy and cheap to keep.
-	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
+	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT, "battery_hours": TYPE_FLOAT, "charge_hours": TYPE_FLOAT, "low_share": TYPE_FLOAT, "charger_cost": TYPE_INT, "max_chargers": TYPE_INT},
 	# Roads the player draws: lanes each way along the drawn direction, whether
 	# lorries may use it (tractors and AGVs always may), and cost and daily upkeep per 4 m cell.
 	# Roads meeting at a node must part by at least min_angle degrees; each is

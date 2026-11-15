@@ -69,7 +69,7 @@ static func local(kind: String, columns: int, depth: int, present: Dictionary) -
 				if whole.call(booth):
 					layout.slots.append(booth)
 			return layout
-		"parking":
+		"parking", "agv_depot":
 			return {"buffer": kept.call(row.call(0, 0, columns)), "slots": slots_in.call(1)}
 	return {}
 

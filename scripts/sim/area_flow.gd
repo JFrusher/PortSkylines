@@ -156,6 +156,7 @@ static func tractor_speed(sim: PortSim) -> float:
 ## One tick of the area flow, after ships: machines work, then vehicles drive.
 static func tick(sim: PortSim) -> void:
 	_fit_machines(sim)
+	_batteries(sim)
 	var wind := sim.event_plan.wind(sim.rules, sim.clock.calendar_minutes())
 	var stopped: Array[String] = []
 	for gear: String in sim.rules.yard_gear:
@@ -354,6 +355,8 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	if not Drive.place(sim, tractor):
 		return
 	sim._next_vehicle += 1
+	if tractor.depot:
+		sim.agv_home[tractor.depot].erase(tractor.charge)
 	tractor.home = Drive.here(sim, tractor)
 	tractor.box = box
 	sim._claimed[box] = true
@@ -375,25 +378,33 @@ static func agv_depots(sim: PortSim, terminal: int) -> Array[int]:
 	return sim._agv_depots.get(terminal, [] as Array[int])
 
 
-## Whether yard block `block` is in an AGV terminal yet no AGV can drive to
-## it from any of the terminal's quay slots: its zone gives AGVs nowhere to
-## turn, or doesn't join the quay to it.
-static func agv_unreachable(sim: PortSim, block: int) -> bool:
-	var terminal: int = sim.areas.list[block].terminal
+## Whether, in an AGV terminal, AGVs can't drive to `area`: to a yard block
+## from any of the terminal's quay slots, or to an AGV depot from the way
+## out of each of its yard blocks, where low AGVs set off home. Its zone
+## gives AGVs nowhere to turn, or doesn't join them up.
+static func agv_unreachable(sim: PortSim, area: int) -> bool:
+	var terminal: int = sim.areas.list[area].terminal
 	if agv_depots(sim, terminal).is_empty():
+		return false
+	var to := _buffer_start(sim, area)
+	if sim.areas.kind_of(sim.areas.list[area]) == "agv_depot":
+		for block: int in sim.areas.list:
+			if sim.areas.list[block].type in Areas.BLOCK_TYPES and sim.areas.list[block].terminal == terminal and not Drive.reaches(sim, _buffer_end(sim, block), to, "agv"):
+				return true
 		return false
 	var slots := []
 	for apron: int in sim.areas.list:
 		if sim.areas.kind_of(sim.areas.list[apron]) == "quay_apron" and sim.areas.list[apron].terminal == terminal:
 			for s: int in sim.areas.layout(apron).slots.size():
 				slots.append(_stand(sim, apron, s))
-	return not slots.is_empty() and not slots.any(func(slot: Vector3i) -> bool: return Drive.reaches(sim, slot, _buffer_start(sim, block), "agv"))
+	return not slots.is_empty() and not slots.any(func(slot: Vector3i) -> bool: return Drive.reaches(sim, slot, to, "agv"))
 
 
-## One of `terminal`'s AGV depots with an AGV at home, or 0.
+## One of `terminal`'s AGV depots with an AGV at home charged above
+## low_share, or 0.
 static func _free_agv_depot(sim: PortSim, terminal: int) -> int:
 	for depot in agv_depots(sim, terminal):
-		if sim._agvs_out.get(depot, 0) < sim.areas.list[depot].settings.agvs:
+		if sim.agv_home.get(depot, []).any(func(charge: float) -> bool: return charge >= sim.rules.agv.low_share):
 			return depot
 	return 0
 
@@ -417,6 +428,9 @@ static func _pool_vehicle(sim: PortSim, block: int, slot: Vector3i) -> Vehicle:
 	if agv:
 		vehicle.depot = _free_agv_depot(sim, terminal)
 		assert(vehicle.depot != 0, "an AGV is sent only when one is free")
+		# The fullest goes; the AGV leaves home only once it is placed (see _send_*).
+		var home: Array[float] = sim.agv_home[vehicle.depot]
+		vehicle.charge = home.max()
 	return vehicle
 
 
@@ -431,7 +445,47 @@ static func buy_agvs(sim: PortSim, area: int, count: int) -> String:
 		return "Not enough money"
 	sim.ledger.post("equipment", -cost)
 	sim.areas.list[area].settings.agvs += count
+	for i in count:
+		sim.agv_home.get_or_add(area, [] as Array[float]).append(1.0)
 	return ""
+
+
+## Buys `count` chargers at AGV depot `area`, up to max_chargers.
+static func buy_chargers(sim: PortSim, area: int, count: int) -> String:
+	if count < 1:
+		return "Buy at least one"
+	if area not in sim.areas.list or sim.areas.kind_of(sim.areas.list[area]) != "agv_depot":
+		return "No AGV depot there"
+	if sim.areas.list[area].settings.chargers + count > sim.rules.agv.max_chargers:
+		return "An AGV depot holds at most %d chargers" % sim.rules.agv.max_chargers
+	var cost: int = count * sim.rules.agv.charger_cost
+	if not sim._afford(cost):
+		return "Not enough money"
+	sim.ledger.post("equipment", -cost)
+	sim.areas.list[area].settings.chargers += count
+	return ""
+
+
+## A tick of AGV batteries: each AGV out drains, a full charge lasting
+## battery_hours; at each depot as many AGVs at home as it has chargers
+## charge, flat to full in charge_hours: those home longest not yet full,
+## each staying plugged in until it is.
+static func _batteries(sim: PortSim) -> void:
+	var minutes := SimClock.CALENDAR_MINUTES_PER_TICK
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.kind == "agv":
+			vehicle.charge = maxf(0.0, vehicle.charge - minutes / (sim.rules.agv.battery_hours * 60.0))
+	for depot: int in sim.agv_home:
+		if depot not in sim.areas.list:
+			continue
+		var home: Array[float] = sim.agv_home[depot]
+		var free: int = sim.areas.list[depot].settings.chargers
+		for i in home.size():
+			if free == 0:
+				break
+			if home[i] < 1.0:
+				home[i] = minf(1.0, home[i] + minutes / (sim.rules.agv.charge_hours * 60.0))
+				free -= 1
 
 
 ## Whether yard block `block`'s gear carries its own boxes to the quay
@@ -598,6 +652,8 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	if not Drive.place(sim, tractor):
 		return false
 	sim._next_vehicle += 1
+	if tractor.depot:
+		sim.agv_home[tractor.depot].erase(tractor.charge)
 	tractor.state = "under_crane"
 	sim._set_area(tractor, block)
 	sim._add_vehicle(tractor)
@@ -1149,7 +1205,7 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		if vehicle.booked <= sim.clock.calendar_minutes():
 			_arrived(sim, vehicle)
 		return
-	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
+	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane", "to_charge"]:
 		return
 	# On its way, not there yet nor waited long enough to unstick: nothing to do.
 	if vehicle.id in sim.traffic.cars and vehicle.id not in sim.traffic.due:
@@ -1162,7 +1218,7 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 			_book(sim, vehicle)
 		"to_slot":
 			_arrived(sim, vehicle)
-		"returning":
+		"returning", "to_charge":
 			_gone(sim, vehicle)
 		"to_crane":
 			vehicle.state = "under_crane"
@@ -1219,6 +1275,13 @@ static func _unstick_minutes(sim: PortSim) -> float:
 
 
 static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
+	if vehicle.kind == "agv" and vehicle.depot in sim.areas.list:
+		# Low, it drives home to charge first; at home it joins its depot's AGVs.
+		if vehicle.state != "to_charge" and vehicle.charge < sim.rules.agv.low_share:
+			sim._set_area(vehicle, vehicle.depot)
+			_head(sim, vehicle, _buffer_start(sim, vehicle.depot), "to_charge")
+			return
+		sim.agv_home.get_or_add(vehicle.depot, [] as Array[float]).append(vehicle.charge)
 	sim._drop_vehicle(vehicle)
 
 

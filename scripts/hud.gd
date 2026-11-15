@@ -940,6 +940,9 @@ func _draw_inspect_actions() -> void:
 		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
 	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
 		_action_button(_inspect_actions, "Buy an AGV, %s" % HudDetails.dollars(sim.rules.agv.cost), {"op": "buy_agvs", "area": id, "count": 1})
+		var charger := _action_button(_inspect_actions, "Buy a charger, %s" % HudDetails.dollars(sim.rules.agv.charger_cost), {"op": "buy_chargers", "area": id, "count": 1})
+		charger.disabled = sim.areas.list[id].settings.chargers >= sim.rules.agv.max_chargers
+		charger.tooltip_text = "One AGV at home charges on each, flat to full in %.1f hours; a full battery lasts %d hours of work." % [sim.rules.agv.charge_hours, roundi(sim.rules.agv.battery_hours)]
 	if sim.areas.kind_of(sim.areas.list[id]) == "fire_station":
 		_action_button(_inspect_actions, "Buy a fire engine, %s" % HudDetails.dollars(sim.rules.events.fires.engine_cost), {"op": "buy_engines", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "workshop":
