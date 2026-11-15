@@ -63,6 +63,8 @@ const AGV_CHARGE_FLAT := Color(0.9, 0.15, 0.1)
 const HEADING_EASE := 10.0
 ## A rack's top, metres: a lift-AGV slides under a box on it.
 const RACK_HEIGHT := 1.6
+## Parking lanes in an AGV depot, two AGVs to each.
+const AGV_LANES := 4
 const AGV_LANE := Color(0.55, 0.42, 0.18)
 ## How high ship lanes are drawn: just over the water.
 const LANE_HEIGHT := -0.2
@@ -670,7 +672,9 @@ static func _agv_depot(size: Vector2) -> Array:
 	for k: int in bays + 1:
 		var x := middle - shed / 2.0 + k * shed / bays
 		parts.append([Vector3(0.02, h, 0.02), Vector3(x, h / 2.0, front + 0.02), steel.darkened(0.35)])
-		parts.append([Vector3(0.008, 0.002, size.y * 0.8), Vector3(x, 0.002, 0), Color(1.0, 0.8, 0.1)])
+	# Four parking lanes along the road, as AGVs drive in, marked in yellow.
+	for r: int in AGV_LANES + 1:
+		parts.append([Vector3(shed, 0.002, 0.008), Vector3(middle, 0.002, _lane_z(size, r) - size.y * 0.45 / AGV_LANES), Color(1.0, 0.8, 0.1)])
 	return parts
 
 
@@ -1772,16 +1776,22 @@ func _draw_racks(buffers: Dictionary) -> void:
 				_put_box(buffers, Transform3D(turned.scaled_local(_real_box[teu]), lifted), rack.box)
 
 
+## The middle of an AGV depot's parking lane `r` across, front to back, in a
+## depot building `size` deep.
+static func _lane_z(size: Vector2, r: int) -> float:
+	return -size.y * 0.45 + (r + 0.5) * size.y * 0.9 / AGV_LANES
+
+
 ## An AGV's battery bar on both its sides at `placed`, green full to red flat.
 func _put_agv_bar(buffers: Dictionary, placed: Transform3D, charge: float) -> void:
 	for side: float in [-1.0, 1.0]:
 		_put(buffers.agv_bar, placed * Transform3D(Basis(), Vector3(side * 0.113, 0.05, 0)), AGV_CHARGE_FLAT.lerp(AGV_CHARGE_FULL, charge))
 
 
-## Each AGV depot's AGVs at home, parked nose-in under its canopy, two to a
-## bay (_agv_depot's four), as many as fit, the ones charging first; and its
-## chargers, a post by each of the first bays' places, lit green while one
-## charges an AGV and amber while it waits.
+## Each AGV depot's AGVs at home, parked lengthwise under its canopy as they
+## drive in, two to each of its AGV_LANES lanes, as many as fit; and its
+## chargers, a post at the outer end of each of the first places, lit green
+## while it charges the AGV there and amber while it waits.
 func _park_agvs(buffers: Dictionary) -> void:
 	for id: int in _area_buildings:
 		if id not in sim.areas.list or sim.areas.kind_of(sim.areas.list[id]) != "agv_depot":
@@ -1796,17 +1806,19 @@ func _park_agvs(buffers: Dictionary) -> void:
 				plugged[i] = true
 		var size := _building_size(id)
 		var shed := size.x * 0.75
-		for k: int in maxi(mini(home.size(), 8), chargers):
-			var x := -size.x * 0.125 - shed / 2.0 + (k / 2 + 0.25 + 0.5 * (k % 2)) * shed / 4.0
-			var place := model.transform * Transform3D(Basis.IDENTITY, Vector3(x, 0.0, size.y * 0.05))
-			if k < home.size() and k < 8:
+		for k: int in maxi(mini(home.size(), AGV_LANES * 2), chargers):
+			var end := -1.0 if k % 2 == 0 else 1.0
+			var x := -size.x * 0.125 + end * shed / 4.0
+			# Lengthwise: an AGV's length (its z) along the depot's road (x).
+			var place := model.transform * Transform3D(Basis(Vector3.UP, PI / 2.0), Vector3(x, 0.0, _lane_z(size, k / 2)))
+			if k < home.size() and k < AGV_LANES * 2:
 				var placed := place * Transform3D(Basis.IDENTITY.scaled(AREA_VEHICLE_SCALE), Vector3.ZERO)
 				_put(buffers.agv, placed, Color.WHITE)
 				_put(buffers.agv_beacon, placed, Color(0.75, 0.4, 0.05))
 				_put_agv_bar(buffers, placed, home[k])
 			if k < chargers:
-				# By the AGV's nose, at the open front of its bay.
-				var post := place * Transform3D(Basis.IDENTITY, Vector3(0.06, 0.0, -size.y * 0.42))
+				# At the AGV's outer end, beside its lane.
+				var post := place * Transform3D(Basis.IDENTITY, Vector3(0.07, 0.0, end * 0.31))
 				_put(buffers.charger, post, Color.WHITE)
 				var charging: bool = k in plugged
 				_put(buffers.charger_light, post, Color(0.2, 1.0, 0.35) if charging else Color(1.0, 0.65, 0.1))

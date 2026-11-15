@@ -71,14 +71,16 @@ func _ready() -> void:
 			live = pick[0]
 			_drawn = [])
 		header.add_child(tab)
-	_reputation.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_reputation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_reputation.clip_text = true
-	header.add_child(_reputation)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(gap)
 	var close := Button.new()
 	close.text = "Close  ✕"
 	close.pressed.connect(func() -> void: closed.emit())
 	header.add_child(close)
+	# Each line's reputation, a line of its own under the header.
+	_reputation.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(_reputation)
 	_help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_help.add_theme_color_override("font_color", MUTED)
 	column.add_child(_help)
@@ -363,7 +365,11 @@ func _build_footer() -> void:
 	var discount := sim.rail_discount
 	var locked := sim.lock_error("rmg")
 	var shares: Array = sim.rules.lines.keys().map(func(line: String) -> String: return "%s %d%%" % [sim.contracts.name_of(line), roundi(sim.rail_share(line) * 100)])
-	rail.add_child(_plain("Rail discount: $%d a box by train. By rail where a rail block can take it: %s" % [discount, ", ".join(shares)]))
+	var said := _plain("Rail discount: $%d a box by train. By rail where a rail block can take it: %s" % [discount, ", ".join(shares)])
+	# Wrapped, so a long line never pushes the board past the screen's edge.
+	said.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	said.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rail.add_child(said)
 	for change: Array in [["- $10", -10], ["+ $10", 10]]:
 		var button := Button.new()
 		button.text = change[0]
