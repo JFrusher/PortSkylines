@@ -128,7 +128,7 @@ const SCHEMA := {
 	# rail_share: of a line's imports, the share booked to leave by train when
 	# the terminal has a rail block. barge_share: of its big ships' imports for
 	# a place the river reaches, the share booked to leave by barge.
-	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT, "barge_share": TYPE_FLOAT, "tranship_share": TYPE_FLOAT, "connection_hours": TYPE_FLOAT, "customs_share": TYPE_FLOAT}},
+	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "stripe": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT, "barge_share": TYPE_FLOAT, "tranship_share": TYPE_FLOAT, "connection_hours": TYPE_FLOAT, "customs_share": TYPE_FLOAT}},
 	# Transhipment: a line's tranship_share of the boxes its big ships land
 	# leave on its next feeder within connection_hours, and the same share of
 	# its feeders' boxes on its next big ship; each such move pays the move
@@ -176,6 +176,10 @@ const SCHEMA := {
 	"sts_cranes": {"*": {"name": TYPE_STRING, "wind_limit_kmh": TYPE_FLOAT, "mtbf_hours": TYPE_FLOAT, "cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT, "max_fetchers": TYPE_INT}},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
+	# How boxes look (M11): own_share of a line's boxes in its livery (stripe_share
+	# of those with its stripe), the rest leased in a lessor colour; reefers
+	# white; each faded and darkened up to weathering, rust_share of them rusty.
+	"box_look": {"own_share": TYPE_FLOAT, "stripe_share": TYPE_FLOAT, "weathering": TYPE_FLOAT, "rust_share": TYPE_FLOAT, "reefer": TYPE_STRING, "rust": TYPE_STRING, "placard": TYPE_STRING, "lessors": TYPE_ARRAY},
 	# An AGV (M11): bought at an AGV depot, driverless, so dear to buy and cheap to keep.
 	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
 	# Roads the player draws: lanes each way along the drawn direction, whether

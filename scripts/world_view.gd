@@ -169,7 +169,8 @@ var _plain_box := {}
 ## Each box model scaled to real size, by TEU, for boxes on areas and vehicles.
 var _real_box := {}
 var _machine_meshes := {}  # gear -> Mesh
-var _asc_meshes := {}  # transfer block columns -> its ASCs' Mesh
+var _asc_meshes := {}
+var _overlays := {}  # "stripe1".."placard2" -> Mesh, see _box_overlays  # transfer block columns -> its ASCs' Mesh
 ## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
@@ -255,6 +256,7 @@ func _ready() -> void:
 		var aabb: AABB = _stack_meshes[teu].get_aabb()
 		_plain_box[teu] = _merged([[aabb.size, aabb.get_center(), Color.WHITE]])
 	_deck_box = Basis(Vector3.UP, PI / 2) * Basis.from_scale(_real_box[2])
+	_overlays = _box_overlays()
 
 
 ## The site in world units.
@@ -909,11 +911,66 @@ static func grid_cell(at: Vector3) -> Vector2i:
 	return Vector2i(floori(at.x * METRES_PER_UNIT / Grid.CELL), floori(at.z * METRES_PER_UNIT / Grid.CELL))
 
 
-## `line`'s livery, a touch lighter or darker per box so a stack reads as
-## separate boxes. shortcut: a shade stands in for M4's wear texture until the box model has UVs.
-func _livery(line: String, id: int) -> Color:
-	var color: Color = PLAIN_BOX if line == "" else Color.html(sim.rules.lines[line].livery)
-	return color.darkened((id * 37 % 100) / 100.0 * 0.25)
+## The colour of box `id` of `line` (M11 box_look): a reefer white; else
+## own_share in the line's livery, the rest leased in a lessor's colour; each
+## faded and darkened by age, rust_share of them rusty. The same every frame:
+## each choice is rolled from the box's id.
+func _box_colour(line: String, id: int, reefer: bool) -> Color:
+	var look: Dictionary = sim.rules.box_look
+	var colour: Color
+	if reefer:
+		colour = Color.html(look.reefer)
+	elif line == "":
+		colour = PLAIN_BOX
+	elif _own(id):
+		colour = Color.html(sim.rules.lines[line].livery)
+	else:
+		colour = Color.html(look.lessors[mini(int(_roll(id, "lessor") * look.lessors.size()), look.lessors.size() - 1)])
+	colour = colour.darkened(_roll(id, "dark") * look.weathering).lerp(PLAIN_BOX, _roll(id, "fade") * look.weathering * 0.5)
+	if _roll(id, "rust") < look.rust_share:
+		colour = colour.lerp(Color.html(look.rust), 0.15 + _roll(id, "rusty") * 0.25)
+	return colour
+
+
+## The band along box `id`'s side, or clear: stripe_share of a line's own boxes carry its stripe.
+func _box_stripe(line: String, id: int, reefer: bool) -> Color:
+	if reefer or line == "" or not _own(id) or _roll(id, "stripe") >= sim.rules.box_look.stripe_share:
+		return Color.TRANSPARENT
+	return Color.html(sim.rules.lines[line].stripe)
+
+
+## Whether box `id` is its line's own, not leased.
+func _own(id: int) -> bool:
+	return _roll(id, "own") < sim.rules.box_look.own_share
+
+
+## A number from 0 to 1 for box `id` and `what`, the same every frame.
+static func _roll(id: int, what: String) -> float:
+	return (hash([id, what]) & 0xFFFF) / 65536.0
+
+
+## Puts box `id` at `placed` into `buffers`: its body by length (buffers[teu]),
+## its stripe ("stripe%d") and a dangerous-goods placard ("placard%d") if it has them.
+func _put_box(buffers: Dictionary, placed: Transform3D, id: int) -> void:
+	var box: Dictionary = sim.boxes[id]
+	_put(buffers[box.teu], placed, _box_colour(box.line, id, box.reefer))
+	var stripe := _box_stripe(box.line, id, box.reefer)
+	if stripe.a > 0.0:
+		_put(buffers["stripe%d" % box.teu], placed, stripe)
+	if box.dg:
+		_put(buffers["placard%d" % box.teu], placed, Color.html(sim.rules.box_look.placard))
+
+
+## The overlays drawn with a box, by its length's mesh: a band along both
+## sides high up, and a placard on each side by one end. Keyed as _put_box writes them.
+func _box_overlays() -> Dictionary:
+	var found := {}
+	for teu: int in BOX_LENGTH:
+		var aabb: AABB = _stack_meshes[teu].get_aabb()
+		var c := aabb.get_center()
+		found["stripe%d" % teu] = _merged([[Vector3(aabb.size.x * 0.96, aabb.size.y * 0.16, aabb.size.z * 1.03), c + Vector3(0, aabb.size.y * 0.22, 0), Color.WHITE]])
+		found["placard%d" % teu] = _merged([[Vector3(aabb.size.x * (0.07 if teu == 2 else 0.12), aabb.size.y * 0.24, aabb.size.z * 1.05), c + Vector3(aabb.size.x * 0.3, -aabb.size.y * 0.05, 0), Color.WHITE]])
+	return found
 
 
 func _draw_ships() -> void:
@@ -938,7 +995,7 @@ func _draw_ships() -> void:
 			deck.visible_instance_count = slots.size()
 			for i in slots.size():
 				deck.set_instance_transform(i, Transform3D(_deck_box, slots[i]))
-				deck.set_instance_color(i, _livery(ship.line, i))
+				deck.set_instance_color(i, _box_colour(ship.line, hash([ship.id, i]), false))
 
 
 ## Each kind of boat's length and beam, in metres.
@@ -1551,6 +1608,8 @@ func _draw_trains() -> void:
 			1: _vehicle_part(_stack_meshes[1]),
 			2: _vehicle_part(_stack_meshes[2]),
 		}
+		for key: String in _overlays:
+			_train_parts[key] = _vehicle_part(_overlays[key])
 	var buffers := {}
 	for part: Variant in _train_parts:
 		buffers[part] = PackedFloat32Array()
@@ -1569,7 +1628,7 @@ func _draw_trains() -> void:
 			if box != 0 and box in sim.boxes:
 				var teu: int = sim.boxes[box].teu
 				var lifted := origin + Vector3(0, 0.07 + REAL_BOX_HEIGHT / METRES_PER_UNIT / 2.0, 0)
-				_put(buffers[teu], Transform3D(turned.scaled_local(_real_box[teu]), lifted), _livery(sim.boxes[box].line, box))
+				_put_box(buffers, Transform3D(turned.scaled_local(_real_box[teu]), lifted), box)
 	for part: Variant in buffers:
 		var multimesh: MultiMesh = _train_parts[part].multimesh
 		multimesh.instance_count = buffers[part].size() / 16
@@ -1588,6 +1647,8 @@ func _draw_vehicles() -> void:
 			1: _vehicle_part(_stack_meshes[1]),
 			2: _vehicle_part(_stack_meshes[2]),
 		}
+		for key: String in _overlays:
+			_vehicle_parts[key] = _vehicle_part(_overlays[key])
 	var buffers := {}
 	for part: Variant in _vehicle_parts:
 		buffers[part] = PackedFloat32Array()
@@ -1615,8 +1676,7 @@ func _draw_vehicles() -> void:
 			_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
 			_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
 		if vehicle.loaded:
-			var box: Dictionary = sim.boxes[vehicle.box]
-			_put(buffers[box.teu], carried, _livery(box.line, vehicle.box))
+			_put_box(buffers, carried, vehicle.box)
 	_headings = headings
 	_park_agvs(buffers)
 	for part: Variant in _vehicle_parts:
@@ -1689,15 +1749,19 @@ func _draw_area_stacks() -> void:
 					else:
 						part.visibility_range_end = STACK_DETAIL_RANGE
 					parts[Vector2i(teu, far)] = part
+			# Stripes and placards only up close, as the detailed boxes.
+			for key: String in _overlays:
+				parts[key] = _vehicle_part(_overlays[key])
+				parts[key].visibility_range_end = STACK_DETAIL_RANGE
 			_area_stacks[area] = {"drawn": [], "parts": parts}
 		var drawn: Dictionary = _area_stacks[area]
 		if drawn.drawn == [stacks.version, sim.areas.version]:
 			continue
 		drawn.drawn = [stacks.version, sim.areas.version]
 		var buffers := _stack_buffers(area, stacks)
-		for key: Vector2i in drawn.parts:
+		for key: Variant in drawn.parts:
 			var multimesh: MultiMesh = drawn.parts[key].multimesh
-			var buffer: PackedFloat32Array = buffers[key.x]
+			var buffer: PackedFloat32Array = buffers[key.x] if key is Vector2i else buffers[key]
 			multimesh.instance_count = buffer.size() / 16
 			if not buffer.is_empty():
 				multimesh.buffer = buffer
@@ -1706,6 +1770,8 @@ func _draw_area_stacks() -> void:
 ## The instance buffers, by TEU, of yard area `area`'s stacked boxes.
 func _stack_buffers(area: int, stacks: AreaStacks) -> Dictionary:
 	var buffers := {1: PackedFloat32Array(), 2: PackedFloat32Array()}
+	for key: String in _overlays:
+		buffers[key] = PackedFloat32Array()
 	var layout := sim.areas.layout(area)
 	for position in stacks.stacks.size():
 		var spot: Vector3i = layout.stacks[position].cells[1]
@@ -1720,7 +1786,7 @@ func _stack_buffers(area: int, stacks: AreaStacks) -> Dictionary:
 				var shift := 0.0 if teu == 2 else (-0.5 if i == 0 else 0.5) * (REAL_BOX_LENGTH[1] + 0.05)
 				var at := centre + along.normalized() * shift
 				var origin := Vector3(at.x, AREA_TOP + (tier + 0.5) * REAL_BOX_HEIGHT, at.y) / METRES_PER_UNIT
-				_put(buffers[teu], Transform3D(turned.scaled_local(_real_box[teu]), origin), _livery(sim.boxes[ids[i]].line, ids[i]))
+				_put_box(buffers, Transform3D(turned.scaled_local(_real_box[teu]), origin), ids[i])
 	return buffers
 
 
