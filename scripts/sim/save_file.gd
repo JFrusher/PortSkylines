@@ -141,9 +141,14 @@ static func _migrate(data: Dictionary) -> Dictionary:
 	return data
 
 
-## v59 adds the AGV zone (M11): none painted.
+## v59 adds the AGV zone (M11): none painted. v58 made empties without
+## customs fields; empties are never flagged, so each is clear.
 static func _migrate_v59(data: Dictionary) -> Dictionary:
 	data.sim.areas.agv_zone = {}
+	for box: Dictionary in data.sim.boxes.values():
+		if box.kind == "empty":
+			box.customs = ""
+			box.customs_until = 0.0
 	data.version = 59
 	return data
 
