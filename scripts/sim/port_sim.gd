@@ -231,6 +231,11 @@ var bookings := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
+## Boxes customs holds (box customs not ""), so Customs.tick looks at them
+## alone; not saved, found again from the boxes on load.
+var _flagged := {}
+var _agv_depots := {}  # see AreaFlow.agv_depots
+var _agv_depots_for := Vector2i(-1, -1)
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
@@ -556,6 +561,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.dwell_times.assign(d.dwell_times)
 	sim.storage = d.storage.duplicate()
 	sim._claimed = d.claimed.duplicate()
+	for id: int in sim.boxes:
+		if sim.boxes[id].customs != "":
+			sim._flagged[id] = true
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
 	sim._until_empty = d.until_empty

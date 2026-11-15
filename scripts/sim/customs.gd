@@ -20,6 +20,7 @@ static func flag(sim: PortSim, id: int, terminal: int) -> int:
 	if _scanner(sim, terminal) and _roll(sim, id, "scan") >= sim.rules.customs.inspect_share_after_scan:
 		return 0
 	box.barge = false
+	sim._flagged[id] = true
 	var block := AreaFlow._block_for(sim, "customs", terminal)
 	if block:
 		box.customs = "inspect"
@@ -33,28 +34,45 @@ static func flag(sim: PortSim, id: int, terminal: int) -> int:
 ## inspection for each idle inspector and clears each box whose inspection
 ## is done.
 static func tick(sim: PortSim) -> void:
+	if sim._flagged.is_empty():
+		return
 	var now := sim.clock.calendar_minutes()
-	for area: int in sim.area_stacks:
-		if area not in sim.areas.list:
+	var at := {}  # customs block -> {"inspecting": count, "waiting": ids}
+	for id: int in sim._flagged.keys():
+		if id not in sim.boxes:
+			sim._flagged.erase(id)  # burned, or gone with its block
 			continue
-		var block: Dictionary = sim.areas.list[area]
-		var inspecting := 0
-		var waiting: Array[int] = []
-		for id: int in sim.area_stacks[area].boxes():
-			var box: Dictionary = sim.boxes[id]
-			if box.customs == "held" and now >= box.customs_until:
+		var box: Dictionary = sim.boxes[id]
+		if box.customs == "held":
+			if now >= box.customs_until:
 				box.customs = ""
-			elif box.customs == "inspect":
-				if box.customs_until == 0.0:
-					waiting.append(id)
-				elif now >= box.customs_until:
-					box.customs = ""
-					box.customs_until = 0.0
-				else:
-					inspecting += 1
-		for id: int in waiting.slice(0, maxi(0, block.settings.get("inspectors", 0) - inspecting)):
+				sim._flagged.erase(id)
+			continue
+		var area := _stacked_in(sim, id)
+		if area == 0:
+			continue  # on its way to the customs block
+		var here: Dictionary = at.get_or_add(area, {"inspecting": 0, "waiting": [] as Array[int]})
+		if box.customs_until == 0.0:
+			here.waiting.append(id)
+		elif now >= box.customs_until:
+			box.customs = ""
+			box.customs_until = 0.0
+			sim._flagged.erase(id)
+		else:
+			here.inspecting += 1
+	for area: int in at:
+		var block: Dictionary = sim.areas.list[area]
+		for id: int in at[area].waiting.slice(0, maxi(0, block.settings.get("inspectors", 0) - at[area].inspecting)):
 			var rules: Dictionary = sim.rules.customs
 			sim.boxes[id].customs_until = now + lerpf(rules.inspect_hours_min, rules.inspect_hours_max, _roll(sim, id, "hours")) * 60.0
+
+
+## The yard area box `id` is stacked in, or 0.
+static func _stacked_in(sim: PortSim, id: int) -> int:
+	for area: int in sim.area_stacks:
+		if area in sim.areas.list and sim.area_stacks[area].has(id):
+			return area
+	return 0
 
 
 ## Hires `count` customs inspectors at customs block `area`.

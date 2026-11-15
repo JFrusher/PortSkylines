@@ -363,12 +363,16 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 
 ## The working AGV depots of `terminal`: a terminal with any runs on its
 ## depots' AGVs (M11), one without on the port's tractors.
+## Kept until the areas or roads change: asked for every crane every tick.
 static func agv_depots(sim: PortSim, terminal: int) -> Array[int]:
-	var found: Array[int] = []
-	for id: int in sim.areas.list:
-		if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot" and sim.areas.list[id].terminal == terminal and sim.areas.idle_reason(id) == "":
-			found.append(id)
-	return found
+	var now := Vector2i(sim.areas.version, sim.roads.version)
+	if sim._agv_depots_for != now:
+		sim._agv_depots_for = now
+		sim._agv_depots.clear()
+		for id: int in sim.areas.list:
+			if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot" and sim.areas.idle_reason(id) == "":
+				sim._agv_depots.get_or_add(sim.areas.list[id].terminal, [] as Array[int]).append(id)
+	return sim._agv_depots.get(terminal, [] as Array[int])
 
 
 ## Whether yard block `block` is in an AGV terminal yet no AGV can drive to
