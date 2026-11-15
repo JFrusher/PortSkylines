@@ -502,16 +502,26 @@ static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 	return true
 
 
-## A yard block other than `except`, of `role` ("" for any), within
-## dg_distance cells of `cells`, or 0.
+## An area other than `except` that `wanted` accepts, within dg_distance
+## cells of `cells`, or 0.
 # shortcut: compares bounding boxes, so a 45° block keeps more than the distance; compare cells if players build DG on diagonals.
-static func near_yard(sim: PortSim, cells: Array[Vector2i], except: int, role: String) -> int:
+static func near(sim: PortSim, cells: Array[Vector2i], except: int, wanted: Callable) -> int:
 	var reach := _bounds(cells).grow(sim.rules.special_boxes.dg_distance)
 	for id: int in sim.areas.list:
-		var area: Dictionary = sim.areas.list[id]
-		if id != except and area.type == "yard_block" and (role == "" or area.settings.role == role) and reach.intersects(_bounds(sim.areas.cells(id))):
+		if id != except and wanted.call(sim.areas.list[id]) and reach.intersects(_bounds(sim.areas.cells(id))):
 			return id
 	return 0
+
+
+## Whether `area` is a dangerous-goods yard block.
+static func is_dangerous(area: Dictionary) -> bool:
+	return area.type == "yard_block" and area.settings.role == "dangerous"
+
+
+## Whether `area` must keep dg_distance from a dangerous-goods block: any
+## other yard block, quay apron or gate.
+static func keeps_from_dangerous(sim: PortSim, area: Dictionary) -> bool:
+	return sim.areas.kind_of(area) in ["yard_block", "quay_apron", "gate"]
 
 
 ## The smallest rectangle of cells holding `cells`.

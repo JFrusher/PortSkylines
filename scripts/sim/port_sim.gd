@@ -144,7 +144,7 @@ var area_stacks := {}
 ## loaded port refits once, which adds nothing.
 var _machines_fit_for := -1
 func _dg_refusal() -> String:
-	return "A dangerous-goods block stands %d m from other yard blocks" % Grid.metres(rules.special_boxes.dg_distance)
+	return "A dangerous-goods block stands %d m from other yard blocks, quays and gates" % Grid.metres(rules.special_boxes.dg_distance)
 
 
 ## The road a berth brings along its back.
@@ -1019,7 +1019,7 @@ func remove_road(segment: int) -> String:
 
 func build_area_error(type: String, segment: int, side: int, from: int, to: int) -> String:
 	var err := areas.add_error(type, segment, side, from, to)
-	if err == "" and rules.area_types[type].kind == "yard_block" and AreaFlow.near_yard(self, areas.cells_of(type, segment, side, from, to), 0, "dangerous") != 0:
+	if err == "" and rules.area_types[type].kind in ["yard_block", "quay_apron", "gate"] and AreaFlow.near(self, areas.cells_of(type, segment, side, from, to), 0, AreaFlow.is_dangerous) != 0:
 		err = _dg_refusal()
 	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
 		err = "Buy this land first"
@@ -1240,7 +1240,7 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		return lock_error("reefers")
 	if settings.get("role") == "tranship" and lock_error("transhipment"):
 		return lock_error("transhipment")
-	if settings.get("role") == "dangerous" and AreaFlow.near_yard(self, areas.cells(id), id, "") != 0:
+	if settings.get("role") == "dangerous" and AreaFlow.near(self, areas.cells(id), id, func(area: Dictionary) -> bool: return AreaFlow.keeps_from_dangerous(self, area)) != 0:
 		return _dg_refusal()
 	if settings.has("gear"):
 		if not rules.yard_gear.has(settings.gear):
