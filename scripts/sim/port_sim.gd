@@ -167,13 +167,13 @@ const MARINE_BASE_SHORE := 10
 const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
-	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
+	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "inspectors": 0},
 	"quay_apron": {"lines": [], "barge": false},
-	"gate": {"level": "manual", "slots_per_hour": 0},
+	"gate": {"level": "manual", "slots_per_hour": 0, "scanner": false},
 	"workshop": {"mechanics": 0},
 	"fire_station": {"engines": 0},
 }
-const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship", "customs"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
 ## The roads drawn on the 4 m grid.
@@ -661,6 +661,10 @@ func apply(command: Dictionary) -> String:
 				return "No such equipment"
 			serviced[command.kind] = command.on
 			return ""
+		"buy_scanner":
+			return Customs.buy_scanner(self, command.gate)
+		"hire_inspectors":
+			return Customs.hire(self, command.area, command.count)
 		"buy_engines":
 			return fires.buy_engines(self, command.area, command.count)
 		"buy_fireboats":
@@ -1235,6 +1239,9 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 	for key: String in settings:
 		if key not in AREA_SETTINGS.get(areas.kind_of(areas.list[id]), {}):
 			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
+		# Bought, not set: by inspecting the area.
+		if key in ["mechanics", "engines", "inspectors", "scanner"]:
+			return "Buy %s by inspecting it" % ("a scanner" if key == "scanner" else key)
 	if settings.has("slots_per_hour") and (not settings.slots_per_hour is int or settings.slots_per_hour < 0 or settings.slots_per_hour > MAX_SLOTS_PER_HOUR):
 		return "Bookings run from 0 (none) to %d an hour" % MAX_SLOTS_PER_HOUR
 	if settings.has("level"):
@@ -1868,6 +1875,7 @@ func tick() -> void:
 	event_plan.tick(self)
 	workshops.tick(self)
 	fires.tick(self)
+	Customs.tick(self)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
@@ -1916,6 +1924,7 @@ func upkeep_parts() -> Dictionary:
 	for id: int in areas.list:
 		parts[0] += areas.list[id].settings.get("mechanics", 0) * rules.events.breakdowns.upkeep_per_mechanic
 		parts[0] += areas.list[id].settings.get("engines", 0) * rules.events.fires.upkeep_per_engine
+		parts[0] += areas.list[id].settings.get("inspectors", 0) * rules.customs.upkeep_per_inspector
 	for boat: Dictionary in boats.list.values():
 		if boat.kind == "fireboat":
 			parts[0] += rules.water.fireboats.upkeep
@@ -2260,7 +2269,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": ""}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
 	exports += 1 if kind == "export" else 0
 	return id
 

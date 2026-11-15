@@ -259,6 +259,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		sim.boxes[id].barge = true
 	# Booked to rail by its line's share, only while a rail block has room for
 	# it and its place has a rail link, so a port without rail rolls nothing.
+	var customs := Customs.flag(sim, id, here)
 	var rail := RailFlow.block_with_room(sim, sim.areas.list[ship.apron].terminal)
 	var plugs := _block_for(sim, "reefer", sim.areas.list[ship.apron].terminal) if sim.boxes[id].reefer else 0
 	if sim.boxes[id].dg:
@@ -271,6 +272,8 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 			sim._event("A dangerous-goods box was shut out: no dangerous-goods block with room in %s" % sim.areas.terminals[sim.areas.list[ship.apron].terminal].name, sim.areas.cell_at(ship.apron, 0, 0))
 			return
 		sim._set_area(tractor, hazard)
+	elif customs:
+		sim._set_area(tractor, customs)
 	elif rail and sim.boxes[id].kind == "import" and not sim.boxes[id].barge and sim.by_rail_to(id) and sim.rng.randf() < sim.rail_share(ship.line):
 		sim.boxes[id].rail = true
 		sim._set_area(tractor, rail)
@@ -649,7 +652,7 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 			continue
 		# Imports come soonest due first, so the block's first unclaimed one is its best.
 		for id: int in sim.area_stacks[block].of_kind("import", sim.boxes):
-			if id in sim._claimed or sim.boxes[id].barge:
+			if id in sim._claimed or sim.boxes[id].barge or sim.boxes[id].customs != "":
 				continue
 			if sim.boxes[id].due <= now and (box == 0 or sim.boxes[id].due < sim.boxes[box].due):
 				box = id

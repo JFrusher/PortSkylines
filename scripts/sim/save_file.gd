@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 57
+const VERSION := 58
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -134,6 +134,23 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v56(data)
 	if data.version < 57:
 		data = _migrate_v57(data)
+	if data.version < 58:
+		data = _migrate_v58(data)
+	return data
+
+
+## v58 adds customs (M11): every box already in port cleared, no yard block
+## with inspectors, no gate with a scanner.
+static func _migrate_v58(data: Dictionary) -> Dictionary:
+	for box: Dictionary in data.sim.boxes.values():
+		box.customs = ""
+		box.customs_until = 0.0
+	for area: Dictionary in data.sim.areas.list.values():
+		if area.type == "yard_block":
+			area.settings.inspectors = 0
+		elif Content.base().area_types.get(area.type, {}).get("kind") == "gate":
+			area.settings.scanner = false
+	data.version = 58
 	return data
 
 

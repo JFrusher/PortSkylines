@@ -71,6 +71,14 @@ const SCHEMA := {
 	# Loans the port can take, up to max_loans at once, paid back daily.
 	"loans": {"*": {"amount": TYPE_INT, "yearly_rate": TYPE_FLOAT, "days": TYPE_INT}},
 	"max_loans": TYPE_INT,
+	# Customs (M11): each line's customs_share of its imports is flagged when
+	# landed. With a gate scanner in the terminal only inspect_share_after_scan
+	# of those need inspecting; they go to a customs block, whose inspectors
+	# (inspector_cost, upkeep_per_inspector a day) each inspect one for
+	# inspect_hours_min to inspect_hours_max. With no customs block a flagged
+	# box waits no_shed_hours where it stacks. A flagged box never leaves until
+	# cleared.
+	"customs": {"inspect_share_after_scan": TYPE_FLOAT, "inspect_hours_min": TYPE_FLOAT, "inspect_hours_max": TYPE_FLOAT, "no_shed_hours": TYPE_FLOAT, "scanner_cost": TYPE_INT, "inspector_cost": TYPE_INT, "upkeep_per_inspector": TYPE_INT},
 	# Events (M11): planned a season of season_days ahead from their own seeded
 	# random numbers, each kind on or off per game (`defaults` for a new one).
 	# Wind blows at mean_kmh, daily_swing_kmh stronger mid-afternoon and that
@@ -120,7 +128,7 @@ const SCHEMA := {
 	# rail_share: of a line's imports, the share booked to leave by train when
 	# the terminal has a rail block. barge_share: of its big ships' imports for
 	# a place the river reaches, the share booked to leave by barge.
-	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT, "barge_share": TYPE_FLOAT, "tranship_share": TYPE_FLOAT, "connection_hours": TYPE_FLOAT}},
+	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT, "barge_share": TYPE_FLOAT, "tranship_share": TYPE_FLOAT, "connection_hours": TYPE_FLOAT, "customs_share": TYPE_FLOAT}},
 	# Transhipment: a line's tranship_share of the boxes its big ships land
 	# leave on its next feeder within connection_hours, and the same share of
 	# its feeders' boxes on its next big ship; each such move pays the move

@@ -128,6 +128,7 @@
 		}
 	},
 	"max_loans": 3.0,
+	"customs": {"inspect_share_after_scan": 0.25, "inspect_hours_min": 2.0, "inspect_hours_max": 4.0, "no_shed_hours": 24.0, "scanner_cost": 250000, "inspector_cost": 15000, "upkeep_per_inspector": 150},
 	"events": {
 		"season_days": 7.0,
 		"defaults": {"tides": false, "storms": true, "breakdowns": false, "fires": false},

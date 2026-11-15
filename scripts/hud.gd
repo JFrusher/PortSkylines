@@ -932,6 +932,10 @@ func _draw_inspect_actions() -> void:
 	var id: int = _inspected.area
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
 		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
+	if sim.areas.list[id].type == "yard_block" and sim.areas.list[id].settings.role == "customs":
+		_action_button(_inspect_actions, "Hire an inspector, %s" % HudDetails.dollars(sim.rules.customs.inspector_cost), {"op": "hire_inspectors", "area": id, "count": 1})
+	if sim.areas.kind_of(sim.areas.list[id]) == "gate" and not sim.areas.list[id].settings.scanner:
+		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
 	if sim.areas.kind_of(sim.areas.list[id]) == "fire_station":
 		_action_button(_inspect_actions, "Buy a fire engine, %s" % HudDetails.dollars(sim.rules.events.fires.engine_cost), {"op": "buy_engines", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "workshop":
@@ -948,7 +952,7 @@ func _draw_inspect_actions() -> void:
 			button.tooltip_text = "Serviced every %d working hours, out of work %d minutes each time, it breaks down %.0f times less often." % [roundi(sim.rules.events.breakdowns.service_every_hours), roundi(sim.rules.events.breakdowns.service_hours * 60.0), sim.rules.events.breakdowns.serviced_mtbf_factor]
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
-		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment"}
+		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment", "customs": "customs"}
 		var unlocks := {"reefer": "reefers", "tranship": "transhipment"}
 		for role: String in ["import", "export", "reefer", "dangerous", "tranship"]:
 			if role != settings.role:

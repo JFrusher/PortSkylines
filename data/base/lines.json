@@ -1,6 +1,6 @@
 {
 	"lines": {
-		"aurora": {
+		"aurora": {"customs_share": 0.03, 
 			"tranship_share": 0.2,
 			"connection_hours": 48.0,
 			"name": "Aurora Lines",
@@ -13,7 +13,7 @@
 			"rail_share": 0.1,
 			"barge_share": 0.1
 		},
-		"kestrel": {
+		"kestrel": {"customs_share": 0.08, 
 			"tranship_share": 0.0,
 			"connection_hours": 48.0,
 			"name": "Kestrel Shipping",
@@ -25,7 +25,7 @@
 			"rail_share": 0.05,
 			"barge_share": 0.0
 		},
-		"meridian": {
+		"meridian": {"customs_share": 0.03, 
 			"tranship_share": 0.3,
 			"connection_hours": 48.0,
 			"name": "Meridian Box",
@@ -40,7 +40,7 @@
 			"rail_share": 0.15,
 			"barge_share": 0.15
 		},
-		"riverline": {
+		"riverline": {"customs_share": 0.02, 
 			"tranship_share": 0.0,
 			"connection_hours": 48.0,
 			"name": "Riverline Barges",
