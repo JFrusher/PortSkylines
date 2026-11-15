@@ -50,7 +50,7 @@ const RAIL_HALF := 0.08
 const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
-	"parking": Color(0.38, 0.4, 0.42),
+	"parking": Color(0.38, 0.4, 0.42), "workshop": Color(0.5, 0.47, 0.42),
 }
 const AREA_TOP := 0.2
 ## How high ship lanes are drawn: just over the water.
@@ -135,6 +135,8 @@ var _bases := {}
 var _boats := {}
 var _boat_seen := {}  # boat id -> [at the tick before, at this tick], in cells
 var _boat_tick := -1
+## Mechanics' vans by id, a Node3D each.
+var _vans := {}
 ## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
 var _vehicle_parts := {}
 ## Trains drawn the same way: "loco", "wagon", and boxes by TEU.
@@ -377,6 +379,7 @@ func _process(dt: float) -> void:
 		_draw_land()
 	_draw_ships()
 	_draw_marine()
+	_draw_vans()
 	_draw_cranes()
 	_draw_vehicles()
 	_draw_trains()
@@ -770,6 +773,31 @@ func _draw_marine() -> void:
 			if moving:
 				model.rotation.y = atan2(way.x, way.y)
 		model.get_node("Wake").visible = moving
+
+
+## Each mechanic's van: a white van with an orange beacon, at its workshop
+## or on the road to a repair, facing the way it drives.
+func _draw_vans() -> void:
+	for id: int in _vans.keys():
+		if id not in sim.workshops.vans:
+			_vans[id].queue_free()
+			_vans.erase(id)
+	for id: int in sim.workshops.vans:
+		var van: Dictionary = sim.workshops.vans[id]
+		if id not in _vans:
+			var model := MeshInstance3D.new()
+			model.mesh = _merged([
+				[Vector3(0.09, 0.08, 0.2), Vector3(0, 0.06, 0), Color(0.95, 0.95, 0.93)],
+				[Vector3(0.092, 0.03, 0.06), Vector3(0, 0.08, 0.07), Color(0.15, 0.2, 0.26)],
+				[Vector3(0.03, 0.02, 0.03), Vector3(0, 0.11, 0.03), Color(1.0, 0.55, 0.1)],
+			])
+			add_child(model)
+			_vans[id] = model
+		var node: Node3D = _vans[id]
+		node.position = Vector3(van.at.x, 0.02, van.at.y) * Grid.CELL / METRES_PER_UNIT
+		if not van.path.is_empty() and van.path[0] != van.at:
+			var way: Vector2 = van.path[0] - van.at
+			node.rotation.y = atan2(way.x, way.y)
 
 
 ## Where base `id`'s jetty starts on the shore and the way it runs out to

@@ -13,6 +13,7 @@ func _initialize() -> void:
 	_test_the_rate_matches_the_data()
 	_test_off_breaks_nothing_and_moves_no_storm()
 	_test_broken_equipment_does_no_work()
+	_test_a_workshop_mends_what_breaks()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -75,3 +76,41 @@ func _test_broken_equipment_does_no_work() -> void:
 		_expect(broken, true, "%s break down" % fragile)
 		_expect(worked_broken, false, "nothing broken works (%s fragile)" % fragile)
 		_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.ends_with("broke down")), true, "the event list says so")
+
+
+## The base port with a workshop along the east road in its terminal and
+## `mechanics` mechanics, and its quay cranes all broken.
+func _workshop_port(mechanics: int) -> PortSim:
+	var sim := AreaPort.base()
+	sim.creative = true
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	_expect(sim.apply({"op": "build_area", "type": "workshop", "segment": east, "side": 1, "from": 62, "to": 70}), "", "a workshop along the east road")
+	var workshop: int = sim.areas.list.keys().max()
+	_expect(sim.areas.list[workshop].terminal, sim.areas.list[1].terminal, "in the terminal")
+	if mechanics > 0:
+		_expect(sim.apply({"op": "hire_mechanics", "area": workshop, "count": mechanics}), "", "with %d mechanics" % mechanics)
+	for crane: PortSim.Crane in sim.cranes:
+		crane.broken = true
+	return sim
+
+
+## Calendar minutes until every quay crane is mended, or -1 after `hours`.
+func _until_mended(sim: PortSim, hours: float) -> float:
+	var start := sim.clock.calendar_minutes()
+	for i in roundi(hours * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		if sim.cranes.all(func(c: PortSim.Crane) -> bool: return not c.broken):
+			return sim.clock.calendar_minutes() - start
+	return -1.0
+
+
+func _test_a_workshop_mends_what_breaks() -> void:
+	var none := _workshop_port(0)
+	_expect(none.cranes.size() >= 2, true, "two quay cranes to break")
+	_expect(_until_mended(none, 6.0), -1.0, "with no mechanics the cranes stay broken")
+	var one := _until_mended(_workshop_port(1), 12.0)
+	var two := _until_mended(_workshop_port(2), 12.0)
+	var most: float = none.rules.events.breakdowns.repair_hours_max * 60.0
+	_expect(one > 0.0 and two > 0.0, true, "mechanics mend them (one: %.0f min, two: %.0f min)" % [one, two])
+	_expect(two < one, true, "two mechanics mend two cranes sooner than one")
+	_expect(two <= most + 60.0, true, "each within its repair and the drive (%.0f min)" % two)

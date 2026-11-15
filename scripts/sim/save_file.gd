@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 54
+const VERSION := 55
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -128,6 +128,15 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v53(data)
 	if data.version < 54:
 		data = _migrate_v54(data)
+	if data.version < 55:
+		data = _migrate_v55(data)
+	return data
+
+
+## v55 adds workshops' mechanics and their vans (M11); older ports have none.
+static func _migrate_v55(data: Dictionary) -> Dictionary:
+	data.sim.workshops = {"vans": {}, "next": 1}
+	data.version = 55
 	return data
 
 
@@ -531,7 +540,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
@@ -566,6 +575,8 @@ static func _valid_sim(data: Variant) -> bool:
 	if not data.service_jetties.keys().all(func(id: Variant) -> bool: return id is int and data.service_jetties[id] is Dictionary and _has_fields(data.service_jetties[id], {"cell": TYPE_VECTOR2I})):
 		return false
 	if not _valid_boats(data):
+		return false
+	if not _has_fields(data.workshops, {"vans": TYPE_DICTIONARY, "next": TYPE_INT}) or not data.workshops.vans.values().all(func(v: Variant) -> bool: return v is Dictionary and _has_fields(v, {"workshop": TYPE_INT, "job": TYPE_STRING, "fix": TYPE_ARRAY, "at": TYPE_VECTOR2, "path": TYPE_ARRAY, "until": TYPE_FLOAT}) and v.job in ["home", "out", "fixing", "back"] and v.path.all(func(p: Variant) -> bool: return p is Vector2)):
 		return false
 	if not _has_fields(data.event_plan, {"on": TYPE_DICTIONARY, "list": TYPE_ARRAY, "planned_to": TYPE_FLOAT, "rng_seed": TYPE_INT, "rng_state": TYPE_INT, "breakdown_seed": TYPE_INT, "breakdown_state": TYPE_INT}) or not data.event_plan.on.keys().all(func(k: Variant) -> bool: return k in Content.base().events.defaults and data.event_plan.on[k] is bool) or not data.event_plan.list.all(func(e: Variant) -> bool: return e is Dictionary and _has_fields(e, {"kind": TYPE_STRING, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "peak": TYPE_FLOAT, "forecast": TYPE_BOOL})):
 		return false

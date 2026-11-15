@@ -39,7 +39,7 @@ const BUILD_BREAKWATER := -14
 ## Drags a road's node, or the point it bends toward, to reshape it (Move It).
 const MOVE_ROAD := -15
 ## The build menu row each area type sits in.
-const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Water", "Bulldoze", "Inspect"]
@@ -857,6 +857,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"quay_apron": "Where ships berth and STS cranes work. Reaches the water from a road %d–%d m in" % [Grid.metres(area.depth + 1), Grid.metres(area.max_depth + 1)],
 		"gate": "Checks lorries in and out: %d lanes, each a booth" % (area.depth - 2),
 		"parking": "Lorries wait here, off the road, while their terminal's gate is busy, and go on to it in turn. One space per %d m" % Grid.metres(AreaLayout.BAY),
+		"workshop": "Its mechanics drive out in their vans to repair the quay cranes and yard gear that break down in its terminal (switch breakdowns on in the menu). Hire mechanics by inspecting it",
 	}[area.kind]
 	if both_sides:
 		what += ", built on both sides of the road so lorries check in and out without turning round"
@@ -928,6 +929,8 @@ func _draw_inspect_actions() -> void:
 	var id: int = _inspected.area
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
 		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
+	if sim.areas.kind_of(sim.areas.list[id]) == "workshop":
+		_action_button(_inspect_actions, "Hire a mechanic, %s" % HudDetails.dollars(sim.rules.events.breakdowns.mechanic_cost), {"op": "hire_mechanics", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
 		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment"}
@@ -1076,7 +1079,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
-	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), _inspected, settings]
+	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), sim.workshops.vans.size(), _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,

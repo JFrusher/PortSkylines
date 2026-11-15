@@ -76,9 +76,11 @@ const SCHEMA := {
 	# Wind blows at mean_kmh, daily_swing_kmh stronger mid-afternoon and that
 	# much calmer before dawn. With breakdowns on, working equipment fails on
 	# average every mtbf_hours of work (in its own data), repairs taking
-	# repair_hours_min to repair_hours_max. Storms: per_season on average, each lasting hours_min to hours_max with
+	# repair_hours_min to repair_hours_max by a mechanic hired at a workshop
+	# for mechanic_cost (upkeep_per_mechanic a day), whose van drives the
+	# roads at van_speed metres a minute. Storms: per_season on average, each lasting hours_min to hours_max with
 	# gusts peaking at peak_min_kmh to peak_max_kmh, forecast lead_hours ahead.
-	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "breakdowns": {"repair_hours_min": TYPE_FLOAT, "repair_hours_max": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
+	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "breakdowns": {"repair_hours_min": TYPE_FLOAT, "repair_hours_max": TYPE_FLOAT, "mechanic_cost": TYPE_INT, "upkeep_per_mechanic": TYPE_INT, "van_speed": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.
@@ -196,7 +198,7 @@ const SCHEMA := {
 }
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
-const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
+const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
 const POSITIVE := ["min_radius_cells", "width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]

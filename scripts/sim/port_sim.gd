@@ -58,6 +58,8 @@ var _next_station := 1
 var boats := Boats.new()
 ## Planned events (storms) and which kinds are on in this game.
 var event_plan: Events
+## The workshops' mechanics and their vans.
+var workshops := Workshops.new()
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
 ## minutes), "ship" (its id)}], see Marine.clear.
 var passages: Array[Dictionary] = []
@@ -164,6 +166,7 @@ const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
 	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
+	"workshop": {"mechanics": 0},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
@@ -415,6 +418,7 @@ func to_dict() -> Dictionary:
 		"next_station": _next_station,
 		"boats": boats.to_dict(),
 		"event_plan": event_plan.to_dict(),
+		"workshops": workshops.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
 		"next_anchorage": _next_anchorage,
@@ -501,6 +505,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim._next_station = d.next_station
 	sim.boats = Boats.from_dict(d.boats)
 	sim.event_plan = Events.from_dict(d.event_plan)
+	sim.workshops = Workshops.from_dict(d.workshops)
 	sim.passages.assign(d.passages.duplicate(true))
 	sim._next_ship = d.next_ship
 	sim._next_anchorage = d.next_anchorage
@@ -639,6 +644,8 @@ func apply(command: Dictionary) -> String:
 			return build_marine_base("tug_depot", command.cell)
 		"build_services_jetty":
 			return build_marine_base("services_jetty", command.cell)
+		"hire_mechanics":
+			return workshops.hire(self, command.area, command.count)
 		"set_event_kind":
 			return event_plan.set_kind(command.kind, command.on)
 		"buy_service_boats":
@@ -1823,6 +1830,7 @@ func tick() -> void:
 	boats.tick(self)
 	Services.tick(self)
 	event_plan.tick(self)
+	workshops.tick(self)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
@@ -1868,6 +1876,8 @@ func upkeep_parts() -> Dictionary:
 		parts[0] += Areas.breakwater_cells(wall.from, wall.to).size() * rules.water.breakwater.upkeep_per_cell
 	for depot: Dictionary in tug_depots.values():
 		parts[0] += depot.tugs * rules.water.tugs.upkeep_per_tug
+	for id: int in areas.list:
+		parts[0] += areas.list[id].settings.get("mechanics", 0) * rules.events.breakdowns.upkeep_per_mechanic
 	for jetty: int in service_jetties:
 		for boat: int in boats.of(jetty):
 			parts[0] += rules.water.services.boats[boats.list[boat].kind].upkeep

@@ -78,6 +78,12 @@ func breaks(mtbf_hours: float) -> bool:
 	return on.breakdowns and _breakdown_rng.randf() < SimClock.CALENDAR_MINUTES_PER_TICK / (mtbf_hours * 60.0)
 
 
+## How long a repair takes, in hours: repair_hours_min to repair_hours_max,
+## from the breakdowns' own chances.
+func repair_hours(rules: Dictionary) -> float:
+	return _breakdown_rng.randf_range(rules.events.breakdowns.repair_hours_min, rules.events.breakdowns.repair_hours_max)
+
+
 ## Switches `kind` on or off for this game.
 func set_kind(kind: String, value: bool) -> String:
 	if kind not in on:
