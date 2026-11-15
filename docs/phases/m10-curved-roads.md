@@ -23,6 +23,14 @@ Placed after M9 and before events (now M11), as the developer chose on
 | Old saves | **Migrate them.** Each grid segment becomes a straight curve on the same line, and areas are rebuilt along it. |
 | Traffic | **CS-like.** Vehicles keep a gap behind the one ahead along their lane, slow on tight curves and at junctions, and change lane where marked. They no longer take one cell each. |
 | Performance | **No worse than today** on the mega port bench (about 19.5 ms a tick). |
+| Speed limits | **Per road type, in the data:** two-lane terminal road 30 km/h, four-lane 40, one-way 40, tractor lane 25, highway 80. A vehicle drives at the lower of the road's limit and its own top speed. Routing uses travel time. |
+| Lane changes | **Anywhere but junctions** and their approaches, as today. |
+| Areas on bends | **A minimum radius per area type, in the data** (e.g. 30 m for yard blocks). Straight areas are always fine. |
+| Following distance | **A standstill gap (2 m) plus about one second of travel** at the current speed, in the data. |
+| Vehicle lengths | **Real lengths, in the data:** lorries 16.5 m, tractors with a chassis 15 m. Queues grow about four times longer than today's one-cell vehicles, so road, buffer and gate capacity matter more; a balance pass follows. |
+| Highway | **A highway road type** (2+2, 80 km/h) for the road to the site's edge. |
+| Grid snap default | **Off**, CS-style. The grid is a toggle. |
+| Code | **GDScript first;** only hot spots that are measured move to native code. |
 | Extras | **Length, cost and angle tooltip** while drawing; **parallel snapping**; **roundabouts**; **Move It-style editing** of built roads' nodes and control points. |
 
 ## Steps, in order
@@ -39,8 +47,70 @@ tools.
 5. **Save v38 and migration.** Old grid segments become straight curves on the same lines, so every older save still loads and plays. Test: each fixture from v26 on loads with the same roads.
 
 ### Areas along curves
-6. **Area cells along a curve.** An area's cells are laid in rows following its road's side, as CS zoning is: one row of 4 m cells per depth step, spaced along the curve. Blocking and the coast use the same cells. Test: an area along a 90° bend has the same cell count as along a straight road of the same length, give or take the inner-corner loss.
+6. **Area cells along a curve**, CS-style local cells (the developer's choice, 1 Nov 2026), in four parts:
+   - **6a. Area shapes.** An area's cells are its own rows of 4 m cells along a stretch of road, turned with it; each a quad with a centre. Test: on straight grid roads they are today's cells; a bend's outer rows stretch and inner cells too small to use are dropped.
+   - **6b. Overlap by shape.** Areas and roads block each other by overlapping shapes, not shared grid cells. Test: the same refusals as today on grid layouts, and overlaps on curves.
+   - **6c. Areas store their shape (save v39).** Old saves migrate; bays, slots and stacks are laid out on the local cells. Test: every fixture loads and yards work as before.
+   - **6d. Water and terminal paint** are read at each cell's centre. Test: today's coast and terminal tests pass.
 7. **Stacks, slots and machines on curved areas.** Bays follow the area's rows; machines travel along them. Test: a yard block on a bend works a ship as one on a straight road does.
+
+### Order after 6c-1 (1 Nov 2026)
+
+Area layouts can't leave the global grid while vehicles drive cell to cell on it, so continuous traffic (step 8) comes next, before 6c-2, 6b, 6d and 7. Today's lane graph is grid geometry throughout (junctions crossed cell by cell, area flow and slots by grid steps), so the new network is built beside it from steps 1-4's curves and switched to in one tested step:
+
+- **8a. Lane network.** Pieces: each lane's curve, trimmed at junctions, and each connection curve across them; routing over pieces. Standalone, with its own tests.
+- **8b. Continuous traffic.** Vehicles hold a piece, a distance along it and a speed; they keep the standstill gap plus about a second of travel behind the one ahead, book a junction's box whole before entering, and drive at the lower of the road's speed limit (in the data) and their own. Standalone, with its own tests.
+- **8c. Area driveways and slots as pieces.**
+- **8d. The switch.** The sim's vehicles, trains, signals and areas move onto the network and traffic; LaneGraph and LaneTraffic go. Save v40. Test: every behaviour test passes.
+
+### 6c-2: areas on their own cells (the developer's answers, 2 Nov 2026)
+
+| Question | Answer |
+|---|---|
+| How the sim names a spot in an area | **Area + local cell:** (area id, column k, row r) on the area's own cells; its place in the world comes from the area's shape. |
+| Handover slot length | **Two bays (24 m)** per slot, so a 16.5 m lorry fits once real lengths return; a block has half today's slots. A last odd bay is served from the slot beside it. |
+| Driving inside an area | **Lanes along the rows:** the buffer strip and through lanes are one curved lane each along their row, with short connections into and out of each slot, as Cities: Skylines' parking lots are. |
+| Order | **6c-2 before 6b**, as the revised order says. |
+
+In four tested parts, new beside old and then the switch, as step 8 was:
+- **6c-2a. Layouts on local cells.** AreaLayout lays buffer, slots (two bays), stacks, rails, lanes and kerbs out as (k, r) local cells from an area's shape. Standalone, with its own tests.
+- **6c-2b. Driveways as lanes.** The lane network builds each area's row lanes and slot connections from its layout and shape, not from the lane graph. Standalone, with its own tests.
+- **6c-2c. The switch.** Area flow, handovers, machines, stacks, trains, the view and Inspect name spots as (area, k, r); vehicles head for spots; save v41. Every behaviour test passes.
+- **6c-2d. LaneGraph goes.** What still reads it (level crossings, which way traffic runs beside an area, old routing tests) moves to the network.
+
+### Interim traffic data (2 Nov 2026)
+
+The switch (8d) cut the showcase port's deliveries to a quarter (27 in 3,000 ticks against 117 on grid traffic). Measured causes: real vehicle lengths, because areas' handover slots are spaced for one-cell vehicles (27 to 63), and acceleration at 1.5 m/s² (61 to 102); area speed barely mattered. The developer chose interim data until step 7 lays areas and slots for real lengths: lorries and tractors 4 m, `area_kmh` 25, `accel` 20. Step 7's balance pass puts back 16.5 m, 15 m, 20 km/h and 1.5 m/s².
+
+**Step 7's balance pass (2 Nov 2026):** the real values are back. With two-bay slots and "don't block the box", real acceleration and area speed cost almost nothing (124 to 122 showcase deliveries in 3,000 ticks); real lengths cost about 30%, through gridlock: queues on both lanes of the spine joined by U-turns into closed loops. Signals now count green in the traffic's real seconds (they counted sim seconds, a calendar minute each, so a phase lasted 20 game minutes), buffer room counts real lengths, and, the developer's choice, any vehicle stuck `stuck_minutes` (15) is moved on to where it was heading with its box, as Cities: Skylines despawns stuck vehicles (149 deliveries in 3,000 ticks, 52 moved on, no lorry gave up; save v42 counts them).
+
+Step 9 also ports M7's "both lanes carry" test (lorries change lane before a turn so both lanes of a 2+2 road carry traffic), dropped with LaneTraffic in 8d-3, and "a lane change costs no extra cells" on a one-way road, dropped with LaneGraph in 6c-2d.
+
+**Step 9 (2 Nov 2026):** a lane beside one running the same way is cut either side of a stretch of `lane_change_cells` (4) at its road's middle, on a road with `lane_change_clear_cells` (5, the longest vehicle and its gap) clear each side, and a lane change crosses the stretch each way: a connection booked as a junction's are, so two changes crossing take turns and a lorry changes only with room past. Routes pick lanes by length as before, so a lorry bound for a turn changes over before the junction rather than going round. The showcase port first fell from 162 deliveries in 3,000 ticks to 40. Two causes, each traced to its root: a gate whose way out met a lane change's end got no exit, because `nearest` took the change over the lane ending there (a road lane now wins a tie); and on roads shorter than a lorry each side of the stretch, a lorry that had changed lane stood at the next stop line with its rear still on the change, holding it, so the crossing change and its lane queued behind (such roads now have no change). After both: 157 deliveries, 41 vehicles moved on (47 before). Shortcut: one change stretch per road, at its middle, and a changing vehicle doesn't look behind in the lane it joins.
+
+**Step 10 (2 Nov 2026):** signals, priority signs and level crossings already run on the new junctions and continuous traffic (8d-1; test_traffic_junctions and test_signals pass). Junction arms are still keyed by their way rounded to a grid step, exact while roads are built straight or at 45°; step 12's any-angle tool must key them by their exact way, since arms 30° apart can round to the same step.
+
+**Step 11 (2 Nov 2026):** the endgame bench runs 15.65 ms a tick against the 19.5 ms gate (28.2 ms before), with the sim's behaviour unchanged; `docs/perf.md` has the record.
+
+### Step 12: the developer's answers (3 Nov 2026)
+
+| Question | Answer |
+|---|---|
+| Where a road's ends and junctions sit | **Anywhere**, as in Cities: Skylines: two roads crossing split at their exact crossing point; step 14's grid snap keeps today's layouts. |
+| Level crossings at an angle | **Down to 30°** (`min_angle`); a shallower crossing is longer, so a train books more of it. |
+
+In four tested parts, today's grid layouts behaving as they do now after each:
+- **12a. Positions off the grid (save v43).** Road and track nodes are points anywhere; junctions, signals and signs are kept by their node's point, and arms by the segment they run along. Every older save migrates.
+- **12b. Road shapes at any angle.** A road's lanes are quads along its curve, as an area's cells are; its ground (water, land, cost, upkeep) is the grid cells under their middles, and roads, track and areas block each other where quads overlap.
+- **12c. Meeting at any angle.** A road crossing another splits both at the crossing point; one ending on or near another joins its node or splits it there; junctions below `min_angle` are refused; road and track cross down to 30°. Commands only.
+**12b-1 (7 Nov 2026):** a road's lanes are quads along its curve (`RoadNet.shape`), its ground the grid cells under their middles (`ground`, and `footprint` for one not yet built); picking, water, land, breakwaters, area fill and the port map read the ground, and an area is blocked where its quads overlap a road's lane quads. Straight grid roads stand on exactly today's cells. A 45° road stands on its true diagonal rather than today's staircase rows: a few more cells, and a square-cut end that reaches over the line it starts on, so one started on the corner of owned land now needs the land past it. Track keeps its grid cells until step 19; road and track crossings are 12c's. 12b-2 lays areas along roads at any angle.
+**12b-2 (7 Nov 2026):** areas lie along a road at any angle: column k is k cells along its curve, so a road offers a column per whole cell of its length (straight roads as today; a new area on a 45° road has cells a cell apart rather than a diagonal step). Whether a road runs beside an area, where a drag attaches, the far end of a drag and an RMG block's siding are read from the area's own points; its grid `start`, `end` and `out` are worked out from them, for quay aprons and berths, which stay on grid roads until step 21.
+**12c (7 Nov 2026):** roads meet at any angle (`RoadNet._plan`). An end within a road's half width of its end or line joins it there; a road crossing another splits both at the crossing point, off the grid as it falls; lanes may overlap only near where roads meet, as far out as two roads that wide overlap at the angle they meet; arms parting by under `min_angle` are refused ("Roads meet at 20°; a junction needs at least 30°"), and a road along another, at under a degree, as before. Road and track may share ground only where they cross, at `min_angle` or more. A road's price and upkeep count the cells of its length (`RoadNet.cells_long`), so a 45° road now costs its true length, √2 times its run. Track keeps the grid rules until step 19.
+
+The soak's random roads, drawn at any angle, were all refused before; now they build, and its run went from 186 s to 326 s. Measured: the time was the lane network's rebuilds (101, 1.2 s each), almost all in finding conflicting connections at one 4-way junction whose two stub roads were shorter than the junction cut them back (2.5 and 3.5 cells against 3.3 at each end): their lanes ran backwards and its connections were curves thousands of cells long. Grid layouts could make such stubs too, silently. Now a road is refused if any road at the junctions it touches would be shorter than its ends are cut back ("Too close to a junction"), worked out with the lane network's own junction shapes on a trial copy; the lane network asserts it; conflicts are measured only between connection segments in neighbouring cells; and a one-way road coming into a junction takes no connection out (it has no lane out). `RoadNet` now takes the data's junction rules.
+- **12d. The straight tool** draws at any angle, snapping onto a road anywhere along it, with its cost by length.
+
+**12d (7 Nov 2026):** the road tool draws at any angle. A drag's ends snap onto the roads (`RoadNet.snap_point`): a road's end, a junction or the highway's anchor within `SNAP_CELLS` first, else the nearest point of a road's line that close, never back onto the road the drag starts on; with Shift held, the grid point under the mouse. Commands carry points. The view draws each road between its nodes with its lanes square across its line, and its junction markings where the lane network's junction shapes cut it back. Shortcut: guides, angle snap and length snap are step 14's, so until then roads have no straight-or-45° snap; track keeps its grid tool until step 19.
 
 ### Traffic
 8. **Continuous movement.** A vehicle has a lane, a distance along it and a speed. It keeps the data's gap behind the vehicle ahead, slows for a curve by its radius, and slows into junctions. This replaces one vehicle per cell. Test: a queue holds its gap; a vehicle on a tight bend is slower than on a straight.
@@ -51,19 +121,47 @@ tools.
 ### Drawing tools
 12. **Straight tool** at any angle, with node merging and segment splitting where a road ends on or near another. Test: commands only; drawing is the view's work.
 13. **Curved tool** (start, control point, end) and **freeform** (each piece continues tangent to the last).
+
+**Step 13 (7 Nov 2026):** `build_road` takes a control point. A curve meets the roads as a straight road does (12c), by its own way where it meets them: crossings are found along it, each piece between them keeps its part of the curve (`RoadCurve.control_between`), and a junction is checked by the curve's tangent there, not its chord. A curve whose tightest radius leaves its inner lane less than a cell (`RoadNet.MIN_INNER_RADIUS`) from the bend's centre is refused ("Too tight a curve"), as its inside would fold. The HUD's Shape button picks straight (a drag), curved (three clicks: start, the point it bends toward, end) or freeform (a drag that carries on along the road it starts from: its control point is that road's way out, half the drag's length on). The view draws a road's asphalt from its own lane quads and its markings along the curve.
 14. **Snapping:** angle snap with guides (90°, 45° and 15° against nearby roads), length snap (whole cells), guide lines from road ends and perpendicular and parallel to nearby roads, parallel snapping at a set gap, and a grid-snap toggle that keeps today's grid layouts.
+**Step 14 (9 Nov 2026):** a road drag ends where `RoadNet.snap_drag` puts it: onto a road near the mouse; else onto a guide line within `GUIDE_SNAP` (a cell): on from a road's dead end, or parallel to a nearby straight road at the gap where both roads' lanes just clear; else its way snaps to the nearest 15° step from east or from the road it starts on, within `ANGLE_SNAP` (5°), and its length to whole cells. The guides it lies on are drawn. The HUD's Grid snap button keeps today's grid snapping (straight or 45°, grid guides), which track always uses until step 19; Shift places freely.
 15. **Tooltip** with length, cost and angle beside the cursor.
+**Step 15 (9 Nov 2026):** while a road is drawn, the tooltip beside the cursor gives its length along its curve, its price and its heading as a compass bearing (north 0°); over a built road, an upgrade's price is for its own curve.
 16. **Lane-arrow editing** at a junction.
+**Step 16 (9 Nov 2026):** each lane coming into a junction can be given the turns it takes (left, straight, right) from the junction's Inspect panel, by a button per lane that cycles them. Its connections across the junction follow its arrows in place of M7's turn rules (`RoadJunction.connections`); a lane turns back only with a left arrow. Arrows are kept with the junction's signals and signs (`Junctions.arrows`, save v44), and changing them builds the lane network again.
 17. **Roundabouts:** a circle tool that builds a one-way ring with yield entries.
+**Step 17 (9 Nov 2026):** the Shape button's roundabout mode builds a ring by a drag from its centre out to it (`build_roundabout`): eight curves of "roundabout" road (a ring type in the data, one-way, two lanes), each a piece of the circle, running anticlockwise as seen from above so traffic keeps right; it is laid on a trial copy first, so a ring that can't be built leaves nothing. A road joining a ring gives way to traffic on it unless it has a sign of its own (`Junctions.sign_at`), so roads joined later yield too. The ring previews whole while dragged, with its width and price.
 18. **Move It-style editing:** drag a built road's node or control point to reshape it, moving its areas with it, or refuse with the reason.
+
+**Step 18 (9 Nov 2026):** the Move It tool drags a road's end or junction (`move_road_node`: straight roads at it stay straight, curves keep their bend) or a road's middle (`move_road_control`: the curve then passes under the mouse). Each reshaped road must still meet the others only at its own ends, by the junction rules (angles, room, radius), and stand on owned dry land clear of breakwaters and track; the areas built along it are laid along it again (`Areas.refit`) and must still fit. A refused move says why and leaves the port as it was. Shortcut: an area moves with a road only if it was laid along that road's whole curve; one laid before the road was split is refused with a reason, until areas know their road.
 
 ### Rail, water and berths
 19. **Rail curves**, with a larger minimum radius from the data. Trains follow the track's curve.
+
+**19a (9 Nov 2026):** track is laid as roads are, through its cells' middles: its nodes are points (save v45 moves each old node and control point half a cell on), `build_rail` lays it by the same geometric rules (`RoadNet._plan`), and its ground is the cells its line runs through, as its quads' middles fall on cell edges. Trains find their way along the track's pieces (`RoadNet.path`), turning at a node as before. The track tool snaps as the road tool does (`snap_point`, `snap_drag`) and lays each end in the middle of its cell; the view draws ballast and rails along the curve. How tight a road or track may bend is now data, `min_radius_cells` per road type and for rail (12 cells, 48 m), in place of 13's fixed rule (`MIN_INNER_RADIUS`). The grid tool and curved track are 19b and 19c.
+
+**19b (9 Nov 2026):** the road tool has one way to snap. Grid snap is an option of `RoadNet.snap_drag`: a drag that ends near a road still ends on it, else it ends on a grid point straight or at 45° from its start, as today's grid layouts; a drag starts on a road near the mouse, else on the nearest grid point. The grid-era road functions (`snap_start`, `snap_end`, grid guides, `grid_point`, and the grid lane rows `cells` and `lanes`) are gone, with their tests rewritten on `ground`, `footprint` and `RoadCurve`. Grid snap draws no guide lines. `RoadNet.line`, `length` and `snap` stay for berths, walls and ship lanes.
+
+**19c (10 Nov 2026):** track curves. The Shape button's curved and freeform modes draw track as they draw roads (`build_rail` takes a control point), bending no tighter than rail's `min_radius_cells` (12 cells, 48 m). Trains run along points a cell apart on the track (`RoadNet.path`), not its cells: on a cell path a train on a curve drew up to 0.48 cells off it and turned up to 64° off its way, as it swung through each step of the cells; along points it keeps within 0.01 cells and 2°, and moves at its speed on curves and diagonals alike. A train's level crossings and Inspect's pick read the cells under its points (`Train.cells`); save v46 moves an old train's path of cells to their middles. Trains still turn any way at a node (the user's call, 9 Nov 2026), so old 90° corners keep working.
 20. **Ship lanes curve**, with a minimum radius from the data. Ships follow lanes; river channels follow rivers.
+
+**20a (10 Nov 2026):** a ship lane runs through its end cells' middles, straight at any angle or curved through a control point (`ShipLanes.curve`), no tighter than its type's `min_radius_cells` (narrow 50 cells, 200 m; wide 75, 300 m; river 20, 80 m: picked for play, in the data); widening checks the wide lane's radius too. A lane covers the cells within half_width of its line, square across at its ends (`footprint`, kept per lane as `area`): a straight lane along the grid covers exactly the cells it did, a 45° one a true band in place of the stepped one. A ship's course has a point every `SAIL_STEP` (2) cells along each lane, so it follows the curves; booking a narrow lane reads the lane ends on the course and skips the points between. Save v47 gives each lane a control point at its middle. The lane tool still draws straight lanes; curves are 20b's.
+
+**20b (10 Nov 2026):** the Water row has a Shape button, the same setting as the Roads row's (the user's call, 10 Nov 2026): straight draws a lane by a drag, kept straight or at 45°; curved by three clicks (start, the point it bends toward, end); freeform by a drag that carries on smoothly from the lane end it starts on; roundabout lays lanes straight. The preview, its length and price, and its refusal ("Too tight a bend") follow the curve. A river channel follows a river by curved pieces drawn one after another.
 21. **Berths at an angle:** a berth is still one straight quay, placed at the angle that adds the least fill, or turned by a button to any angle the coast allows.
+
+**21a (10 Nov 2026):** everything about a quay reads its apron's own shape (`Areas.point`, `out_at`, `columns`) in place of its grid ends and way out (`start`, `end`, `out`): how deep it reaches to the water, its pocket, where a ship lies alongside, the cells Inspect picks for a ship or crane, the ship's and cranes' poses in the view, and the guide's berth and yard lengths. Berths still face along the grid, so nothing changes: the tests pass unchanged and a berthed ship and its crane draw to within one colour level of before. `start`, `end` and `out` stay stored for now; 21b decides them.
+
+21a's first cut raised the bench's worst tick from 11–21 ms to 90–120 ms: building an area's curve measures its length, and `Areas.point` built one per call, so a pocket (720 points) cost 13.6 ms. A probe on the bench put a 35 ms tick's 24.6 ms in six pocket calls as ship routes were found again. Areas now build each curve once (`_curve_of`), pockets are kept per apron until the areas change, and counts read `Marine.pocket_size`; the worst tick is back to 9–12 ms.
+
+**21b (10 Nov 2026):** a berth turns to its coast. `berth_plan` lays the berth facing any angle (its quay out to the furthest water along it, the fill behind, its road two rows in) and, left to itself, tries every `BERTH_TURN` (15°) and keeps the angle that fills least, grid ways first on a tie, so a coast along the grid gets the berth it always did. On the estuary's slanting bank a berth facing west filled 634 cells; turned to 210° it fills 58. The Quay row's Turn button turns the berth 15° from the way it faces; Auto turns it back. The tool finds its plan once per cell, angle and change to the areas (all angles take 26 ms, one 0.6 ms), and builds at the angle it previewed. The berth's road is found by its ends (`RoadNet.segment_between`): an angled road's ground need not hold the cell under its middle. The first CI run caught berths that passed their check and then failed to build: a turned berth's fill, walked back one line per column, missed water under its road, which the check lets through as it will be filled. The plan now reads each cell at four points inside it and fills back at least past the road; along the grid the points stay in the berth's own cells. The showcase, laid out for west-facing berths, turns its berths west (and its barge berth north) until step 22 rebuilds it. Shortcut: an apron's stored `start`, `end` and `out` round an angled apron to the grid; nothing reads `end` or `out` for geometry since 21a, but tests still build grid berths with them.
 
 ### Close
 22. Showcase port rebuilt with curves (a curving spine, a roundabout, yards on a bend, a curved river channel), fixture, soak, playtest notes in `docs/playtests/m10.md`, tag.
+
+**Step 22 (10 Nov 2026):** the developer chose to add the curves to the showcase rather than rebuild it (10 Nov 2026), keeping its layout and throughput: a yard road curves south off the spine to a roundabout, with four blocks on its bend (all at work, the import block holding 74 boxes within four hours); the track's first corner to the rail block is a curve, which trains take; the river channel curves down the river, and barges follow it. The berths still face west for the grid connectors. Save fixtures run to v47 (no format change since). The soak and every test pass; the endgame gate runs 12.2–14.3 ms a tick against 19.5. Playtest notes: `docs/playtests/m10.md`.
+
+After the close (10 Nov 2026, the developer's call): areas no longer keep grid ends. `start`, `end` and `out` are gone (save v48); events, tests and benches read an area's cells through `Areas.cell_at(id, k, r)`, its way out through `out_at`.
 
 ## Risks
 

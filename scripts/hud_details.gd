@@ -179,7 +179,7 @@ static func traffic_cards(sim: PortSim) -> Array[Dictionary]:
 	for v: Vehicle in sim.vehicles:
 		if v.kind == "lorry":
 			lorries += 1
-		if v.waited > 0:
+		if Drive.waited(sim, v) > 0.0 and not sim.traffic.arrived(v.id):
 			waiting += 1
 	var tractors_out := sim._tractors_out()
 	return [
@@ -196,7 +196,7 @@ static func traffic_rows(sim: PortSim) -> Array[Dictionary]:
 	for v: Vehicle in sim.vehicles:
 		if v.kind == "lorry":
 			lorries += 1
-		if v.waited > 0:
+		if Drive.waited(sim, v) > 0.0 and not sim.traffic.arrived(v.id):
 			waiting += 1
 	return [
 		row("Active tractors", "%d of %d" % [sim._tractors_out(), sim.tractors]),

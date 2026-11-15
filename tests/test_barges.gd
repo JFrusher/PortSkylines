@@ -61,8 +61,7 @@ func _test_barges_unlock_at_the_terminal() -> void:
 ## Where a ship lies at `apron`: its pocket's middle, as AreaPort.add_lane.
 func _berth_point(sim: PortSim, apron: int) -> Vector2i:
 	var area: Dictionary = sim.areas.list[apron]
-	var cells := RoadNet.line(area.start, area.end)
-	return cells[cells.size() / 2] + area.out * (sim.areas.depth_of(area) + sim.rules.water.pocket / 2)
+	return sim.areas.cell_at(apron, area.columns / 2, sim.areas.depth_of(area) + sim.rules.water.pocket / 2)
 
 
 ## A barge berth at row 400 and a feeder berth at row 520 on the strait's

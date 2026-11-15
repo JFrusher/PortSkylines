@@ -208,7 +208,7 @@ Every tunable number lives in `data/base/*.json`, which covers rules, ships, ber
 | `scripts/sim/port_sim.gd` | The sim's state: money, ships, cranes, boxes, vehicles, trains, land, upkeep and KPIs |
 | `scripts/sim/area_flow.gd` | Ships at berths, cranes, tractors and lorries moving boxes by slots and machine jobs |
 | `scripts/sim/rail_flow.gd`, `train.gd` | Trains on their timetable, RMG sidings and level crossings |
-| `scripts/sim/road_net.gd`, `lane_graph.gd`, `lane_traffic.gd` | Roads and track at 0, 45 and 90°, the lanes routed over them, and one vehicle per cell |
+| `scripts/sim/road_net.gd`, `lane_network.gd`, `traffic.gd`, `drive.gd` | Roads and track as curves, the lane network over them, and vehicles driving it continuously |
 | `scripts/sim/areas.gd`, `area_layout.gd` | Areas dragged along roads, grouped into terminals, and how each lays itself out |
 | `scripts/sim/handovers.gd`, `machines.gd`, `area_stacks.gd` | Handover slots, yard machines' jobs and the stacks in yard blocks |
 | `scripts/sim/contracts.gd`, `ledger.gd`, `finance.gd` | Lines and services, the books, loans and the bailout |

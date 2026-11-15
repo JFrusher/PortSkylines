@@ -36,7 +36,7 @@ func _test_remove_one_crane() -> void:
 	_expect(sim.apply({"op": "remove_sts", "apron": 1, "along": 20}), "", "an idle crane comes down")
 	_expect(sim.cranes.map(func(c: PortSim.Crane) -> int: return c.along), [40], "only that crane is gone")
 	_expect(1 in sim.areas.list, true, "its apron stays")
-	var cell: Vector2i = sim.areas.list[1].start + (sim.areas.list[1].end - sim.areas.list[1].start).sign() * 40
+	var cell: Vector2i = sim.areas.cell_at(1, 40, 0)
 	_expect(AreaFlow.crane_at(sim, cell) == sim.cranes[0], true, "the crane left is found from a cell under it")
 
 

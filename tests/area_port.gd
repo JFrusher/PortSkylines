@@ -90,7 +90,7 @@ static func add_rail_block(sim: PortSim) -> int:
 	var id: int = sim.areas.list.keys()[-1]
 	_built(sim.apply({"op": "set_area", "id": id, "settings": {"gear": "rmg"}}), "it gets RMGs")
 	var area: Dictionary = sim.areas.list[id]
-	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var behind: Vector2i = sim.areas.cell_at(id, 0, sim.areas.depth_of(area))
 	var entry := sim.site_rail_entry()
 	var bend := Vector2i(entry.x - 5, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:
@@ -130,11 +130,11 @@ static func region(sim: PortSim) -> Array[Vector2i]:
 ## to the site's edge, so ships reach it from the open sea.
 static func add_lane(sim: PortSim, apron: int) -> void:
 	var area: Dictionary = sim.areas.list[apron]
-	var cells := RoadNet.line(area.start, area.end)
-	var berth: Vector2i = cells[cells.size() / 2] + area.out * (sim.areas.depth_of(area) + sim.rules.water.pocket / 2)
+	var berth: Vector2i = sim.areas.cell_at(apron, area.columns / 2, sim.areas.depth_of(area) + sim.rules.water.pocket / 2)
+	var out := Vector2i(sim.areas.out_at(apron, area.columns / 2).round())
 	var sea := berth
-	while sim.areas.coast.inside(sea + area.out):
-		sea += area.out
+	while sim.areas.coast.inside(sea + out):
+		sea += out
 	var creative := sim.creative
 	sim.creative = true
 	_built(sim.apply({"op": "build_ship_lane", "from": sea, "to": berth, "type": "narrow"}), "a ship lane out to the apron")

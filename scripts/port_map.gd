@@ -362,10 +362,9 @@ class MapCanvas extends Control:
 			for cell in sim.areas.cells(id):
 				image.set_pixelv(cell, colour)
 		for segment: int in sim.roads.segments:
-			for lane: Dictionary in sim.roads.lanes(segment):
-				for cell: Vector2i in lane.cells:
-					if Rect2i(Vector2i.ZERO, site).has_point(cell):
-						image.set_pixelv(cell, Color(0.12, 0.12, 0.14))
+			for cell in sim.roads.ground(segment):
+				if Rect2i(Vector2i.ZERO, site).has_point(cell):
+					image.set_pixelv(cell, Color(0.12, 0.12, 0.14))
 		return image
 
 	## Each painted cell in its terminal's colour, see-through.

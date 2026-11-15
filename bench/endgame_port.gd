@@ -77,7 +77,7 @@ static func build(rules: Dictionary) -> PortSim:
 		rail.append(_area(sim, {"op": "build_area", "type": "yard_block", "segment": last, "side": 1, "from": from, "to": from + BLOCK - 1}))
 		_do(sim, {"op": "set_area", "id": rail[-1], "settings": {"gear": "rmg"}})
 	var area: Dictionary = sim.areas.list[rail[0]]
-	var behind: Vector2i = area.start + area.out * sim.areas.depth_of(area)
+	var behind: Vector2i = sim.areas.cell_at(rail[0], 0, sim.areas.depth_of(area))
 	var entry := sim.site_rail_entry()
 	var bend := Vector2i(entry.x - 9, behind.y)
 	for leg: Array in [[behind, bend], [bend, Vector2i(bend.x, entry.y)], [Vector2i(bend.x, entry.y), entry]]:

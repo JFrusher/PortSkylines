@@ -171,7 +171,7 @@ func _test_outreach() -> void:
 	_run(sim, FIRST_SHIP + 30)
 	_expect(sim.ships.size() == 1 and sim.ships[0].boxes == rules.ship_classes.panamax.import_moves, true, "a panamax gets no moves from cranes that are too short")
 	_expect(sim.last_event().contains("reaches 13 rows"), true, "the status says why (%s)" % sim.last_event())
-	_expect(sim.events[-1].get("at"), sim.areas.list[1].start, "and links to the ship's apron")
+	_expect(sim.events[-1].get("at"), sim.areas.cell_at(1, 0, 0), "and links to the ship's apron")
 
 
 ## One machine per bay against one per two bays, with lifts slow enough that
@@ -285,7 +285,7 @@ func _test_upkeep_at_midnight() -> void:
 	var cells := 0.0
 	for segment: int in sim.roads.segments:
 		var road: Dictionary = sim.roads.segments[segment]
-		cells += RoadNet.length(sim.roads.nodes[road.a], sim.roads.nodes[road.b]) * rules.road_types[road.type].upkeep_per_cell
+		cells += RoadNet.cells_long(sim.roads.curve(segment).length) * rules.road_types[road.type].upkeep_per_cell
 	for id: int in sim.areas.list:
 		cells += sim.areas.cells(id).size() * rules.area_types[sim.areas.list[id].type].upkeep_per_cell
 	for segment: int in sim.ship_lanes.segments:
@@ -655,14 +655,12 @@ func _test_inspect_each_entity() -> void:
 	var ship := sim.ships[0]
 	var crane := sim.cranes[0]
 	var vehicle := sim.vehicles[0]
-	var apron: Dictionary = sim.areas.list[1]
-	var along: Vector2i = (apron.end - apron.start).sign()
-	var water: Vector2i = apron.start + along * (ship.from + 5) + apron.out * (sim.rules.area_types.quay_apron.depth + 2)
+	var water: Vector2i = sim.areas.cell_at(1, ship.from + 5, sim.rules.area_types.quay_apron.depth + 2)
 	_expect(Inspect.pick(sim, water), ship, "a click on the water beside an apron picks its ship")
 	_expect(Inspect.describe(sim, ship)[0], "%s feeder" % sim.contracts.name_of(ship.line), "a ship is named by line and class")
-	_expect(Inspect.pick(sim, apron.start + along * crane.along + apron.out * 4), crane, "a click between a crane's rails picks the crane")
+	_expect(Inspect.pick(sim, sim.areas.cell_at(1, crane.along, 4)), crane, "a click between a crane's rails picks the crane")
 	_expect(Inspect.describe(sim, crane)[0], "STS crane", "a crane is named")
-	_expect(Inspect.pick(sim, Vector2i(vehicle.position(1.0).round())), vehicle, "a click on a vehicle picks it")
+	_expect(Inspect.pick(sim, Vector2i(Drive.where(sim, vehicle).round())), vehicle, "a click on a vehicle picks it")
 	_expect(Inspect.describe(sim, vehicle)[0], "Tractor %d" % vehicle.id, "a vehicle is named by kind and id")
 	_expect(Inspect.describe(sim, {"area": 3}).slice(0, 3), ["Yard block", "Terminal 1", "Import block, worked by reach stackers"] as Array[String], "a yard block shows its rules")
 	sim.vehicles.erase(vehicle)

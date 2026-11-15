@@ -1,80 +1,133 @@
 class_name ShipLanes
 extends RefCounted
-## The ship lanes the player draws on the water: segments between grid
-## points, straight or at 45° like roads, meeting only at their ends. A
-## segment covers half_width cells either side of its line, all of it water.
+## The ship lanes the player draws on the water: segments between cells,
+## through the cells' middles, straight at any angle or curved (a quadratic
+## curve, RoadCurve) no tighter than their type's min_radius_cells, meeting
+## only at their ends. A segment covers half_width cells either side of its
+## line, all of it water.
 ## Its depth is the shallowest water along its line plus what has been
 ## dredged there. Ships route along lanes deep enough for their draft, from
 ## a lane end on the site's edge (the open sea) to their berth.
 
-## Lane type -> {"name", "half_width", "cost_per_cell", "upkeep_per_cell"},
-## from rules.water.lanes.
+## Lane type -> {"name", "min_radius_cells", "half_width", "cost_per_cell",
+## "upkeep_per_cell", ...}, from rules.water.lanes.
 var types: Dictionary
-## Node id -> grid point.
+## Node id -> its cell.
 var nodes := {}
-## Segment id -> {"a", "b": node ids, "type", "dredged": metres}.
+## Segment id -> {"a", "b": node ids, "type", "dredged": metres, "control":
+## its curve's control point in grid units, at its middle while straight}.
 var segments := {}
 ## Bumped by every change, so routes are found again.
 var version := 0
 var _next_node := 1
 var _next_segment := 1
+## Segment id -> [what it is laid from, its line's cells, the cells it covers].
+var _laid := {}
 
 
 func _init(lane_types: Dictionary) -> void:
 	types = lane_types
 
 
+## `segment`'s line as a curve, in grid units.
+func curve(segment: int) -> RoadCurve:
+	var lane: Dictionary = segments[segment]
+	return RoadCurve.new(Vector2(nodes[lane.a]) + Vector2(0.5, 0.5), lane.control, Vector2(nodes[lane.b]) + Vector2(0.5, 0.5))
+
+
+## The line of a lane from cell `from` to cell `to` through their middles,
+## curving through `control` (INF: straight).
+static func line_of(from: Vector2i, to: Vector2i, control := Vector2.INF) -> RoadCurve:
+	var a := Vector2(from) + Vector2(0.5, 0.5)
+	var b := Vector2(to) + Vector2(0.5, 0.5)
+	return RoadCurve.straight(a, b) if control == Vector2.INF else RoadCurve.new(a, control, b)
+
+
 ## The cells along `segment`'s line, from a to b.
 func cells(segment: int) -> Array[Vector2i]:
-	return RoadNet.line(nodes[segments[segment].a], nodes[segments[segment].b])
+	return _laid_of(segment)[1]
 
 
-## The cells a lane of `type` from `from` to `to` covers: its line and
-## half_width cells either side, across the line.
-func footprint(from: Vector2i, to: Vector2i, type: String) -> Array[Vector2i]:
-	var step := (to - from).sign()
-	var across := Vector2i(-step.y, step.x)
-	var half: int = types[type].half_width
+## The cells `segment` covers (see footprint).
+func area(segment: int) -> Array[Vector2i]:
+	return _laid_of(segment)[2]
+
+
+## [key, line cells, covered cells] of `segment`, laid again only when it changes.
+func _laid_of(segment: int) -> Array:
+	var lane: Dictionary = segments[segment]
+	var key := [nodes[lane.a], lane.control, nodes[lane.b], lane.type]
+	if segment not in _laid or _laid[segment][0] != key:
+		_laid[segment] = [key, _line_cells(curve(segment)), _band(curve(segment), types[lane.type].half_width)]
+	return _laid[segment]
+
+
+## The cells a lane of `type` from cell `from` to cell `to`, curving through
+## `control`, covers: its line and half_width cells either side, across it.
+func footprint(from: Vector2i, to: Vector2i, type: String, control := Vector2.INF) -> Array[Vector2i]:
+	return _band(line_of(from, to, control), types[type].half_width)
+
+
+## The cells `line` runs through, in order.
+static func _line_cells(line: RoadCurve) -> Array[Vector2i]:
 	var found: Array[Vector2i] = []
-	for cell in RoadNet.line(from, to):
-		for k in range(-half, half + 1):
-			found.append(cell + across * k)
-			# A 45° line's cells touch only at corners; fill the gaps beside them.
-			if step.x != 0 and step.y != 0:
-				found.append(cell + across * k + Vector2i(step.x, 0))
+	var steps := maxi(1, ceili(line.length / 0.25))
+	for n in steps + 1:
+		var cell := Vector2i(line.point_at(line.length * n / steps).floor())
+		if found.is_empty() or found[-1] != cell:
+			found.append(cell)
 	return found
 
 
-## Why a lane of `type` can't run from `from` to `to`, or "": `is_water`
-## says whether a cell is open water.
-func add_error(from: Vector2i, to: Vector2i, type: String, is_water: Callable) -> String:
+## The cells within `half` cells of `line`, square across at its ends: on a
+## straight line along the grid, its cells and `half` rows either side.
+static func _band(line: RoadCurve, half: int) -> Array[Vector2i]:
+	var under := {}
+	var steps := maxi(1, ceili(line.length / 0.5))
+	for n in steps + 1:
+		var d := line.length * n / steps
+		var at := line.point_at(d)
+		var across := line.right_at(d)
+		for k in range(-2 * half, 2 * half + 1):
+			under[Vector2i((at + across * (k / 2.0)).floor())] = true
+	var found: Array[Vector2i] = []
+	found.assign(under.keys())
+	return found
+
+
+## Why a lane of `type` can't run from `from` to `to`, curving through
+## `control` (INF: straight), or "": `is_water` says whether a cell is open
+## water.
+func add_error(from: Vector2i, to: Vector2i, type: String, is_water: Callable, control := Vector2.INF) -> String:
 	if type not in types:
 		return "Unknown lane type \"%s\"" % type
-	var d := to - from
-	if d == Vector2i.ZERO:
+	if from == to:
 		return "A lane needs a length"
-	if d.x != 0 and d.y != 0 and absi(d.x) != absi(d.y):
-		return "Lanes run straight or at 45°"
-	if not footprint(from, to, type).all(is_water):
+	var line := line_of(from, to, control)
+	if line.min_radius() < types[type].min_radius_cells:
+		return "Too tight a bend: a %s turns no tighter than %d m" % [types[type].name.to_lower(), roundi(types[type].min_radius_cells * Grid.CELL)]
+	if not _band(line, types[type].half_width).all(is_water):
 		return "A lane needs open water all along it, %d m wide" % Grid.metres(types[type].half_width * 2 + 1)
-	var line := RoadNet.line(from, to)
+	var mine := _line_cells(line)
 	for segment: int in segments:
 		var other := cells(segment)
-		for cell in line:
+		for cell in mine:
 			if cell in other and cell not in [from, to]:
 				return "Lanes meet only at their ends"
 	return ""
 
 
-## Adds a lane of `type` from `from` to `to`, joining nodes it ends on and
-## splitting a lane its end lands on part-way. Returns "" or why not.
-func add(from: Vector2i, to: Vector2i, type: String, is_water: Callable) -> String:
-	var err := add_error(from, to, type, is_water)
+## Adds a lane of `type` from `from` to `to`, curving through `control`
+## (INF: straight), joining nodes it ends on and splitting a lane its end
+## lands on part-way. Returns "" or why not.
+func add(from: Vector2i, to: Vector2i, type: String, is_water: Callable, control := Vector2.INF) -> String:
+	var err := add_error(from, to, type, is_water, control)
 	if err:
 		return err
+	var line := line_of(from, to, control)
 	var a := _node_at(from)
 	var b := _node_at(to)
-	segments[_next_segment] = {"a": a, "b": b, "type": type, "dredged": 0.0}
+	segments[_next_segment] = {"a": a, "b": b, "type": type, "dredged": 0.0, "control": line.c}
 	_next_segment += 1
 	version += 1
 	return ""
@@ -141,7 +194,7 @@ func route(starts: Array[int], ends: Array[int], may_use: Callable) -> Array[int
 			if not may_use.call(segment):
 				continue
 			var next: int = segments[segment].b if segments[segment].a == here else segments[segment].a
-			var cost: float = best[here] + RoadNet.length(nodes[here], nodes[next])
+			var cost: float = best[here] + curve(segment).length
 			if next not in best or cost < best[next]:
 				best[next] = cost
 				came[next] = here
@@ -182,8 +235,11 @@ func _node_at(cell: Vector2i) -> int:
 	nodes[node] = cell
 	var through := segment_at(cell)
 	if through:
+		# Each piece keeps its part of the curve, split where it passes nearest the cell's middle.
 		var old: Dictionary = segments[through]
-		segments[through] = {"a": old.a, "b": node, "type": old.type, "dredged": old.dredged}
-		segments[_next_segment] = {"a": node, "b": old.b, "type": old.type, "dredged": old.dredged}
+		var line := curve(through)
+		var t := line.t_at(line.nearest(Vector2(cell) + Vector2(0.5, 0.5)))
+		segments[through] = {"a": old.a, "b": node, "type": old.type, "dredged": old.dredged, "control": line.control_between(0.0, t)}
+		segments[_next_segment] = {"a": node, "b": old.b, "type": old.type, "dredged": old.dredged, "control": line.control_between(t, 1.0)}
 		_next_segment += 1
 	return node
