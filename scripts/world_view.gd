@@ -718,10 +718,8 @@ func _draw_ships() -> void:
 				deck.set_instance_color(i, _livery(ship.line, i))
 
 
-## Lengths and beams of the port's boats, in cells.
-const TUG_LENGTH := 30.0 / Grid.CELL
-const TUG_BEAM := 10.0 / Grid.CELL
-const PILOT_BOAT_LENGTH := 16.0 / Grid.CELL
+## Each kind of boat's length and beam, in metres.
+const BOAT_METRES := {"tug": Vector2(30, 10), "pilot": Vector2(16, 5), "bunkers": Vector2(60, 12), "provisions": Vector2(30, 8), "waste": Vector2(30, 8)}
 ## Where the water's surface lies, in world units.
 const WATERLINE := -0.3
 
@@ -738,7 +736,7 @@ func _draw_marine() -> void:
 			_bases.erase(id)
 	for id: int in bases:
 		if id not in _bases:
-			_bases[id] = _base_model(id, id in sim.pilot_stations)
+			_bases[id] = _base_model(id, "pilot" if id in sim.pilot_stations else ("tug" if id in sim.tug_depots else "services"))
 	for id: int in _boats.keys():
 		if id not in sim.boats.list:
 			_boats[id].queue_free()
@@ -760,6 +758,8 @@ func _draw_marine() -> void:
 			model.position = Vector3(moored[0].x, 0.0, moored[0].y) * Grid.CELL / METRES_PER_UNIT
 			model.rotation.y = atan2(moored[1].x, moored[1].y)
 		elif boat.job == "with" and _tug_at_ship(model, id, boat):
+			pass
+		elif boat.job == "serve" and _alongside_ship(model, boat):
 			pass
 		else:
 			var seen: Array = _boat_seen[id]
@@ -793,7 +793,9 @@ func _jetty(id: int) -> Array[Vector2]:
 func _jetty_length(id: int) -> float:
 	var start: Vector2 = _jetty(id)[0]
 	var cell := sim.marine_base_cell(id)
-	var boat := TUG_LENGTH if id in sim.tug_depots else PILOT_BOAT_LENGTH
+	var boat := 0.0
+	for b: int in sim.boats.of(id):
+		boat = maxf(boat, BOAT_METRES[sim.boats.list[b].kind].x / Grid.CELL)
 	return maxf(start.distance_to(Vector2(cell) + Vector2(0.5, 0.5)) + 1.0, ceili(sim.boats.of(id).size() / 2.0) * (boat + 1.0) + 2.0)
 
 
@@ -803,8 +805,11 @@ func _moored(id: int, boat: Dictionary) -> Array[Vector2]:
 	var jetty := _jetty(boat.base)
 	var out: Vector2 = jetty[1]
 	var slot := sim.boats.of(boat.base).find(id)
-	var length := PILOT_BOAT_LENGTH if boat.kind == "pilot" else TUG_LENGTH
-	var beam := 5.0 / Grid.CELL if boat.kind == "pilot" else TUG_BEAM
+	var size: Vector2 = BOAT_METRES[boat.kind] / Grid.CELL
+	var length := 0.0
+	for b: int in sim.boats.of(boat.base):
+		length = maxf(length, BOAT_METRES[sim.boats.list[b].kind].x / Grid.CELL)
+	var beam := size.y
 	var along := _jetty_length(boat.base) - 1.0 - length / 2.0 - (slot / 2) * (length + 1.0)
 	var across := (0.5 + beam / 2.0 + 0.2) * (1.0 if slot % 2 == 0 else -1.0)
 	return [jetty[0] + out * along + Vector2(-out.y, out.x) * across, out]
@@ -829,22 +834,50 @@ func _tug_at_ship(model: Node3D, id: int, boat: Dictionary) -> bool:
 	var side := Vector3(side2.x, 0.0, side2.y)
 	var bow := hull.basis.z.normalized()
 	var along := (float(k) / maxi(tugs.size() - 1, 1) - 0.5) * length / 2.0 if tugs.size() > 1 else 0.0
-	var off := beam(spec.outreach) / 2.0 + TUG_LENGTH * Grid.CELL / METRES_PER_UNIT / 2.0
+	var off := beam(spec.outreach) / 2.0 + BOAT_METRES.tug.x / METRES_PER_UNIT / 2.0
 	model.position = Vector3(hull.position.x, 0.0, hull.position.z) + bow * along + side * off
 	model.rotation.y = atan2(-side.x, -side.z)
 	return true
 
 
+## Puts service boat `boat` at work alongside its ship: lying parallel to
+## the hull on its seaward side (the side away from the quay, or its
+## starboard side at anchor), each service at its own place along the hull;
+## false if its ship is not drawn.
+func _alongside_ship(model: Node3D, boat: Dictionary) -> bool:
+	var ship: PortSim.Ship = null
+	for s: PortSim.Ship in sim.ships:
+		if s.id == boat.ship:
+			ship = s
+	if ship == null or ship not in _ships:
+		return false
+	var hull: Node3D = _ships[ship]
+	var bow := hull.basis.z.normalized()
+	var side := hull.basis.x.normalized()
+	if ship.apron != 0:
+		var out := sim.areas.out_at(ship.apron, ship.from + (AreaFlow.ship_cells(sim, ship.kind) - 1) / 2.0)
+		side = Vector3(out.x, 0.0, out.y)
+	var spec: Dictionary = sim.rules.ship_classes[ship.kind]
+	var length: float = spec.length / METRES_PER_UNIT
+	var along: float = {"bunkers": -0.15, "provisions": 0.2, "waste": 0.35}[boat.kind] * length
+	var off: float = beam(spec.outreach) / 2.0 + BOAT_METRES[boat.kind].y / METRES_PER_UNIT / 2.0 + 0.02
+	model.position = Vector3(hull.position.x, 0.0, hull.position.z) + bow * along + side * off
+	model.rotation.y = atan2(bow.x, bow.z)
+	return true
+
+
 ## A jetty on piles from the shore out to sea, and at its root on land a
 ## two-storey harbour office with a signal mast: a white roof trimmed red
-## and pilot flags (white over red) for a pilot station, an orange roof for
-## a tug depot.
-func _base_model(id: int, pilots: bool) -> Node3D:
+## and pilot flags (white over red) for a pilot station (`kind` "pilot"),
+## an orange roof for a tug depot ("tug"), a green roof trimmed white for a
+## services jetty ("services").
+func _base_model(id: int, kind: String) -> Node3D:
+	var pilots := kind == "pilot"
 	var jetty := _jetty(id)
 	var length := _jetty_length(id) * Grid.CELL / METRES_PER_UNIT
 	var unit := Grid.CELL / METRES_PER_UNIT
-	var roof := Color(0.96, 0.96, 0.94) if pilots else Color(1.0, 0.55, 0.15)
-	var trim := Color(0.8, 0.15, 0.12) if pilots else Color(0.12, 0.12, 0.12)
+	var roof: Color = {"pilot": Color(0.96, 0.96, 0.94), "tug": Color(1.0, 0.55, 0.15), "services": Color(0.2, 0.55, 0.35)}[kind]
+	var trim: Color = {"pilot": Color(0.8, 0.15, 0.12), "tug": Color(0.12, 0.12, 0.12), "services": Color(0.95, 0.95, 0.93)}[kind]
 	var timber := Color(0.55, 0.42, 0.28)
 	var walls := Color(0.86, 0.84, 0.78)
 	var glass := Color(0.18, 0.24, 0.3)
@@ -876,19 +909,21 @@ func _base_model(id: int, pilots: bool) -> Node3D:
 	return model
 
 
-## A tug (black hull, orange bulwark, white deckhouse and wheelhouse,
-## orange funnel, heavy fendering) or a pilot boat (slim navy hull with an
-## orange PILOT stripe, white cabin and mast), bow along +Z, floating, with
-## a wake astern shown while it moves.
+## A boat of `kind`, bow along +Z, floating, with a wake astern shown while
+## it moves: a tug (black hull, orange bulwark, white deckhouse and
+## wheelhouse, orange funnel, heavy fendering), a pilot boat (slim navy hull
+## with an orange PILOT stripe, white cabin and mast), a bunker barge (long
+## dark red hull, fuel tanks on deck, wheelhouse aft), a supply boat (white
+## with a blue hull and a deck crane) or a waste boat (green, with skips).
 func _boat_model(kind: String) -> Node3D:
 	var unit := Grid.CELL / METRES_PER_UNIT
 	var parts: Array
-	var length: float
+	var length: float = BOAT_METRES[kind].x / METRES_PER_UNIT
+	var beam_u: float = BOAT_METRES[kind].y / METRES_PER_UNIT
+	var white := Color(0.95, 0.95, 0.93)
+	var glass := Color(0.15, 0.2, 0.26)
 	if kind == "tug":
-		length = TUG_LENGTH * unit
-		var beam_u := TUG_BEAM * unit
 		var orange := Color(1.0, 0.5, 0.1)
-		var white := Color(0.95, 0.95, 0.93)
 		parts = [
 			[Vector3(beam_u, 0.14, length), Vector3(0, 0.0, 0), Color(0.14, 0.12, 0.12)],
 			[Vector3(beam_u + 0.04, 0.05, length + 0.03), Vector3(0, 0.03, 0), Color(0.05, 0.05, 0.05)],
@@ -900,9 +935,37 @@ func _boat_model(kind: String) -> Node3D:
 			[Vector3(0.105, 0.04, 0.105), Vector3(0, 0.41, -length * 0.1), Color(0.08, 0.08, 0.08)],
 			[Vector3(beam_u * 0.7, 0.02, length * 0.35), Vector3(0, 0.125, -length * 0.3), Color(0.45, 0.45, 0.45)],
 		]
+	elif kind == "bunkers":
+		var red := Color(0.45, 0.1, 0.08)
+		parts = [
+			[Vector3(beam_u, 0.12, length), Vector3(0, 0.0, 0), red],
+			[Vector3(beam_u + 0.01, 0.025, length + 0.01), Vector3(0, 0.07, 0), Color(0.1, 0.1, 0.1)],
+			[Vector3(beam_u * 0.55, 0.12, length * 0.18), Vector3(0, 0.15, -length * 0.38), white],
+			[Vector3(beam_u * 0.56, 0.035, length * 0.19), Vector3(0, 0.17, -length * 0.38), glass],
+			[Vector3(0.05, 0.12, 0.05), Vector3(0, 0.25, -length * 0.44), Color(0.1, 0.1, 0.1)],
+		]
+		for k: int in 3:
+			parts.append([Vector3(beam_u * 0.7, 0.07, length * 0.18), Vector3(0, 0.1, length * (0.3 - k * 0.22)), Color(0.75, 0.72, 0.68)])
+	elif kind == "provisions":
+		parts = [
+			[Vector3(beam_u, 0.12, length), Vector3(0, 0.0, 0), Color(0.12, 0.28, 0.55)],
+			[Vector3(beam_u * 0.8, 0.14, length * 0.3), Vector3(0, 0.13, length * 0.25), white],
+			[Vector3(beam_u * 0.81, 0.04, length * 0.31), Vector3(0, 0.16, length * 0.25), glass],
+			[Vector3(beam_u * 0.85, 0.02, length * 0.5), Vector3(0, 0.07, -length * 0.2), Color(0.5, 0.5, 0.5)],
+			[Vector3(0.025, 0.2, 0.025), Vector3(0, 0.17, -length * 0.05), Color(1.0, 0.75, 0.1)],
+			[Vector3(0.02, 0.02, length * 0.35), Vector3(0, 0.26, -length * 0.2), Color(1.0, 0.75, 0.1)],
+			[Vector3(0.06, 0.05, 0.08), Vector3(0, 0.1, -length * 0.3), Color(0.8, 0.3, 0.15)],
+		]
+	elif kind == "waste":
+		var green := Color(0.15, 0.42, 0.22)
+		parts = [
+			[Vector3(beam_u, 0.12, length), Vector3(0, 0.0, 0), green],
+			[Vector3(beam_u * 0.7, 0.14, length * 0.25), Vector3(0, 0.13, -length * 0.3), white],
+			[Vector3(beam_u * 0.71, 0.04, length * 0.26), Vector3(0, 0.16, -length * 0.3), glass],
+		]
+		for k: int in 2:
+			parts.append([Vector3(beam_u * 0.75, 0.08, length * 0.2), Vector3(0, 0.1, length * (0.25 - k * 0.24)), Color(0.85, 0.65, 0.1)])
 	else:
-		length = PILOT_BOAT_LENGTH * unit
-		var beam_u := 5.0 / Grid.CELL * unit
 		var navy := Color(0.08, 0.12, 0.25)
 		parts = [
 			[Vector3(beam_u, 0.1, length * 0.85), Vector3(0, 0.0, -length * 0.075), navy],
