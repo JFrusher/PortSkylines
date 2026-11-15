@@ -129,7 +129,8 @@
 	"max_loans": 3.0,
 	"events": {
 		"season_days": 7.0,
-		"defaults": {"tides": false, "storms": true},
+		"defaults": {"tides": false, "storms": true, "breakdowns": false},
+		"breakdowns": {"repair_hours_min": 1.0, "repair_hours_max": 3.0},
 		"wind": {"mean_kmh": 18.0, "daily_swing_kmh": 8.0},
 		"storms": {"per_season": 1.0, "hours_min": 6.0, "hours_max": 18.0, "lead_hours": 24.0, "peak_min_kmh": 70.0, "peak_max_kmh": 110.0}
 	},

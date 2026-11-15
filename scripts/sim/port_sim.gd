@@ -371,6 +371,8 @@ class Crane:
 	var timer := 0.0
 	## The tractor sent to it (a vehicle id), or 0.
 	var tractor := 0
+	## Broken down, waiting for a repair.
+	var broken := false
 
 	func _init(on: int, at: int, of_kind: String) -> void:
 		apron = on
@@ -378,12 +380,13 @@ class Crane:
 		kind = of_kind
 
 	func to_dict() -> Dictionary:
-		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind}
+		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind, "broken": broken}
 
 	static func from_dict(d: Dictionary) -> Crane:
 		var crane := Crane.new(d.apron, d.along, d.kind)
 		crane.timer = d.timer
 		crane.tractor = d.tractor
+		crane.broken = d.broken
 		return crane
 
 

@@ -29,7 +29,7 @@ func count_for(gear: String, bays: int) -> int:
 
 ## Adds a machine of `gear` to `area`, standing at bay `bay`.
 func add(area: int, gear: String, bay: int) -> int:
-	list[_next_id] = {"area": area, "gear": gear, "bay": bay, "job": {}}
+	list[_next_id] = {"area": area, "gear": gear, "bay": bay, "job": {}, "broken": false}
 	_next_id += 1
 	return _next_id - 1
 
@@ -52,13 +52,14 @@ func give(id: int, from: int, to: int, rehandles := 0) -> void:
 	machine.job = {"phases": phases, "left": phases[0].seconds, "carrying": false}
 
 
-## Runs every machine for one tick, except those of a gear in `stopped`
-## (the wind is over their limit). Returns the ids that finished a job.
+## Runs every machine for one tick, except broken ones and those of a gear
+## in `stopped` (the wind is over their limit). Returns the ids that
+## finished a job.
 func tick(stopped: Array[String]) -> Array[int]:
 	var finished: Array[int] = []
 	for id: int in list:
 		var job: Dictionary = list[id].job
-		if job.is_empty() or list[id].gear in stopped:
+		if job.is_empty() or list[id].broken or list[id].gear in stopped:
 			continue
 		var time := SECONDS_PER_TICK
 		while time > 0.0 and not job.phases.is_empty():

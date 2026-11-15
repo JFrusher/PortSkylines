@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 53
+const VERSION := 54
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -126,6 +126,23 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v52(data)
 	if data.version < 53:
 		data = _migrate_v53(data)
+	if data.version < 54:
+		data = _migrate_v54(data)
+	return data
+
+
+## v54 lets cranes and yard machines break down (M11): none is broken, and
+## breakdowns, off for older games, draw on their own seeded chances.
+static func _migrate_v54(data: Dictionary) -> Dictionary:
+	for crane: Dictionary in data.sim.cranes:
+		crane.broken = false
+	for machine: Dictionary in data.sim.machines.list.values():
+		machine.broken = false
+	var fresh := Events.create(Content.base(), data.sim.rng_seed).to_dict()
+	data.sim.event_plan.on.breakdowns = false
+	data.sim.event_plan.breakdown_seed = fresh.breakdown_seed
+	data.sim.event_plan.breakdown_state = fresh.breakdown_state
+	data.version = 54
 	return data
 
 
@@ -550,7 +567,7 @@ static func _valid_sim(data: Variant) -> bool:
 		return false
 	if not _valid_boats(data):
 		return false
-	if not _has_fields(data.event_plan, {"on": TYPE_DICTIONARY, "list": TYPE_ARRAY, "planned_to": TYPE_FLOAT, "rng_seed": TYPE_INT, "rng_state": TYPE_INT}) or not data.event_plan.on.keys().all(func(k: Variant) -> bool: return k in Content.base().events.defaults and data.event_plan.on[k] is bool) or not data.event_plan.list.all(func(e: Variant) -> bool: return e is Dictionary and _has_fields(e, {"kind": TYPE_STRING, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "peak": TYPE_FLOAT, "forecast": TYPE_BOOL})):
+	if not _has_fields(data.event_plan, {"on": TYPE_DICTIONARY, "list": TYPE_ARRAY, "planned_to": TYPE_FLOAT, "rng_seed": TYPE_INT, "rng_state": TYPE_INT, "breakdown_seed": TYPE_INT, "breakdown_state": TYPE_INT}) or not data.event_plan.on.keys().all(func(k: Variant) -> bool: return k in Content.base().events.defaults and data.event_plan.on[k] is bool) or not data.event_plan.list.all(func(e: Variant) -> bool: return e is Dictionary and _has_fields(e, {"kind": TYPE_STRING, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "peak": TYPE_FLOAT, "forecast": TYPE_BOOL})):
 		return false
 	if not data.passages.all(func(p: Variant) -> bool: return p is Dictionary and _has_fields(p, {"segment": TYPE_INT, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "ship": TYPE_INT})):
 		return false
@@ -587,7 +604,7 @@ static func _valid_sim(data: Variant) -> bool:
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {
-			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING,
+			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING, "broken": TYPE_BOOL,
 		}) or crane.kind not in Content.base().sts_cranes or not (crane.apron in data.areas.list and data.areas.list[crane.apron].type == "quay_apron"):
 			return false
 	if not _valid_area_flow(data):
@@ -653,7 +670,7 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 	if not _has_fields(data.machines, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT}):
 		return false
 	for machine: Variant in data.machines.list.values():
-		if not (machine is Dictionary and _has_fields(machine, {"area": TYPE_INT, "gear": TYPE_STRING, "bay": TYPE_INT, "job": TYPE_DICTIONARY}) and machine.gear in Content.base().yard_gear):
+		if not (machine is Dictionary and _has_fields(machine, {"area": TYPE_INT, "gear": TYPE_STRING, "bay": TYPE_INT, "job": TYPE_DICTIONARY, "broken": TYPE_BOOL}) and machine.gear in Content.base().yard_gear):
 			return false
 	for machine: Variant in data.machine_jobs:
 		var job: Variant = data.machine_jobs[machine]

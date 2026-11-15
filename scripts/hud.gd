@@ -51,6 +51,7 @@ const SETTINGS_PATH := "user://settings.cfg"
 const EVENT_NAMES := {
 	"storms": ["Storms", "Storms come with a day's forecast; strong wind stops cranes."],
 	"tides": ["Tides", "The water rises and falls twice a day; the deepest ships wait for high water."],
+	"breakdowns": ["Breakdowns", "Quay cranes and yard gear break down now and then; a workshop's mechanics repair them."],
 }
 ## The menu's switch for each event kind.
 var _event_checks := {}

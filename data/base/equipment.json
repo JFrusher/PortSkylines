@@ -1,7 +1,7 @@
 {
 	"sts_cranes": {
-		"barge_crane": {"wind_limit_kmh": 80.0, "name": "Barge crane", "cost": 6000.0, "rate": 18.0, "outreach": 6.0, "lead_days": 0.0, "width": 20.0, "max_fetchers": 2.0},
-		"sts": {"wind_limit_kmh": 80.0, 
+		"barge_crane": {"wind_limit_kmh": 80.0, "mtbf_hours": 150.0, "name": "Barge crane", "cost": 6000.0, "rate": 18.0, "outreach": 6.0, "lead_days": 0.0, "width": 20.0, "max_fetchers": 2.0},
+		"sts": {"wind_limit_kmh": 80.0, "mtbf_hours": 150.0, 
 			"name": "STS crane",
 			"cost": 15000.0,
 			"rate": 25.0,
@@ -10,7 +10,7 @@
 			"width": 28.0,
 			"max_fetchers": 4.0
 		},
-		"wide_sts": {"wind_limit_kmh": 80.0, 
+		"wide_sts": {"wind_limit_kmh": 80.0, "mtbf_hours": 150.0, 
 			"name": "Wide STS crane",
 			"cost": 40000.0,
 			"rate": 28.0,
@@ -19,7 +19,7 @@
 			"width": 32.0,
 			"max_fetchers": 5.0
 		},
-		"mega_sts": {"wind_limit_kmh": 80.0, 
+		"mega_sts": {"wind_limit_kmh": 80.0, "mtbf_hours": 150.0, 
 			"name": "Mega STS crane",
 			"cost": 70000.0,
 			"rate": 30.0,
@@ -35,7 +35,7 @@
 		"speed": 500.0
 	},
 	"yard_gear": {
-		"reach_stacker": {"wind_limit_kmh": 65.0, 
+		"reach_stacker": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 
 			"name": "reach stackers",
 			"upkeep_per_machine": 400.0,
 			"speed": 7.0,
@@ -46,7 +46,7 @@
 			"empties_only": false,
 			"carries": false
 		},
-		"rtg": {"wind_limit_kmh": 65.0, 
+		"rtg": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 
 			"name": "RTGs",
 			"upkeep_per_machine": 600.0,
 			"speed": 2.0,
@@ -57,7 +57,7 @@
 			"empties_only": false,
 			"carries": false
 		},
-		"rmg": {"wind_limit_kmh": 65.0, 
+		"rmg": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 
 			"name": "RMGs",
 			"upkeep_per_machine": 800.0,
 			"speed": 3.0,
@@ -68,7 +68,7 @@
 			"empties_only": false,
 			"carries": false
 		},
-		"empty_handler": {"wind_limit_kmh": 65.0, 
+		"empty_handler": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 
 			"name": "empty handlers",
 			"upkeep_per_machine": 300.0,
 			"speed": 7.0,
@@ -79,7 +79,7 @@
 			"empties_only": true,
 			"carries": false
 		},
-		"straddle": {"wind_limit_kmh": 65.0, 
+		"straddle": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 
 			"name": "straddle carriers",
 			"upkeep_per_machine": 700.0,
 			"speed": 6.0,

@@ -14,12 +14,15 @@ var list: Array[Dictionary] = []
 ## The calendar minute events are planned up to.
 var planned_to := 0.0
 var _rng := RandomNumberGenerator.new()
+## Breakdowns' own chances, so switching them on or off moves no storm.
+var _breakdown_rng := RandomNumberGenerator.new()
 
 
 static func create(rules: Dictionary, seed_value: int) -> Events:
 	var events := Events.new()
 	events.on = rules.events.defaults.duplicate()
 	events._rng.seed = hash([seed_value, "events"])
+	events._breakdown_rng.seed = hash([seed_value, "breakdowns"])
 	return events
 
 
@@ -69,6 +72,12 @@ func wind(rules: Dictionary, minute: float) -> float:
 	return speed
 
 
+## Whether a piece of equipment working this tick, failing on average every
+## `mtbf_hours` of work, breaks down now; never with breakdowns off.
+func breaks(mtbf_hours: float) -> bool:
+	return on.breakdowns and _breakdown_rng.randf() < SimClock.CALENDAR_MINUTES_PER_TICK / (mtbf_hours * 60.0)
+
+
 ## Switches `kind` on or off for this game.
 func set_kind(kind: String, value: bool) -> String:
 	if kind not in on:
@@ -98,7 +107,7 @@ func _plan_storms(storms: Dictionary, from: float, season: float) -> void:
 
 
 func to_dict() -> Dictionary:
-	return {"on": on.duplicate(), "list": list.duplicate(true), "planned_to": planned_to, "rng_seed": _rng.seed, "rng_state": _rng.state}
+	return {"on": on.duplicate(), "list": list.duplicate(true), "planned_to": planned_to, "rng_seed": _rng.seed, "rng_state": _rng.state, "breakdown_seed": _breakdown_rng.seed, "breakdown_state": _breakdown_rng.state}
 
 
 static func from_dict(d: Dictionary) -> Events:
@@ -108,4 +117,6 @@ static func from_dict(d: Dictionary) -> Events:
 	events.planned_to = d.planned_to
 	events._rng.seed = d.rng_seed
 	events._rng.state = d.rng_state
+	events._breakdown_rng.seed = d.breakdown_seed
+	events._breakdown_rng.state = d.breakdown_state
 	return events
