@@ -311,6 +311,8 @@ class Ship:
 	## Boxes moved so far, and the calendar minute it berthed (-1 before).
 	var moves := 0
 	var berthed := -1.0
+	## The services it still wants (see Services), given when it calls.
+	var needs: Array[String] = []
 
 	func _init(ship_kind: String, ship_line: String, window_end: float, imports: int, export_room: int) -> void:
 		kind = ship_kind
@@ -321,7 +323,7 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth, "needs": needs.duplicate()}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
@@ -343,6 +345,7 @@ class Ship:
 		ship.prev_sail = d.prev_sail
 		ship.moves = d.moves
 		ship.berthed = d.berthed
+		ship.needs.assign(d.needs)
 		ship.apron = d.apron
 		ship.from = d.from
 		ship.berth = d.berth
@@ -2008,6 +2011,7 @@ func _call(service: Dictionary) -> void:
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
 	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
+	ship.needs = Services.wants(self, service.kind)
 	ships.append(ship)
 	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
 	_event("%s's %s has arrived" % [who, service.kind])
