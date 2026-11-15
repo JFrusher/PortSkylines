@@ -1919,6 +1919,7 @@ func tick() -> void:
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
+	AreaFlow.safety_stops(self)
 	Drive.signals(self)
 	AreaFlow.tick(self)
 	RailFlow.tick(self)

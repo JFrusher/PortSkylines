@@ -184,6 +184,12 @@ func remove(id: int) -> void:
 	cars.erase(id)
 
 
+## Cars made to stand where they are this tick, whatever is ahead: AGVs on a
+## safety stop near a service vehicle in the AGV zone (see AreaFlow). Not
+## saved: set again each tick.
+var held := {}
+
+
 ## Moves every car on for `seconds`, in order of id.
 func tick(seconds: float) -> void:
 	due.clear()
@@ -202,6 +208,10 @@ func _move(id: int, seconds: float) -> void:
 		car.waited += seconds
 		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
 		due[id] = true
+		return
+	# On a safety stop it stands, without counting as stuck.
+	if id in held:
+		car.v = 0.0
 		return
 	# Stopped behind a car that hasn't moved since, it stays stopped: the look
 	# ahead would find that car just as near again.

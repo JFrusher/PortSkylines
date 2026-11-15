@@ -185,8 +185,10 @@ var _areas_drawn := []
 ## The AGV zone: a yellow-black safety line round it, its lanes tinted amber,
 ## and a barrier on each road lane where it crosses the zone's edge.
 var _agv_zone := MeshInstance3D.new()
-var _barriers: Array[Node3D] = []
+## Each barrier: {"node", "boom" (hinged at its post), "at" (cells), "lift" 0 down to 1 up}.
+var _barriers: Array[Dictionary] = []
 var _barrier_cache: Mesh
+var _boom_cache: Mesh
 var _area_preview := MeshInstance3D.new()
 ## The ship lanes on the water, and what they were drawn for.
 var _ship_lanes := MeshInstance3D.new()
@@ -402,6 +404,7 @@ func _process(dt: float) -> void:
 	_draw_marine()
 	_draw_vans()
 	_draw_fires()
+	_animate_barriers(dt)
 	_draw_cranes()
 	_draw_vehicles()
 	_draw_trains()
@@ -493,8 +496,8 @@ func _draw_agv_zone() -> void:
 			var inward := -Vector2(side) * edge
 			_quad(tool, [a, a + along, a + along + inward, a + inward], ROAD_TOP + ASPHALT_RISE + 0.04)
 	_agv_zone.mesh = tool.commit()
-	for node: Node3D in _barriers:
-		node.queue_free()
+	for barrier: Dictionary in _barriers:
+		barrier.node.queue_free()
 	_barriers.clear()
 	Drive._refresh(sim)
 	var pieces: Dictionary = sim.network.pieces
@@ -510,7 +513,27 @@ func _draw_agv_zone() -> void:
 		barrier.position = at
 		barrier.basis = Basis(Vector3.UP, atan2(-way.y, way.x))
 		add_child(barrier)
-		_barriers.append(barrier)
+		var boom := MeshInstance3D.new()
+		boom.mesh = _boom_cache
+		boom.position = Vector3(0, 0.055, -Grid.CELL / METRES_PER_UNIT * 0.5)
+		barrier.add_child(boom)
+		_barriers.append({"node": barrier, "boom": boom, "at": points[-1], "lift": 0.0})
+
+
+## Lifts each barrier's boom while a service vehicle is close to it, a
+## mechanic's van or fire engine passing into or out of the AGV zone, and
+## lowers it once it has gone.
+func _animate_barriers(dt: float) -> void:
+	if _barriers.is_empty():
+		return
+	var near: Array[Vector2] = []
+	for vehicle: Dictionary in sim.workshops.vans.values() + sim.fires.engines.values():
+		if vehicle.job != "home":
+			near.append(vehicle.at)
+	for barrier: Dictionary in _barriers:
+		var up := near.any(func(p: Vector2) -> bool: return p.distance_to(barrier.at) < 2.5)
+		barrier.lift = move_toward(barrier.lift, 1.0 if up else 0.0, dt * 1.5)
+		barrier.boom.rotation.x = -barrier.lift * PI * 0.45
 
 
 ## A boom barrier at a lane's end (x along the lane, z across it): a
@@ -526,10 +549,13 @@ func _barrier_mesh() -> Mesh:
 			[Vector3(0.052, 0.006, 0.042), Vector3(-0.03, 0.053, -lane * 0.5 - 0.05), Color(0.25, 0.27, 0.3)],
 			[Vector3(0.002, 0.02, 0.03), Vector3(-0.004, 0.035, -lane * 0.5 - 0.05), Color(1.0, 0.65, 0.1)],
 		]
+		_barrier_cache = _merged(parts)
+		# The boom, red and white, from its hinge at the post across the lane.
+		var boom: Array = []
 		var stripes := 6
 		for k: int in stripes:
-			parts.append([Vector3(0.008, 0.008, lane / stripes), Vector3(0, 0.055, -lane * 0.5 + (k + 0.5) * lane / stripes), Color(0.9, 0.1, 0.1) if k % 2 == 0 else Color.WHITE])
-		_barrier_cache = _merged(parts)
+			boom.append([Vector3(0.008, 0.008, lane / stripes), Vector3(0, 0, (k + 0.5) * lane / stripes), Color(0.9, 0.1, 0.1) if k % 2 == 0 else Color.WHITE])
+		_boom_cache = _merged(boom)
 	return _barrier_cache
 
 

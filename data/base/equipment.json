@@ -42,7 +42,8 @@
 		"low_share": 0.2,
 		"charger_cost": 25000.0,
 		"max_chargers": 8.0,
-		"rack_cost": 120000.0
+		"rack_cost": 120000.0,
+		"safety_cells": 4.0
 	},
 	"yard_gear": {
 		"reach_stacker": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 

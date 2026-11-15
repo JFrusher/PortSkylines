@@ -470,6 +470,36 @@ static func buy_chargers(sim: PortSim, area: int, count: int) -> String:
 	return ""
 
 
+## The service vehicles in the AGV zone, where each is (cells): mechanics'
+## vans and fire engines out on the roads.
+static func service_in_zone(sim: PortSim) -> Array[Vector2]:
+	var found: Array[Vector2] = []
+	if sim.areas.agv_zone.is_empty():
+		return found
+	var out: Array = sim.workshops.vans.values().filter(func(v: Dictionary) -> bool: return v.job != "home") + sim.fires.engines.values().filter(func(e: Dictionary) -> bool: return e.job != "home")
+	for vehicle: Dictionary in out:
+		if Vector2i(vehicle.at.floor()) in sim.areas.agv_zone:
+			found.append(vehicle.at)
+	return found
+
+
+## Holds every AGV within safety_cells of a service vehicle in the AGV zone
+## where it stands for the tick: a safety stop while people drive among them.
+static func safety_stops(sim: PortSim) -> void:
+	Drive._refresh(sim)
+	sim.traffic.held.clear()
+	var near := service_in_zone(sim)
+	if near.is_empty():
+		return
+	var reach: float = sim.rules.agv.safety_cells
+	for vehicle: Vehicle in sim.vehicles:
+		if vehicle.kind != "agv" or vehicle.id not in sim.traffic.cars:
+			continue
+		var at := Drive.where(sim, vehicle) + Vector2(0.5, 0.5)
+		if near.any(func(p: Vector2) -> bool: return p.distance_to(at) <= reach):
+			sim.traffic.held[vehicle.id] = true
+
+
 ## A tick of AGV batteries: each AGV out drains, a full charge lasting
 ## battery_hours; at each depot as many AGVs at home as it has chargers
 ## charge, flat to full in charge_hours: those home longest not yet full,
