@@ -137,6 +137,8 @@ var _boat_seen := {}  # boat id -> [at the tick before, at this tick], in cells
 var _boat_tick := -1
 ## Mechanics' vans by id, a Node3D each.
 var _vans := {}
+## Buildings standing on areas (a workshop's shed, a fire station) by area id.
+var _area_buildings := {}
 ## Fire engines by id, a Node3D each, and each fire's flames and smoke.
 var _engines := {}
 var _fires := {}
@@ -445,6 +447,91 @@ func _draw_areas() -> void:
 			tool.set_color(color.lerp(IDLE_TINT, 0.4) if idle else color)
 			_quad(tool, cell.corners, AREA_TOP)
 	_areas.mesh = tool.commit()
+	_draw_area_buildings()
+
+
+## The building on each area that has one, built again with the areas: a
+## workshop's shed or a fire station, standing on the area's middle with its
+## doors to the road.
+func _draw_area_buildings() -> void:
+	for node: Node3D in _area_buildings.values():
+		node.queue_free()
+	_area_buildings.clear()
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		var kind := sim.areas.kind_of(area)
+		if kind not in ["workshop", "fire_station"]:
+			continue
+		var unit := Grid.CELL / METRES_PER_UNIT
+		var middle: float = area.columns / 2.0
+		var depth := sim.areas.depth_of(area)
+		var size := Vector2(minf(area.columns * unit * 0.85, 1.8), depth * unit * 0.75)
+		var model := MeshInstance3D.new()
+		model.mesh = _merged(_fire_station(size) if kind == "fire_station" else _workshop(size))
+		var at := sim.areas.point(id, middle, (depth - 1) / 2.0) * unit
+		var along := sim.areas.heading(id, middle)
+		var out := sim.areas.out_at(id, middle)
+		var x := Vector3(along.x, 0, along.y)
+		# Keep the frame right-handed on either side of the road, so faces stay outward.
+		if x.cross(Vector3.UP).dot(Vector3(out.x, 0, out.y)) > 0.0:
+			x = -x
+		model.basis = Basis(x, Vector3.UP, Vector3(out.x, 0, out.y))
+		model.position = Vector3(at.x, AREA_TOP, at.y)
+		add_child(model)
+		_area_buildings[id] = model
+
+
+## A fire station `size` across (x along the road) and deep (z away from
+## it): red brick, three engine bays with white-framed red doors to the
+## road, a white band, a flat roof with a blue light bar, a hose-drying
+## tower at one end and a flagpole.
+static func _fire_station(size: Vector2) -> Array:
+	var brick := Color(0.62, 0.2, 0.15)
+	var white := Color(0.95, 0.95, 0.93)
+	var h := 0.32
+	var front := -size.y / 2.0
+	var parts: Array = [
+		[Vector3(size.x, h, size.y), Vector3(0, h / 2.0, 0), brick],
+		[Vector3(size.x + 0.01, 0.03, size.y + 0.01), Vector3(0, h * 0.72, 0), white],
+		[Vector3(size.x + 0.04, 0.03, size.y + 0.04), Vector3(0, h + 0.015, 0), Color(0.35, 0.35, 0.37)],
+		[Vector3(size.x * 0.3, 0.03, 0.04), Vector3(0, h + 0.045, front * 0.4), Color(0.2, 0.4, 1.0)],
+	]
+	var bays := 3
+	var bay := size.x * 0.7 / bays
+	for k: int in bays:
+		var x := (k - (bays - 1) / 2.0) * bay * 1.15 - size.x * 0.1
+		parts.append([Vector3(bay * 0.92, h * 0.62, 0.02), Vector3(x, h * 0.31, front - 0.005), white])
+		parts.append([Vector3(bay * 0.8, h * 0.56, 0.025), Vector3(x, h * 0.28, front - 0.01), Color(0.78, 0.1, 0.08)])
+	var tower := Vector3(size.x / 2.0 - 0.08, 0, size.y / 4.0)
+	parts.append_array([
+		[Vector3(0.14, h * 2.0, 0.14), tower + Vector3(0, h, 0), brick],
+		[Vector3(0.16, 0.04, 0.16), tower + Vector3(0, h * 2.0 + 0.02, 0), white],
+		[Vector3(0.012, 0.35, 0.012), Vector3(-size.x / 2.0 + 0.05, h + 0.175, front + 0.05), white],
+		[Vector3(0.002, 0.06, 0.09), Vector3(-size.x / 2.0 + 0.05, h + 0.32, front + 0.1), Color(0.8, 0.15, 0.12)],
+	])
+	return parts
+
+
+## A workshop's shed `size` across and deep: blue-grey cladding, a ridged
+## roof, a big roller door to the road with stripes, a white office annex at
+## one end and an orange sign.
+static func _workshop(size: Vector2) -> Array:
+	var clad := Color(0.48, 0.55, 0.62)
+	var h := 0.28
+	var front := -size.y / 2.0
+	var parts: Array = [
+		[Vector3(size.x * 0.75, h, size.y), Vector3(-size.x * 0.125, h / 2.0, 0), clad],
+		[Vector3(size.x * 0.77, 0.05, size.y * 0.55), Vector3(-size.x * 0.125, h + 0.02, -size.y * 0.22), clad.darkened(0.2)],
+		[Vector3(size.x * 0.77, 0.05, size.y * 0.55), Vector3(-size.x * 0.125, h + 0.02, size.y * 0.22), clad.darkened(0.3)],
+		[Vector3(size.x * 0.77, 0.04, 0.04), Vector3(-size.x * 0.125, h + 0.05, 0), clad.darkened(0.4)],
+		[Vector3(size.x * 0.4, h * 0.8, 0.02), Vector3(-size.x * 0.125, h * 0.4, front - 0.005), Color(0.3, 0.32, 0.34)],
+		[Vector3(size.x * 0.25, h * 0.75, size.y * 0.6), Vector3(size.x * 0.375, h * 0.375, -size.y * 0.2), Color(0.92, 0.92, 0.9)],
+		[Vector3(size.x * 0.26, 0.04, size.y * 0.61), Vector3(size.x * 0.375, h * 0.5, -size.y * 0.2), Color(0.15, 0.2, 0.26)],
+		[Vector3(size.x * 0.3, 0.06, 0.015), Vector3(-size.x * 0.125, h * 0.9, front - 0.01), Color(1.0, 0.55, 0.1)],
+	]
+	for k: int in 5:
+		parts.append([Vector3(size.x * 0.4, 0.008, 0.022), Vector3(-size.x * 0.125, h * (0.12 + k * 0.14), front - 0.008), Color(0.22, 0.24, 0.26)])
+	return parts
 
 
 ## Colours each place info_shares gives from green through amber to red.
