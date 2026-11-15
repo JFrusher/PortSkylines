@@ -35,7 +35,7 @@ func _test_boxes_go_on_by_feeder() -> void:
 	rules.lines.aurora.tranship_share = 0.5
 	var sim := AreaPort.base(rules, "")
 	AreaPort.add_export_block(sim)
-	sim.contracts.services.append({"id": 900, "line": "aurora", "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000})
+	sim.contracts.services.append({"id": 900, "line": "aurora", "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000, "next_start": -1.0})
 	var big := PortSim.Ship.new("panamax", "aurora", sim.clock.calendar_minutes() + 6000.0, 200, 0)
 	sim.ships.append(big)
 	_expect(AreaFlow.berth(sim, big), true, "the Panamax berths")
@@ -96,7 +96,7 @@ func _test_they_stack_in_the_nearest_transhipment_block() -> void:
 	sim.creative = false
 	var far := blocks[0]
 	var near := blocks[1]
-	sim.contracts.services.append({"id": 900, "line": "aurora", "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000})
+	sim.contracts.services.append({"id": 900, "line": "aurora", "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000, "next_start": -1.0})
 	var big := PortSim.Ship.new("panamax", "aurora", sim.clock.calendar_minutes() + 6000.0, 60, 0)
 	sim.ships.append(big)
 	_expect(AreaFlow.berth(sim, big), true, "the Panamax berths")
@@ -125,7 +125,7 @@ func _test_a_missed_connection_rolls_on() -> void:
 	rules.lines.aurora.tranship_share = 0.5
 	rules.lines.aurora.connection_hours = 2.0
 	var sim := AreaPort.base(rules, "")
-	sim.contracts.services.append({"id": 900, "line": "aurora", "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000})
+	sim.contracts.services.append({"id": 900, "line": "aurora", "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000, "next_start": -1.0})
 	var big := PortSim.Ship.new("panamax", "aurora", sim.clock.calendar_minutes() + 6000.0, 30, 0)
 	sim.ships.append(big)
 	_expect(AreaFlow.berth(sim, big), true, "the Panamax berths")

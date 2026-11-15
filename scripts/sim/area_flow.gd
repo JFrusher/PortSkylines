@@ -20,11 +20,14 @@ static func ready_aprons(sim: PortSim) -> Array[int]:
 
 
 ## Moves an anchored ship to a free stretch of a ready apron, its own berth
-## if it has one, or another only if it may; false if none yet.
-static func berth(sim: PortSim, ship: PortSim.Ship) -> bool:
+## if it has one, or another only if it may; or, sent there by the harbour
+## master, of apron `only`. False if none yet.
+static func berth(sim: PortSim, ship: PortSim.Ship, only := 0) -> bool:
 	var span := ship_cells(sim, ship.kind)
 	var aprons := ready_aprons(sim).filter(func(apron: int) -> bool: return Marine.reaches(sim, ship.kind, apron, ship.anchorage, ship.light))
-	if ship.berth != 0:
+	if only:
+		aprons = aprons.filter(func(apron: int) -> bool: return apron == only)
+	elif ship.berth != 0:
 		# A service is signed for its berth's terminal: other berths only there,
 		# or anywhere once its berth is gone.
 		var mine := func(a: int) -> bool: return ship.berth not in sim.areas.list or sim.areas.list[a].terminal == sim.areas.list[ship.berth].terminal

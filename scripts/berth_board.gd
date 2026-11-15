@@ -5,7 +5,12 @@ extends PanelContainer
 ## to agree it there, and the sim times it at the line's hour or the nearest
 ## free one within its flex band. Agreed calls sit on their berth's week:
 ## drag one to move it, click it to let its ship take any free berth when its
-## own is busy. Asks for changes through `command_issued`; never changes the sim.
+## own is busy. Its Live tab is the harbour master's (M11): each berth's next
+## three days, with the ships alongside, their progress and due times, the
+## calls coming, forecast storms and low water shaded; the ships waiting at
+## anchor, to keep there, put ahead in line or drag onto a berth; a call
+## dragged along its row moves just that call. Asks for changes through
+## `command_issued`; never changes the sim.
 
 signal command_issued(command: Dictionary)
 signal closed
@@ -28,7 +33,12 @@ var _help: Label
 var _inbox: VBoxContainer
 var _rows: VBoxContainer
 var _footer: VBoxContainer
-var _timelines: Array[Timeline] = []
+var _timelines: Array[Control] = []
+## Whether the Live tab (the next LIVE_HOURS, as they happen) shows, not the week plan.
+var live := false
+const LIVE_HOURS := 72.0
+const LOW_WATER := Color(0.25, 0.45, 0.85, 0.16)
+const STORM := Color(0.9, 0.3, 0.25, 0.18)
 
 
 func _ready() -> void:
@@ -50,8 +60,20 @@ func _ready() -> void:
 	title.text = "Berth board"
 	title.theme_type_variation = "ClockLabel"
 	header.add_child(title)
+	var tabs := ButtonGroup.new()
+	for pick: Array in [[false, "Week plan"], [true, "Live, next 3 days"]]:
+		var tab := Button.new()
+		tab.text = pick[1]
+		tab.toggle_mode = true
+		tab.button_group = tabs
+		tab.button_pressed = pick[0] == live
+		tab.pressed.connect(func() -> void:
+			live = pick[0]
+			_drawn = [])
+		header.add_child(tab)
 	_reputation.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_reputation.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_reputation.clip_text = true
 	header.add_child(_reputation)
 	var close := Button.new()
 	close.text = "Close  ✕"
@@ -81,7 +103,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _process(_dt: float) -> void:
 	if not visible or sim == null:
 		return
-	var now := [sim, sim.contracts.version, sim.areas.version, sim.cranes.size(), sim.storage.duplicate(), sim.rail_discount, sim.barge_discount, roundi(sim.clock.calendar_minutes() / 60.0)]
+	var now := [live, sim, sim.contracts.version, sim.areas.version, sim.cranes.size(), sim.storage.duplicate(), sim.rail_discount, sim.barge_discount, roundi(sim.clock.calendar_minutes() / 60.0), sim.ships.map(func(s: PortSim.Ship) -> Array: return [s.id, s.state, s.kept, s.apron])]
 	if now != _drawn:
 		_drawn = now
 		_build()
@@ -148,9 +170,112 @@ func _build() -> void:
 		for child in box.get_children():
 			child.queue_free()
 	_timelines.clear()
+	if live:
+		_help.text = "Each berth's next three days: ships alongside (filled as they are worked, a tick at when they are due out) and the calls coming. Shaded: forecast storms (red) and low water (blue). Drag a waiting ship onto a berth to send it in; drag a coming call along its row to move just that call, within %d h of its weekly time." % sim.rules.contracts.flex_hours
+		_build_waiting()
+		_build_live_rows()
+		return
 	_build_inbox()
 	_build_rows()
 	_build_footer()
+
+
+## The ships waiting at anchor, first in line first: each a card to drag
+## onto a berth, with Keep / Let go and Ahead.
+func _build_waiting() -> void:
+	var heading := Label.new()
+	var waiting := sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.state in [PortSim.Ship.State.ANCHORED, PortSim.Ship.State.ANCHORING])
+	heading.text = "Waiting at anchor (%d)" % waiting.size()
+	heading.theme_type_variation = "CategoryHeader"
+	_inbox.add_child(heading)
+	if waiting.is_empty():
+		_inbox.add_child(_note("No ships waiting."))
+	for i in waiting.size():
+		var ship: PortSim.Ship = waiting[i]
+		var card := ShipCard.new()
+		card.board = self
+		card.id = ship.id
+		card.add_theme_stylebox_override("panel", _card(Color(0.12, 0.15, 0.2), color_of(ship.line), 10))
+		var lines := VBoxContainer.new()
+		card.add_child(lines)
+		var title := Label.new()
+		title.text = "%s · %s%s" % [sim.contracts.name_of(ship.line), ship.kind.capitalize(), "  (kept)" if ship.kept else ""]
+		title.add_theme_color_override("font_color", color_of(ship.line))
+		lines.add_child(title)
+		var due := ship.due - sim.clock.calendar_minutes()
+		lines.add_child(_plain("%d moves · due out in %d h" % [ship.boxes + ship.exports, roundi(due / 60.0)]))
+		if ship.anchorage == 0:
+			var left: float = ship.arrived + sim.rules.water.max_wait_hours * 60.0 - sim.clock.calendar_minutes()
+			var warn := _plain("No anchorage: it gives up in %d h" % maxi(0, roundi(left / 60.0)))
+			warn.add_theme_color_override("font_color", REFUSED)
+			lines.add_child(warn)
+		var buttons := HBoxContainer.new()
+		lines.add_child(buttons)
+		var keep := Button.new()
+		keep.text = "Let go" if ship.kept else "Keep at anchor"
+		keep.tooltip_text = "Let it take a berth again" if ship.kept else "Keep it waiting, to save a berth for another ship"
+		keep.pressed.connect(func() -> void: command_issued.emit({"op": "keep_ship", "ship": ship.id, "on": not ship.kept}))
+		buttons.add_child(keep)
+		if i > 0:
+			var ahead := Button.new()
+			ahead.text = "Ahead ▲"
+			ahead.tooltip_text = "Put it ahead of the ship above, to take the next free berth first"
+			var before: PortSim.Ship = waiting[i - 1]
+			ahead.pressed.connect(func() -> void: command_issued.emit({"op": "ship_ahead", "ship": ship.id, "of": before.id}))
+			buttons.add_child(ahead)
+		_inbox.add_child(card)
+
+
+func _build_live_rows() -> void:
+	var aprons := AreaFlow.ready_aprons(sim)
+	if aprons.is_empty():
+		_rows.add_child(_note("No working berths yet: a berth needs a crane, and a gate and road in its terminal."))
+	var axis := LiveTimeline.new()
+	axis.board = self
+	axis.apron = -1
+	axis.custom_minimum_size.y = 18.0
+	_rows.add_child(_row("", axis))
+	var number := 0
+	for apron: int in aprons:
+		number += 1
+		var timeline := LiveTimeline.new()
+		timeline.board = self
+		timeline.apron = apron
+		timeline.custom_minimum_size.y = ROW_HEIGHT + 8.0
+		_rows.add_child(_row("Berth %d · %d m" % [number, Grid.metres(AreaFlow._length(sim, apron))], timeline))
+
+
+## When ship `ship`, alongside, will be done, a calendar minute: its moves
+## left at its berth's cranes' rate.
+func finish_of(ship: PortSim.Ship) -> float:
+	var cranes := AreaFlow.cranes_for(sim, ship)
+	var rate := 0.0
+	for crane: PortSim.Crane in cranes:
+		rate += sim.rules.sts_cranes[crane.kind].rate
+	var left := ship.boxes + ship.exports
+	return sim.clock.calendar_minutes() + (left / rate * 60.0 if rate > 0.0 else LIVE_HOURS * 60.0)
+
+
+## Where dragged `data` would land on berth `apron` at `minute` (a calendar
+## minute): {"why": the refusal or "", "start": minute of the week}.
+func live_landing(data: Dictionary, apron: int, minute: float) -> Dictionary:
+	if data.has("ship"):
+		var ship := sim.ship_of(data.ship)
+		var why := "" if ship and ship.state == PortSim.Ship.State.ANCHORED else "Only a ship waiting at anchor can be sent in"
+		return {"why": why, "start": -1}
+	var start := fposmod(minute, Contracts.MINUTES_PER_WEEK)
+	var service := service(data.call)
+	var why := sim.contracts.move_call_error(data.call, start)
+	if why == "" and service.apron != apron:
+		why = "A call moves in time here; move its berth on the Week plan"
+	return {"why": why, "start": start}
+
+
+func live_drop(data: Dictionary, apron: int, minute: float) -> void:
+	if data.has("ship"):
+		command_issued.emit({"op": "send_ship", "ship": data.ship, "apron": apron})
+	else:
+		command_issued.emit({"op": "move_call", "id": data.call, "start": fposmod(minute, Contracts.MINUTES_PER_WEEK)})
 
 
 func _build_inbox() -> void:
@@ -278,7 +403,7 @@ func _barge_row(sim: PortSim) -> HBoxContainer:
 	return row
 
 
-func _row(text: String, timeline: Timeline) -> HBoxContainer:
+func _row(text: String, timeline: Control) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	var label := Label.new()
 	label.text = text
@@ -331,6 +456,135 @@ func _scrolled(content: Control, width: float) -> ScrollContainer:
 
 
 ## An offer in the inbox, dragged onto a berth's week.
+## A ship waiting at anchor, to drag onto a berth on the Live tab.
+class ShipCard extends PanelContainer:
+	var board: BerthBoard
+	var id: int
+
+	func _get_drag_data(_at: Vector2) -> Variant:
+		var preview := Label.new()
+		preview.text = "Send in: ship %d" % id
+		set_drag_preview(preview)
+		return {"ship": id}
+
+
+## One berth's next LIVE_HOURS from now, on the Live tab; -1 is the hour axis.
+class LiveTimeline extends Control:
+	var board: BerthBoard
+	var apron := 0
+	var _ghost := {}
+
+	func _ready() -> void:
+		mouse_filter = Control.MOUSE_FILTER_PASS if apron == -1 else Control.MOUSE_FILTER_STOP
+
+	func _minute_at(x: float) -> float:
+		return board.sim.clock.calendar_minutes() + x / size.x * BerthBoard.LIVE_HOURS * 60.0
+
+	func _x(minute: float) -> float:
+		return (minute - board.sim.clock.calendar_minutes()) / (BerthBoard.LIVE_HOURS * 60.0) * size.x
+
+	func _can_drop_data(at: Vector2, data: Variant) -> bool:
+		if apron <= 0 or not (data is Dictionary and (data.has("ship") or data.has("call"))):
+			return false
+		_ghost = board.live_landing(data, apron, _minute_at(at.x))
+		_ghost.at = at.x
+		queue_redraw()
+		return _ghost.why == ""
+
+	func _drop_data(at: Vector2, data: Variant) -> void:
+		_ghost = {}
+		board.live_drop(data, apron, _minute_at(at.x))
+
+	func _notification(what: int) -> void:
+		if what in [NOTIFICATION_DRAG_END, NOTIFICATION_MOUSE_EXIT]:
+			_ghost = {}
+			queue_redraw()
+
+	## The coming call on this row under `at`, or {}.
+	func _get_drag_data(at: Vector2) -> Variant:
+		if apron <= 0:
+			return null
+		var now := board.sim.clock.calendar_minutes()
+		for service: Dictionary in board.sim.contracts.services:
+			var start := Contracts.next_call(service, now)
+			if service.apron == apron and at.x >= _x(start) and at.x <= _x(start + service.window_hours * 60.0):
+				var preview := Label.new()
+				preview.text = "Move this %s call" % service.kind
+				set_drag_preview(preview)
+				return {"call": service.id}
+		return null
+
+	func _draw() -> void:
+		var font := get_theme_default_font()
+		var sim := board.sim
+		var now := sim.clock.calendar_minutes()
+		var hour := size.x / BerthBoard.LIVE_HOURS
+		if apron == -1:
+			for h in range(0, int(BerthBoard.LIVE_HOURS), 12):
+				var at := floorf(now / 720.0) * 720.0 + (h + 12) * 60.0
+				var day := int(at / 1440.0)
+				draw_string(font, Vector2(_x(at) + 2, 13), "%s %02d:00" % [BerthBoard.WEEKDAYS[day % 7], int(at / 60.0) % 24], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, BerthBoard.MUTED)
+			return
+		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.05))
+		# Low water and forecast storms, shaded across the row.
+		if sim.event_plan.on.tides:
+			# Each spell of low water, the tide's bottom third (it swings half its
+			# range either side of chart depth), as one span, a quarter hour at a time.
+			var low: float = -sim.rules.water.tides.range / 6.0
+			var from := -1.0
+			for step in int(BerthBoard.LIVE_HOURS * 4) + 1:
+				var minute := now + step * 15.0
+				var is_low := Marine.tide(sim, minute) < low and step < int(BerthBoard.LIVE_HOURS * 4)
+				if is_low and from < 0.0:
+					from = minute
+				elif not is_low and from >= 0.0:
+					draw_rect(Rect2(_x(from), 0, _x(minute) - _x(from), size.y), BerthBoard.LOW_WATER)
+					from = -1.0
+		for storm: Dictionary in sim.event_plan.list:
+			if storm.kind == "storms" and storm.forecast:
+				draw_rect(Rect2(_x(storm.from), 0, (storm.to - storm.from) / 60.0 * hour, size.y), BerthBoard.STORM)
+		for day in range(1, 4):
+			var midnight := (floorf(now / 1440.0) + day) * 1440.0
+			draw_line(Vector2(_x(midnight), 0), Vector2(_x(midnight), size.y), Color(1, 1, 1, 0.14))
+		# The calls coming to this berth.
+		for service: Dictionary in sim.contracts.services:
+			if service.apron != apron:
+				continue
+			var start := Contracts.next_call(service, now)
+			if start - now > BerthBoard.LIVE_HOURS * 60.0:
+				continue
+			var color := board.color_of(service.line)
+			var rect := Rect2(_x(start), 6, service.window_hours * hour - 1.0, size.y - 12)
+			draw_rect(rect, Color(color, 0.35))
+			draw_rect(rect, color, false, 1.5)
+			draw_string(font, rect.position + Vector2(4, rect.size.y / 2 + 5), "%s %s%s" % [sim.contracts.name_of(service.line), service.kind, " (moved)" if service.next_start >= 0.0 else ""], HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 6, 11, Color.WHITE)
+		# Ships alongside or coming in: worked so far filled, a tick when due out.
+		for ship: PortSim.Ship in sim.ships:
+			if ship.apron != apron or ship.state not in [PortSim.Ship.State.ARRIVING, PortSim.Ship.State.WORKING]:
+				continue
+			var color := board.color_of(ship.line)
+			# From now to when it should be done; the part already worked shown filled.
+			var start := now
+			var done := board.finish_of(ship)
+			var rect := Rect2(_x(start), 4, minf((done - start) / 60.0 * hour, size.x), size.y - 8)
+			draw_rect(rect, Color(color, 0.55))
+			var share := float(ship.moves) / maxf(1.0, ship.moves + ship.boxes + ship.exports)
+			draw_rect(Rect2(rect.position, Vector2(rect.size.x * share, rect.size.y)), color)
+			draw_string(font, rect.position + Vector2(4, rect.size.y / 2 + 5), "%s %s · %d%%" % [sim.contracts.name_of(ship.line), ship.kind, roundi(share * 100.0)], HORIZONTAL_ALIGNMENT_LEFT, maxf(rect.size.x, 140.0), 12, Color.WHITE)
+			# A tick when it is due out: red if it won't make it; at now if already late.
+			var due := maxf(_x(ship.due), 2.0)
+			draw_line(Vector2(due, 0), Vector2(due, size.y), BerthBoard.REFUSED if ship.due < done else Color.WHITE, 2.0)
+			if ship.due < now:
+				draw_string(font, Vector2(due + 3, size.y - 4), "late", HORIZONTAL_ALIGNMENT_LEFT, -1, 10, BerthBoard.REFUSED)
+		if not _ghost.is_empty():
+			if _ghost.why == "":
+				draw_rect(Rect2(Vector2.ZERO, size), BerthBoard.OK, false, 2.0)
+			else:
+				draw_rect(Rect2(Vector2.ZERO, size), BerthBoard.REFUSED, false, 2.0)
+				draw_string(font, Vector2(6, size.y / 2 + 5), _ghost.why, HORIZONTAL_ALIGNMENT_LEFT, size.x - 12, 12, BerthBoard.REFUSED)
+		draw_line(Vector2(0, 0), Vector2(0, size.y), Color(1, 0.85, 0.3), 2.0)
+
+
 class Strip extends PanelContainer:
 	var board: BerthBoard
 	var id: int

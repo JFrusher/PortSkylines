@@ -399,7 +399,7 @@ func _test_reputation_cancels_and_recovers() -> void:
 	rules.contracts.offer_chance = 1.0
 	var contracts := Contracts.new(rules)
 	for id: int in [1, 2]:
-		contracts.services.append({"id": id, "line": "kestrel", "kind": "feeder", "start": 0, "window_hours": 12.0, "moves": 40, "apron": 1, "asked": 0, "any_berth": false})
+		contracts.services.append({"id": id, "line": "kestrel", "kind": "feeder", "start": 0, "window_hours": 12.0, "moves": 40, "apron": 1, "asked": 0, "any_berth": false, "next_start": -1.0})
 	var said := ""
 	var calls := 0
 	while said == "" and calls < 20:

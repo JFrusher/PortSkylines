@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 63
+const VERSION := 64
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -146,6 +146,18 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v62(data)
 	if data.version < 63:
 		data = _migrate_v63(data)
+	if data.version < 64:
+		data = _migrate_v64(data)
+	return data
+
+
+## v64 adds the harbour master (M11): no ship kept at anchor, no call moved.
+static func _migrate_v64(data: Dictionary) -> Dictionary:
+	for ship: Dictionary in data.sim.ships:
+		ship.kept = false
+	for service: Dictionary in data.sim.contracts.services + data.sim.contracts.offers:
+		service.next_start = -1.0
+	data.version = 64
 	return data
 
 
@@ -720,7 +732,7 @@ static func _valid_sim(data: Variant) -> bool:
 			"boxes": TYPE_INT, "exports": TYPE_INT, "empties": TYPE_INT, "state": TYPE_INT,
 			"id": TYPE_INT, "light": TYPE_BOOL, "cleared": TYPE_BOOL, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "tug_depot": TYPE_INT, "tugs_at": TYPE_FLOAT, "hold_until": TYPE_FLOAT,
 			"anchorage": TYPE_INT, "spot": TYPE_INT, "arrived": TYPE_FLOAT, "path": TYPE_ARRAY, "sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
-			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL, "needs": TYPE_ARRAY,
+			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL, "needs": TYPE_ARRAY, "kept": TYPE_BOOL,
 		}):
 			return false
 		if (ship.apron == 0) != (ship.state in [PortSim.Ship.State.ANCHORED, PortSim.Ship.State.ANCHORING]) or (ship.anchorage != 0 and ship.anchorage not in data.anchorages) or not ship.path.all(func(p: Variant) -> bool: return p is Vector2) or not ship.needs.all(func(n: Variant) -> bool: return n is String and n in Content.base().ship_classes.get(ship.kind, {}).get("services", {})):

@@ -339,6 +339,8 @@ class Ship:
 	var berthed := -1.0
 	## The services it still wants (see Services), given when it calls.
 	var needs: Array[String] = []
+	## Kept at anchor by the harbour master (M11): it doesn't take a berth until let go.
+	var kept := false
 
 	func _init(ship_kind: String, ship_line: String, window_end: float, imports: int, export_room: int) -> void:
 		kind = ship_kind
@@ -349,7 +351,7 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth, "needs": needs.duplicate()}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth, "needs": needs.duplicate(), "kept": kept}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
@@ -376,6 +378,7 @@ class Ship:
 		ship.from = d.from
 		ship.berth = d.berth
 		ship.any_berth = d.any_berth
+		ship.kept = d.kept
 		return ship
 
 
@@ -637,6 +640,14 @@ func apply(command: Dictionary) -> String:
 			return accept_offer(command.id, command.apron)
 		"move_service":
 			return move_service(command.id, command.apron)
+		"move_call":
+			return contracts.move_call(command.id, command.start, clock.calendar_minutes())
+		"send_ship":
+			return send_ship(command.ship, command.apron)
+		"keep_ship":
+			return keep_ship(command.ship, command.on)
+		"ship_ahead":
+			return ship_ahead(command.ship, command.of)
 		"set_any_berth":
 			return contracts.set_any_berth(command.id, command.any_berth)
 		"decline_offer":
@@ -1890,6 +1901,7 @@ func tick() -> void:
 		_deliver_cranes()
 	for service in contracts.due(clock.ticks % (SimClock.TICKS_PER_DAY * 7)):
 		_call(service)
+		service.next_start = -1.0  # a call moved once comes back to its week
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
 		AreaFlow.fine_unplugged(self, clock.calendar_minutes())
@@ -2217,6 +2229,63 @@ func move_service(id: int, apron: int) -> String:
 	return err if err else contracts.move(id, apron)
 
 
+## The ship with id `id`, or null.
+func ship_of(id: int) -> Ship:
+	for ship: Ship in ships:
+		if ship.id == id:
+			return ship
+	return null
+
+
+## The harbour master sends ship `id`, waiting at anchor, to berth `apron`
+## now, if there is room for it there (M11); its own terminal's berths only
+## when a service there is its own.
+func send_ship(id: int, apron: int) -> String:
+	var ship := ship_of(id)
+	if ship == null:
+		return "No such ship"
+	if ship.state != Ship.State.ANCHORED:
+		return "Only a ship waiting at anchor can be sent in"
+	if apron not in AreaFlow.ready_aprons(self):
+		return "That berth can't take ships"
+	if ship.berth in areas.list and areas.list[apron].terminal != areas.list[ship.berth].terminal:
+		return "Its line calls at the other terminal"
+	if not Marine.reaches(self, ship.kind, apron, ship.anchorage, ship.light):
+		return "It has no way in to that berth"
+	if not AreaFlow.berth(self, ship, apron):
+		return "No room for it at that berth now"
+	ship.kept = false
+	return ""
+
+
+## Keeps ship `id` waiting at anchor (`on`), or lets it take a berth again.
+func keep_ship(id: int, on: bool) -> String:
+	var ship := ship_of(id)
+	if ship == null:
+		return "No such ship"
+	if ship.state not in [Ship.State.ANCHORED, Ship.State.ANCHORING]:
+		return "Only a ship waiting at anchor can be kept there"
+	ship.kept = on
+	_berths_seen = Vector2i(-1, -1)  # let go, it tries for a berth this tick
+	return ""
+
+
+## Puts ship `id`, waiting at anchor, ahead of waiting ship `of`: the one
+## first in line takes the next free berth.
+func ship_ahead(id: int, of: int) -> String:
+	var ship := ship_of(id)
+	var other := ship_of(of)
+	if ship == null or other == null or ship == other:
+		return "No such ships"
+	for s: Ship in [ship, other]:
+		if s.state not in [Ship.State.ANCHORED, Ship.State.ANCHORING]:
+			return "Only ships waiting at anchor change places in line"
+	ships.erase(ship)
+	ships.insert(ships.find(other), ship)
+	_berths_seen = Vector2i(-1, -1)
+	return ""
+
+
 ## Ends agreed service `id`; a ship already called for it still works.
 func cancel_service(id: int) -> String:
 	var done := contracts.cancel(id)
@@ -2242,7 +2311,7 @@ func _work(ship: Ship) -> void:
 	ship.prev_sail = ship.sail
 	match ship.state:
 		Ship.State.ANCHORED:
-			if not AreaFlow.berth(self, ship):
+			if ship.kept or not AreaFlow.berth(self, ship):
 				Marine.wait(self, ship)
 		Ship.State.ANCHORING:
 			if not Marine.under_way(self, ship, 1):
