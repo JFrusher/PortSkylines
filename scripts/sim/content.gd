@@ -40,7 +40,7 @@ const SCHEMA := {
 	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},
 	"gate_levels": {"*": {"name": TYPE_STRING, "minutes": TYPE_FLOAT, "upkeep_per_lane": TYPE_INT}},
 	"export_lead_hours": TYPE_FLOAT,
-	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
+	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT, "agv": TYPE_INT},
 	# How long vehicles wait in each lane cell is folded in every epoch_seconds
 	# of vehicle time, mixed in at `smoothing` (0 to 1); routes take up the
 	# delays every route_epoch_seconds, dropping every kept route.
@@ -176,6 +176,8 @@ const SCHEMA := {
 	"sts_cranes": {"*": {"name": TYPE_STRING, "wind_limit_kmh": TYPE_FLOAT, "mtbf_hours": TYPE_FLOAT, "cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT, "max_fetchers": TYPE_INT}},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
+	# An AGV (M11): bought at an AGV depot, driverless, so dear to buy and cheap to keep.
+	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
 	# Roads the player draws: lanes each way along the drawn direction, whether
 	# lorries may use it (tractors and AGVs always may), and cost and daily upkeep per 4 m cell.
 	# Roads meeting at a node must part by at least min_angle degrees; each is
@@ -215,7 +217,7 @@ const SCHEMA := {
 }
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
-const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop", "fire_station"]
+const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop", "fire_station", "agv_depot"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
 const POSITIVE := ["min_radius_cells", "width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]

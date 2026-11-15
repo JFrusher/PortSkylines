@@ -39,7 +39,7 @@ const BUILD_BREAKWATER := -14
 ## Drags a road's node, or the point it bends toward, to reshape it (Move It).
 const MOVE_ROAD := -15
 ## The build menu row each area type sits in.
-const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "agv_depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Water", "Bulldoze", "Inspect"]
@@ -858,6 +858,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"quay_apron": "Where ships berth and STS cranes work. Reaches the water from a road %d–%d m in" % [Grid.metres(area.depth + 1), Grid.metres(area.max_depth + 1)],
 		"gate": "Checks lorries in and out: %d lanes, each a booth" % (area.depth - 2),
 		"parking": "Lorries wait here, off the road, while their terminal's gate is busy, and go on to it in turn. One space per %d m" % Grid.metres(AreaLayout.BAY),
+		"agv_depot": "Home of AGVs, the driverless carriers: built inside the AGV zone, its terminal moves boxes between quay and yard on its AGVs instead of tractors. Dear to buy, cheap to run. Buy AGVs by inspecting it",
 		"fire_station": "Its fire engines drive out to fires in the yard and on ships at berth (switch fires on in the menu); a fire no crew reaches soon burns boxes. Buy engines by inspecting it",
 		"workshop": "Its mechanics drive out in their vans to repair the quay cranes and yard gear that break down in its terminal (switch breakdowns on in the menu). Hire mechanics by inspecting it",
 	}[area.kind]
@@ -936,6 +937,8 @@ func _draw_inspect_actions() -> void:
 		_action_button(_inspect_actions, "Hire an inspector, %s" % HudDetails.dollars(sim.rules.customs.inspector_cost), {"op": "hire_inspectors", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate" and not sim.areas.list[id].settings.scanner:
 		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
+	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
+		_action_button(_inspect_actions, "Buy an AGV, %s" % HudDetails.dollars(sim.rules.agv.cost), {"op": "buy_agvs", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "fire_station":
 		_action_button(_inspect_actions, "Buy a fire engine, %s" % HudDetails.dollars(sim.rules.events.fires.engine_cost), {"op": "buy_engines", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "workshop":

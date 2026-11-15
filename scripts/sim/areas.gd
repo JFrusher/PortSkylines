@@ -403,7 +403,11 @@ func _idle_reason(id: int) -> String:
 	var area: Dictionary = list[id]
 	if area.terminal == 0:
 		return "Paint this %s into a terminal on the map (Map, key 6)" % types[area.type].name.to_lower()
-	return "" if road_beside(id) else "No road runs along this %s" % types[area.type].name.to_lower()
+	if not road_beside(id):
+		return "No road runs along this %s" % types[area.type].name.to_lower()
+	if kind_of(area) == "agv_depot" and not cells(id).all(func(cell: Vector2i) -> bool: return cell in agv_zone):
+		return "Paint this AGV depot into the AGV zone on the map (Map, key 6)"
+	return ""
 
 
 ## Whether a road's lane runs beside any of area `id`'s first row.

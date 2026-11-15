@@ -34,6 +34,10 @@
 		"cost": 4000.0,
 		"speed": 500.0
 	},
+	"agv": {
+		"cost": 60000.0,
+		"speed": 350.0
+	},
 	"yard_gear": {
 		"reach_stacker": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 
 			"name": "reach stackers",

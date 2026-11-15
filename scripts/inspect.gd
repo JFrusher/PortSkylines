@@ -252,6 +252,8 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		lines.append("%d inspectors, %d boxes to inspect" % [settings.inspectors, waiting])
 	if settings.get("scanner", false):
 		lines.append("Scanner: clears most flagged boxes at once")
+	if settings.has("agvs"):
+		lines.append("%d AGVs, %d out" % [settings.agvs, sim._agvs_out.get(id, 0)])
 	if settings.has("engines"):
 		lines.append("%d fire engines, %d out" % [settings.engines, sim.fires.engines.values().filter(func(e: Dictionary) -> bool: return e.station == id and e.job != "home").size()])
 	if settings.has("mechanics"):

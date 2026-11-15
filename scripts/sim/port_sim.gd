@@ -108,6 +108,7 @@ var _tractors_on_road := 0
 var _fetching := {}  # apron slot spot -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
 var _straddles_out := {}  # straddle block id -> its carriers on the road
+var _agvs_out := {}  # AGV depot id -> its AGVs on the road
 ## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
 var trains: Array[Train] = []
 var _next_train := 1
@@ -172,6 +173,7 @@ const AREA_SETTINGS := {
 	"gate": {"level": "manual", "slots_per_hour": 0, "scanner": false},
 	"workshop": {"mechanics": 0},
 	"fire_station": {"engines": 0},
+	"agv_depot": {"agvs": 0},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship", "customs"]
 ## The most lorries a gate can book in an hour.
@@ -665,6 +667,8 @@ func apply(command: Dictionary) -> String:
 			return Customs.buy_scanner(self, command.gate)
 		"hire_inspectors":
 			return Customs.hire(self, command.area, command.count)
+		"buy_agvs":
+			return AreaFlow.buy_agvs(self, command.area, command.count)
 		"buy_engines":
 			return fires.buy_engines(self, command.area, command.count)
 		"buy_fireboats":
@@ -1242,7 +1246,7 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		if key not in AREA_SETTINGS.get(areas.kind_of(areas.list[id]), {}):
 			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
 		# Bought, not set: by inspecting the area.
-		if key in ["mechanics", "engines", "inspectors", "scanner"]:
+		if key in ["mechanics", "engines", "inspectors", "scanner", "agvs"]:
 			return "Buy %s by inspecting it" % ("a scanner" if key == "scanner" else key)
 	if settings.has("slots_per_hour") and (not settings.slots_per_hour is int or settings.slots_per_hour < 0 or settings.slots_per_hour > MAX_SLOTS_PER_HOUR):
 		return "Bookings run from 0 (none) to %d an hour" % MAX_SLOTS_PER_HOUR
@@ -1926,6 +1930,7 @@ func upkeep_parts() -> Dictionary:
 	for id: int in areas.list:
 		parts[0] += areas.list[id].settings.get("mechanics", 0) * rules.events.breakdowns.upkeep_per_mechanic
 		parts[0] += areas.list[id].settings.get("engines", 0) * rules.events.fires.upkeep_per_engine
+		parts[0] += areas.list[id].settings.get("agvs", 0) * rules.upkeep.agv
 		parts[0] += areas.list[id].settings.get("inspectors", 0) * rules.customs.upkeep_per_inspector
 	for boat: Dictionary in boats.list.values():
 		if boat.kind == "fireboat":
@@ -2384,6 +2389,8 @@ func _add_vehicle(vehicle: Vehicle) -> void:
 	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
+	if vehicle.depot:
+		_agvs_out[vehicle.depot] = _agvs_out.get(vehicle.depot, 0) + 1
 	_count_bound(vehicle, 1)
 	if vehicle.home != Areas.NO_SPOT:
 		if vehicle.home not in _fetching:
@@ -2399,6 +2406,8 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] -= 1
+	if vehicle.depot:
+		_agvs_out[vehicle.depot] -= 1
 	_count_bound(vehicle, -1)
 	if vehicle.home != Areas.NO_SPOT:
 		_fetching[vehicle.home].erase(vehicle)

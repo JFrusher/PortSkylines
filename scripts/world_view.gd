@@ -51,9 +51,12 @@ const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
 	"parking": Color(0.38, 0.4, 0.42), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27),
+	"agv_depot": Color(0.45, 0.5, 0.52),
 }
 const AREA_TOP := 0.2
 ## AGV-only lanes, amber over the asphalt.
+## A full AGV battery's bar.
+const AGV_CHARGE_FULL := Color(0.2, 0.85, 0.3)
 const AGV_LANE := Color(0.55, 0.42, 0.18)
 ## How high ship lanes are drawn: just over the water.
 const LANE_HEIGHT := -0.2
@@ -531,25 +534,32 @@ func _draw_area_buildings() -> void:
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
 		var kind := sim.areas.kind_of(area)
-		if kind not in ["workshop", "fire_station"]:
+		if kind not in ["workshop", "fire_station", "agv_depot"]:
 			continue
 		var unit := Grid.CELL / METRES_PER_UNIT
 		var middle: float = area.columns / 2.0
 		var depth := sim.areas.depth_of(area)
-		var size := Vector2(minf(area.columns * unit * 0.85, 1.8), depth * unit * 0.75)
+		var size := _building_size(id)
 		var model := MeshInstance3D.new()
-		model.mesh = _merged(_fire_station(size) if kind == "fire_station" else _workshop(size))
+		model.mesh = _merged({"fire_station": _fire_station(size), "workshop": _workshop(size), "agv_depot": _agv_depot(size)}[kind])
 		var at := sim.areas.point(id, middle, (depth - 1) / 2.0) * unit
 		var along := sim.areas.heading(id, middle)
 		var out := sim.areas.out_at(id, middle)
 		var x := Vector3(along.x, 0, along.y)
 		# Keep the frame right-handed on either side of the road, so faces stay outward.
-		if x.cross(Vector3.UP).dot(Vector3(out.x, 0, out.y)) > 0.0:
+		if x.cross(Vector3.UP).dot(Vector3(out.x, 0, out.y)) < 0.0:
 			x = -x
 		model.basis = Basis(x, Vector3.UP, Vector3(out.x, 0, out.y))
-		model.position = Vector3(at.x, AREA_TOP, at.y)
+		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
 		add_child(model)
 		_area_buildings[id] = model
+
+
+## The size of area `id`'s building: across (along its road) and deep.
+func _building_size(id: int) -> Vector2:
+	var area: Dictionary = sim.areas.list[id]
+	var unit := Grid.CELL / METRES_PER_UNIT
+	return Vector2(minf(area.columns * unit * 0.85, 1.8), sim.areas.depth_of(area) * unit * 0.75)
 
 
 ## A fire station `size` across (x along the road) and deep (z away from
@@ -580,6 +590,50 @@ static func _fire_station(size: Vector2) -> Array:
 		[Vector3(0.012, 0.35, 0.012), Vector3(-size.x / 2.0 + 0.05, h + 0.175, front + 0.05), white],
 		[Vector3(0.002, 0.06, 0.09), Vector3(-size.x / 2.0 + 0.05, h + 0.32, front + 0.1), Color(0.8, 0.15, 0.12)],
 	])
+	return parts
+
+
+## An AGV (x across, z along, y up, before AREA_VEHICLE_SCALE): a long low
+## white body with a teal stripe, a steel deck the box sits on, yellow bumpers at both ends,
+## wheels, white lights ahead and red behind, an amber beacon.
+static func _agv_parts() -> Array:
+	var parts: Array = [
+		[Vector3(0.22, 0.07, 0.6), Vector3(0, 0.045, 0), Color(0.95, 0.96, 0.97)],
+		[Vector3(0.222, 0.018, 0.56), Vector3(0, 0.05, 0), Color(0.05, 0.6, 0.62)],
+		[Vector3(0.21, 0.012, 0.56), Vector3(0, 0.086, 0), Color(0.45, 0.47, 0.5)],
+		[Vector3(0.02, 0.025, 0.02), Vector3(0.08, 0.1, 0.27), Color(1.0, 0.55, 0.05)],
+	]
+	for end: float in [-1.0, 1.0]:
+		parts.append([Vector3(0.23, 0.03, 0.025), Vector3(0, 0.04, end * 0.31), Color(1.0, 0.8, 0.1)])
+		parts.append([Vector3(0.231, 0.008, 0.026), Vector3(0, 0.04, end * 0.31), Color(0.1, 0.1, 0.1)])
+		parts.append([Vector3(0.235, 0.04, 0.07), Vector3(0, 0.02, end * 0.2), Color(0.08, 0.08, 0.08)])
+		for side: float in [-1.0, 1.0]:
+			parts.append([Vector3(0.03, 0.015, 0.01), Vector3(side * 0.08, 0.065, end * 0.301), Color(1, 1, 0.9) if end > 0 else Color(0.9, 0.1, 0.1)])
+	return parts
+
+
+## An AGV depot `size` across and deep: an open-fronted canopy shed on
+## posts over its bays, a glazed control office at one end, a teal sign.
+static func _agv_depot(size: Vector2) -> Array:
+	var steel := Color(0.72, 0.74, 0.76)
+	var h := 0.26
+	var front := -size.y / 2.0
+	var shed := size.x * 0.75
+	var middle := -size.x * 0.125
+	var parts: Array = [
+		[Vector3(shed, 0.03, size.y), Vector3(middle, h, 0), steel],
+		[Vector3(shed, h, 0.02), Vector3(middle, h / 2.0, -front), steel.darkened(0.2)],
+		[Vector3(shed + 0.01, 0.015, 0.02), Vector3(middle, h - 0.02, front), Color(0.1, 0.55, 0.55)],
+		[Vector3(size.x * 0.22, h * 0.8, size.y * 0.55), Vector3(size.x * 0.38, h * 0.4, size.y * 0.15), Color(0.9, 0.9, 0.88)],
+		[Vector3(size.x * 0.221, h * 0.3, size.y * 0.551), Vector3(size.x * 0.38, h * 0.55, size.y * 0.15), Color(0.25, 0.45, 0.6)],
+		[Vector3(size.x * 0.24, 0.03, size.y * 0.57), Vector3(size.x * 0.38, h * 0.8 + 0.015, size.y * 0.15), Color(0.15, 0.2, 0.26)],
+		[Vector3(size.x * 0.18, 0.05, 0.012), Vector3(size.x * 0.38, h * 0.95, size.y * 0.15 - size.y * 0.28), Color(0.1, 0.6, 0.6)],
+	]
+	var bays := 4
+	for k: int in bays + 1:
+		var x := middle - shed / 2.0 + k * shed / bays
+		parts.append([Vector3(0.02, h, 0.02), Vector3(x, h / 2.0, front + 0.02), steel.darkened(0.35)])
+		parts.append([Vector3(0.008, 0.002, size.y * 0.8), Vector3(x, 0.002, 0), Color(1.0, 0.8, 0.1)])
 	return parts
 
 
@@ -1525,6 +1579,8 @@ func _draw_vehicles() -> void:
 			"cab": _vehicle_part(_merged([[Vector3(0.24, 0.2, 0.16), Vector3.ZERO, Color.WHITE]])),
 			"chassis": _vehicle_part(_merged([[Vector3(0.22, 0.04, 0.52), Vector3.ZERO, Color(0.2, 0.2, 0.22)]])),
 			"straddle": _vehicle_part(_merged(_straddle_frame(Color.WHITE))),
+			"agv": _vehicle_part(_merged(_agv_parts())),
+			"agv_bar": _vehicle_part(_merged([[Vector3(0.004, 0.014, 0.22), Vector3.ZERO, Color.WHITE]])),
 			1: _vehicle_part(_stack_meshes[1]),
 			2: _vehicle_part(_stack_meshes[2]),
 		}
@@ -1545,6 +1601,12 @@ func _draw_vehicles() -> void:
 		if vehicle.straddle:
 			_put(buffers.straddle, placed, STRADDLE_RED)
 			carried = placed * Transform3D(Basis(), Vector3(0, 0.12, 0)) * _vehicle_box
+		elif vehicle.kind == "agv":
+			_put(buffers.agv, placed, Color.WHITE)
+			# The charge left, green full to red flat, on both sides.
+			for side: float in [-1.0, 1.0]:
+				_put(buffers.agv_bar, placed * Transform3D(Basis(), Vector3(side * 0.113, 0.05, 0)), AGV_CHARGE_FULL)
+			carried = placed * Transform3D(_vehicle_box.basis, Vector3(0, 0.215, 0))
 		else:
 			_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
 			_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
@@ -1552,6 +1614,7 @@ func _draw_vehicles() -> void:
 			var box: Dictionary = sim.boxes[vehicle.box]
 			_put(buffers[box.teu], carried, _livery(box.line, vehicle.box))
 	_headings = headings
+	_park_agvs(buffers)
 	for part: Variant in _vehicle_parts:
 		var multimesh: MultiMesh = _vehicle_parts[part].multimesh
 		var buffer: PackedFloat32Array = buffers[part]
@@ -1561,6 +1624,24 @@ func _draw_vehicles() -> void:
 		buffer.resize(multimesh.instance_count * 16)
 		multimesh.buffer = buffer
 		multimesh.visible_instance_count = count
+
+
+## Each AGV depot's AGVs at home, parked nose-in under its canopy, two to a
+## bay (_agv_depot's four), as many as fit.
+func _park_agvs(buffers: Dictionary) -> void:
+	for id: int in _area_buildings:
+		if id not in sim.areas.list or sim.areas.kind_of(sim.areas.list[id]) != "agv_depot":
+			continue
+		var model: Node3D = _area_buildings[id]
+		var home: int = sim.areas.list[id].settings.agvs - sim._agvs_out.get(id, 0)
+		var size := _building_size(id)
+		var shed := size.x * 0.75
+		for k: int in mini(home, 8):
+			var x := -size.x * 0.125 - shed / 2.0 + (k / 2 + 0.25 + 0.5 * (k % 2)) * shed / 4.0
+			var placed := model.transform * Transform3D(Basis.IDENTITY.scaled(AREA_VEHICLE_SCALE), Vector3(x, 0.0, size.y * 0.05))
+			_put(buffers.agv, placed, Color.WHITE)
+			for side: float in [-1.0, 1.0]:
+				_put(buffers.agv_bar, placed * Transform3D(Basis(), Vector3(side * 0.113, 0.05, 0)), AGV_CHARGE_FULL)
 
 
 ## Appends `placed` and `color` to `buffer` in MultiMesh layout: the

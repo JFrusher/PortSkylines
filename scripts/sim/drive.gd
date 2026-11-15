@@ -319,7 +319,7 @@ static func _best_route(sim: PortSim, start: int, to: Vector3i, who: String) -> 
 	var key := [start, to, who]
 	if not sim._reach.get(key, true):
 		return []
-	var speed: float = (sim.rules.lorry_speed if who == "lorry" else sim.rules.tractor.speed) / 60.0 / Grid.CELL  # m a minute -> cells a second
+	var speed := _speed(sim, who) / 60.0 / Grid.CELL  # m a minute -> cells a second
 	var ends: Array[int] = []
 	for end in sim.network.ending_at(sim.areas.centre(to)):
 		if LaneNetwork.may_use(sim.network.pieces[end], who):
@@ -343,7 +343,17 @@ static func _lane_ending(sim: PortSim, cell: Vector2i, inward: bool) -> int:
 
 ## `vehicle`'s top speed, cells a second.
 static func _top(sim: PortSim, vehicle: Vehicle) -> float:
-	return (sim.rules.lorry_speed if vehicle.kind == "lorry" else sim.rules.tractor.speed) / 60.0 / Grid.CELL
+	return _speed(sim, vehicle.kind) / 60.0 / Grid.CELL
+
+
+## Metres a minute `who` drives at (see LaneNetwork.may_use).
+static func _speed(sim: PortSim, who: String) -> float:
+	match who:
+		"lorry":
+			return sim.rules.lorry_speed
+		"agv":
+			return sim.rules.agv.speed
+	return sim.rules.tractor.speed
 
 
 ## `vehicle`'s length, cells.
