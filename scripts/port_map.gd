@@ -232,7 +232,7 @@ func _stats(terminal: int) -> String:
 	var berths := mine.filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "quay_apron").size()
 	var fill := Vector2i.ZERO
 	for id: int in mine:
-		if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
+		if sim.areas.list[id].type in Areas.BLOCK_TYPES:
 			fill += sim.block_fill(id)
 	var yard := "yard %d%% full" % roundi(100.0 * fill.x / fill.y) if fill.y > 0 else "no yard"
 	var turn := sim.terminal_turn_minutes(terminal)
@@ -246,7 +246,7 @@ func _lacks(terminal: int) -> String:
 	var err := sim.areas.terminal_error(terminal)
 	if err != "":
 		return err
-	if not sim.areas.list.values().any(func(a: Dictionary) -> bool: return a.terminal == terminal and sim.areas.kind_of(a) == "yard_block"):
+	if not sim.areas.list.values().any(func(a: Dictionary) -> bool: return a.terminal == terminal and a.type in Areas.BLOCK_TYPES):
 		return "%s needs a yard block" % sim.areas.terminals[terminal].name
 	return ""
 
@@ -368,7 +368,7 @@ class MapCanvas extends Control:
 				pixels[i * 4 + 1] = water.g8
 				pixels[i * 4 + 2] = water.b8
 		image.set_data(site.x, site.y, false, Image.FORMAT_RGBA8, pixels)
-		var kinds := {"yard_block": Color(0.62, 0.62, 0.58), "quay_apron": Color(0.75, 0.74, 0.68), "gate": Color(0.48, 0.56, 0.64), "parking": Color(0.42, 0.44, 0.47), "depot": Color(0.6, 0.55, 0.45), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27), "agv_depot": Color(0.45, 0.5, 0.52)}
+		var kinds := {"yard_block": Color(0.62, 0.62, 0.58), "quay_apron": Color(0.75, 0.74, 0.68), "gate": Color(0.48, 0.56, 0.64), "parking": Color(0.42, 0.44, 0.47), "depot": Color(0.6, 0.55, 0.45), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27), "agv_depot": Color(0.45, 0.5, 0.52), "transfer_block": Color(0.62, 0.62, 0.58)}
 		for id: int in sim.areas.list:
 			var colour: Color = kinds[sim.areas.kind_of(sim.areas.list[id])]
 			for cell in sim.areas.cells(id):

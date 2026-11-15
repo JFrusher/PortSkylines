@@ -174,6 +174,7 @@ const AREA_SETTINGS := {
 	"workshop": {"mechanics": 0},
 	"fire_station": {"engines": 0},
 	"agv_depot": {"agvs": 0},
+	"transfer_block": {"role": "import", "gear": "asc", "lines": [], "inspectors": 0},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship", "customs"]
 ## The most lorries a gate can book in an hour.
@@ -581,7 +582,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	# and for one migrated to v41 (whose slots came from grid cells) the fix.
 	for vehicle: Vehicle in sim.vehicles:
 		if vehicle.state.trim_prefix("no_route:") == "to_slot" and vehicle.slot >= 0:
-			vehicle.target = AreaFlow._stand(sim, vehicle.area, vehicle.slot)
+			vehicle.target = AreaFlow._stand(sim, AreaFlow._door(sim, vehicle), vehicle.slot)
 		if vehicle.home != Areas.NO_SPOT and vehicle.home.x in sim.areas.list:
 			var slots: Array = sim.areas.layout(vehicle.home.x).get("slots", [])
 			var s := slots.find_custom(func(cells: Array) -> bool: return vehicle.home in cells)
@@ -1038,7 +1039,7 @@ func remove_road(segment: int) -> String:
 
 func build_area_error(type: String, segment: int, side: int, from: int, to: int) -> String:
 	var err := areas.add_error(type, segment, side, from, to)
-	if err == "" and rules.area_types[type].kind in ["yard_block", "quay_apron", "gate"] and AreaFlow.near(self, areas.cells_of(type, segment, side, from, to), 0, AreaFlow.is_dangerous) != 0:
+	if err == "" and rules.area_types[type].kind in ["yard_block", "transfer_block", "quay_apron", "gate"] and AreaFlow.near(self, areas.cells_of(type, segment, side, from, to), 0, AreaFlow.is_dangerous) != 0:
 		err = _dg_refusal()
 	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
 		err = "Buy this land first"
@@ -1248,6 +1249,10 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		# Bought, not set: by inspecting the area.
 		if key in ["mechanics", "engines", "inspectors", "scanner", "agvs"]:
 			return "Buy %s by inspecting it" % ("a scanner" if key == "scanner" else key)
+		if key == "gear" and areas.kind_of(areas.list[id]) == "transfer_block":
+			return "A transfer block is worked by its two ASCs"
+	if settings.get("gear") == "asc":
+		return "ASCs work transfer blocks only"
 	if settings.has("slots_per_hour") and (not settings.slots_per_hour is int or settings.slots_per_hour < 0 or settings.slots_per_hour > MAX_SLOTS_PER_HOUR):
 		return "Bookings run from 0 (none) to %d an hour" % MAX_SLOTS_PER_HOUR
 	if settings.has("level"):

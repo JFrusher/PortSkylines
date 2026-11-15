@@ -61,7 +61,7 @@ static func tick(sim: PortSim) -> void:
 static func hire(sim: PortSim, area: int, count: int) -> String:
 	if count < 1:
 		return "Hire at least one"
-	if area not in sim.areas.list or sim.areas.list[area].type != "yard_block" or sim.areas.list[area].settings.role != "customs":
+	if area not in sim.areas.list or sim.areas.list[area].type not in Areas.BLOCK_TYPES or sim.areas.list[area].settings.role != "customs":
 		return "No customs block there"
 	var cost: int = count * sim.rules.customs.inspector_cost
 	if not sim._afford(cost):

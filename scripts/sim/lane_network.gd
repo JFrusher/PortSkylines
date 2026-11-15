@@ -225,32 +225,42 @@ func add_driveways(areas: Areas, kmh: float) -> void:
 	var ids := areas.list.keys()
 	ids.sort()
 	for id: int in ids:
-		if areas.kind_of(areas.list[id]) in ["yard_block", "quay_apron", "gate", "parking"]:
-			_add_driveway(id, areas, kmh, made, leaving)
+		if areas.kind_of(areas.list[id]) in ["yard_block", "transfer_block", "quay_apron", "gate", "parking"]:
+			_add_driveway(id, areas, kmh, made, leaving, false)
+		if areas.kind_of(areas.list[id]) == "transfer_block":
+			_add_driveway(id, areas, kmh, made, leaving, true)
 	_link(made, leaving)
 
 
-func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving: Dictionary) -> void:
+## `back`: a transfer block's back end (M11), its own buffer and slots off
+## the road behind it, its way and slots kept under -id (see AreaFlow._door).
+func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving: Dictionary, back: bool) -> void:
 	var area: Dictionary = areas.list[id]
 	var kind := areas.kind_of(area)
 	var layout: Dictionary = _local(areas.layout(id))
+	if back:
+		layout = {"buffer": layout.back_buffer, "slots": layout.back_slots}
+	var door := -id if back else id
 	if layout.buffer.size() < 2:
 		return
 	var curve := areas.curve(id)
 	var centre := {}
 	for cell: Dictionary in areas.shape(id).cells:
 		centre[Vector2i(cell.k, cell.r)] = cell.centre
-	var out := func(k: int) -> Vector2: return curve.right_at(area.from + k + 0.5) * area.side
+	# Out from the area to the road its buffer is beside: the back's road is behind it.
+	var out := func(k: int) -> Vector2: return curve.right_at(area.from + k + 0.5) * area.side * (-1.0 if back else 1.0)
 	# The road lane beside the buffer's middle sets the way traffic runs.
 	var middle: Vector2i = layout.buffer[layout.buffer.size() / 2]
 	var beside := nearest(centre[middle] - out.call(middle.x), "service")
 	if beside[0] == 0 or pieces[beside[0]].segment == 0:
 		return
 	var flow := 1 if point_along(beside[0], beside[1])[1].dot(curve.direction_at(area.from + middle.x + 0.5)) > 0.0 else -1
-	flows[id] = flow
+	flows[door] = flow
 	var lorries: bool = area.type != "quay_apron"
 	var order := func(cells: Array) -> Array: return cells.duplicate() if flow > 0 else _reversed(cells)
-	var rows := {0: order.call(layout.buffer)}  # lane row -> its cells in driving order
+	# The buffer's row: 0, or a transfer block's last at its back.
+	var front: int = layout.buffer[0].y
+	var rows := {front: order.call(layout.buffer)}  # lane row -> its cells in driving order
 	var links: Array = []  # [from cell, to cell, slot]
 	if kind == "quay_apron":
 		rows[2] = order.call(layout.lanes[0])
@@ -258,7 +268,7 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 		for lane: Array in layout.lanes:
 			rows[lane[0].y] = order.call(lane)
 	var deepest: int = rows.keys().max()
-	if deepest > 0:
+	if deepest > front:
 		var first: int = rows[0][0].x
 		var last: int = rows[0][-1].x
 		for r in range(1, deepest + 1):
@@ -272,8 +282,8 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 			if end.y in rows:
 				stops[end.y][end.x] = true
 	var slot_runs: Array = []
-	if kind in ["yard_block", "parking", "quay_apron"]:
-		var lane_row := 2 if kind == "quay_apron" else 0
+	if kind in ["yard_block", "transfer_block", "parking", "quay_apron"]:
+		var lane_row := 2 if kind == "quay_apron" else front
 		for s: int in layout.slots.size():
 			var ks: Array = order.call(layout.slots[s])
 			var columns: Array = rows[lane_row].map(func(c: Vector2i) -> int: return c.x)
@@ -281,12 +291,12 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 			if ks[0].x not in columns or ks[-1].x not in columns:
 				continue
 			var into: Vector2i = Vector2i(ks[0].x, lane_row)
-			var back: Vector2i = rows[lane_row][mini(columns.find(ks[-1].x) + 1, columns.size() - 1)]
-			links.append([into, ks[0], Vector2i(id, s)])
-			links.append([ks[-1], back, Vector2i(id, s)])
-			slot_runs.append([ks, Vector2i(id, s)])
+			var back_to: Vector2i = rows[lane_row][mini(columns.find(ks[-1].x) + 1, columns.size() - 1)]
+			links.append([into, ks[0], Vector2i(door, s)])
+			links.append([ks[-1], back_to, Vector2i(door, s)])
+			slot_runs.append([ks, Vector2i(door, s)])
 			stops[lane_row][into.x] = true
-			stops[lane_row][back.x] = true
+			stops[lane_row][back_to.x] = true
 	elif kind == "gate":
 		for slot: Array in layout.slots:
 			var ks: Array = order.call(slot)
@@ -308,8 +318,8 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 	for link: Array in links:
 		made.append(_area_piece([centre[link[0]], centre[link[1]]] as Array[Vector2], id, link[2], lorries, kmh))
 	# In from the road beside the first buffer cell, out beside the last.
-	var first_cell: Vector2i = rows[0][0]
-	var last_cell: Vector2i = rows[0][-1]
+	var first_cell: Vector2i = rows[front][0]
+	var last_cell: Vector2i = rows[front][-1]
 	var way_in := _road_point(centre[first_cell] - out.call(first_cell.x))
 	var way_out := _road_point(centre[last_cell] - out.call(last_cell.x))
 	if way_in != Vector2.INF:

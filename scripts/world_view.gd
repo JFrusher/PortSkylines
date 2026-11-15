@@ -51,7 +51,7 @@ const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
 	"parking": Color(0.38, 0.4, 0.42), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27),
-	"agv_depot": Color(0.45, 0.5, 0.52),
+	"agv_depot": Color(0.45, 0.5, 0.52), "transfer_block": Color(0.56, 0.56, 0.53),
 }
 const AREA_TOP := 0.2
 ## AGV-only lanes, amber over the asphalt.
@@ -169,6 +169,7 @@ var _plain_box := {}
 ## Each box model scaled to real size, by TEU, for boxes on areas and vehicles.
 var _real_box := {}
 var _machine_meshes := {}  # gear -> Mesh
+var _asc_meshes := {}  # transfer block columns -> its ASCs' Mesh
 ## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
@@ -435,7 +436,7 @@ func _draw_areas() -> void:
 		var colors := {}
 		var layout := sim.areas.layout(id)
 		var paint := func(spot: Vector3i, color: Color) -> void: colors[Vector2i(spot.y, spot.z)] = color
-		for spot: Vector3i in layout.get("buffer", []):
+		for spot: Vector3i in layout.get("buffer", []) + layout.get("back_buffer", []):
 			paint.call(spot, BUFFER_COLOR)
 		for lane: Array in layout.get("lanes", []):
 			for spot: Vector3i in lane:
@@ -450,6 +451,9 @@ func _draw_areas() -> void:
 				colors[Vector2i(k, d)] = SPOT_COLOR
 		for i: int in layout.get("slots", []).size():
 			for spot: Vector3i in layout.slots[i]:
+				paint.call(spot, SLOT_COLORS[i % 2])
+		for i: int in layout.get("back_slots", []).size():
+			for spot: Vector3i in layout.back_slots[i]:
 				paint.call(spot, SLOT_COLORS[i % 2])
 		var idle := sim.areas.idle_reason(id) != ""
 		for cell: Dictionary in sim.areas.shape(id).cells:
@@ -685,7 +689,7 @@ static func info_shares(sim: PortSim, view: String) -> Dictionary:
 			shares[[cell]] = minf(delays[cell] / JAM_SECONDS, 1.0)
 	else:
 		for id: int in sim.areas.list:
-			if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
+			if sim.areas.list[id].type in Areas.BLOCK_TYPES:
 				var fill := sim.block_fill(id)
 				shares[sim.areas.cells(id)] = fill.x / float(maxi(fill.y, 1))
 	return shares
@@ -1706,7 +1710,8 @@ func _stack_buffers(area: int, stacks: AreaStacks) -> Dictionary:
 	for position in stacks.stacks.size():
 		var spot: Vector3i = layout.stacks[position].cells[1]
 		var centre := sim.areas.centre(spot) * Grid.CELL
-		var along := sim.areas.heading(area, spot.y)
+		# A transfer block's boxes lie away from its road, along its stacks.
+		var along := sim.areas.out_at(area, spot.y) if sim.areas.kind_of(sim.areas.list[area]) == "transfer_block" else sim.areas.heading(area, spot.y)
 		var turned := Basis(Vector3.UP, atan2(-along.y, along.x))
 		for tier: int in stacks.stacks[position].size():
 			var ids: Array = stacks.stacks[position][tier]
@@ -1735,7 +1740,8 @@ func _draw_area_machines() -> void:
 			continue
 		if id not in _area_machines:
 			var node := MeshInstance3D.new()
-			node.mesh = _machine_meshes[machine.gear]
+			# A transfer block's ASCs are built as wide as the block, legs and all.
+			node.mesh = _asc_mesh(sim.areas.list[machine.area].columns) if machine.gear == "asc" else _machine_meshes[machine.gear]
 			var box := MeshInstance3D.new()
 			box.name = "Box"
 			box.mesh = _stack_meshes[2]
@@ -1745,15 +1751,20 @@ func _draw_area_machines() -> void:
 			_area_machines[id] = node
 		var model: MeshInstance3D = _area_machines[id]
 		# An RTG spans the stack rows; an RMG spans them and the siding behind.
-		var row: float = {"rtg": (2 + depth - 1) / 2.0, "rmg": (2 + depth) / 2.0}.get(machine.gear, 1.0)
-		var k := sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
+		var area: Dictionary = sim.areas.list[machine.area]
+		var travel: float = sim.machines.position(id) * AreaLayout.BAY + (AreaLayout.BAY - 1) / 2.0
+		# A transfer block's ASCs span its columns and run away from the road,
+		# between its ends; other gear runs along the road.
+		var across := sim.areas.kind_of(area) == "transfer_block"
+		var row: float = 2.0 + travel if across else {"rtg": (2 + depth - 1) / 2.0, "rmg": (2 + depth) / 2.0}.get(machine.gear, 1.0)
+		var k: float = area.columns / 2.0 if across else travel
 		var at := sim.areas.point(machine.area, k, row) * Grid.CELL / METRES_PER_UNIT
 		var out := (sim.areas.point(machine.area, k, 1.0) - sim.areas.point(machine.area, k, 0.0)).normalized()
 		model.position = Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
-		model.rotation.y = atan2(-out.y, out.x)
-		var gantry: bool = machine.gear in ["rtg", "rmg"]
+		model.rotation.y = atan2(-out.y, out.x) + (PI / 2.0 if across else 0.0)
+		var gantry: bool = machine.gear in ["rtg", "rmg", "asc"]
 		var tall: float = REAL_RTG_HEIGHT / METRES_PER_UNIT / _machine_heights[machine.gear] if gantry else 1.0
-		var wide: float = (depth - 1.0) / (depth - 2.0) if machine.gear == "rmg" else 1.0
+		var wide: float = 1.0 if across else ((depth - 1.0) / (depth - 2.0) if machine.gear == "rmg" else 1.0)
 		model.scale = Vector3(wide, tall, 1.0)
 		var job: Dictionary = machine.job
 		var box: MeshInstance3D = model.get_node("Box")
@@ -1780,36 +1791,55 @@ static func _straddle_frame(colour: Color) -> Array:
 
 
 ## One mesh per kind of yard gear, standing on its origin.
+## An ASC as wide as a transfer block `columns` cells across, a cell over:
+## its legs at the block's sides, its girders over the whole width.
+func _asc_mesh(columns: int) -> Mesh:
+	if columns not in _asc_meshes:
+		_asc_meshes[columns] = _merged(_gantry_parts("asc", (columns + 1) * Grid.CELL / METRES_PER_UNIT / 2.0))
+	return _asc_meshes[columns]
+
+
 func _machine_mesh(gear: String) -> Mesh:
 	if gear == "straddle":
 		return _merged(_straddle_frame(STRADDLE_RED))
-	if gear not in ["rtg", "rmg"]:
+	if gear not in ["rtg", "rmg", "asc"]:
 		return _merged([
 			[Vector3(0.26, 0.2, 0.4), Vector3(0, 0.12, 0), Color(0.85, 0.35, 0.15)],
 			[Vector3(0.06, 0.06, 0.4), Vector3(0, 0.36, -0.1), Color(0.2, 0.2, 0.22)],
 		])
-	# Drawn scaled to REAL_RTG_HEIGHT; this only sets its proportions.
+	return _merged(_gantry_parts(gear, 0.56))
+
+
+## A gantry crane of `gear`, its legs `half` either side of its middle.
+## Drawn scaled to REAL_RTG_HEIGHT; this only sets its proportions.
+func _gantry_parts(gear: String, half: float) -> Array:
 	var height: float = 0.3 + sim.rules.yard_gear[gear].tiers * BOX_HEIGHT
 	var parts := []
-	for x: float in [-0.56, 0.56]:
+	for x: float in [-half, half]:
 		for z: float in [-0.3, 0.3]:
 			parts.append([Vector3(0.08, height, 0.08), Vector3(x, height / 2.0, z), Color(0.95, 0.95, 0.92)])
 		parts.append([Vector3(0.14, 0.1, 0.72), Vector3(x, 0.05, 0), Color(0.2, 0.2, 0.22)])
-	# RTGs in yellow, RMGs in blue, so a rail yard reads apart from the stacks.
-	var colour := Color(0.95, 0.75, 0.1) if gear == "rtg" else Color(0.15, 0.45, 0.8)
+	# RTGs in yellow, RMGs in blue, ASCs in teal (the AGV livery), so each yard reads apart.
+	var colour: Color = {"rtg": Color(0.95, 0.75, 0.1), "rmg": Color(0.15, 0.45, 0.8), "asc": Color(0.05, 0.6, 0.62)}[gear]
 	for z: float in [-0.3, 0.3]:
-		parts.append([Vector3(1.24, 0.1, 0.1), Vector3(0, height, z), colour])
+		parts.append([Vector3(half * 2.0 + 0.12, 0.1, 0.1), Vector3(0, height, z), colour])
 		# A sill beam low across, between each pair of legs.
-		parts.append([Vector3(1.12, 0.06, 0.06), Vector3(0, height * 0.3, z), colour])
-	for x: float in [-0.56, 0.56]:
+		parts.append([Vector3(half * 2.0, 0.06, 0.06), Vector3(0, height * 0.3, z), colour])
+	for x: float in [-half, half]:
 		# The side beams joining each side's legs at the top.
 		parts.append([Vector3(0.08, 0.08, 0.6), Vector3(x, height - 0.02, 0), colour])
 	# The trolley on the girders, its spreader hanging below, and the driver's cab.
 	parts.append([Vector3(0.2, 0.08, 0.66), Vector3(0.1, height + 0.08, 0), Color(0.3, 0.3, 0.32)])
 	parts.append([Vector3(0.12, 0.04, 0.5), Vector3(0.1, height - 0.35, 0), Color(0.95, 0.75, 0.1)])
 	parts.append([Vector3(0.02, 0.4, 0.02), Vector3(0.1, height - 0.15, 0), Color(0.15, 0.15, 0.15)])
-	parts.append([Vector3(0.14, 0.12, 0.12), Vector3(-0.42, height - 0.1, -0.3), Color(0.92, 0.92, 0.9)])
-	return _merged(parts)
+	if gear != "asc":
+		parts.append([Vector3(0.14, 0.12, 0.12), Vector3(-half + 0.14, height - 0.1, -0.3), Color(0.92, 0.92, 0.9)])
+	else:
+		# Driverless: no cab, an electrical house on the girders and warning lights.
+		parts.append([Vector3(0.22, 0.12, 0.3), Vector3(-half + 0.16, height + 0.1, 0), Color(0.92, 0.94, 0.95)])
+		for z: float in [-0.3, 0.3]:
+			parts.append([Vector3(0.04, 0.04, 0.04), Vector3(half, height + 0.07, z), Color(1.0, 0.55, 0.05)])
+	return parts
 
 
 ## Frees the nodes of things the sim no longer has.

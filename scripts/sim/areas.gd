@@ -7,6 +7,8 @@ extends RefCounted
 ## except a quay apron, which fills the water behind its straight quay.
 ## It keeps its own cells once built, so later road edits never move it.
 
+## Yard area types: those that stack boxes (M11 adds the transfer block).
+const BLOCK_TYPES := ["yard_block", "transfer_block"]
 ## Area id -> {"type": a key of area_types,
 ## "settings": the player's rules for it, checked by PortSim.set_area,
 ## "terminal": the terminal it belongs to}; a quay apron also has "depth",
@@ -167,6 +169,8 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 	var placed := _placed(type, segment, side, from, to)
 	if types[type].kind == "quay_apron" and placed.depth > types[type].max_depth:
 		return "A quay apron reaches at most %d m from its road to the water" % Grid.metres(types[type].max_depth)
+	if types[type].kind == "transfer_block" and placed.depth > types[type].max_depth:
+		return "A transfer block runs back to a road behind it, %d to %d m away" % [Grid.metres(types[type].depth), Grid.metres(types[type].max_depth)]
 	for cell in _cells(placed):
 		if cell.x < 0 or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
 			return "Areas must stay on the site"
@@ -174,7 +178,7 @@ func add_error(type: String, segment: int, side: int, from: int, to: int) -> Str
 			return "Areas can't be built on water"
 	# Blocked where its cells' quads overlap a road's lane quads, a breakwater's cells or another area's cells.
 	var lanes := _lane_quads()
-	var depth: int = placed.depth if types[type].kind == "quay_apron" else types[type].depth
+	var depth: int = placed.depth if types[type].kind in ["quay_apron", "transfer_block"] else types[type].depth
 	var curve := _curve_of(placed)
 	for cell: Dictionary in AreaShape.along(curve, placed.side, placed.from, placed.columns, placed.edge, depth).cells:
 		var quad := PackedVector2Array(cell.corners)
@@ -412,13 +416,24 @@ func _idle_reason(id: int) -> String:
 
 ## Whether a road's lane runs beside any of area `id`'s first row.
 func road_beside(id: int) -> bool:
+	return range(list[id].columns).any(func(k: int) -> bool: return Vector2i(point(id, k, -1.0).floor()) in _lanes())
+
+
+## Whether a road's lane runs along the back of transfer block `id`, where
+## its lorries come.
+func road_behind(id: int) -> bool:
+	return range(list[id].columns).any(func(k: int) -> bool: return Vector2i(point(id, k, depth_of(list[id]) + 0.5).floor()) in _lanes())
+
+
+## Every road lane cell, kept until the roads change.
+func _lanes() -> Dictionary:
 	if _lanes_for != _roads.version:
 		_lanes_for = _roads.version
 		_lane_cells.clear()
 		for segment: int in _roads.segments:
 			for cell in _roads.ground(segment):
 				_lane_cells[cell] = true
-	return range(list[id].columns).any(func(k: int) -> bool: return Vector2i(point(id, k, -1.0).floor()) in _lane_cells)
+	return _lane_cells
 
 
 ## What `id` holds, laid out by AreaLayout for its type on its own cells,
@@ -656,7 +671,21 @@ func _placed(type: String, segment: int, side: int, from: int, to: int) -> Dicti
 	var placed := {"type": type, "curve": [curve.a, curve.c, curve.b], "side": side, "from": float(from), "columns": to - from + 1, "edge": (road.forward + road.backward) / 2.0}
 	if types[type].kind == "quay_apron":
 		placed.depth = _reach(placed)
+	elif types[type].kind == "transfer_block":
+		placed.depth = _to_back_road(placed)
 	return placed
+
+
+## How many rows a transfer block placed as `placed` takes to reach a road
+## behind it: the first row from its type's depth to its max_depth whose
+## every column lies on a road lane; max_depth + 1 when there is none.
+func _to_back_road(placed: Dictionary) -> int:
+	var lanes := _lanes()
+	var type: Dictionary = types[placed.type]
+	for d in range(type.depth, type.max_depth + 1):
+		if range(placed.columns).all(func(k: int) -> bool: return Vector2i(_point_of(placed, k, d + 0.5).floor()) in lanes):
+			return d
+	return type.max_depth + 1
 
 
 ## How many rows a quay apron placed as `placed` takes to reach the water: at
@@ -683,7 +712,7 @@ func kind_of(area: Dictionary) -> String:
 ## reaches out to the water (see _reach), so its road needn't be an exact
 ## distance from the water.
 func depth_of(area: Dictionary) -> int:
-	return area.depth if kind_of(area) == "quay_apron" else types[area.type].depth
+	return area.depth if kind_of(area) in ["quay_apron", "transfer_block"] else types[area.type].depth
 
 
 ## The ground `area` stands on: the grid cells its own cells' middles lie

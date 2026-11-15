@@ -751,7 +751,7 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 	for area: Variant in data.handovers:
 		var at: Variant = data.handovers[area]
-		if not (area in data.areas.list and at is Dictionary and _has_fields(at, {"slots": TYPE_ARRAY, "buffer": TYPE_ARRAY, "road": TYPE_ARRAY})):
+		if not (area is int and absi(area) in data.areas.list and at is Dictionary and _has_fields(at, {"slots": TYPE_ARRAY, "buffer": TYPE_ARRAY, "road": TYPE_ARRAY})):
 			return false
 	if not _has_fields(data.machines, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT}):
 		return false

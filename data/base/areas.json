@@ -9,6 +9,7 @@
 		"depot": {"name": "Depot", "kind": "depot", "depth": 6, "max_depth": 6, "min_length": 5, "cost_per_cell": 10, "upkeep_per_cell": 0.5},
 		"workshop": {"name": "Workshop", "kind": "workshop", "depth": 4, "max_depth": 4, "min_length": 5, "cost_per_cell": 60, "upkeep_per_cell": 2.0},
 		"fire_station": {"name": "Fire station", "kind": "fire_station", "depth": 4, "max_depth": 4, "min_length": 5, "cost_per_cell": 80, "upkeep_per_cell": 2.0},
-		"agv_depot": {"name": "AGV depot", "kind": "agv_depot", "depth": 5, "max_depth": 5, "min_length": 5, "cost_per_cell": 70, "upkeep_per_cell": 2.0}
+		"agv_depot": {"name": "AGV depot", "kind": "agv_depot", "depth": 5, "max_depth": 5, "min_length": 5, "cost_per_cell": 70, "upkeep_per_cell": 2.0},
+		"transfer_block": {"name": "Transfer block", "kind": "transfer_block", "depth": 12, "max_depth": 40, "min_length": 6, "cost_per_cell": 40, "upkeep_per_cell": 1.0}
 	}
 }

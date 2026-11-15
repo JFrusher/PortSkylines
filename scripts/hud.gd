@@ -39,7 +39,7 @@ const BUILD_BREAKWATER := -14
 ## Drags a road's node, or the point it bends toward, to reshape it (Move It).
 const MOVE_ROAD := -15
 ## The build menu row each area type sits in.
-const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "agv_depot": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "agv_depot": "Yard", "transfer_block": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Water", "Bulldoze", "Inspect"]
@@ -858,6 +858,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"quay_apron": "Where ships berth and STS cranes work. Reaches the water from a road %d–%d m in" % [Grid.metres(area.depth + 1), Grid.metres(area.max_depth + 1)],
 		"gate": "Checks lorries in and out: %d lanes, each a booth" % (area.depth - 2),
 		"parking": "Lorries wait here, off the road, while their terminal's gate is busy, and go on to it in turn. One space per %d m" % Grid.metres(AreaLayout.BAY),
+		"transfer_block": "A high-volume yard block for an AGV terminal, laid across its road: AGVs hand boxes over at the front, in the AGV zone, and lorries at the back, off a road behind it (drag along the zone's road; it reaches back to the next road, 48 to 160 m). Twin ASCs, one at each end, stack between them",
 		"agv_depot": "Home of AGVs, the driverless carriers: built inside the AGV zone, its terminal moves boxes between quay and yard on its AGVs instead of tractors. Dear to buy, cheap to run. Buy AGVs by inspecting it",
 		"fire_station": "Its fire engines drive out to fires in the yard and on ships at berth (switch fires on in the menu); a fire no crew reaches soon burns boxes. Buy engines by inspecting it",
 		"workshop": "Its mechanics drive out in their vans to repair the quay cranes and yard gear that break down in its terminal (switch breakdowns on in the menu). Hire mechanics by inspecting it",
@@ -933,7 +934,7 @@ func _draw_inspect_actions() -> void:
 	var id: int = _inspected.area
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
 		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
-	if sim.areas.list[id].type == "yard_block" and sim.areas.list[id].settings.role == "customs":
+	if sim.areas.list[id].type in Areas.BLOCK_TYPES and sim.areas.list[id].settings.role == "customs":
 		_action_button(_inspect_actions, "Hire an inspector, %s" % HudDetails.dollars(sim.rules.customs.inspector_cost), {"op": "hire_inspectors", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate" and not sim.areas.list[id].settings.scanner:
 		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
@@ -953,18 +954,19 @@ func _draw_inspect_actions() -> void:
 			var on: bool = sim.serviced.get(kind, false)
 			var button := _action_button(_inspect_actions, "%s %ss" % ["Stop servicing" if on else "Service", kinds[kind]], {"op": "set_serviced", "kind": kind, "on": not on})
 			button.tooltip_text = "Serviced every %d working hours, out of work %d minutes each time, it breaks down %.0f times less often." % [roundi(sim.rules.events.breakdowns.service_every_hours), roundi(sim.rules.events.breakdowns.service_hours * 60.0), sim.rules.events.breakdowns.serviced_mtbf_factor]
-	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
+	if sim.areas.list[id].type in Areas.BLOCK_TYPES:
 		var settings: Dictionary = sim.areas.list[id].settings
 		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment", "customs": "customs"}
 		var unlocks := {"reefer": "reefers", "tranship": "transhipment"}
-		for role: String in ["import", "export", "reefer", "dangerous", "tranship"]:
+		for role: String in ["import", "export", "reefer", "dangerous", "tranship", "customs"]:
 			if role != settings.role:
 				var make := _action_button(_inspect_actions, "Make %s block" % names.get(role, role), {"op": "set_area", "id": id, "settings": {"role": role}})
 				if role in unlocks:
 					make.disabled = sim.lock_error(unlocks[role]) != ""
 					make.tooltip_text = sim.lock_error(unlocks[role])
-		for gear: String in sim.rules.yard_gear:
-			if gear != settings.gear and (settings.role == "empty" or not sim.rules.yard_gear[gear].empties_only):
+		# A transfer block is worked by its twin ASCs, which work nowhere else.
+		for gear: String in sim.rules.yard_gear if sim.areas.list[id].type == "yard_block" else {}:
+			if gear != settings.gear and gear != "asc" and (settings.role == "empty" or not sim.rules.yard_gear[gear].empties_only):
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
 				button.disabled = sim.lock_error(gear) != ""
 				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]

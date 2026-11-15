@@ -72,6 +72,17 @@
 			"empties_only": false,
 			"carries": false
 		},
+		"asc": {"wind_limit_kmh": 72.0, "mtbf_hours": 140.0, 
+			"name": "ASCs",
+			"upkeep_per_machine": 350.0,
+			"speed": 4.0,
+			"lift_seconds": 20.0,
+			"set_down_seconds": 15.0,
+			"bays_per_machine": 8.0,
+			"tiers": 5.0,
+			"empties_only": false,
+			"carries": false
+		},
 		"empty_handler": {"wind_limit_kmh": 65.0, "mtbf_hours": 100.0, 
 			"name": "empty handlers",
 			"upkeep_per_machine": 300.0,
