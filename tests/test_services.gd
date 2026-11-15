@@ -11,6 +11,7 @@ var _failures := 0
 func _initialize() -> void:
 	_test_needs_follow_the_chances()
 	_test_a_calling_ship_has_its_needs()
+	_test_a_services_jetty_and_its_boats()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -55,3 +56,30 @@ func _test_a_calling_ship_has_its_needs() -> void:
 		ship.needs.assign(["bunkers", "waste"])
 		var loaded := PortSim.from_dict(sim.to_dict())
 		_expect(loaded.ships[0].needs, ["bunkers", "waste"] as Array[String], "needs are saved")
+
+
+## A services jetty holds the boats bought for it, each service's kind, and
+## their upkeep; it comes out only once every boat is home.
+func _test_a_services_jetty_and_its_boats() -> void:
+	var sim := AreaPort.base()
+	sim.creative = true
+	_expect(sim.apply({"op": "build_services_jetty", "cell": Vector2i(66, 180)}), "", "a services jetty by the shore")
+	var jetty: int = sim.service_jetties.keys()[0]
+	var before := sim.daily_upkeep()
+	for service: String in ["bunkers", "provisions", "waste"]:
+		_expect(sim.apply({"op": "buy_service_boats", "jetty": jetty, "service": service, "count": 1}), "", "a boat for %s" % service)
+	_expect(sim.apply({"op": "buy_service_boats", "jetty": jetty, "service": "tea", "count": 1}), "No such service boat", "no boat for a service there is none of")
+	var kinds := sim.boats.of(jetty).map(func(b: int) -> String: return sim.boats.list[b].kind)
+	kinds.sort()
+	_expect(kinds, ["bunkers", "provisions", "waste"], "one boat of each kind at the jetty")
+	var boats_upkeep := 0
+	for service: String in sim.rules.water.services.boats:
+		boats_upkeep += sim.rules.water.services.boats[service].upkeep
+	_expect(sim.daily_upkeep() - before, boats_upkeep, "their upkeep is paid daily")
+	var loaded := PortSim.from_dict(sim.to_dict())
+	_expect(loaded.service_jetties.keys(), [jetty], "the jetty is saved")
+	sim.boats.list[sim.boats.of(jetty)[0]].job = "out"
+	_expect(sim.apply({"op": "remove_marine_base", "id": jetty}), "Wait for its boats to come back", "it stays while a boat is out")
+	sim.boats.list[sim.boats.of(jetty)[0]].job = "home"
+	_expect(sim.apply({"op": "remove_marine_base", "id": jetty}), "", "and comes out once all are home")
+	_expect(sim.boats.list.is_empty(), true, "with its boats")

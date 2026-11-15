@@ -731,7 +731,7 @@ const WATERLINE := -0.3
 ## its jetty when home, under way where the sim has it, and a tug with a
 ## ship at its seaward side, bow to the hull, pushing.
 func _draw_marine() -> void:
-	var bases := sim.pilot_stations.merged(sim.tug_depots)
+	var bases := sim.pilot_stations.merged(sim.tug_depots).merged(sim.service_jetties)
 	for id: int in _bases.keys():
 		if id not in bases or _bases[id].get_meta("boats") != sim.boats.of(id).size():
 			_bases[id].queue_free()
@@ -775,7 +775,7 @@ func _draw_marine() -> void:
 ## Where base `id`'s jetty starts on the shore and the way it runs out to
 ## sea, in cells: from the land cell nearest the base, through the base.
 func _jetty(id: int) -> Array[Vector2]:
-	var cell: Vector2i = sim.pilot_stations[id].cell if id in sim.pilot_stations else sim.tug_depots[id].cell
+	var cell := sim.marine_base_cell(id)
 	var shore := Vector2(cell)
 	var near := INF
 	for dx: int in range(-PortSim.MARINE_BASE_SHORE, PortSim.MARINE_BASE_SHORE + 1):
@@ -792,8 +792,8 @@ func _jetty(id: int) -> Array[Vector2]:
 ## along it for its boats moored either side, bow to stern.
 func _jetty_length(id: int) -> float:
 	var start: Vector2 = _jetty(id)[0]
-	var cell: Vector2i = sim.pilot_stations[id].cell if id in sim.pilot_stations else sim.tug_depots[id].cell
-	var boat := PILOT_BOAT_LENGTH if id in sim.pilot_stations else TUG_LENGTH
+	var cell := sim.marine_base_cell(id)
+	var boat := TUG_LENGTH if id in sim.tug_depots else PILOT_BOAT_LENGTH
 	return maxf(start.distance_to(Vector2(cell) + Vector2(0.5, 0.5)) + 1.0, ceili(sim.boats.of(id).size() / 2.0) * (boat + 1.0) + 2.0)
 
 

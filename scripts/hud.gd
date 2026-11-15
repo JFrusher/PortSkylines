@@ -79,7 +79,7 @@ var berth_angle := PortSim.AUTO_ANGLE
 var berth_auto := 0.0
 ## The ship lane DRAW_LANE draws, a key of rules.water.lanes.
 var lane_type := ""
-## What BUILD_MARINE places: "pilot_station" or "tug_depot".
+## What BUILD_MARINE places: "pilot_station", "tug_depot" or "services_jetty".
 var marine_base := ""
 ## The crane CRANE places, a key of rules.sts_cranes.
 var crane_kind := ""
@@ -413,6 +413,9 @@ func _ready() -> void:
 	_item(_button(rows.Water, "Tug depot\n%s" % HudDetails.dollars(water.tugs.depot_cost), tools, false, func() -> void:
 		tool = BUILD_MARINE
 		marine_base = "tug_depot")).tooltip_text = "Click the water near the shore. Panamaxes and bigger wait for tugs to berth and unberth; tugs sail out from the nearest depot with enough free, so a depot near the berths berths ships sooner. Buy tugs by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.tugs.tug_cost), HudDetails.dollars(water.tugs.upkeep_per_tug)]
+	_item(_button(rows.Water, "Services jetty\n%s" % HudDetails.dollars(water.services.jetty_cost), tools, false, func() -> void:
+		tool = BUILD_MARINE
+		marine_base = "services_jetty")).tooltip_text = "Click the water near the shore. Its boats see to ships at berth or at anchor: a bunker barge fuels them, a supply boat brings provisions and a waste boat takes waste off, each for a fee. A ship never waits for them; one that sails with a need unserved costs a little reputation, but only for a service you offer. Buy boats by inspecting it."
 	_item(_button(rows.Water, "Breakwater\n%s a cell" % HudDetails.dollars(water.breakwater.cost_per_cell), tools, false, func() -> void: tool = BUILD_BREAKWATER)).tooltip_text = "Drag a breakwater across open water, straight or at 45°: a rock wall 8 m thick that no ship lane crosses, to shelter berths and anchorages."
 	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane, area or water", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane, area, ship lane or anchorage to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
@@ -883,6 +886,10 @@ func _draw_inspect_actions() -> void:
 			_action_button(_inspect_actions, "Hire a pilot, %s" % HudDetails.dollars(sim.rules.water.pilots.pilot_cost), {"op": "hire_pilots", "station": id, "count": 1})
 		elif id in sim.tug_depots:
 			_action_button(_inspect_actions, "Buy a tug, %s" % HudDetails.dollars(sim.rules.water.tugs.tug_cost), {"op": "buy_tugs", "depot": id, "count": 1})
+		elif id in sim.service_jetties:
+			for service: String in sim.rules.water.services.boats:
+				var boat: Dictionary = sim.rules.water.services.boats[service]
+				_action_button(_inspect_actions, "Buy a %s, %s" % [boat.name.to_lower(), HudDetails.dollars(boat.cost)], {"op": "buy_service_boats", "jetty": id, "service": service, "count": 1})
 		return
 	if _inspected is Dictionary and _inspected.has("lane"):
 		if _inspected.lane in sim.ship_lanes.segments:
@@ -1046,7 +1053,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
-	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
+	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,

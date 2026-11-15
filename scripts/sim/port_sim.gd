@@ -50,6 +50,9 @@ var _next_anchorage := 1
 ## id -> {"cell", "tugs"}, numbered together.
 var pilot_stations := {}
 var tug_depots := {}
+## Services jetties on the water, numbered with them: id -> {"cell"}; their
+## boats (bunker barges, supply and waste boats) are in `boats`.
+var service_jetties := {}
 var _next_station := 1
 ## Their pilot boats and tugs on the water.
 var boats := Boats.new()
@@ -402,6 +405,7 @@ func to_dict() -> Dictionary:
 		"anchorages": anchorages.duplicate(true),
 		"pilot_stations": pilot_stations.duplicate(true),
 		"tug_depots": tug_depots.duplicate(true),
+		"service_jetties": service_jetties.duplicate(true),
 		"next_station": _next_station,
 		"boats": boats.to_dict(),
 		"passages": passages.duplicate(true),
@@ -486,6 +490,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.anchorages = d.anchorages.duplicate(true)
 	sim.pilot_stations = d.pilot_stations.duplicate(true)
 	sim.tug_depots = d.tug_depots.duplicate(true)
+	sim.service_jetties = d.service_jetties.duplicate(true)
 	sim._next_station = d.next_station
 	sim.boats = Boats.from_dict(d.boats)
 	sim.passages.assign(d.passages.duplicate(true))
@@ -624,6 +629,10 @@ func apply(command: Dictionary) -> String:
 			return build_marine_base("pilot_station", command.cell)
 		"build_tug_depot":
 			return build_marine_base("tug_depot", command.cell)
+		"build_services_jetty":
+			return build_marine_base("services_jetty", command.cell)
+		"buy_service_boats":
+			return add_service_boats(command.jetty, command.service, command.count)
 		"hire_pilots":
 			return add_marine_craft(command.station, command.count)
 		"buy_tugs":
@@ -1490,7 +1499,7 @@ func build_marine_base_error(kind: String, cell: Vector2i) -> String:
 		return "Place it near the shore, within %d m of land" % Grid.metres(MARINE_BASE_SHORE)
 	if marine_base_at(cell, MARINE_BASE_GAP):
 		return "Too close to another pilot station or tug depot"
-	var cost: int = rules.water.pilots.station_cost if kind == "pilot_station" else rules.water.tugs.depot_cost
+	var cost: int = {"pilot_station": rules.water.pilots.station_cost, "tug_depot": rules.water.tugs.depot_cost, "services_jetty": rules.water.services.jetty_cost}[kind]
 	if not _afford(cost):
 		return "Not enough money"
 	return ""
@@ -1499,14 +1508,37 @@ func build_marine_base_error(kind: String, cell: Vector2i) -> String:
 func build_marine_base(kind: String, cell: Vector2i) -> String:
 	var err := build_marine_base_error(kind, cell)
 	if err == "":
-		var pilots := kind == "pilot_station"
-		ledger.post("construction", -(rules.water.pilots.station_cost if pilots else rules.water.tugs.depot_cost))
-		if pilots:
-			pilot_stations[_next_station] = {"cell": cell, "pilots": 0}
-		else:
-			tug_depots[_next_station] = {"cell": cell, "tugs": 0}
+		var bases: Dictionary = {"pilot_station": pilot_stations, "tug_depot": tug_depots, "services_jetty": service_jetties}[kind]
+		ledger.post("construction", -{"pilot_station": rules.water.pilots.station_cost, "tug_depot": rules.water.tugs.depot_cost, "services_jetty": rules.water.services.jetty_cost}[kind])
+		bases[_next_station] = {"cell": cell, "pilots": 0} if kind == "pilot_station" else ({"cell": cell, "tugs": 0} if kind == "tug_depot" else {"cell": cell})
 		_next_station += 1
 	return err
+
+
+## Where pilot station, tug depot or services jetty `id` stands.
+func marine_base_cell(id: int) -> Vector2i:
+	for bases: Dictionary in [pilot_stations, tug_depots, service_jetties]:
+		if id in bases:
+			return bases[id].cell
+	assert(false, "no pilot station, tug depot or services jetty %d" % id)
+	return Grid.NONE
+
+
+## Buys `count` boats for `service` (bunkers, provisions or waste) at services jetty `id`.
+func add_service_boats(id: int, service: String, count: int) -> String:
+	if count < 1:
+		return "Add at least one"
+	if id not in service_jetties:
+		return "No services jetty there"
+	if service not in rules.water.services.boats:
+		return "No such service boat"
+	var cost: int = count * rules.water.services.boats[service].cost
+	if not _afford(cost):
+		return "Not enough money"
+	ledger.post("equipment", -cost)
+	for i in count:
+		boats.add(service, id, service_jetties[id].cell)
+	return ""
 
 
 ## Hires `count` pilots at station `id`, or buys `count` tugs at depot `id`.
@@ -1532,13 +1564,14 @@ func add_marine_craft(id: int, count: int) -> String:
 
 ## Takes out pilot station or tug depot `id`, once none of its pilots or tugs is out with a ship.
 func remove_marine_base(id: int) -> String:
-	if id not in pilot_stations and id not in tug_depots:
-		return "No pilot station or tug depot there"
+	if id not in pilot_stations and id not in tug_depots and id not in service_jetties:
+		return "No pilot station, tug depot or services jetty there"
 	if boats.ready_at(id).size() < boats.of(id).size():
-		return "Wait for its %s to come back" % ("pilots" if id in pilot_stations else "tugs")
+		return "Wait for its %s to come back" % ("pilots" if id in pilot_stations else ("tugs" if id in tug_depots else "boats"))
 	boats.remove_base(id)
 	pilot_stations.erase(id)
 	tug_depots.erase(id)
+	service_jetties.erase(id)
 	return ""
 
 
@@ -1554,7 +1587,7 @@ func _near_land(cell: Vector2i, reach: int) -> bool:
 
 ## The pilot station or tug depot within `reach` cells of `cell`, or 0.
 func marine_base_at(cell: Vector2i, reach := 2) -> int:
-	for bases: Dictionary in [pilot_stations, tug_depots]:
+	for bases: Dictionary in [pilot_stations, tug_depots, service_jetties]:
 		for id: int in bases:
 			var d: Vector2i = (bases[id].cell - cell).abs()
 			if d.x <= reach and d.y <= reach:
@@ -1823,6 +1856,9 @@ func upkeep_parts() -> Dictionary:
 		parts[0] += Areas.breakwater_cells(wall.from, wall.to).size() * rules.water.breakwater.upkeep_per_cell
 	for depot: Dictionary in tug_depots.values():
 		parts[0] += depot.tugs * rules.water.tugs.upkeep_per_tug
+	for jetty: int in service_jetties:
+		for boat: int in boats.of(jetty):
+			parts[0] += rules.water.services.boats[boats.list[boat].kind].upkeep
 	var add := func(terminal: int, amount: float) -> void: parts[terminal] = parts.get(terminal, 0.0) + amount
 	for id: int in areas.list:
 		var area: Dictionary = areas.list[id]

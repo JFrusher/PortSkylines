@@ -78,6 +78,12 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		if thing.base in sim.tug_depots:
 			var depot: Dictionary = sim.tug_depots[thing.base]
 			return ["Tug depot", "%d tugs, %d out with ships" % [depot.tugs, depot.tugs - Marine.free_tugs(sim, thing.base)], "Panamaxes and bigger need tugs to berth and unberth"] as Array[String]
+		if thing.base in sim.service_jetties:
+			var counts: Array[String] = []
+			for service: String in sim.rules.water.services.boats:
+				var mine := sim.boats.of(thing.base).filter(func(b: int) -> bool: return sim.boats.list[b].kind == service)
+				counts.append("%d %s (%d out)" % [mine.size(), sim.rules.water.services.boats[service].name.to_lower() + ("s" if mine.size() != 1 else ""), mine.filter(func(b: int) -> bool: return sim.boats.list[b].job != "home").size()])
+			return ["Services jetty", ", ".join(counts), "Its boats bunker, provision and take waste off ships at berth or at anchor, for a fee; a ship never waits for them"] as Array[String]
 		return nothing
 	if thing is Dictionary and thing.has("anchorage"):
 		return _anchorage(sim, thing.anchorage) if thing.anchorage in sim.anchorages else nothing
