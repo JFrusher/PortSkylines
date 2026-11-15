@@ -56,6 +56,8 @@ var service_jetties := {}
 var _next_station := 1
 ## Their pilot boats and tugs on the water.
 var boats := Boats.new()
+## Planned events (storms) and which kinds are on in this game.
+var event_plan: Events
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
 ## minutes), "ship" (its id)}], see Marine.clear.
 var passages: Array[Dictionary] = []
@@ -256,6 +258,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 			land[Vector2i(x, y)] = true
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
+	event_plan = Events.create(rules, seed_value)
 	_check_milestones()
 	_event("Place a berth on the coast, then draw a road from the highway to it and add a gate and a yard block along it")
 
@@ -408,6 +411,7 @@ func to_dict() -> Dictionary:
 		"service_jetties": service_jetties.duplicate(true),
 		"next_station": _next_station,
 		"boats": boats.to_dict(),
+		"event_plan": event_plan.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
 		"next_anchorage": _next_anchorage,
@@ -493,6 +497,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.service_jetties = d.service_jetties.duplicate(true)
 	sim._next_station = d.next_station
 	sim.boats = Boats.from_dict(d.boats)
+	sim.event_plan = Events.from_dict(d.event_plan)
 	sim.passages.assign(d.passages.duplicate(true))
 	sim._next_ship = d.next_ship
 	sim._next_anchorage = d.next_anchorage
@@ -631,6 +636,8 @@ func apply(command: Dictionary) -> String:
 			return build_marine_base("tug_depot", command.cell)
 		"build_services_jetty":
 			return build_marine_base("services_jetty", command.cell)
+		"set_event_kind":
+			return event_plan.set_kind(command.kind, command.on)
 		"buy_service_boats":
 			return add_service_boats(command.jetty, command.service, command.count)
 		"hire_pilots":
@@ -1812,6 +1819,7 @@ func tick() -> void:
 	_berths_seen = berths_now
 	boats.tick(self)
 	Services.tick(self)
+	event_plan.tick(self)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes

@@ -71,6 +71,11 @@ const SCHEMA := {
 	# Loans the port can take, up to max_loans at once, paid back daily.
 	"loans": {"*": {"amount": TYPE_INT, "yearly_rate": TYPE_FLOAT, "days": TYPE_INT}},
 	"max_loans": TYPE_INT,
+	# Events (M11): planned a season of season_days ahead from their own seeded
+	# random numbers, each kind on or off per game (`defaults` for a new one).
+	# Storms: per_season on average, each lasting hours_min to hours_max with
+	# gusts peaking at peak_min_kmh to peak_max_kmh, forecast lead_hours ahead.
+	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.

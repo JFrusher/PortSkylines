@@ -47,6 +47,13 @@ const FLASH_SECONDS := 2.5
 ## UI scales the settings button steps through, and where the choice is kept.
 const UI_SCALES: Array[float] = [1.0, 1.25, 1.5]
 const SETTINGS_PATH := "user://settings.cfg"
+## Each event kind's switch in the menu: [label, tooltip].
+const EVENT_NAMES := {
+	"storms": ["Storms", "Storms come with a day's forecast; strong wind stops cranes."],
+	"tides": ["Tides", "The water rises and falls twice a day; the deepest ships wait for high water."],
+}
+## The menu's switch for each event kind.
+var _event_checks := {}
 const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 const REFRESH_SECONDS := 0.25
 
@@ -250,6 +257,16 @@ func _ready() -> void:
 		settings.save(SETTINGS_PATH))
 	menu.add_child(scale_button)
 	_set_ui_scale(settings.get_value("ui", "scale", 1.0), scale_button)
+	# Events this game has, each switched on or off as a command.
+	for kind: String in EVENT_NAMES:
+		var check := CheckButton.new()
+		check.text = EVENT_NAMES[kind][0]
+		check.tooltip_text = EVENT_NAMES[kind][1]
+		check.toggled.connect(func(on: bool) -> void:
+			if on != sim.event_plan.on[kind]:
+				command_issued.emit({"op": "set_event_kind", "kind": kind, "on": on}))
+		menu.add_child(check)
+		_event_checks[kind] = check
 
 	var guide := _panel(right, "Getting started")
 	_guide_step.theme_type_variation = "MutedLabel"
@@ -757,6 +774,8 @@ func _toggle_menu() -> void:
 		return
 	_speed_before_menu = speed
 	_set_speed(0)
+	for kind: String in _event_checks:
+		_event_checks[kind].set_pressed_no_signal(sim.event_plan.on[kind])
 	_menu.visible = true
 
 
