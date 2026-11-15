@@ -137,6 +137,9 @@ var _boat_seen := {}  # boat id -> [at the tick before, at this tick], in cells
 var _boat_tick := -1
 ## Mechanics' vans by id, a Node3D each.
 var _vans := {}
+## Fire engines by id, a Node3D each, and each fire's flames and smoke.
+var _engines := {}
+var _fires := {}
 ## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
 var _vehicle_parts := {}
 ## Trains drawn the same way: "loco", "wagon", and boxes by TEU.
@@ -380,6 +383,7 @@ func _process(dt: float) -> void:
 	_draw_ships()
 	_draw_marine()
 	_draw_vans()
+	_draw_fires()
 	_draw_cranes()
 	_draw_vehicles()
 	_draw_trains()
@@ -722,7 +726,7 @@ func _draw_ships() -> void:
 
 
 ## Each kind of boat's length and beam, in metres.
-const BOAT_METRES := {"tug": Vector2(30, 10), "pilot": Vector2(16, 5), "bunkers": Vector2(60, 12), "provisions": Vector2(30, 8), "waste": Vector2(30, 8)}
+const BOAT_METRES := {"tug": Vector2(30, 10), "pilot": Vector2(16, 5), "fireboat": Vector2(26, 8), "bunkers": Vector2(60, 12), "provisions": Vector2(30, 8), "waste": Vector2(30, 8)}
 ## Where the water's surface lies, in world units.
 const WATERLINE := -0.3
 
@@ -762,7 +766,9 @@ func _draw_marine() -> void:
 			model.rotation.y = atan2(moored[1].x, moored[1].y)
 		elif boat.job == "with" and _tug_at_ship(model, id, boat):
 			pass
-		elif boat.job == "serve" and _alongside_ship(model, boat):
+		elif boat.job == "serve" and _alongside_ship(model, boat.ship, boat.kind):
+			pass
+		elif boat.job == "fight" and boat.ship in sim.fires.list and sim.fires.list[boat.ship].target[0] == "ship" and _alongside_ship(model, sim.fires.list[boat.ship].target[1], boat.kind):
 			pass
 		else:
 			var seen: Array = _boat_seen[id]
@@ -773,6 +779,78 @@ func _draw_marine() -> void:
 			if moving:
 				model.rotation.y = atan2(way.x, way.y)
 		model.get_node("Wake").visible = moving
+
+
+## Fire engines (red, with a blue beacon) at their station or on the road,
+## and each fire: flames that flicker and a column of smoke, on its block or
+## its ship.
+func _draw_fires() -> void:
+	for id: int in _engines.keys():
+		if id not in sim.fires.engines:
+			_engines[id].queue_free()
+			_engines.erase(id)
+	for id: int in sim.fires.engines:
+		var engine: Dictionary = sim.fires.engines[id]
+		if id not in _engines:
+			var model := MeshInstance3D.new()
+			model.mesh = _merged([
+				[Vector3(0.1, 0.1, 0.32), Vector3(0, 0.07, 0), Color(0.8, 0.1, 0.08)],
+				[Vector3(0.102, 0.03, 0.08), Vector3(0, 0.1, 0.11), Color(0.15, 0.2, 0.26)],
+				[Vector3(0.06, 0.02, 0.2), Vector3(0, 0.13, -0.04), Color(0.75, 0.75, 0.75)],
+				[Vector3(0.04, 0.02, 0.03), Vector3(0, 0.13, 0.09), Color(0.2, 0.4, 1.0)],
+			])
+			add_child(model)
+			_engines[id] = model
+		var node: Node3D = _engines[id]
+		node.position = Vector3(engine.at.x, 0.02, engine.at.y) * Grid.CELL / METRES_PER_UNIT
+		if not engine.path.is_empty() and engine.path[0] != engine.at:
+			var way: Vector2 = engine.path[0] - engine.at
+			node.rotation.y = atan2(way.x, way.y)
+	for id: int in _fires.keys():
+		if id not in sim.fires.list:
+			_fires[id].queue_free()
+			_fires.erase(id)
+	var flicker := 1.0 + 0.15 * sin(Time.get_ticks_msec() / 90.0)
+	for id: int in sim.fires.list:
+		var fire: Dictionary = sim.fires.list[id]
+		if id not in _fires:
+			_fires[id] = _fire_model()
+		var node: Node3D = _fires[id]
+		var at := Vector3.ZERO
+		if fire.target[0] == "block" and fire.target[1] in sim.areas.list:
+			var area: Dictionary = sim.areas.list[fire.target[1]]
+			var middle := sim.areas.point(fire.target[1], area.columns / 2.0, sim.areas.depth_of(area) / 2.0)
+			at = Vector3(middle.x, 0.3, middle.y) * Grid.CELL / METRES_PER_UNIT
+			at.y = 0.3
+		else:
+			for ship: PortSim.Ship in sim.ships:
+				if ship.id == fire.target[1] and ship in _ships:
+					at = _ships[ship].position + Vector3(0, SHIP_DECK + 0.3, 0)
+		node.position = at
+		node.get_node("Flames").scale = Vector3(1.0, flicker, 1.0)
+
+
+## Flames (orange and yellow, unlit so they glow) and a smoke column above.
+func _fire_model() -> Node3D:
+	var node := Node3D.new()
+	var flames := MeshInstance3D.new()
+	flames.name = "Flames"
+	flames.mesh = _merged([
+		[Vector3(0.5, 0.35, 0.5), Vector3(0, 0.17, 0), Color(1.0, 0.35, 0.05)],
+		[Vector3(0.3, 0.55, 0.3), Vector3(0.08, 0.27, -0.05), Color(1.0, 0.6, 0.1)],
+		[Vector3(0.18, 0.7, 0.18), Vector3(-0.08, 0.35, 0.06), Color(1.0, 0.85, 0.3)],
+	])
+	var glow := StandardMaterial3D.new()
+	glow.vertex_color_use_as_albedo = true
+	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flames.material_override = glow
+	node.add_child(flames)
+	for k: int in 4:
+		var puff := _box(Vector3(0.5 + k * 0.2, 0.35, 0.5 + k * 0.2), Color(0.2, 0.2, 0.22, 0.5 - k * 0.1))
+		puff.position = Vector3(0.1 * k, 0.8 + k * 0.45, -0.08 * k)
+		node.add_child(puff)
+	add_child(node)
+	return node
 
 
 ## Each mechanic's van: a white van with an orange beacon, at its workshop
@@ -868,14 +946,15 @@ func _tug_at_ship(model: Node3D, id: int, boat: Dictionary) -> bool:
 	return true
 
 
-## Puts service boat `boat` at work alongside its ship: lying parallel to
+## Puts a boat of `kind` at work alongside the ship with id `ship_id` (a
+## service boat, or a fireboat at a ship on fire): lying parallel to
 ## the hull on its seaward side (the side away from the quay, or its
 ## starboard side at anchor), each service at its own place along the hull;
 ## false if its ship is not drawn.
-func _alongside_ship(model: Node3D, boat: Dictionary) -> bool:
+func _alongside_ship(model: Node3D, ship_id: int, kind: String) -> bool:
 	var ship: PortSim.Ship = null
 	for s: PortSim.Ship in sim.ships:
-		if s.id == boat.ship:
+		if s.id == ship_id:
 			ship = s
 	if ship == null or ship not in _ships:
 		return false
@@ -887,8 +966,8 @@ func _alongside_ship(model: Node3D, boat: Dictionary) -> bool:
 		side = Vector3(out.x, 0.0, out.y)
 	var spec: Dictionary = sim.rules.ship_classes[ship.kind]
 	var length: float = spec.length / METRES_PER_UNIT
-	var along: float = {"bunkers": -0.15, "provisions": 0.2, "waste": 0.35}[boat.kind] * length
-	var off: float = beam(spec.outreach) / 2.0 + BOAT_METRES[boat.kind].y / METRES_PER_UNIT / 2.0 + 0.02
+	var along: float = {"bunkers": -0.15, "provisions": 0.2, "waste": 0.35, "fireboat": 0.0}[kind] * length
+	var off: float = beam(spec.outreach) / 2.0 + BOAT_METRES[kind].y / METRES_PER_UNIT / 2.0 + 0.02
 	model.position = Vector3(hull.position.x, 0.0, hull.position.z) + bow * along + side * off
 	model.rotation.y = atan2(bow.x, bow.z)
 	return true
@@ -942,7 +1021,8 @@ func _base_model(id: int, kind: String) -> Node3D:
 ## wheelhouse, orange funnel, heavy fendering), a pilot boat (slim navy hull
 ## with an orange PILOT stripe, white cabin and mast), a bunker barge (long
 ## dark red hull, fuel tanks on deck, wheelhouse aft), a supply boat (white
-## with a blue hull and a deck crane) or a waste boat (green, with skips).
+## with a blue hull and a deck crane), a waste boat (green, with skips) or a
+## fireboat (red, white bridge, a water cannon on its mast).
 func _boat_model(kind: String) -> Node3D:
 	var unit := Grid.CELL / METRES_PER_UNIT
 	var parts: Array
@@ -974,6 +1054,15 @@ func _boat_model(kind: String) -> Node3D:
 		]
 		for k: int in 3:
 			parts.append([Vector3(beam_u * 0.7, 0.07, length * 0.18), Vector3(0, 0.1, length * (0.3 - k * 0.22)), Color(0.75, 0.72, 0.68)])
+	elif kind == "fireboat":
+		parts = [
+			[Vector3(beam_u, 0.13, length), Vector3(0, 0.0, 0), Color(0.75, 0.1, 0.08)],
+			[Vector3(beam_u + 0.01, 0.03, length + 0.01), Vector3(0, 0.07, 0), Color(0.95, 0.95, 0.93)],
+			[Vector3(beam_u * 0.7, 0.16, length * 0.35), Vector3(0, 0.17, length * 0.05), Color(0.95, 0.95, 0.93)],
+			[Vector3(beam_u * 0.71, 0.04, length * 0.36), Vector3(0, 0.2, length * 0.05), glass],
+			[Vector3(0.03, 0.14, 0.03), Vector3(0, 0.32, length * 0.05), Color(0.75, 0.1, 0.08)],
+			[Vector3(0.025, 0.025, 0.12), Vector3(0, 0.4, length * 0.1), Color(0.6, 0.6, 0.6)],
+		]
 	elif kind == "provisions":
 		parts = [
 			[Vector3(beam_u, 0.12, length), Vector3(0, 0.0, 0), Color(0.12, 0.28, 0.55)],
