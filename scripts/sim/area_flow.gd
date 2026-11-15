@@ -371,6 +371,21 @@ static func agv_depots(sim: PortSim, terminal: int) -> Array[int]:
 	return found
 
 
+## Whether yard block `block` is in an AGV terminal yet no AGV can drive to
+## it from any of the terminal's quay slots: its zone gives AGVs nowhere to
+## turn, or doesn't join the quay to it.
+static func agv_unreachable(sim: PortSim, block: int) -> bool:
+	var terminal: int = sim.areas.list[block].terminal
+	if agv_depots(sim, terminal).is_empty():
+		return false
+	var slots := []
+	for apron: int in sim.areas.list:
+		if sim.areas.kind_of(sim.areas.list[apron]) == "quay_apron" and sim.areas.list[apron].terminal == terminal:
+			for s: int in sim.areas.layout(apron).slots.size():
+				slots.append(_stand(sim, apron, s))
+	return not slots.is_empty() and not slots.any(func(slot: Vector3i) -> bool: return Drive.reaches(sim, slot, _buffer_start(sim, block), "agv"))
+
+
 ## One of `terminal`'s AGV depots with an AGV at home, or 0.
 static func _free_agv_depot(sim: PortSim, terminal: int) -> int:
 	for depot in agv_depots(sim, terminal):
