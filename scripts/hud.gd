@@ -931,6 +931,16 @@ func _draw_inspect_actions() -> void:
 		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "workshop":
 		_action_button(_inspect_actions, "Hire a mechanic, %s" % HudDetails.dollars(sim.rules.events.breakdowns.mechanic_cost), {"op": "hire_mechanics", "area": id, "count": 1})
+		# Servicing, by kind of equipment the port has.
+		var kinds := {}
+		for crane: PortSim.Crane in sim.cranes:
+			kinds[crane.kind] = sim.rules.sts_cranes[crane.kind].name
+		for machine: Dictionary in sim.machines.list.values():
+			kinds[machine.gear] = sim.rules.yard_gear[machine.gear].name
+		for kind: String in kinds:
+			var on: bool = sim.serviced.get(kind, false)
+			var button := _action_button(_inspect_actions, "%s %ss" % ["Stop servicing" if on else "Service", kinds[kind]], {"op": "set_serviced", "kind": kind, "on": not on})
+			button.tooltip_text = "Serviced every %d working hours, out of work %d minutes each time, it breaks down %.0f times less often." % [roundi(sim.rules.events.breakdowns.service_every_hours), roundi(sim.rules.events.breakdowns.service_hours * 60.0), sim.rules.events.breakdowns.serviced_mtbf_factor]
 	if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
 		var settings: Dictionary = sim.areas.list[id].settings
 		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment"}
@@ -1079,7 +1089,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
-	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), sim.workshops.vans.size(), _inspected, settings]
+	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), sim.workshops.vans.size(), sim.serviced.duplicate(), _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,

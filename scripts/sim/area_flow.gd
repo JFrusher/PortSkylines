@@ -163,7 +163,10 @@ static func tick(sim: PortSim) -> void:
 			stopped.append(gear)
 	for id: int in sim.machines.list:
 		var machine: Dictionary = sim.machines.list[id]
-		if not machine.job.is_empty() and not machine.broken and machine.gear not in stopped and sim.event_plan.breaks(sim.rules.yard_gear[machine.gear].mtbf_hours):
+		if machine.job.is_empty() or machine.broken or machine.gear in stopped:
+			continue
+		machine.worked += SimClock.CALENDAR_MINUTES_PER_TICK
+		if sim.event_plan.breaks(Events.mtbf(sim.rules, "yard_gear", machine.gear, sim.serviced)):
 			machine.broken = true
 			sim._event("A %s broke down" % sim.rules.yard_gear[machine.gear].name, sim.areas.cell_at(machine.area, machine.bay, 0))
 	for machine: int in sim.machines.tick(stopped):
@@ -186,7 +189,8 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		# Over its wind limit a crane stops where it is; a broken one waits for its repair.
 		if crane.broken or wind >= sim.rules.sts_cranes[crane.kind].wind_limit_kmh:
 			continue
-		if sim.event_plan.breaks(sim.rules.sts_cranes[crane.kind].mtbf_hours):
+		crane.worked += SimClock.CALENDAR_MINUTES_PER_TICK
+		if sim.event_plan.breaks(Events.mtbf(sim.rules, "sts_cranes", crane.kind, sim.serviced)):
 			crane.broken = true
 			sim._event("A %s broke down" % sim.rules.sts_cranes[crane.kind].name, sim.areas.cell_at(crane.apron, crane.along, 0))
 			continue

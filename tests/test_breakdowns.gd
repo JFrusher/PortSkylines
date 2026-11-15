@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_off_breaks_nothing_and_moves_no_storm()
 	_test_broken_equipment_does_no_work()
 	_test_a_workshop_mends_what_breaks()
+	_test_preventive_maintenance()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -114,3 +115,30 @@ func _test_a_workshop_mends_what_breaks() -> void:
 	_expect(one > 0.0 and two > 0.0, true, "mechanics mend them (one: %.0f min, two: %.0f min)" % [one, two])
 	_expect(two < one, true, "two mechanics mend two cranes sooner than one")
 	_expect(two <= most + 60.0, true, "each within its repair and the drive (%.0f min)" % two)
+
+
+## Serviced equipment fails serviced_mtbf_factor times less often; once it
+## has worked service_every_hours a mechanic comes, takes it out of work for
+## its service, and its hours start again.
+func _test_preventive_maintenance() -> void:
+	var sim := _workshop_port(1)
+	for crane: PortSim.Crane in sim.cranes:
+		crane.broken = false
+	var factor: float = sim.rules.events.breakdowns.serviced_mtbf_factor
+	_expect(sim.apply({"op": "set_serviced", "kind": "reach_stacker", "on": true}), "", "reach stackers serviced")
+	_expect(sim.apply({"op": "set_serviced", "kind": "teapot", "on": true}), "No such equipment", "only real equipment")
+	_expect(is_equal_approx(Events.mtbf(sim.rules, "yard_gear", "reach_stacker", sim.serviced), sim.rules.yard_gear.reach_stacker.mtbf_hours * factor), true, "serviced, it fails %.0f times less often" % factor)
+	_expect(is_equal_approx(Events.mtbf(sim.rules, "yard_gear", "rtg", sim.serviced), sim.rules.yard_gear.rtg.mtbf_hours), true, "unserviced gear as before")
+	while sim.machines.list.is_empty():
+		sim.tick()
+	var machine: Dictionary = sim.machines.list.values()[0]
+	machine.worked = sim.rules.events.breakdowns.service_every_hours * 60.0
+	var out_of_work := false
+	for i in roundi(4 * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		out_of_work = out_of_work or machine.broken
+		if sim.events.any(func(e: Dictionary) -> bool: return e.text.ends_with("is serviced")):
+			break
+	_expect(out_of_work, true, "it is out of work while serviced")
+	_expect(machine.broken, false, "and back at work after")
+	_expect(machine.worked < 60.0, true, "its hours start again (%.0f min)" % machine.worked)

@@ -29,7 +29,7 @@ func count_for(gear: String, bays: int) -> int:
 
 ## Adds a machine of `gear` to `area`, standing at bay `bay`.
 func add(area: int, gear: String, bay: int) -> int:
-	list[_next_id] = {"area": area, "gear": gear, "bay": bay, "job": {}, "broken": false}
+	list[_next_id] = {"area": area, "gear": gear, "bay": bay, "job": {}, "broken": false, "worked": 0.0}
 	_next_id += 1
 	return _next_id - 1
 

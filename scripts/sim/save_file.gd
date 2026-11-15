@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 55
+const VERSION := 56
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -130,6 +130,24 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v54(data)
 	if data.version < 55:
 		data = _migrate_v55(data)
+	if data.version < 56:
+		data = _migrate_v56(data)
+	return data
+
+
+## v56 adds preventive maintenance (M11): no kind serviced yet, each crane
+## and machine's hours since service starting at nought, and a van's job
+## tagged a repair.
+static func _migrate_v56(data: Dictionary) -> Dictionary:
+	data.sim.serviced = {}
+	for crane: Dictionary in data.sim.cranes:
+		crane.worked = 0.0
+	for machine: Dictionary in data.sim.machines.list.values():
+		machine.worked = 0.0
+	for van: Dictionary in data.sim.workshops.vans.values():
+		if not van.fix.is_empty():
+			van.fix.append("repair")
+	data.version = 56
 	return data
 
 
@@ -540,7 +558,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "serviced": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
@@ -615,7 +633,7 @@ static func _valid_sim(data: Variant) -> bool:
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {
-			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING, "broken": TYPE_BOOL,
+			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING, "broken": TYPE_BOOL, "worked": TYPE_FLOAT,
 		}) or crane.kind not in Content.base().sts_cranes or not (crane.apron in data.areas.list and data.areas.list[crane.apron].type == "quay_apron"):
 			return false
 	if not _valid_area_flow(data):
@@ -681,7 +699,7 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 	if not _has_fields(data.machines, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT}):
 		return false
 	for machine: Variant in data.machines.list.values():
-		if not (machine is Dictionary and _has_fields(machine, {"area": TYPE_INT, "gear": TYPE_STRING, "bay": TYPE_INT, "job": TYPE_DICTIONARY, "broken": TYPE_BOOL}) and machine.gear in Content.base().yard_gear):
+		if not (machine is Dictionary and _has_fields(machine, {"area": TYPE_INT, "gear": TYPE_STRING, "bay": TYPE_INT, "job": TYPE_DICTIONARY, "broken": TYPE_BOOL, "worked": TYPE_FLOAT}) and machine.gear in Content.base().yard_gear):
 			return false
 	for machine: Variant in data.machine_jobs:
 		var job: Variant = data.machine_jobs[machine]

@@ -78,6 +78,12 @@ func breaks(mtbf_hours: float) -> bool:
 	return on.breakdowns and _breakdown_rng.randf() < SimClock.CALENDAR_MINUTES_PER_TICK / (mtbf_hours * 60.0)
 
 
+## The mean hours between failures of equipment of `kind` in `rules`
+## (`equipment`: its section), longer when the workshops service it.
+static func mtbf(rules: Dictionary, equipment: String, kind: String, serviced: Dictionary) -> float:
+	return rules[equipment][kind].mtbf_hours * (rules.events.breakdowns.serviced_mtbf_factor if serviced.get(kind, false) else 1.0)
+
+
 ## How long a repair takes, in hours: repair_hours_min to repair_hours_max,
 ## from the breakdowns' own chances.
 func repair_hours(rules: Dictionary) -> float:

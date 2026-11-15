@@ -78,9 +78,11 @@ const SCHEMA := {
 	# average every mtbf_hours of work (in its own data), repairs taking
 	# repair_hours_min to repair_hours_max by a mechanic hired at a workshop
 	# for mechanic_cost (upkeep_per_mechanic a day), whose van drives the
-	# roads at van_speed metres a minute. Storms: per_season on average, each lasting hours_min to hours_max with
+	# roads at van_speed metres a minute. Equipment the player has serviced
+	# (by kind) is taken out for service_hours every service_every_hours of
+	# work, and fails serviced_mtbf_factor times less often. Storms: per_season on average, each lasting hours_min to hours_max with
 	# gusts peaking at peak_min_kmh to peak_max_kmh, forecast lead_hours ahead.
-	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "breakdowns": {"repair_hours_min": TYPE_FLOAT, "repair_hours_max": TYPE_FLOAT, "mechanic_cost": TYPE_INT, "upkeep_per_mechanic": TYPE_INT, "van_speed": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
+	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "breakdowns": {"repair_hours_min": TYPE_FLOAT, "repair_hours_max": TYPE_FLOAT, "mechanic_cost": TYPE_INT, "upkeep_per_mechanic": TYPE_INT, "van_speed": TYPE_FLOAT, "service_every_hours": TYPE_FLOAT, "service_hours": TYPE_FLOAT, "serviced_mtbf_factor": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.

@@ -3,12 +3,15 @@ extends RefCounted
 ## Workshops and their mechanics (M11). Each mechanic hired at a workshop
 ## has a van. A van sets out for the nearest broken quay crane or yard
 ## machine in its workshop's terminal, drives the road there at van speed,
-## repairs it for a while, then drives back. Vans keep to the roads but
+## repairs it for a while, then drives back; with nothing broken it services
+## equipment of a kind the player has serviced once it is due. Vans keep to
+## the roads but
 ## stay out of the traffic: they never queue or block.
 
 ## Van id -> {"workshop": its area, "job": "home", "out" (driving to its
 ## repair), "fixing" (until the calendar minute "until") or "back", "fix":
-## what it repairs, ["crane", apron, along] or ["machine", id], "at" and
+## its job, ["crane", apron, along, "repair" or "service"] or ["machine",
+## id, "repair" or "service"], "at" and
 ## "path" (points still to drive, in cells), "until"}.
 var vans := {}
 var _next := 1
@@ -46,7 +49,12 @@ func tick(sim: PortSim) -> void:
 			if van.path.is_empty():
 				if van.job == "out":
 					van.job = "fixing"
-					van.until = now + sim.event_plan.repair_hours(sim.rules) * 60.0
+					if van.fix[-1] == "service":
+						# Out of work while it is serviced.
+						_set_broken(sim, van.fix, true)
+						van.until = now + sim.rules.events.breakdowns.service_hours * 60.0
+					else:
+						van.until = now + sim.event_plan.repair_hours(sim.rules) * 60.0
 				else:
 					van.job = "home"
 		elif van.job == "fixing" and now >= van.until:
@@ -54,9 +62,9 @@ func tick(sim: PortSim) -> void:
 			van.path = _road(sim, van.at, _door(sim, van.workshop))
 			van.job = "back"
 		if van.job in ["out", "fixing"]:
-			busy[van.fix] = true
-	for fix: Array in _broken(sim):
-		if fix in busy:
+			busy[van.fix.slice(0, -1)] = true
+	for fix: Array in _broken(sim) + _due(sim):
+		if fix.slice(0, -1) in busy:
 			continue
 		var at := _where(sim, fix)
 		var terminal: int = _terminal(sim, fix)
@@ -73,6 +81,7 @@ func tick(sim: PortSim) -> void:
 		vans[best].path = path
 		vans[best].fix = fix
 		vans[best].job = "out"
+		busy[fix.slice(0, -1)] = true
 
 
 ## Moves `van` a tick along its path at van speed.
@@ -90,27 +99,63 @@ func _drive(sim: PortSim, van: Dictionary) -> void:
 			left = 0.0
 
 
-## Everything broken: ["crane", apron, along] and ["machine", id].
+## Everything broken, to repair: ["crane", apron, along, "repair"] and
+## ["machine", id, "repair"].
 static func _broken(sim: PortSim) -> Array[Array]:
 	var found: Array[Array] = []
 	for crane: PortSim.Crane in sim.cranes:
 		if crane.broken:
-			found.append(["crane", crane.apron, crane.along])
+			found.append(["crane", crane.apron, crane.along, "repair"])
 	for id: int in sim.machines.list:
 		if sim.machines.list[id].broken:
-			found.append(["machine", id])
+			found.append(["machine", id, "repair"])
 	return found
 
 
-static func _mend(sim: PortSim, fix: Array) -> void:
+## Working equipment of a serviced kind that has worked service_every_hours
+## since its last service, to service.
+static func _due(sim: PortSim) -> Array[Array]:
+	var every: float = sim.rules.events.breakdowns.service_every_hours * 60.0
+	var found: Array[Array] = []
+	for crane: PortSim.Crane in sim.cranes:
+		if not crane.broken and sim.serviced.get(crane.kind, false) and crane.worked >= every:
+			found.append(["crane", crane.apron, crane.along, "service"])
+	for id: int in sim.machines.list:
+		var machine: Dictionary = sim.machines.list[id]
+		if not machine.broken and sim.serviced.get(machine.gear, false) and machine.worked >= every:
+			found.append(["machine", id, "service"])
+	return found
+
+
+## The crane or machine `fix` is about, or null if it is gone.
+static func _thing(sim: PortSim, fix: Array) -> Variant:
 	if fix[0] == "crane":
 		for crane: PortSim.Crane in sim.cranes:
-			if crane.apron == fix[1] and crane.along == fix[2] and crane.broken:
-				crane.broken = false
-				sim._event("A %s is repaired" % sim.rules.sts_cranes[crane.kind].name, sim.areas.cell_at(crane.apron, crane.along, 0))
-	elif fix[1] in sim.machines.list and sim.machines.list[fix[1]].broken:
-		sim.machines.list[fix[1]].broken = false
-		sim._event("A %s is repaired" % sim.rules.yard_gear[sim.machines.list[fix[1]].gear].name)
+			if crane.apron == fix[1] and crane.along == fix[2]:
+				return crane
+		return null
+	return sim.machines.list.get(fix[1])
+
+
+static func _set_broken(sim: PortSim, fix: Array, broken: bool) -> void:
+	var thing: Variant = _thing(sim, fix)
+	if thing is PortSim.Crane or thing is Dictionary:
+		thing.broken = broken
+
+
+## Ends `fix`'s repair or service: back at work, a serviced one's hours since
+## service starting again.
+static func _mend(sim: PortSim, fix: Array) -> void:
+	var thing: Variant = _thing(sim, fix)
+	if thing == null:
+		return
+	_set_broken(sim, fix, false)
+	var name: String = sim.rules.sts_cranes[thing.kind].name if thing is PortSim.Crane else sim.rules.yard_gear[thing.gear].name
+	if fix[-1] == "service":
+		thing.worked = 0.0
+		sim._event("A %s is serviced" % name)
+	else:
+		sim._event("A %s is repaired" % name)
 
 
 ## Where a van parks to repair `fix`, in cells: at the road edge of its area

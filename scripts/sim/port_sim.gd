@@ -60,6 +60,8 @@ var boats := Boats.new()
 var event_plan: Events
 ## The workshops' mechanics and their vans.
 var workshops := Workshops.new()
+## The kinds of quay crane and yard gear the workshops service (kind -> true).
+var serviced := {}
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
 ## minutes), "ship" (its id)}], see Marine.clear.
 var passages: Array[Dictionary] = []
@@ -374,8 +376,10 @@ class Crane:
 	var timer := 0.0
 	## The tractor sent to it (a vehicle id), or 0.
 	var tractor := 0
-	## Broken down, waiting for a repair.
+	## Broken down, waiting for a repair, or out for its service.
 	var broken := false
+	## Calendar minutes worked since its last service.
+	var worked := 0.0
 
 	func _init(on: int, at: int, of_kind: String) -> void:
 		apron = on
@@ -383,13 +387,14 @@ class Crane:
 		kind = of_kind
 
 	func to_dict() -> Dictionary:
-		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind, "broken": broken}
+		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind, "broken": broken, "worked": worked}
 
 	static func from_dict(d: Dictionary) -> Crane:
 		var crane := Crane.new(d.apron, d.along, d.kind)
 		crane.timer = d.timer
 		crane.tractor = d.tractor
 		crane.broken = d.broken
+		crane.worked = d.worked
 		return crane
 
 
@@ -419,6 +424,7 @@ func to_dict() -> Dictionary:
 		"boats": boats.to_dict(),
 		"event_plan": event_plan.to_dict(),
 		"workshops": workshops.to_dict(),
+		"serviced": serviced.duplicate(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
 		"next_anchorage": _next_anchorage,
@@ -506,6 +512,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.boats = Boats.from_dict(d.boats)
 	sim.event_plan = Events.from_dict(d.event_plan)
 	sim.workshops = Workshops.from_dict(d.workshops)
+	sim.serviced = d.serviced.duplicate()
 	sim.passages.assign(d.passages.duplicate(true))
 	sim._next_ship = d.next_ship
 	sim._next_anchorage = d.next_anchorage
@@ -644,6 +651,11 @@ func apply(command: Dictionary) -> String:
 			return build_marine_base("tug_depot", command.cell)
 		"build_services_jetty":
 			return build_marine_base("services_jetty", command.cell)
+		"set_serviced":
+			if command.kind not in rules.sts_cranes and command.kind not in rules.yard_gear:
+				return "No such equipment"
+			serviced[command.kind] = command.on
+			return ""
 		"hire_mechanics":
 			return workshops.hire(self, command.area, command.count)
 		"set_event_kind":
