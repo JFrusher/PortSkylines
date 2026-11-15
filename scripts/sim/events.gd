@@ -16,6 +16,8 @@ var planned_to := 0.0
 var _rng := RandomNumberGenerator.new()
 ## Breakdowns' own chances, so switching them on or off moves no storm.
 var _breakdown_rng := RandomNumberGenerator.new()
+## Fires' own chances.
+var fire_rng := RandomNumberGenerator.new()
 
 
 static func create(rules: Dictionary, seed_value: int) -> Events:
@@ -23,6 +25,7 @@ static func create(rules: Dictionary, seed_value: int) -> Events:
 	events.on = rules.events.defaults.duplicate()
 	events._rng.seed = hash([seed_value, "events"])
 	events._breakdown_rng.seed = hash([seed_value, "breakdowns"])
+	events.fire_rng.seed = hash([seed_value, "fires"])
 	return events
 
 
@@ -119,7 +122,7 @@ func _plan_storms(storms: Dictionary, from: float, season: float) -> void:
 
 
 func to_dict() -> Dictionary:
-	return {"on": on.duplicate(), "list": list.duplicate(true), "planned_to": planned_to, "rng_seed": _rng.seed, "rng_state": _rng.state, "breakdown_seed": _breakdown_rng.seed, "breakdown_state": _breakdown_rng.state}
+	return {"on": on.duplicate(), "list": list.duplicate(true), "planned_to": planned_to, "rng_seed": _rng.seed, "rng_state": _rng.state, "breakdown_seed": _breakdown_rng.seed, "breakdown_state": _breakdown_rng.state, "fire_seed": fire_rng.seed, "fire_state": fire_rng.state}
 
 
 static func from_dict(d: Dictionary) -> Events:
@@ -131,4 +134,6 @@ static func from_dict(d: Dictionary) -> Events:
 	events._rng.state = d.rng_state
 	events._breakdown_rng.seed = d.breakdown_seed
 	events._breakdown_rng.state = d.breakdown_state
+	events.fire_rng.seed = d.fire_seed
+	events.fire_rng.state = d.fire_state
 	return events

@@ -103,6 +103,7 @@
 		"reefer_fines": "Reefer fines",
 		"rush_fines": "Rush fines",
 		"connection_fines": "Missed connections",
+		"fire_losses": "Fire losses",
 		"port_dues": "Port dues",
 		"pilotage": "Pilotage",
 		"services": "Ship services",
@@ -129,7 +130,8 @@
 	"max_loans": 3.0,
 	"events": {
 		"season_days": 7.0,
-		"defaults": {"tides": false, "storms": true, "breakdowns": false},
+		"defaults": {"tides": false, "storms": true, "breakdowns": false, "fires": false},
+		"fires": {"per_week": 0.5, "dg_factor": 3.0, "ship_share": 0.25, "grace_minutes": 20.0, "boxes_per_hour": 6.0, "box_value": 20000, "reputation_per_box": 0.5, "ship_reputation_per_hour": 2.0, "fight_hours": 1.0, "engine_cost": 90000, "upkeep_per_engine": 300, "engine_speed": 800.0},
 		"breakdowns": {"repair_hours_min": 1.0, "repair_hours_max": 3.0, "mechanic_cost": 20000, "upkeep_per_mechanic": 200, "van_speed": 600.0, "service_every_hours": 80.0, "service_hours": 0.5, "serviced_mtbf_factor": 2.0},
 		"wind": {"mean_kmh": 18.0, "daily_swing_kmh": 8.0},
 		"storms": {"per_season": 1.0, "hours_min": 6.0, "hours_max": 18.0, "lead_hours": 24.0, "peak_min_kmh": 70.0, "peak_max_kmh": 110.0}

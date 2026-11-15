@@ -21,7 +21,8 @@ const STEP := 4
 ## "ashore": a pilot boat at its base while its pilot is aboard `ship`;
 ## "fetch": a pilot boat sailing to take its pilot off;
 ## "serve": a service boat alongside `ship`, at work until the calendar
-## minute "until" (see Services)}.
+## minute "until" (see Services);
+## "fight": a fireboat at the fire `ship` names (a fire id, see Fires)}.
 var list := {}
 var _next := 1
 var _grid: AStarGrid2D
@@ -145,6 +146,8 @@ func _arrive(sim: PortSim, id: int) -> void:
 		"out":
 			if boat.kind == "tug":
 				boat.job = "with"
+			elif boat.kind == "fireboat":
+				boat.job = "fight"
 			elif boat.kind != "pilot":
 				var ship := _ship(sim, boat.ship)
 				if ship == null:
@@ -208,6 +211,8 @@ static func speed(sim: PortSim, kind: String) -> float:
 		return sim.rules.water.pilots.boat_speed
 	if kind == "tug":
 		return sim.rules.water.tugs.speed
+	if kind == "fireboat":
+		return sim.rules.water.fireboats.speed
 	return sim.rules.water.services.boats[kind].speed
 
 

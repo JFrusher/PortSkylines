@@ -62,6 +62,8 @@ var event_plan: Events
 var workshops := Workshops.new()
 ## The kinds of quay crane and yard gear the workshops service (kind -> true).
 var serviced := {}
+## Fires burning, and the fire engines.
+var fires := Fires.new()
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
 ## minutes), "ship" (its id)}], see Marine.clear.
 var passages: Array[Dictionary] = []
@@ -169,6 +171,7 @@ const AREA_SETTINGS := {
 	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 	"workshop": {"mechanics": 0},
+	"fire_station": {"engines": 0},
 }
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
@@ -425,6 +428,7 @@ func to_dict() -> Dictionary:
 		"event_plan": event_plan.to_dict(),
 		"workshops": workshops.to_dict(),
 		"serviced": serviced.duplicate(),
+		"fires": fires.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
 		"next_anchorage": _next_anchorage,
@@ -513,6 +517,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.event_plan = Events.from_dict(d.event_plan)
 	sim.workshops = Workshops.from_dict(d.workshops)
 	sim.serviced = d.serviced.duplicate()
+	sim.fires = Fires.from_dict(d.fires)
 	sim.passages.assign(d.passages.duplicate(true))
 	sim._next_ship = d.next_ship
 	sim._next_anchorage = d.next_anchorage
@@ -656,6 +661,10 @@ func apply(command: Dictionary) -> String:
 				return "No such equipment"
 			serviced[command.kind] = command.on
 			return ""
+		"buy_engines":
+			return fires.buy_engines(self, command.area, command.count)
+		"buy_fireboats":
+			return add_fireboats(command.depot, command.count)
 		"hire_mechanics":
 			return workshops.hire(self, command.area, command.count)
 		"set_event_kind":
@@ -1553,6 +1562,21 @@ func marine_base_cell(id: int) -> Vector2i:
 	return Grid.NONE
 
 
+## Buys `count` fireboats at tug depot `id`.
+func add_fireboats(id: int, count: int) -> String:
+	if count < 1:
+		return "Add at least one"
+	if id not in tug_depots:
+		return "No tug depot there"
+	var cost: int = count * rules.water.fireboats.cost
+	if not _afford(cost):
+		return "Not enough money"
+	ledger.post("equipment", -cost)
+	for i in count:
+		boats.add("fireboat", id, tug_depots[id].cell)
+	return ""
+
+
 ## Buys `count` boats for `service` (bunkers, provisions or waste) at services jetty `id`.
 func add_service_boats(id: int, service: String, count: int) -> String:
 	if count < 1:
@@ -1843,6 +1867,7 @@ func tick() -> void:
 	Services.tick(self)
 	event_plan.tick(self)
 	workshops.tick(self)
+	fires.tick(self)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
@@ -1890,6 +1915,10 @@ func upkeep_parts() -> Dictionary:
 		parts[0] += depot.tugs * rules.water.tugs.upkeep_per_tug
 	for id: int in areas.list:
 		parts[0] += areas.list[id].settings.get("mechanics", 0) * rules.events.breakdowns.upkeep_per_mechanic
+		parts[0] += areas.list[id].settings.get("engines", 0) * rules.events.fires.upkeep_per_engine
+	for boat: Dictionary in boats.list.values():
+		if boat.kind == "fireboat":
+			parts[0] += rules.water.fireboats.upkeep
 	for jetty: int in service_jetties:
 		for boat: int in boats.of(jetty):
 			parts[0] += rules.water.services.boats[boats.list[boat].kind].upkeep

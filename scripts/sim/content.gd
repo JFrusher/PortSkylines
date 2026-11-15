@@ -80,9 +80,15 @@ const SCHEMA := {
 	# for mechanic_cost (upkeep_per_mechanic a day), whose van drives the
 	# roads at van_speed metres a minute. Equipment the player has serviced
 	# (by kind) is taken out for service_hours every service_every_hours of
-	# work, and fails serviced_mtbf_factor times less often. Storms: per_season on average, each lasting hours_min to hours_max with
+	# work, and fails serviced_mtbf_factor times less often. With fires on,
+	# per_week break out (ship_share of them on ships at berth, a yard block
+	# by or with dangerous goods dg_factor times likelier); one no crew has
+	# reached after grace_minutes burns boxes_per_hour (each box_value and
+	# reputation_per_box), a ship ship_reputation_per_hour; a crew puts it out
+	# in fight_hours. Fire engines (engine_cost, upkeep_per_engine) drive from
+	# fire stations at engine_speed metres a minute. Storms: per_season on average, each lasting hours_min to hours_max with
 	# gusts peaking at peak_min_kmh to peak_max_kmh, forecast lead_hours ahead.
-	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "breakdowns": {"repair_hours_min": TYPE_FLOAT, "repair_hours_max": TYPE_FLOAT, "mechanic_cost": TYPE_INT, "upkeep_per_mechanic": TYPE_INT, "van_speed": TYPE_FLOAT, "service_every_hours": TYPE_FLOAT, "service_hours": TYPE_FLOAT, "serviced_mtbf_factor": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
+	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "fires": {"per_week": TYPE_FLOAT, "dg_factor": TYPE_FLOAT, "ship_share": TYPE_FLOAT, "grace_minutes": TYPE_FLOAT, "boxes_per_hour": TYPE_FLOAT, "box_value": TYPE_INT, "reputation_per_box": TYPE_FLOAT, "ship_reputation_per_hour": TYPE_FLOAT, "fight_hours": TYPE_FLOAT, "engine_cost": TYPE_INT, "upkeep_per_engine": TYPE_INT, "engine_speed": TYPE_FLOAT}, "breakdowns": {"repair_hours_min": TYPE_FLOAT, "repair_hours_max": TYPE_FLOAT, "mechanic_cost": TYPE_INT, "upkeep_per_mechanic": TYPE_INT, "van_speed": TYPE_FLOAT, "service_every_hours": TYPE_FLOAT, "service_hours": TYPE_FLOAT, "serviced_mtbf_factor": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.
@@ -149,6 +155,7 @@ const SCHEMA := {
 		"anchorage": {"cost_per_cell": TYPE_INT, "spacing": TYPE_INT}, "max_wait_hours": TYPE_FLOAT,
 		"pilots": {"station_cost": TYPE_INT, "pilot_cost": TYPE_INT, "upkeep_per_pilot": TYPE_INT, "boat_speed": TYPE_FLOAT, "fee": TYPE_INT},
 		"tugs": {"depot_cost": TYPE_INT, "tug_cost": TYPE_INT, "upkeep_per_tug": TYPE_INT, "speed": TYPE_FLOAT}, "slot_margin_minutes": TYPE_FLOAT,
+		"fireboats": {"cost": TYPE_INT, "upkeep": TYPE_INT, "speed": TYPE_FLOAT},
 		"tides": {"range": TYPE_FLOAT, "period_hours": TYPE_FLOAT},
 		"services": {"jetty_cost": TYPE_INT, "unserved_reputation": TYPE_FLOAT, "boats": {"*": {"name": TYPE_STRING, "cost": TYPE_INT, "upkeep": TYPE_INT, "speed": TYPE_FLOAT}}},
 		"breakwater": {"cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT},
@@ -200,7 +207,7 @@ const SCHEMA := {
 }
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
-const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop"]
+const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop", "fire_station"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
 const POSITIVE := ["min_radius_cells", "width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]

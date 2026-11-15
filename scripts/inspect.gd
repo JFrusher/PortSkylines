@@ -247,6 +247,8 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		var waiting := sim.handovers.waiting(id)
 		lines.append("%d lorries queuing" % (waiting.buffer.size() + waiting.road.size()))
 		lines.append("Bookings: %d an hour" % settings.slots_per_hour if settings.slots_per_hour > 0 else "No bookings: lorries come in as they arrive")
+	if settings.has("engines"):
+		lines.append("%d fire engines, %d out" % [settings.engines, sim.fires.engines.values().filter(func(e: Dictionary) -> bool: return e.station == id and e.job != "home").size()])
 	if settings.has("mechanics"):
 		var out := sim.workshops.vans.values().filter(func(v: Dictionary) -> bool: return v.workshop == id and v.job != "home").size()
 		lines.append("%d mechanics, %d out on repairs" % [settings.mechanics, out])

@@ -50,7 +50,7 @@ const RAIL_HALF := 0.08
 const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
-	"parking": Color(0.38, 0.4, 0.42), "workshop": Color(0.5, 0.47, 0.42),
+	"parking": Color(0.38, 0.4, 0.42), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27),
 }
 const AREA_TOP := 0.2
 ## How high ship lanes are drawn: just over the water.

@@ -161,15 +161,19 @@ static func tick(sim: PortSim) -> void:
 	for gear: String in sim.rules.yard_gear:
 		if wind >= sim.rules.yard_gear[gear].wind_limit_kmh:
 			stopped.append(gear)
+	var stopped_machines: Array[int] = []
 	for id: int in sim.machines.list:
 		var machine: Dictionary = sim.machines.list[id]
 		if machine.job.is_empty() or machine.broken or machine.gear in stopped:
+			continue
+		if sim.fires.block_burning(machine.area):
+			stopped_machines.append(id)
 			continue
 		machine.worked += SimClock.CALENDAR_MINUTES_PER_TICK
 		if sim.event_plan.breaks(Events.mtbf(sim.rules, "yard_gear", machine.gear, sim.serviced)):
 			machine.broken = true
 			sim._event("A %s broke down" % sim.rules.yard_gear[machine.gear].name, sim.areas.cell_at(machine.area, machine.bay, 0))
-	for machine: int in sim.machines.tick(stopped):
+	for machine: int in sim.machines.tick(stopped, stopped_machines):
 		_machine_done(sim, machine)
 	_unpark(sim)
 	sim.traffic.due_after = _unstick_minutes(sim) * 60.0
@@ -180,6 +184,9 @@ static func tick(sim: PortSim) -> void:
 ## One tick of an apron ship alongside: each of its cranes discharges, and
 ## once the holds are empty and the cranes idle it sails.
 static func work(sim: PortSim, ship: PortSim.Ship) -> void:
+	# A burning ship isn't worked until the fire is out.
+	if sim.fires.ship_burning(ship.id):
+		return
 	var working := cranes_for(sim, ship)
 	if working.is_empty():
 		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, sim.rules.ship_classes[ship.kind].outreach], sim.areas.cell_at(ship.apron, 0, 0))

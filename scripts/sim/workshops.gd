@@ -29,7 +29,7 @@ func hire(sim: PortSim, area: int, count: int) -> String:
 	sim.ledger.post("equipment", -cost)
 	sim.areas.list[area].settings.mechanics += count
 	for i in count:
-		vans[_next] = {"workshop": area, "job": "home", "fix": [], "at": _door(sim, area), "path": [] as Array[Vector2], "until": 0.0}
+		vans[_next] = {"workshop": area, "job": "home", "fix": [], "at": door(sim, area), "path": [] as Array[Vector2], "until": 0.0}
 		_next += 1
 	return ""
 
@@ -45,7 +45,7 @@ func tick(sim: PortSim) -> void:
 	for id: int in vans:
 		var van: Dictionary = vans[id]
 		if van.job in ["out", "back"]:
-			_drive(sim, van)
+			drive(van, sim.rules.events.breakdowns.van_speed)
 			if van.path.is_empty():
 				if van.job == "out":
 					van.job = "fixing"
@@ -59,7 +59,7 @@ func tick(sim: PortSim) -> void:
 					van.job = "home"
 		elif van.job == "fixing" and now >= van.until:
 			_mend(sim, van.fix)
-			van.path = _road(sim, van.at, _door(sim, van.workshop))
+			van.path = road(sim, van.at, door(sim, van.workshop))
 			van.job = "back"
 		if van.job in ["out", "fixing"]:
 			busy[van.fix.slice(0, -1)] = true
@@ -75,7 +75,7 @@ func tick(sim: PortSim) -> void:
 				best = id
 		if best == 0:
 			continue
-		var path := _road(sim, vans[best].at, at)
+		var path := road(sim, vans[best].at, at)
 		if path.is_empty():
 			continue
 		vans[best].path = path
@@ -84,9 +84,10 @@ func tick(sim: PortSim) -> void:
 		busy[fix.slice(0, -1)] = true
 
 
-## Moves `van` a tick along its path at van speed.
-func _drive(sim: PortSim, van: Dictionary) -> void:
-	var left: float = sim.rules.events.breakdowns.van_speed / Grid.CELL * SimClock.CALENDAR_MINUTES_PER_TICK
+## Moves `van` (with "at" and "path") a tick along its path at `speed`
+## metres a minute.
+static func drive(van: Dictionary, speed: float) -> void:
+	var left: float = speed / Grid.CELL * SimClock.CALENDAR_MINUTES_PER_TICK
 	while left > 0.0 and not van.path.is_empty():
 		var to: Vector2 = van.path[0]
 		var gap: float = van.at.distance_to(to)
@@ -173,13 +174,13 @@ static func _terminal(sim: PortSim, fix: Array) -> int:
 
 
 ## The middle of workshop `area`'s road edge, where its vans live.
-static func _door(sim: PortSim, area: int) -> Vector2:
+static func door(sim: PortSim, area: int) -> Vector2:
 	return sim.areas.point(area, sim.areas.list[area].columns / 2.0, 0)
 
 
 ## The way by road lanes from `from` to `to`, in cells: the points of the
 ## lanes between the lanes nearest each; empty when no road joins them.
-static func _road(sim: PortSim, from: Vector2, to: Vector2) -> Array[Vector2]:
+static func road(sim: PortSim, from: Vector2, to: Vector2) -> Array[Vector2]:
 	Drive._refresh(sim)
 	var start: Array = sim.network.nearest(from, false)
 	var end: Array = sim.network.nearest(to, false)

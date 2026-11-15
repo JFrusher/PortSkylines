@@ -39,7 +39,7 @@ const BUILD_BREAKWATER := -14
 ## Drags a road's node, or the point it bends toward, to reshape it (Move It).
 const MOVE_ROAD := -15
 ## The build menu row each area type sits in.
-const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Water", "Bulldoze", "Inspect"]
@@ -52,6 +52,7 @@ const EVENT_NAMES := {
 	"storms": ["Storms", "Storms come with a day's forecast; strong wind stops cranes."],
 	"tides": ["Tides", "The water rises and falls twice a day; the deepest ships wait for high water."],
 	"breakdowns": ["Breakdowns", "Quay cranes and yard gear break down now and then; a workshop's mechanics repair them."],
+	"fires": ["Fires", "Now and then a yard block or a ship at berth catches fire, likelier by dangerous goods; fire engines and fireboats put it out."],
 }
 ## The menu's switch for each event kind.
 var _event_checks := {}
@@ -857,6 +858,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"quay_apron": "Where ships berth and STS cranes work. Reaches the water from a road %d–%d m in" % [Grid.metres(area.depth + 1), Grid.metres(area.max_depth + 1)],
 		"gate": "Checks lorries in and out: %d lanes, each a booth" % (area.depth - 2),
 		"parking": "Lorries wait here, off the road, while their terminal's gate is busy, and go on to it in turn. One space per %d m" % Grid.metres(AreaLayout.BAY),
+		"fire_station": "Its fire engines drive out to fires in the yard and on ships at berth (switch fires on in the menu); a fire no crew reaches soon burns boxes. Buy engines by inspecting it",
 		"workshop": "Its mechanics drive out in their vans to repair the quay cranes and yard gear that break down in its terminal (switch breakdowns on in the menu). Hire mechanics by inspecting it",
 	}[area.kind]
 	if both_sides:
@@ -910,6 +912,7 @@ func _draw_inspect_actions() -> void:
 			_action_button(_inspect_actions, "Hire a pilot, %s" % HudDetails.dollars(sim.rules.water.pilots.pilot_cost), {"op": "hire_pilots", "station": id, "count": 1})
 		elif id in sim.tug_depots:
 			_action_button(_inspect_actions, "Buy a tug, %s" % HudDetails.dollars(sim.rules.water.tugs.tug_cost), {"op": "buy_tugs", "depot": id, "count": 1})
+			_action_button(_inspect_actions, "Buy a fireboat, %s" % HudDetails.dollars(sim.rules.water.fireboats.cost), {"op": "buy_fireboats", "depot": id, "count": 1})
 		elif id in sim.service_jetties:
 			for service: String in sim.rules.water.services.boats:
 				var boat: Dictionary = sim.rules.water.services.boats[service]
@@ -929,6 +932,8 @@ func _draw_inspect_actions() -> void:
 	var id: int = _inspected.area
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
 		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
+	if sim.areas.kind_of(sim.areas.list[id]) == "fire_station":
+		_action_button(_inspect_actions, "Buy a fire engine, %s" % HudDetails.dollars(sim.rules.events.fires.engine_cost), {"op": "buy_engines", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "workshop":
 		_action_button(_inspect_actions, "Hire a mechanic, %s" % HudDetails.dollars(sim.rules.events.breakdowns.mechanic_cost), {"op": "hire_mechanics", "area": id, "count": 1})
 		# Servicing, by kind of equipment the port has.
@@ -1089,7 +1094,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
-	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), sim.workshops.vans.size(), sim.serviced.duplicate(), _inspected, settings]
+	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), sim.workshops.vans.size(), sim.fires.engines.size(), sim.serviced.duplicate(), _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,

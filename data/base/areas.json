@@ -7,6 +7,7 @@
 		"gate_large": {"name": "Large gate", "kind": "gate", "depth": 8, "max_depth": 8, "min_length": 5, "cost_per_cell": 80, "upkeep_per_cell": 5.0},
 		"truck_park": {"name": "Truck park", "kind": "parking", "depth": 2, "max_depth": 2, "min_length": 6, "cost_per_cell": 30, "upkeep_per_cell": 1.0},
 		"depot": {"name": "Depot", "kind": "depot", "depth": 6, "max_depth": 6, "min_length": 5, "cost_per_cell": 10, "upkeep_per_cell": 0.5},
-		"workshop": {"name": "Workshop", "kind": "workshop", "depth": 4, "max_depth": 4, "min_length": 5, "cost_per_cell": 60, "upkeep_per_cell": 2.0}
+		"workshop": {"name": "Workshop", "kind": "workshop", "depth": 4, "max_depth": 4, "min_length": 5, "cost_per_cell": 60, "upkeep_per_cell": 2.0},
+		"fire_station": {"name": "Fire station", "kind": "fire_station", "depth": 4, "max_depth": 4, "min_length": 5, "cost_per_cell": 80, "upkeep_per_cell": 2.0}
 	}
 }

@@ -126,6 +126,7 @@
 			"upkeep_per_tug": 400,
 			"speed": 300.0
 		},
+		"fireboats": {"cost": 150000, "upkeep": 400, "speed": 400.0},
 		"tides": {"range": 3.0, "period_hours": 12.42},
 		"services": {"jetty_cost": 60000, "unserved_reputation": 1.0, "boats": {"bunkers": {"name": "Bunker barge", "cost": 120000, "upkeep": 300, "speed": 250.0}, "provisions": {"name": "Supply boat", "cost": 40000, "upkeep": 120, "speed": 450.0}, "waste": {"name": "Waste boat", "cost": 50000, "upkeep": 150, "speed": 350.0}}},
 		"slot_margin_minutes": 2.0,
