@@ -8,6 +8,11 @@ extends RefCounted
 
 ## How far apart, in cells, a ship's course has points along a lane.
 const SAIL_STEP := 2.0
+## Cells of water left between a turning ship's hull and its quay.
+const TURN_MARGIN := 2.0
+## Degrees off its quay a ship's last lane may run and the ship still come
+## straight in sideways, with no need to turn off the berth.
+const PARALLEL_DEGREES := 45.0
 
 
 ## The water a ship lies in off quay apron `apron`: `water.pocket` rows out
@@ -74,7 +79,8 @@ static func berth_nodes(sim: PortSim, apron: int) -> Array[int]:
 ## The way in to `apron` for a ship of `kind`, from the open sea or (with
 ## `anchorage`) from that anchorage, as lane ends in cells, first to last;
 ## [] when no lane deep enough for its draft reaches the berth, the pocket
-## is too shallow, or the berth isn't for its kind (barge or not). Kept until the lanes, the areas, the anchorages
+## is too shallow, the berth isn't for its kind (barge or not), or the ship
+## must turn off the berth and nowhere along it has the water to. Kept until the lanes, the areas, the anchorages
 ## or the dredging change.
 static func route(sim: PortSim, kind: String, apron: int, anchorage := 0, light := false) -> Array[Vector2]:
 	var key := [kind, apron, anchorage, light]
@@ -82,7 +88,8 @@ static func route(sim: PortSim, kind: String, apron: int, anchorage := 0, light 
 		var none: Array[Vector2] = []
 		# A barge berth takes only barges, and a barge only a barge berth.
 		var fits: bool = apron in sim.areas.list and sim.areas.list[apron].settings.barge == sim.rules.ship_classes[kind].inland and pocket_depth(sim, apron) >= draft(sim, kind, light)
-		sim._ship_routes[key] = _find(sim, kind, draft(sim, kind, light), _starts(sim, kind, anchorage), berth_nodes(sim, apron)) if fits else none
+		var lanes := _find(sim, kind, draft(sim, kind, light), _starts(sim, kind, anchorage), berth_nodes(sim, apron)) if fits else none
+		sim._ship_routes[key] = lanes if lanes.is_empty() or room_at(sim, kind, apron, lanes) else none
 	return sim._ship_routes[key]
 
 
@@ -212,17 +219,118 @@ static func alongside(sim: PortSim, ship: PortSim.Ship) -> Vector2:
 	return sim.areas.point(ship.apron, ship.from + (span - 1) / 2.0, sim.areas.depth_of(area) + sim.rules.water.pocket / 2.0)
 
 
+## Where a ship of `kind` berthing at `from` along `apron` turns to lie
+## along its quay, in cells: of the spots along the quay line half its
+## length and TURN_MARGIN out with open water all round for its hull to
+## swing, the nearest off its berth (off it, if there is room there);
+## Vector2.INF if there is none from a ship length before the quay to one
+## past it. Kept with the routes, until the lanes, areas, anchorages or
+## dredging change.
+static func swing_point(sim: PortSim, kind: String, apron: int, from: int) -> Vector2:
+	var key := [kind, apron, from, "swing"]
+	if key not in _routes(sim):
+		var span := AreaFlow.ship_cells(sim, kind)
+		var middle := from + (span - 1) / 2.0
+		var out := _turn_out(sim, kind, apron)
+		var found := Vector2.INF
+		var step := maxi(2, span / 8)
+		for d: int in range(0, sim.areas.list[apron].columns + 2 * span, step):
+			for k: float in [middle - d, middle + d]:
+				if found == Vector2.INF and k >= -span and k <= sim.areas.list[apron].columns + span and _open_circle(sim, _off_quay(sim, apron, k, out), span / 2.0):
+					found = _off_quay(sim, apron, k, out)
+			if found != Vector2.INF:
+				break
+		sim._ship_routes[key] = found
+	return sim._ship_routes[key]
+
+
+## Off `from`'s berth on `apron` as far out as a ship of `kind` turns, in cells.
+static func off_berth(sim: PortSim, kind: String, apron: int, from: int) -> Vector2:
+	return _off_quay(sim, apron, from + (AreaFlow.ship_cells(sim, kind) - 1) / 2.0, _turn_out(sim, kind, apron))
+
+
+static func _turn_out(sim: PortSim, kind: String, apron: int) -> float:
+	return sim.areas.depth_of(sim.areas.list[apron]) + AreaFlow.ship_cells(sim, kind) / 2.0 + TURN_MARGIN
+
+
+## The point `r` rows out from `apron`'s road, `k` columns along it; past
+## its ends the quay line runs on straight.
+static func _off_quay(sim: PortSim, apron: int, k: float, r: float) -> Vector2:
+	var inside := clampf(k, 0.0, sim.areas.list[apron].columns - 1.0)
+	return sim.areas.point(apron, inside, r) + sim.areas.heading(apron, inside) * (k - inside)
+
+
+## Whether every cell within `radius` of `centre` is water: its rim cell by
+## cell, its inside every 4 cells, and every breakwater cell; off the map
+## the water runs on as at the map's edge, open sea beyond a sea edge.
+# shortcut: land under 4 cells across lying wholly inside, other than a breakwater, can hide; check every inside cell if that turns up.
+static func _open_circle(sim: PortSim, centre: Vector2, radius: float) -> bool:
+	var edge := sim.areas.coast.size - Vector2i.ONE
+	var water := func(p: Vector2) -> bool: return sim.areas.is_water(Vector2i(p.floor()).clamp(Vector2i.ZERO, edge))
+	var rim := ceili(TAU * radius)
+	for i: int in rim:
+		if not water.call(centre + Vector2.from_angle(TAU * i / rim) * radius):
+			return false
+	for dx: int in range(-floori(radius), floori(radius) + 1, 4):
+		for dy: int in range(-floori(radius), floori(radius) + 1, 4):
+			if dx * dx + dy * dy <= radius * radius and not water.call(centre + Vector2(dx, dy)):
+				return false
+	for wall: Dictionary in sim.areas.breakwaters.values():
+		for cell: Vector2i in Areas.breakwater_cells(wall.from, wall.to):
+			if (Vector2(cell) + Vector2(0.5, 0.5)).distance_to(centre) <= radius:
+				return false
+	return true
+
+
+## Whether a ship of `kind` coming in along `lanes` must turn to lie along
+## `apron`'s quay: over its last half length its lane runs more than
+## PARALLEL_DEGREES off the quay.
+static func turns(sim: PortSim, kind: String, apron: int, lanes: Array[Vector2]) -> bool:
+	if lanes.size() < 2:
+		return false
+	var back := lanes.size() - 2
+	while back > 0 and lanes[back].distance_to(lanes[-1]) < AreaFlow.ship_cells(sim, kind) / 2.0:
+		back -= 1
+	var side := sim.areas.out_at(apron, sim.areas.list[apron].columns / 2.0)
+	return absf((lanes[-1] - lanes[back]).normalized().dot(side)) > sin(deg_to_rad(PARALLEL_DEGREES))
+
+
+## Whether a ship of `kind` coming in along `lanes` may berth on `apron`:
+## straight in, or with somewhere along the quay to turn.
+static func room_at(sim: PortSim, kind: String, apron: int, lanes: Array[Vector2]) -> bool:
+	return not turns(sim, kind, apron, lanes) or swing_point(sim, kind, apron, 0) != Vector2.INF
+
+
 ## Sets `ship`'s course to its berth: from its spot at anchor if it waits
-## at one, in along the lanes, then alongside.
+## at one, in along the lanes, then pushed in sideways alongside. One whose
+## last lane runs across the quay leaves the lanes at their point nearest
+## where it turns (see swing_point), turns, and sails along the quay to off
+## its berth first.
 static func set_course(sim: PortSim, ship: PortSim.Ship) -> void:
 	ship.path.clear()
 	if ship.anchorage:
 		ship.path.append(spots(sim, ship.anchorage)[ship.spot])
-	ship.path.append_array(route(sim, ship.kind, ship.apron, ship.anchorage, ship.light))
+	var lanes := route(sim, ship.kind, ship.apron, ship.anchorage, ship.light)
+	if turns(sim, ship.kind, ship.apron, lanes):
+		var swing := swing_point(sim, ship.kind, ship.apron, ship.from)
+		# It keeps to its lanes as far as the point on them nearest where it
+		# turns, short of the lane's end in the pocket, then sails along the
+		# quay to off its berth if it turned elsewhere.
+		var leave := 0
+		for i: int in lanes.size() - 1:
+			if lanes[i].distance_to(swing) < lanes[leave].distance_to(swing):
+				leave = i
+		ship.path.append_array(lanes.slice(0, leave + 1))
+		ship.path.append(swing)
+		var off := off_berth(sim, ship.kind, ship.apron, ship.from)
+		if off.distance_to(swing) > 0.5:
+			ship.path.append(off)
+	else:
+		ship.path.append_array(lanes)
 	ship.path.append(alongside(sim, ship))
 	ship.anchorage = 0
 	ship.spot = -1
-	release(ship)
+	release(sim, ship)
 	ship.sail = 0.0
 	ship.prev_sail = 0.0
 
@@ -257,21 +365,17 @@ static func clear_of_berth(sim: PortSim, ship: PortSim.Ship) -> bool:
 	return ship.state == PortSim.Ship.State.LEAVING and ship.cleared and ship.path.size() > 1 and ship.sail < _length(ship.path.slice(0, -1)) / maxf(_length(ship.path), 0.0001)
 
 
-## Pilots on the port's stations not aboard a ship.
+## Pilots home at their stations with their boats, free to take a ship.
 static func free_pilots(sim: PortSim) -> int:
 	var total := 0
-	for station: Dictionary in sim.pilot_stations.values():
-		total += station.pilots
-	return total - sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.pilot).size()
+	for id: int in sim.pilot_stations:
+		total += sim.boats.ready_at(id).size()
+	return total
 
 
-## Depot `id`'s tugs not out with a ship.
+## Depot `id`'s tugs home and free.
 static func free_tugs(sim: PortSim, id: int) -> int:
-	var out := 0
-	for ship: PortSim.Ship in sim.ships:
-		if ship.tug_depot == id:
-			out += ship.tugs
-	return sim.tug_depots[id].tugs - out
+	return sim.boats.ready_at(id).size()
 
 
 ## Whether `ship` may move along its course this tick, in (`way` 1) or out
@@ -300,14 +404,30 @@ static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
 	var start := ship.path[0] if way == 1 else ship.path[-1]
 	var berth := ship.path[-1]
 	var sets_off := now
+	# The nearest free pilot boat sails out to where the ship sets off.
+	var pilot_boat := 0
+	var pilot_way: Array[Vector2] = []
 	if spec.pilot:
 		if sim.pilot_stations.is_empty():
 			return "a %s needs a pilot: build a pilot station (Water)" % ship.kind
-		if free_pilots(sim) == 0:
+		var near := INF
+		for id: int in sim.pilot_stations:
+			for boat: int in sim.boats.ready_at(id):
+				var far: float = sim.boats.list[boat].at.distance_to(start)
+				if far < near:
+					near = far
+					pilot_boat = boat
+		if pilot_boat == 0:
 			return "no pilot free"
-		sets_off += _nearest(sim.pilot_stations, start) * Grid.CELL / sim.rules.water.pilots.boat_speed
+		pilot_way = sim.boats.way(sim.areas, sim.boats.list[pilot_boat].at, start)
+		if pilot_way.is_empty():
+			return "no way by water from a pilot station to it"
+		sets_off += Boats.length(sim.boats.list[pilot_boat].at, pilot_way) * Grid.CELL / sim.rules.water.pilots.boat_speed
+	# Tugs from the depot nearest its berth meet it off the berth coming in,
+	# or alongside going out.
 	var depot := 0
 	var tugs_at := 0.0
+	var tug_way: Array[Vector2] = []
 	if spec.tugs > 0 and ship.state != PortSim.Ship.State.ANCHORING:
 		var near := INF
 		for id: int in sim.tug_depots:
@@ -317,7 +437,12 @@ static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
 				depot = id
 		if depot == 0:
 			return "it needs %d tugs free at one depot%s" % [spec.tugs, "" if not sim.tug_depots.is_empty() else ": build a tug depot (Water)"]
-		tugs_at = now + near * Grid.CELL / sim.rules.water.tugs.speed
+		var meet: Vector2 = ship.path[-2] if way == 1 else ship.path[-1]
+		var from: Vector2 = sim.boats.list[sim.boats.ready_at(depot)[0]].at
+		tug_way = sim.boats.way(sim.areas, from, meet)
+		if tug_way.is_empty():
+			return "no way by water from a tug depot to it"
+		tugs_at = now + Boats.length(from, tug_way) * Grid.CELL / sim.rules.water.tugs.speed
 		if way == -1:
 			sets_off = maxf(sets_off, tugs_at)
 	sim.passages = sim.passages.filter(func(p: Dictionary) -> bool: return p.to >= now)
@@ -329,6 +454,11 @@ static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
 				return "no slot free through a narrow lane"
 	if spec.pilot:
 		sim.ledger.post("pilotage", sim.rules.water.pilots.fee)
+	if pilot_boat:
+		sim.boats.send(pilot_boat, pilot_way, "out", ship.id)
+	if depot:
+		for boat: int in sim.boats.ready_at(depot).slice(0, spec.tugs):
+			sim.boats.send(boat, tug_way.duplicate(), "out", ship.id)
 	ship.pilot = spec.pilot
 	ship.tugs = spec.tugs if depot else 0
 	ship.tug_depot = depot
@@ -350,44 +480,76 @@ static func _nearest(bases: Dictionary, point: Vector2) -> float:
 
 
 ## The narrow lanes `ship` passes on its course (in or out), each with the
-## calendar minutes it is in it when it sets off at `sets_off`.
+## calendar minutes it is in it when it sets off at `sets_off`: every leg of
+## its course whose middle lies on a narrow lane's line, those in a row on
+## one lane joined. A course may leave the lanes short of their end (to
+## turn off its berth), so legs, not lane ends, say where it is.
 static func _windows(sim: PortSim, ship: PortSim.Ship, way: int, sets_off: float) -> Array[Dictionary]:
 	var points := ship.path.duplicate()
 	if way == -1:
 		points.reverse()
+	var narrow := {}  # line cell -> its narrow lane
+	for segment: int in sim.ship_lanes.segments:
+		if not sim.rules.water.lanes[sim.ship_lanes.segments[segment].type].two_way:
+			for cell: Vector2i in sim.ship_lanes.cells(segment):
+				narrow[cell] = segment
 	var per_cell: float = Grid.CELL / sim.rules.water.ship_speed
 	var found: Array[Dictionary] = []
 	var at := 0.0
-	# From the last lane end passed, and how far along the course it was.
-	var last := _node_at(sim, points[0])
-	var last_at := 0.0
 	for i in range(1, points.size()):
-		at += points[i - 1].distance_to(points[i])
-		var node := _node_at(sim, points[i])
-		if node == 0:
-			continue
-		var segment := sim.ship_lanes.between(last, node)
-		if segment and not sim.rules.water.lanes[sim.ship_lanes.segments[segment].type].two_way:
-			found.append({"segment": segment, "from": sets_off + last_at * per_cell, "to": sets_off + at * per_cell})
-		last = node
-		last_at = at
+		var leg: float = points[i - 1].distance_to(points[i])
+		var segment: int = narrow.get(Vector2i(((points[i - 1] + points[i]) / 2.0).floor()), 0)
+		if segment:
+			if not found.is_empty() and found[-1].segment == segment and is_equal_approx(found[-1].to, sets_off + at * per_cell):
+				found[-1].to = sets_off + (at + leg) * per_cell
+			else:
+				found.append({"segment": segment, "from": sets_off + at * per_cell, "to": sets_off + (at + leg) * per_cell})
+		at += leg
 	return found
 
 
-## The lane end whose cell's middle is `point`, or 0 (for points along a lane, between its ends).
-static func _node_at(sim: PortSim, point: Vector2) -> int:
-	for node: int in sim.ship_lanes.nodes:
-		if Vector2(sim.ship_lanes.nodes[node]) + Vector2(0.5, 0.5) == point:
-			return node
-	return 0
-
-
-## Lets `ship`'s pilot and tugs go: it is alongside, or has a new course to clear.
-static func release(ship: PortSim.Ship) -> void:
+## Lets `ship`'s pilot and tugs go: it is alongside, at anchor or out at
+## sea, or has a new course to clear. Its tugs sail home and its pilot boat
+## comes to take its pilot off.
+static func release(sim: PortSim, ship: PortSim.Ship) -> void:
+	sim.boats.release(sim, ship.id, point_along(ship.path, ship.sail))
 	ship.cleared = false
 	ship.pilot = false
 	ship.tugs = 0
 	ship.tug_depot = 0
+
+
+## The way `ship`'s bow points a fraction `sail` along its course: along its
+## way, swinging round on the leg to where it turns to lie along the quay
+## (the way it then sails, so never further round than it must), then along
+## the quay while it sails to off its berth and its tugs push it in
+## sideways. Going out it does the same backwards.
+static func bow(sim: PortSim, ship: PortSim.Ship, sail: float) -> Vector2:
+	var path := ship.path
+	var quay := Vector2.DOWN
+	var turn := path.size() - 2  # the leg (by its end point) it swings round on
+	if ship.apron != 0:
+		var side := sim.areas.out_at(ship.apron, ship.from + (AreaFlow.ship_cells(sim, ship.kind) - 1) / 2.0)
+		quay = Vector2(-side.y, side.x)
+		if path.size() >= 3 and quay.dot(path[-2] - path[-3]) < 0.0:
+			quay = -quay
+		# Legs along the quay before it is pushed in come after the turn.
+		while turn > 1 and absf((path[turn] - path[turn - 1]).normalized().dot(side)) < sin(deg_to_rad(10.0)):
+			turn -= 1
+	if path.size() < 2:
+		return quay
+	var left := sail * _length(path)
+	for i in range(1, path.size()):
+		var leg := path[i - 1].distance_to(path[i])
+		if left <= leg or i == path.size() - 1:
+			var way := (path[i] - path[i - 1]).normalized() * (1.0 if ship.state == PortSim.Ship.State.ARRIVING else -1.0)
+			if ship.apron == 0 or path.size() < 3 or i < turn:
+				return way
+			if i > turn:
+				return quay
+			return way.slerp(quay, clampf(left / maxf(leg, 0.0001), 0.0, 1.0))
+		left -= leg
+	return quay
 
 
 ## The point a fraction `t` of the way along `path`, in cells.

@@ -129,6 +129,12 @@ var _owned := ImageTexture.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
 # shortcut: ships are one node each, fine at the handful a port works at once; MultiMesh them if berths grow past ~20.
 var _ships := {}  # PortSim.Ship -> Node3D
+## Pilot stations and tug depots by id: their jetty and office, a Node3D each.
+var _bases := {}
+## Pilot boats and tugs by id, a Node3D each, and where each was the last two ticks.
+var _boats := {}
+var _boat_seen := {}  # boat id -> [at the tick before, at this tick], in cells
+var _boat_tick := -1
 ## Every vehicle part drawn as one MultiMesh: "cab", "chassis", and boxes by TEU.
 var _vehicle_parts := {}
 ## Trains drawn the same way: "loco", "wagon", and boxes by TEU.
@@ -361,7 +367,7 @@ func _process(dt: float) -> void:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
-	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys(), sim.areas.breakwaters.keys()] != _ship_lanes_drawn:
+	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.areas.breakwaters.keys()] != _ship_lanes_drawn:
 		_draw_ship_lanes()
 	_draw_junctions()
 	if sim.areas.filled.size() != _coast_filled:
@@ -370,6 +376,7 @@ func _process(dt: float) -> void:
 	if sim.land.size() != _drawn_land:
 		_draw_land()
 	_draw_ships()
+	_draw_marine()
 	_draw_cranes()
 	_draw_vehicles()
 	_draw_trains()
@@ -468,8 +475,8 @@ static func info_shares(sim: PortSim, view: String) -> Dictionary:
 ## Each ship lane as a pale band over the water it covers, its line down the
 ## middle: white where dredged, else pale blue.
 func _draw_ship_lanes() -> void:
-	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.pilot_stations.keys(), sim.tug_depots.keys(), sim.areas.breakwaters.keys()]
-	_ship_lanes.visible = not (sim.ship_lanes.segments.is_empty() and sim.anchorages.is_empty() and sim.pilot_stations.is_empty() and sim.tug_depots.is_empty() and sim.areas.breakwaters.is_empty())
+	_ship_lanes_drawn = [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.areas.breakwaters.keys()]
+	_ship_lanes.visible = not (sim.ship_lanes.segments.is_empty() and sim.anchorages.is_empty() and sim.areas.breakwaters.is_empty())
 	if not _ship_lanes.visible:
 		return
 	var tool := _road_tool()
@@ -478,13 +485,6 @@ func _draw_ship_lanes() -> void:
 	for wall: Dictionary in sim.areas.breakwaters.values():
 		for cell in Areas.breakwater_cells(wall.from, wall.to):
 			_cell_quad(tool, cell, 0.05)
-	# Pilot stations white and tug depots orange, five cells across.
-	for bases: Array in [[sim.pilot_stations, Color(0.95, 0.95, 0.95, 0.9)], [sim.tug_depots, Color(1.0, 0.55, 0.15, 0.9)]]:
-		tool.set_color(bases[1])
-		for base: Dictionary in bases[0].values():
-			for dx: int in range(-2, 3):
-				for dy: int in range(-2, 3):
-					_cell_quad(tool, base.cell + Vector2i(dx, dy), LANE_HEIGHT + 0.05)
 	# Each anchorage as one pale yellow rectangle, a dot at each spot.
 	for id: int in sim.anchorages:
 		var a: Dictionary = sim.anchorages[id]
@@ -718,38 +718,233 @@ func _draw_ships() -> void:
 				deck.set_instance_color(i, _livery(ship.line, i))
 
 
-## Puts `model` a fraction `sail` of the way along `ship`'s course: along the
-## lanes, then in to lie alongside, its bow along its way until the last leg,
-## where it turns to lie along the quay.
+## Lengths and beams of the port's boats, in cells.
+const TUG_LENGTH := 30.0 / Grid.CELL
+const TUG_BEAM := 10.0 / Grid.CELL
+const PILOT_BOAT_LENGTH := 16.0 / Grid.CELL
+## Where the water's surface lies, in world units.
+const WATERLINE := -0.3
+
+
+## Each pilot station and tug depot as a jetty out from the shore with a
+## harbour office at its root, and every pilot boat and tug: moored along
+## its jetty when home, under way where the sim has it, and a tug with a
+## ship at its seaward side, bow to the hull, pushing.
+func _draw_marine() -> void:
+	var bases := sim.pilot_stations.merged(sim.tug_depots)
+	for id: int in _bases.keys():
+		if id not in bases or _bases[id].get_meta("boats") != sim.boats.of(id).size():
+			_bases[id].queue_free()
+			_bases.erase(id)
+	for id: int in bases:
+		if id not in _bases:
+			_bases[id] = _base_model(id, id in sim.pilot_stations)
+	for id: int in _boats.keys():
+		if id not in sim.boats.list:
+			_boats[id].queue_free()
+			_boats.erase(id)
+			_boat_seen.erase(id)
+	if sim.clock.ticks != _boat_tick:
+		_boat_tick = sim.clock.ticks
+		for id: int in sim.boats.list:
+			var at: Vector2 = sim.boats.list[id].at
+			_boat_seen[id] = [_boat_seen[id][1] if id in _boat_seen else at, at]
+	for id: int in sim.boats.list:
+		var boat: Dictionary = sim.boats.list[id]
+		if id not in _boats:
+			_boats[id] = _boat_model(boat.kind)
+		var model: Node3D = _boats[id]
+		var moving := false
+		if boat.job in ["home", "ashore"]:
+			var moored := _moored(id, boat)
+			model.position = Vector3(moored[0].x, 0.0, moored[0].y) * Grid.CELL / METRES_PER_UNIT
+			model.rotation.y = atan2(moored[1].x, moored[1].y)
+		elif boat.job == "with" and _tug_at_ship(model, id, boat):
+			pass
+		else:
+			var seen: Array = _boat_seen[id]
+			var at: Vector2 = seen[0].lerp(seen[1], alpha)
+			model.position = Vector3(at.x, 0.0, at.y) * Grid.CELL / METRES_PER_UNIT
+			var way: Vector2 = seen[1] - seen[0]
+			moving = way.length() > 0.01
+			if moving:
+				model.rotation.y = atan2(way.x, way.y)
+		model.get_node("Wake").visible = moving
+
+
+## Where base `id`'s jetty starts on the shore and the way it runs out to
+## sea, in cells: from the land cell nearest the base, through the base.
+func _jetty(id: int) -> Array[Vector2]:
+	var cell: Vector2i = sim.pilot_stations[id].cell if id in sim.pilot_stations else sim.tug_depots[id].cell
+	var shore := Vector2(cell)
+	var near := INF
+	for dx: int in range(-PortSim.MARINE_BASE_SHORE, PortSim.MARINE_BASE_SHORE + 1):
+		for dy: int in range(-PortSim.MARINE_BASE_SHORE, PortSim.MARINE_BASE_SHORE + 1):
+			var land := cell + Vector2i(dx, dy)
+			if sim.areas.coast.inside(land) and not sim.areas.is_water(land) and Vector2(dx, dy).length() < near:
+				near = Vector2(dx, dy).length()
+				shore = Vector2(land)
+	var out := (Vector2(cell) - shore).normalized()
+	return [shore + Vector2(0.5, 0.5) + out * 0.5, out]
+
+
+## How long base `id`'s jetty is, in cells: out past the base, with room
+## along it for its boats moored either side, bow to stern.
+func _jetty_length(id: int) -> float:
+	var start: Vector2 = _jetty(id)[0]
+	var cell: Vector2i = sim.pilot_stations[id].cell if id in sim.pilot_stations else sim.tug_depots[id].cell
+	var boat := PILOT_BOAT_LENGTH if id in sim.pilot_stations else TUG_LENGTH
+	return maxf(start.distance_to(Vector2(cell) + Vector2(0.5, 0.5)) + 1.0, ceili(sim.boats.of(id).size() / 2.0) * (boat + 1.0) + 2.0)
+
+
+## [where boat `id` lies moored at its jetty, the way its bow points], in
+## cells: in turn either side of the jetty from its far end in, bows to sea.
+func _moored(id: int, boat: Dictionary) -> Array[Vector2]:
+	var jetty := _jetty(boat.base)
+	var out: Vector2 = jetty[1]
+	var slot := sim.boats.of(boat.base).find(id)
+	var length := PILOT_BOAT_LENGTH if boat.kind == "pilot" else TUG_LENGTH
+	var beam := 5.0 / Grid.CELL if boat.kind == "pilot" else TUG_BEAM
+	var along := _jetty_length(boat.base) - 1.0 - length / 2.0 - (slot / 2) * (length + 1.0)
+	var across := (0.5 + beam / 2.0 + 0.2) * (1.0 if slot % 2 == 0 else -1.0)
+	return [jetty[0] + out * along + Vector2(-out.y, out.x) * across, out]
+
+
+## Puts tug `id`, with its ship, at the ship's seaward side, bow to its
+## hull, its ship's tugs spread along its length; false if its ship is not
+## drawn (out at sea).
+func _tug_at_ship(model: Node3D, id: int, boat: Dictionary) -> bool:
+	var ship: PortSim.Ship = null
+	for s: PortSim.Ship in sim.ships:
+		if s.id == boat.ship:
+			ship = s
+	if ship == null or ship not in _ships or ship.apron == 0:
+		return false
+	var hull: Node3D = _ships[ship]
+	var tugs := sim.boats.list.keys().filter(func(t: int) -> bool: return sim.boats.list[t].ship == ship.id and sim.boats.list[t].kind == "tug")
+	var k := tugs.find(id)
+	var spec: Dictionary = sim.rules.ship_classes[ship.kind]
+	var length: float = spec.length / METRES_PER_UNIT
+	var side2 := sim.areas.out_at(ship.apron, ship.from + (AreaFlow.ship_cells(sim, ship.kind) - 1) / 2.0)
+	var side := Vector3(side2.x, 0.0, side2.y)
+	var bow := hull.basis.z.normalized()
+	var along := (float(k) / maxi(tugs.size() - 1, 1) - 0.5) * length / 2.0 if tugs.size() > 1 else 0.0
+	var off := beam(spec.outreach) / 2.0 + TUG_LENGTH * Grid.CELL / METRES_PER_UNIT / 2.0
+	model.position = Vector3(hull.position.x, 0.0, hull.position.z) + bow * along + side * off
+	model.rotation.y = atan2(-side.x, -side.z)
+	return true
+
+
+## A jetty on piles from the shore out to sea, and at its root on land a
+## two-storey harbour office with a signal mast: a white roof trimmed red
+## and pilot flags (white over red) for a pilot station, an orange roof for
+## a tug depot.
+func _base_model(id: int, pilots: bool) -> Node3D:
+	var jetty := _jetty(id)
+	var length := _jetty_length(id) * Grid.CELL / METRES_PER_UNIT
+	var unit := Grid.CELL / METRES_PER_UNIT
+	var roof := Color(0.96, 0.96, 0.94) if pilots else Color(1.0, 0.55, 0.15)
+	var trim := Color(0.8, 0.15, 0.12) if pilots else Color(0.12, 0.12, 0.12)
+	var timber := Color(0.55, 0.42, 0.28)
+	var walls := Color(0.86, 0.84, 0.78)
+	var glass := Color(0.18, 0.24, 0.3)
+	var parts: Array = [[Vector3(unit, 0.03, length), Vector3(0, 0.02, length / 2.0), timber]]
+	for k: int in floori(length / 0.25) + 1:
+		for x: float in [-unit / 2.0, unit / 2.0]:
+			parts.append([Vector3(0.03, 0.34, 0.03), Vector3(x, -0.15, minf(k * 0.25, length)), timber.darkened(0.5)])
+	# The office stands on land behind the jetty's root.
+	var office := Vector3(0, 0, -0.3)
+	parts.append_array([
+		[Vector3(0.48, 0.18, 0.36), office + Vector3(0, 0.09, 0), walls],
+		[Vector3(0.485, 0.04, 0.365), office + Vector3(0, 0.11, 0), glass],
+		[Vector3(0.44, 0.16, 0.32), office + Vector3(0, 0.26, 0), walls],
+		[Vector3(0.445, 0.04, 0.325), office + Vector3(0, 0.28, 0), glass],
+		[Vector3(0.5, 0.03, 0.38), office + Vector3(0, 0.335, 0), trim],
+		[Vector3(0.5, 0.04, 0.38), office + Vector3(0, 0.37, 0), roof],
+		[Vector3(0.025, 0.6, 0.025), office + Vector3(0.15, 0.69, 0.1), Color.WHITE],
+		[Vector3(0.26, 0.02, 0.02), office + Vector3(0.15, 0.9, 0.1), Color.WHITE],
+	])
+	for x: float in [0.04, 0.26]:
+		parts.append([Vector3(0.005, 0.03, 0.06), office + Vector3(x, 0.865, 0.1), Color.WHITE if pilots else roof])
+		parts.append([Vector3(0.005, 0.03, 0.06), office + Vector3(x, 0.835, 0.1), trim if pilots else roof])
+	var model := MeshInstance3D.new()
+	model.mesh = _merged(parts)
+	model.position = Vector3(jetty[0].x, 0.0, jetty[0].y) * unit
+	model.rotation.y = atan2(jetty[1].x, jetty[1].y)
+	model.set_meta("boats", sim.boats.of(id).size())
+	add_child(model)
+	return model
+
+
+## A tug (black hull, orange bulwark, white deckhouse and wheelhouse,
+## orange funnel, heavy fendering) or a pilot boat (slim navy hull with an
+## orange PILOT stripe, white cabin and mast), bow along +Z, floating, with
+## a wake astern shown while it moves.
+func _boat_model(kind: String) -> Node3D:
+	var unit := Grid.CELL / METRES_PER_UNIT
+	var parts: Array
+	var length: float
+	if kind == "tug":
+		length = TUG_LENGTH * unit
+		var beam_u := TUG_BEAM * unit
+		var orange := Color(1.0, 0.5, 0.1)
+		var white := Color(0.95, 0.95, 0.93)
+		parts = [
+			[Vector3(beam_u, 0.14, length), Vector3(0, 0.0, 0), Color(0.14, 0.12, 0.12)],
+			[Vector3(beam_u + 0.04, 0.05, length + 0.03), Vector3(0, 0.03, 0), Color(0.05, 0.05, 0.05)],
+			[Vector3(beam_u + 0.02, 0.06, length + 0.02), Vector3(0, 0.09, 0), orange],
+			[Vector3(beam_u * 0.75, 0.14, length * 0.36), Vector3(0, 0.19, length * 0.1), white],
+			[Vector3(beam_u * 0.65, 0.12, length * 0.2), Vector3(0, 0.32, length * 0.14), white],
+			[Vector3(beam_u * 0.66, 0.04, length * 0.21), Vector3(0, 0.34, length * 0.14), Color(0.15, 0.2, 0.26)],
+			[Vector3(0.1, 0.18, 0.1), Vector3(0, 0.31, -length * 0.1), orange],
+			[Vector3(0.105, 0.04, 0.105), Vector3(0, 0.41, -length * 0.1), Color(0.08, 0.08, 0.08)],
+			[Vector3(beam_u * 0.7, 0.02, length * 0.35), Vector3(0, 0.125, -length * 0.3), Color(0.45, 0.45, 0.45)],
+		]
+	else:
+		length = PILOT_BOAT_LENGTH * unit
+		var beam_u := 5.0 / Grid.CELL * unit
+		var navy := Color(0.08, 0.12, 0.25)
+		parts = [
+			[Vector3(beam_u, 0.1, length * 0.85), Vector3(0, 0.0, -length * 0.075), navy],
+			[Vector3(beam_u * 0.6, 0.1, length * 0.15), Vector3(0, 0.0, length * 0.425), navy],
+			[Vector3(beam_u + 0.01, 0.03, length * 0.7), Vector3(0, 0.03, -length * 0.05), Color(1.0, 0.45, 0.05)],
+			[Vector3(beam_u * 0.8, 0.12, length * 0.4), Vector3(0, 0.11, length * 0.05), Color(0.95, 0.95, 0.93)],
+			[Vector3(beam_u * 0.82, 0.035, length * 0.41), Vector3(0, 0.13, length * 0.05), Color(0.15, 0.2, 0.26)],
+			[Vector3(0.015, 0.12, 0.015), Vector3(0, 0.23, length * 0.1), Color.WHITE],
+			[Vector3(0.005, 0.025, 0.05), Vector3(0, 0.27, length * 0.1 - 0.03), Color.WHITE],
+			[Vector3(0.005, 0.025, 0.05), Vector3(0, 0.245, length * 0.1 - 0.03), Color(0.8, 0.15, 0.12)],
+		]
+	var hull := MeshInstance3D.new()
+	hull.mesh = _merged(parts)
+	hull.position.y = WATERLINE + 0.04
+	var wake := _box(Vector3(length * 0.35, 0.01, length * 1.4), Color(1, 1, 1, 0.45))
+	wake.name = "Wake"
+	wake.position = Vector3(0, WATERLINE + 0.01, -length * 1.2)
+	var node := Node3D.new()
+	node.add_child(hull)
+	node.add_child(wake)
+	add_child(node)
+	return node
+
+
+## Puts `model` a fraction `sail` of the way along `ship`'s course, its bow
+## as Marine.bow points it: along the lanes, round to lie along the quay off
+## its berth, then pushed in sideways.
 func _sail(model: Node3D, ship: PortSim.Ship, sail: float) -> void:
 	if ship.anchorage:
 		_to_anchor(model, ship, sail)
 		return
 	var frame := _berth_frame(ship)
-	var quay_heading := atan2(-frame[1].y, frame[1].x)
-	if ship.path.size() < 2:
-		model.position = Vector3(frame[0].x, 0.0, frame[0].y)
-		model.rotation.y = quay_heading
-		return
-	var points: Array[Vector2] = []
-	for point: Vector2 in ship.path.slice(0, -1):
-		points.append(point * Grid.CELL / METRES_PER_UNIT)
-	points.append(frame[0])
-	var at := Marine.point_along(points, sail)
+	var at: Vector2 = frame[0]
+	if ship.path.size() >= 2:
+		var points: Array[Vector2] = []
+		for point: Vector2 in ship.path.slice(0, -1):
+			points.append(point * Grid.CELL / METRES_PER_UNIT)
+		points.append(frame[0])
+		at = Marine.point_along(points, sail)
 	model.position = Vector3(at.x, 0.0, at.y)
-	# Which leg it is on, and how far along it.
-	var length := 0.0
-	for i in range(1, points.size()):
-		length += points[i - 1].distance_to(points[i])
-	var left := sail * length
-	for i in range(1, points.size()):
-		var leg := points[i - 1].distance_to(points[i])
-		if left <= leg or i == points.size() - 1:
-			var way := points[i] - points[i - 1]
-			var heading := atan2(way.x, way.y) if ship.state == PortSim.Ship.State.ARRIVING else atan2(-way.x, -way.y)
-			model.rotation.y = lerp_angle(heading, quay_heading, clampf(left / maxf(leg, 0.001), 0.0, 1.0)) if i == points.size() - 1 else heading
-			return
-		left -= leg
+	var bow := Marine.bow(sim, ship, sail)
+	model.rotation.y = atan2(bow.x, bow.y)
 
 
 ## A ship sailing in to its spot at anchor, or lying there, bow along its

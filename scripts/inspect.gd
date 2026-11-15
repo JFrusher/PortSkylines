@@ -74,7 +74,7 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		return ["Breakwater", "%d m long, 8 m thick" % Grid.metres(RoadNet.length(wall.from, wall.to) + 1), "No ship lane crosses it"] as Array[String]
 	if thing is Dictionary and thing.has("base"):
 		if thing.base in sim.pilot_stations:
-			return ["Pilot station", "%d pilots, %d out with ships" % [sim.pilot_stations[thing.base].pilots, sim.ships.filter(func(s: PortSim.Ship) -> bool: return s.pilot).size()], "Panamaxes and bigger take a pilot in and out"] as Array[String]
+			return ["Pilot station", "%d pilots, %d out with ships" % [sim.pilot_stations[thing.base].pilots, sim.pilot_stations[thing.base].pilots - sim.boats.ready_at(thing.base).size()], "Panamaxes and bigger take a pilot in and out"] as Array[String]
 		if thing.base in sim.tug_depots:
 			var depot: Dictionary = sim.tug_depots[thing.base]
 			return ["Tug depot", "%d tugs, %d out with ships" % [depot.tugs, depot.tugs - Marine.free_tugs(sim, thing.base)], "Panamaxes and bigger need tugs to berth and unberth"] as Array[String]
