@@ -37,11 +37,11 @@ static func where(sim: PortSim, vehicle: Vehicle, _alpha := 1.0) -> Vector2:
 
 
 ## [where `vehicle` is, in cells (a cell's corner), the way it heads], for drawing.
-static func pose(sim: PortSim, vehicle: Vehicle, _alpha: float) -> Array[Vector2]:
+static func pose(sim: PortSim, vehicle: Vehicle, alpha: float) -> Array[Vector2]:
 	_refresh(sim)
 	if vehicle.id not in sim.traffic.cars:
 		return [sim.areas.centre(vehicle.path[0]) - Vector2(0.5, 0.5), Vector2.ZERO]
-	var at := sim.traffic.pose(vehicle.id)
+	var at := sim.traffic.pose(vehicle.id, alpha)
 	return [at[0] - Vector2(0.5, 0.5), at[1]]
 
 

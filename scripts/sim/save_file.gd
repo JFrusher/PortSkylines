@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 62
+const VERSION := 63
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -144,6 +144,18 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v61(data)
 	if data.version < 62:
 		data = _migrate_v62(data)
+	if data.version < 63:
+		data = _migrate_v63(data)
+	return data
+
+
+## v63 keeps how far each car drove in its last tick, so the view draws it
+## between ticks (M11): none yet.
+static func _migrate_v63(data: Dictionary) -> Dictionary:
+	if not data.sim.traffic.is_empty():
+		for car: Dictionary in data.sim.traffic.traffic.cars.values():
+			car.moved = 0.0
+	data.version = 63
 	return data
 
 
@@ -758,7 +770,7 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			vehicles[vehicle.id] = true
 		for id: Variant in data.traffic.traffic.cars:
 			var car: Variant = data.traffic.traffic.cars[id]
-			if not (id is int and id in vehicles and car is Dictionary and _has_fields(car, {"route": TYPE_ARRAY, "i": TYPE_INT, "s": TYPE_FLOAT, "v": TYPE_FLOAT, "top": TYPE_FLOAT, "length": TYPE_FLOAT, "booked": TYPE_ARRAY, "waited": TYPE_FLOAT})):
+			if not (id is int and id in vehicles and car is Dictionary and _has_fields(car, {"route": TYPE_ARRAY, "i": TYPE_INT, "s": TYPE_FLOAT, "v": TYPE_FLOAT, "top": TYPE_FLOAT, "length": TYPE_FLOAT, "booked": TYPE_ARRAY, "waited": TYPE_FLOAT, "moved": TYPE_FLOAT})):
 				return false
 			if car.route.is_empty() or car.i < 0 or car.i >= car.route.size() or not car.route.all(known_piece):
 				return false

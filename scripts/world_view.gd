@@ -58,6 +58,9 @@ const AREA_TOP := 0.2
 ## A full AGV battery's bar.
 const AGV_CHARGE_FULL := Color(0.2, 0.85, 0.3)
 const AGV_CHARGE_FLAT := Color(0.9, 0.15, 0.1)
+## How fast a vehicle's drawn heading follows its path's, a second: about a
+## sixth of the way a frame at 60 fps.
+const HEADING_EASE := 10.0
 ## A rack's top, metres: a lift-AGV slides under a box on it.
 const RACK_HEIGHT := 1.6
 const AGV_LANE := Color(0.55, 0.42, 0.18)
@@ -406,7 +409,7 @@ func _process(dt: float) -> void:
 	_draw_fires()
 	_animate_barriers(dt)
 	_draw_cranes()
-	_draw_vehicles()
+	_draw_vehicles(dt)
 	_draw_trains()
 	_draw_area_machines()
 	_draw_area_stacks()
@@ -636,7 +639,6 @@ static func _agv_parts() -> Array:
 		[Vector3(0.22, 0.07, 0.6), Vector3(0, 0.045, 0), Color(0.95, 0.96, 0.97)],
 		[Vector3(0.222, 0.018, 0.56), Vector3(0, 0.05, 0), Color(0.05, 0.6, 0.62)],
 		[Vector3(0.21, 0.012, 0.56), Vector3(0, 0.086, 0), Color(0.45, 0.47, 0.5)],
-		[Vector3(0.02, 0.025, 0.02), Vector3(0.08, 0.1, 0.27), Color(1.0, 0.55, 0.05)],
 	]
 	for end: float in [-1.0, 1.0]:
 		parts.append([Vector3(0.23, 0.03, 0.025), Vector3(0, 0.04, end * 0.31), Color(1.0, 0.8, 0.1)])
@@ -1670,7 +1672,7 @@ func _draw_trains() -> void:
 			multimesh.buffer = buffers[part]
 
 
-func _draw_vehicles() -> void:
+func _draw_vehicles(dt: float) -> void:
 	if _vehicle_parts.is_empty():
 		_vehicle_parts = {
 			"cab": _vehicle_part(_merged([[Vector3(0.24, 0.2, 0.16), Vector3.ZERO, Color.WHITE]])),
@@ -1678,6 +1680,7 @@ func _draw_vehicles() -> void:
 			"straddle": _vehicle_part(_merged(_straddle_frame(Color.WHITE))),
 			"agv": _vehicle_part(_merged(_agv_parts())),
 			"agv_bar": _vehicle_part(_merged([[Vector3(0.004, 0.014, 0.22), Vector3.ZERO, Color.WHITE]])),
+			"agv_beacon": _vehicle_part(_merged([[Vector3(0.02, 0.025, 0.02), Vector3(0.08, 0.1, 0.27), Color.WHITE]])),
 			# A charger: a grey post with a cable arm, and its light on top, tinted by what it is doing.
 			"charger": _vehicle_part(_merged([[Vector3(0.025, 0.11, 0.025), Vector3(0, 0.055, 0), Color(0.55, 0.58, 0.6)], [Vector3(0.012, 0.012, 0.06), Vector3(0, 0.09, 0.03), Color(0.12, 0.12, 0.12)], [Vector3(0.035, 0.025, 0.035), Vector3(0, 0.12, 0), Color(0.3, 0.32, 0.34)]])),
 			"charger_light": _vehicle_part(_merged([[Vector3(0.02, 0.012, 0.02), Vector3(0, 0.138, 0), Color.WHITE]])),
@@ -1694,6 +1697,9 @@ func _draw_vehicles() -> void:
 	for vehicle: Vehicle in sim.vehicles:
 		var pose := Drive.pose(sim, vehicle, alpha)
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
+		# Eased toward the way its path runs, so a sharp jog into a slot reads as a turn.
+		if vehicle.id in _headings:
+			heading = (_headings[vehicle.id] as Vector2).slerp(heading, minf(1.0, dt * HEADING_EASE))
 		headings[vehicle.id] = heading
 		# Each lane is its own cell, so a vehicle drives down the middle of it.
 		var at: Vector2 = (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
@@ -1707,6 +1713,9 @@ func _draw_vehicles() -> void:
 		elif vehicle.kind == "agv":
 			_put(buffers.agv, placed, Color.WHITE)
 			_put_agv_bar(buffers, placed, vehicle.charge)
+			# Its amber beacon flashes while it stands on a safety stop.
+			var flash := vehicle.id in sim.traffic.held and fmod(Time.get_ticks_msec() / 1000.0, 0.6) < 0.3
+			_put(buffers.agv_beacon, placed, Color(1.0, 0.75, 0.2) * 1.6 if flash else Color(0.75, 0.4, 0.05))
 			carried = placed * Transform3D(_vehicle_box.basis, Vector3(0, 0.215, 0))
 		else:
 			_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
@@ -1793,6 +1802,7 @@ func _park_agvs(buffers: Dictionary) -> void:
 			if k < home.size() and k < 8:
 				var placed := place * Transform3D(Basis.IDENTITY.scaled(AREA_VEHICLE_SCALE), Vector3.ZERO)
 				_put(buffers.agv, placed, Color.WHITE)
+				_put(buffers.agv_beacon, placed, Color(0.75, 0.4, 0.05))
 				_put_agv_bar(buffers, placed, home[k])
 			if k < chargers:
 				# By the AGV's nose, at the open front of its bay.
@@ -1907,6 +1917,12 @@ func _draw_area_machines() -> void:
 			box.mesh = _stack_meshes[2]
 			box.material_override = StandardMaterial3D.new()
 			node.add_child(box)
+			# A gantry's spreader, the yellow frame that grabs a box, always on show.
+			var spreader := MeshInstance3D.new()
+			spreader.name = "Spreader"
+			spreader.mesh = _merged([[Vector3(0.12, 0.025, 0.55), Vector3.ZERO, Color(1.0, 0.75, 0.1)], [Vector3(0.01, 0.12, 0.01), Vector3(0, 0.07, 0), Color(0.15, 0.15, 0.15)]])
+			spreader.visible = machine.gear in ["rtg", "rmg", "asc"]
+			node.add_child(spreader)
 			add_child(node)
 			_area_machines[id] = node
 		var model: MeshInstance3D = _area_machines[id]
@@ -1929,12 +1945,29 @@ func _draw_area_machines() -> void:
 		var job: Dictionary = machine.job
 		var box: MeshInstance3D = model.get_node("Box")
 		box.visible = not job.is_empty() and (job.phases[0].kind == "lift" or job.get("carrying", false))
+		var lift := lerpf(0.05, _machine_heights[machine.gear] * 0.85, sim.machines.spreader(id))
+		var spreader: MeshInstance3D = model.get_node("Spreader")
+		# The spreader rides on the box's top as it lifts, sets down and travels.
+		spreader.scale = Vector3(1.0 / wide, 1.0 / tall, 1.0)
+		spreader.position = Vector3(0, lift + REAL_BOX_HEIGHT / METRES_PER_UNIT / tall * 0.55, 0)
 		if box.visible:
 			# Counter the machine's height scale so the box keeps its real size.
 			box.scale = _real_box[2] / Vector3(wide, tall, 1.0)
-			box.position = Vector3(0, lerpf(0.05, _machine_heights[machine.gear] * 0.85, sim.machines.spreader(id)), 0)
+			box.position = Vector3(0, lift, 0)
 			box.rotation.y = PI / 2
-			(box.material_override as StandardMaterial3D).albedo_color = PLAIN_BOX
+			var carried := _carried_box(id)
+			(box.material_override as StandardMaterial3D).albedo_color = _box_colour(sim.boxes[carried].line, carried, sim.boxes[carried].reefer) if carried in sim.boxes else PLAIN_BOX
+
+
+## The box machine `id` is working, or 0: its vehicle's, rack's or train's.
+func _carried_box(id: int) -> int:
+	var job: Dictionary = sim.machine_jobs.get(id, {})
+	if job.has("box"):
+		return job.box
+	if job.has("vehicle"):
+		var vehicle: Vehicle = sim._by_id.get(job.vehicle)
+		return vehicle.box if vehicle else 0
+	return 0
 
 
 ## A straddle carrier's frame in `colour`: four legs and the beams joining

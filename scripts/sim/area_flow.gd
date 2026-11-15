@@ -1313,7 +1313,10 @@ static func _gone(sim: PortSim, vehicle: Vehicle) -> void:
 		# Low, it drives home to charge first; at home it joins its depot's AGVs.
 		if vehicle.state != "to_charge" and vehicle.charge < sim.rules.agv.low_share:
 			sim._set_area(vehicle, vehicle.depot)
-			_head(sim, vehicle, _buffer_start(sim, vehicle.depot), "to_charge")
+			# Into one of its bays, the next along by how many are home, where it parks.
+			var bays: Array = sim.areas.layout(vehicle.depot).slots
+			var bay: int = sim.agv_home.get(vehicle.depot, []).size() % bays.size()
+			_head(sim, vehicle, _stand(sim, vehicle.depot, bay) if not bays.is_empty() else _buffer_start(sim, vehicle.depot), "to_charge")
 			return
 		sim.agv_home.get_or_add(vehicle.depot, [] as Array[float]).append(vehicle.charge)
 	sim._drop_vehicle(vehicle)
