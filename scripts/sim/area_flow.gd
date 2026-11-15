@@ -156,7 +156,12 @@ static func tractor_speed(sim: PortSim) -> float:
 ## One tick of the area flow, after ships: machines work, then vehicles drive.
 static func tick(sim: PortSim) -> void:
 	_fit_machines(sim)
-	for machine: int in sim.machines.tick():
+	var wind := sim.event_plan.wind(sim.rules, sim.clock.calendar_minutes())
+	var stopped: Array[String] = []
+	for gear: String in sim.rules.yard_gear:
+		if wind >= sim.rules.yard_gear[gear].wind_limit_kmh:
+			stopped.append(gear)
+	for machine: int in sim.machines.tick(stopped):
 		_machine_done(sim, machine)
 	_unpark(sim)
 	sim.traffic.due_after = _unstick_minutes(sim) * 60.0
@@ -171,7 +176,11 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 	if working.is_empty():
 		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, sim.rules.ship_classes[ship.kind].outreach], sim.areas.cell_at(ship.apron, 0, 0))
 		return
+	var wind := sim.event_plan.wind(sim.rules, sim.clock.calendar_minutes())
 	for crane in working:
+		# Over its wind limit a crane stops where it is.
+		if wind >= sim.rules.sts_cranes[crane.kind].wind_limit_kmh:
+			continue
 		var move_minutes := move_minutes_of(sim, crane)
 		if ship.boxes > 0:
 			_discharge(sim, crane, ship, move_minutes)

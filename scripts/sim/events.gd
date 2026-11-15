@@ -37,6 +37,14 @@ func tick(sim: PortSim) -> void:
 		if not event.forecast and on[event.kind] and now >= event.from - storms.lead_hours * 60.0:
 			event.forecast = true
 			sim._event("Storm forecast: gusts up to %d km/h from day %d %02d:00, for %d hours" % [roundi(event.peak), int(event.from / 1440.0), int(event.from / 60.0) % 24, roundi((event.to - event.from) / 60.0)])
+	# Say when the wind stops yard gear or quay cranes, and frees them again.
+	var before := wind(sim.rules, now - SimClock.CALENDAR_MINUTES_PER_TICK)
+	var after := wind(sim.rules, now)
+	for limit: Array in [[_least(sim.rules.yard_gear), "yard gear"], [_least(sim.rules.sts_cranes), "quay cranes"]]:
+		if before < limit[0] and after >= limit[0]:
+			sim._event("The wind is %d km/h: %s stopped" % [roundi(after), limit[1]])
+		elif before >= limit[0] and after < limit[0]:
+			sim._event("The wind has dropped to %d km/h: %s back at work" % [roundi(after), limit[1]])
 	list = list.filter(func(e: Dictionary) -> bool: return e.to >= now)
 
 
@@ -67,6 +75,14 @@ func set_kind(kind: String, value: bool) -> String:
 		return "No such event"
 	on[kind] = value
 	return ""
+
+
+## The lowest wind limit of `equipment` (each with a wind_limit_kmh).
+static func _least(equipment: Dictionary) -> float:
+	var least := INF
+	for kind: String in equipment:
+		least = minf(least, equipment[kind].wind_limit_kmh)
+	return least
 
 
 func _plan_storms(storms: Dictionary, from: float, season: float) -> void:

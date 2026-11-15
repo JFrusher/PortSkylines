@@ -520,7 +520,7 @@ func _test_machine_jobs() -> void:
 		if phases.is_empty() or phases[-1] != machines.phase(rtg):
 			phases.append(machines.phase(rtg))
 		ticks += 1
-		if not machines.tick().is_empty():
+		if not machines.tick([] as Array[String]).is_empty():
 			break
 	_expect(ticks, ceili(seconds / Machines.SECONDS_PER_TICK), "one move takes the data's time in game seconds (%.1f s)" % seconds)
 	_expect(phases, ["travel", "lift", "travel", "set_down"], "in the phases travel, lift, travel and set down")
@@ -529,7 +529,7 @@ func _test_machine_jobs() -> void:
 	var stacker := machines.add(1, "reach_stacker", 8)
 	machines.give(stacker, 8, 8)
 	var lift_only := 0
-	while machines.tick().is_empty():
+	while machines.tick([] as Array[String]).is_empty():
 		lift_only += 1
 	_expect(lift_only + 1, ceili((gear.reach_stacker.lift_seconds + gear.reach_stacker.set_down_seconds) / Machines.SECONDS_PER_TICK), "a move within one bay is just lift and set down")
 

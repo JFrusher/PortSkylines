@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_off_forecasts_nothing_and_shifts_nothing()
 	_test_the_plan_is_saved()
 	_test_wind()
+	_test_storm_stops_cranes()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -96,3 +97,35 @@ func _test_wind() -> void:
 	_expect(sim.event_plan.wind(sim.rules, storm.to + 1.0) <= calm.mean_kmh + calm.daily_swing_kmh, true, "and is calm again after")
 	sim.apply({"op": "set_event_kind", "kind": "storms", "on": false})
 	_expect(sim.event_plan.wind(sim.rules, middle) <= calm.mean_kmh + calm.daily_swing_kmh, true, "storms off: calm through it")
+
+
+## The storm exit criterion: a storm gusting to 100 km/h stops yard gear
+## from 65 km/h and quay cranes from 80, says so, and frees them after.
+func _test_storm_stops_cranes() -> void:
+	var sim := AreaPort.base()
+	sim.event_plan.tick(sim)
+	sim.event_plan.list.clear()
+	var start := sim.clock.calendar_minutes() + 60.0
+	sim.event_plan.list.append({"kind": "storms", "from": start, "to": start + 600.0, "peak": 100.0, "forecast": true})
+	var yard_stopped := false
+	var quay_stopped := false
+	var worked_over_limit := false
+	for i in roundi(700.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		var before := {}
+		for id: int in sim.machines.list:
+			before[id] = sim.machines.list[id].job.duplicate(true)
+		var timers := sim.cranes.map(func(c: PortSim.Crane) -> float: return c.timer)
+		sim.tick()
+		var wind := sim.event_plan.wind(sim.rules, sim.clock.calendar_minutes())
+		for id: int in sim.machines.list:
+			var gear: String = sim.machines.list[id].gear
+			if wind >= sim.rules.yard_gear[gear].wind_limit_kmh and not before.get(id, {}).is_empty() and sim.machines.list[id].job != before[id]:
+				worked_over_limit = true
+		for k in sim.cranes.size():
+			if wind >= sim.rules.sts_cranes[sim.cranes[k].kind].wind_limit_kmh and sim.cranes[k].timer != timers[k]:
+				worked_over_limit = true
+		yard_stopped = yard_stopped or sim.events.any(func(e: Dictionary) -> bool: return e.text.ends_with("yard gear stopped"))
+		quay_stopped = quay_stopped or sim.events.any(func(e: Dictionary) -> bool: return e.text.ends_with("quay cranes stopped"))
+	_expect(yard_stopped and quay_stopped, true, "the event list says the wind stopped yard gear and quay cranes")
+	_expect(worked_over_limit, false, "nothing works over its wind limit")
+	_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.ends_with("quay cranes back at work")), true, "and says when they are back at work")
