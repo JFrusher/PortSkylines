@@ -53,6 +53,8 @@ const AREA_COLOR := {
 	"parking": Color(0.38, 0.4, 0.42), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27),
 }
 const AREA_TOP := 0.2
+## AGV-only lanes, amber over the asphalt.
+const AGV_LANE := Color(0.55, 0.42, 0.18)
 ## How high ship lanes are drawn: just over the water.
 const LANE_HEIGHT := -0.2
 ## Camera distance, in world units, past which yard boxes are drawn plain.
@@ -172,6 +174,11 @@ var _roads_drawn := []
 var _areas := MeshInstance3D.new()
 ## The area and road versions the areas were drawn for: idle tints follow the roads.
 var _areas_drawn := []
+## The AGV zone: a yellow-black safety line round it, its lanes tinted amber,
+## and a barrier on each road lane where it crosses the zone's edge.
+var _agv_zone := MeshInstance3D.new()
+var _barriers: Array[Node3D] = []
+var _barrier_cache: Mesh
 var _area_preview := MeshInstance3D.new()
 ## The ship lanes on the water, and what they were drawn for.
 var _ship_lanes := MeshInstance3D.new()
@@ -216,7 +223,7 @@ func _ready() -> void:
 	_land.set_shader_parameter("owned", _owned)
 	_land.set_shader_parameter("colour", LAND_COLOUR)
 	add_child(_hover)
-	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview, _ship_lanes]:
+	for node: MeshInstance3D in [_roads, _road_marks, _road_preview, _snap_marks, _junction_signs, _areas, _area_preview, _ship_lanes, _agv_zone]:
 		add_child(node)
 	_ship_lanes.material_override = StandardMaterial3D.new()
 	_ship_lanes.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -448,6 +455,70 @@ func _draw_areas() -> void:
 			_quad(tool, cell.corners, AREA_TOP)
 	_areas.mesh = tool.commit()
 	_draw_area_buildings()
+	_draw_agv_zone()
+
+
+func _draw_agv_zone() -> void:
+	var zone: Dictionary = sim.areas.agv_zone
+	var tool := _road_tool()
+	var lanes := {}
+	for segment: int in sim.roads.segments:
+		for cell in sim.roads.ground(segment):
+			lanes[cell] = true
+	var edge := 0.12  # of a cell
+	for cell: Vector2i in zone:
+		var at := Vector2(cell)
+		if cell in lanes:
+			tool.set_color(AGV_LANE)
+			_quad(tool, [at, at + Vector2(1, 0), at + Vector2.ONE, at + Vector2(0, 1)], ROAD_TOP + ASPHALT_RISE + 0.02)
+		tool.set_color(Color(1.0, 0.8, 0.1) if posmod(cell.x + cell.y, 2) == 0 else Color(0.1, 0.1, 0.1))
+		for side: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if cell + side in zone:
+				continue
+			# The strip along this side, just inside the cell.
+			var a := at + Vector2(maxi(side.x, 0), maxi(side.y, 0))
+			var along := Vector2(absi(side.y), absi(side.x))
+			var inward := -Vector2(side) * edge
+			_quad(tool, [a, a + along, a + along + inward, a + inward], ROAD_TOP + ASPHALT_RISE + 0.04)
+	_agv_zone.mesh = tool.commit()
+	for node: Node3D in _barriers:
+		node.queue_free()
+	_barriers.clear()
+	Drive._refresh(sim)
+	var pieces: Dictionary = sim.network.pieces
+	for id: int in pieces:
+		var piece: Dictionary = pieces[id]
+		if not piece.next.any(func(n: int) -> bool: return pieces[n].agv != piece.agv):
+			continue
+		var points: PackedVector2Array = piece.points
+		var way := (points[-1] - points[-2]).normalized()
+		var barrier := MeshInstance3D.new()
+		barrier.mesh = _barrier_mesh()
+		var at := _world(points[-1] * Grid.CELL, ROAD_TOP + ASPHALT_RISE)
+		barrier.position = at
+		barrier.basis = Basis(Vector3.UP, atan2(-way.y, way.x))
+		add_child(barrier)
+		_barriers.append(barrier)
+
+
+## A boom barrier at a lane's end (x along the lane, z across it): a
+## yellow post at the kerb, a red-white striped boom down across the lane, a
+## small grey cabin with a sign.
+func _barrier_mesh() -> Mesh:
+	if _barrier_cache == null:
+		var lane := Grid.CELL / METRES_PER_UNIT  # a cell, about a lane wide
+		var parts: Array = [
+			[Vector3(0.025, 0.06, 0.025), Vector3(0, 0.03, -lane * 0.5), Color(1.0, 0.8, 0.1)],
+			[Vector3(0.03, 0.03, 0.03), Vector3(0, 0.06, -lane * 0.5), Color(0.15, 0.15, 0.15)],
+			[Vector3(0.05, 0.05, 0.04), Vector3(-0.03, 0.025, -lane * 0.5 - 0.05), Color(0.7, 0.72, 0.74)],
+			[Vector3(0.052, 0.006, 0.042), Vector3(-0.03, 0.053, -lane * 0.5 - 0.05), Color(0.25, 0.27, 0.3)],
+			[Vector3(0.002, 0.02, 0.03), Vector3(-0.004, 0.035, -lane * 0.5 - 0.05), Color(1.0, 0.65, 0.1)],
+		]
+		var stripes := 6
+		for k: int in stripes:
+			parts.append([Vector3(0.008, 0.008, lane / stripes), Vector3(0, 0.055, -lane * 0.5 + (k + 0.5) * lane / stripes), Color(0.9, 0.1, 0.1) if k % 2 == 0 else Color.WHITE])
+		_barrier_cache = _merged(parts)
+	return _barrier_cache
 
 
 ## The building on each area that has one, built again with the areas: a

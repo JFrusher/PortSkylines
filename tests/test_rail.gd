@@ -35,12 +35,12 @@ func _test_track_is_its_own_graph() -> void:
 	var sim := _port()
 	var segments := sim.roads.segments.size()
 	var network := LaneNetwork.new(sim.roads, sim.rules.junctions)
-	var route := network.route(network.nearest(Vector2(151, 100.5), true)[0], network.nearest(Vector2(249, 100.5), true)[0], true)
+	var route := network.route(network.nearest(Vector2(151, 100.5), "lorry")[0], network.nearest(Vector2(249, 100.5), "lorry")[0], true)
 	_expect(sim.apply({"op": "build_rail", "from": Vector2i(200, 60), "to": Vector2i(200, 140)}), "", "track is built straight across the road")
 	_expect(sim.roads.segments.size(), segments, "track doesn't split the road it crosses")
 	_expect(sim.rails.segments.size(), 1, "and the road doesn't split the track")
 	var after := LaneNetwork.new(sim.roads, sim.rules.junctions)
-	_expect(route.is_empty() or after.route(after.nearest(Vector2(151, 100.5), true)[0], after.nearest(Vector2(249, 100.5), true)[0], true) != route, false, "vehicles route as before")
+	_expect(route.is_empty() or after.route(after.nearest(Vector2(151, 100.5), "lorry")[0], after.nearest(Vector2(249, 100.5), "lorry")[0], true) != route, false, "vehicles route as before")
 	var lane_cells := {}
 	for id: int in after.pieces:
 		for point: Vector2 in after.pieces[id].points:

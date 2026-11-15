@@ -182,12 +182,12 @@ static func door(sim: PortSim, area: int) -> Vector2:
 ## lanes between the lanes nearest each; empty when no road joins them.
 static func road(sim: PortSim, from: Vector2, to: Vector2) -> Array[Vector2]:
 	Drive._refresh(sim)
-	var start: Array = sim.network.nearest(from, false)
-	var end: Array = sim.network.nearest(to, false)
+	var start: Array = sim.network.nearest(from, "service")
+	var end: Array = sim.network.nearest(to, "service")
 	var path: Array[Vector2] = []
 	if start[0] == 0 or end[0] == 0:
 		return path
-	var pieces := sim.network.route(start[0], end[0])
+	var pieces := sim.network.route(start[0], end[0], "service")
 	if pieces.is_empty():
 		return path
 	for piece: int in pieces:

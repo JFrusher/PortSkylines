@@ -904,7 +904,7 @@ static func _gate_of(sim: PortSim, terminal: int, from: Vector3i) -> int:
 			if best == 0 or minutes < soonest:
 				best = gate
 				soonest = minutes
-		if Drive.reaches(sim, from, _buffer_start(sim, best), true):
+		if Drive.reaches(sim, from, _buffer_start(sim, best), "lorry"):
 			return best
 		gates.erase(best)
 	return _gates(sim, terminal)[0] if _has_gate(sim, terminal) else 0

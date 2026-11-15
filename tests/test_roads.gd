@@ -895,19 +895,21 @@ func _outbound(sim: PortSim, _entry: Vector2i) -> Vector3i:
 ## from the lane nearest `from` to the one nearest `to`; [] when there is none.
 func _lane_route(roads: RoadNet, from: Vector2, to: Vector2, lorry: bool) -> Array[int]:
 	var network := LaneNetwork.new(roads, Content.base().junctions)
-	var start: int = network.nearest(from, lorry)[0]
-	var end: int = network.nearest(to, lorry)[0]
+	var who := "lorry" if lorry else "tractor"
+	var start: int = network.nearest(from, who)[0]
+	var end: int = network.nearest(to, who)[0]
 	if start == 0 or end == 0:
 		return []
-	return network.route(start, end, lorry)
+	return network.route(start, end, who)
 
 
 ## The lane network's route for a lorry (`lorry`) or a tractor from spot
 ## `from` to spot `to`, as Drive finds it; [] when there is none.
 func _route(sim: PortSim, from: Vector3i, to: Vector3i, lorry: bool) -> Array[int]:
 	Drive.flow(sim, 0)
-	var start: int = sim.network.nearest(sim.areas.centre(from), lorry)[0]
-	return Drive._best_route(sim, start, to, lorry)
+	var who := "lorry" if lorry else "tractor"
+	var start: int = sim.network.nearest(sim.areas.centre(from), who)[0]
+	return Drive._best_route(sim, start, to, who)
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`

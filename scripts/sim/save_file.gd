@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 58
+const VERSION := 59
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -136,6 +136,15 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v57(data)
 	if data.version < 58:
 		data = _migrate_v58(data)
+	if data.version < 59:
+		data = _migrate_v59(data)
+	return data
+
+
+## v59 adds the AGV zone (M11): none painted.
+static func _migrate_v59(data: Dictionary) -> Dictionary:
+	data.sim.areas.agv_zone = {}
+	data.version = 59
 	return data
 
 
@@ -776,9 +785,11 @@ static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.
 static func _valid_areas(areas: Dictionary) -> bool:
-	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY, "breakwaters": TYPE_DICTIONARY, "next_breakwater": TYPE_INT}):
+	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "agv_zone": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY, "breakwaters": TYPE_DICTIONARY, "next_breakwater": TYPE_INT}):
 		return false
 	if not areas.filled.keys().all(func(cell: Variant) -> bool: return cell is Vector2i):
+		return false
+	if not areas.agv_zone.keys().all(func(cell: Variant) -> bool: return cell is Vector2i and areas.agv_zone[cell] is bool):
 		return false
 	if not areas.breakwaters.keys().all(func(id: Variant) -> bool: return id is int and areas.breakwaters[id] is Dictionary and _has_fields(areas.breakwaters[id], {"from": TYPE_VECTOR2I, "to": TYPE_VECTOR2I})):
 		return false

@@ -719,6 +719,8 @@ func apply(command: Dictionary) -> String:
 			return set_area(command.id, command.settings)
 		"paint_terminal":
 			return areas.paint_cells(command.cells, command.terminal)
+		"paint_agv_zone":
+			return areas.paint_agv(command.cells, command.on)
 		"fill_terminal":
 			var cells := areas.fill_cells(command.cell)
 			return areas.paint_cells(cells, command.terminal) if not cells.is_empty() else "No road closes in this ground"

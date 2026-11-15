@@ -23,6 +23,9 @@ static var _curves := {}
 var terminals := {}
 ## Painted cells: cell -> terminal id.
 var paint := {}
+## The AGV zone (M11), painted like terminals: cell -> true. Lanes in it are
+## for AGVs alone, and service vans and fire engines (see LaneNetwork.may_use).
+var agv_zone := {}
 ## Water filled in to make land behind quay walls: cell -> true. It stays
 ## land when its apron is taken out.
 var filled := {}
@@ -228,6 +231,19 @@ func paint_cells(cells: Array, terminal: int) -> String:
 			_counts[terminal] = _counts.get(terminal, 0) + 1
 		touched = Rect2i(cell, Vector2i.ONE) if touched.size == Vector2i.ZERO else touched.expand(cell).expand(cell + Vector2i.ONE)
 	_repaint(touched)
+	return ""
+
+
+## Paints `cells` into the AGV zone (`on`) or out of it.
+func paint_agv(cells: Array, on: bool) -> String:
+	for cell: Vector2i in cells:
+		if cell.x < 0 or cell.y < 0 or cell.x >= _size.x or cell.y >= _size.y:
+			continue
+		if on:
+			agv_zone[cell] = true
+		else:
+			agv_zone.erase(cell)
+	version += 1
 	return ""
 
 
@@ -564,7 +580,7 @@ func _columns(segment: int) -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal, "paint": paint.duplicate(), "filled": filled.duplicate(), "breakwaters": breakwaters.duplicate(true), "next_breakwater": _next_breakwater}
+	return {"list": list.duplicate(true), "next_id": _next_id, "terminals": terminals.duplicate(true), "next_terminal": _next_terminal, "paint": paint.duplicate(), "agv_zone": agv_zone.duplicate(), "filled": filled.duplicate(), "breakwaters": breakwaters.duplicate(true), "next_breakwater": _next_breakwater}
 
 
 static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, site_coast: Coast) -> Areas:
@@ -580,6 +596,7 @@ static func from_dict(d: Dictionary, area_types: Dictionary, roads: RoadNet, sit
 	areas.terminals = d.terminals.duplicate(true)
 	areas._next_terminal = d.next_terminal
 	areas.paint = d.paint.duplicate()
+	areas.agv_zone = d.agv_zone.duplicate()
 	for terminal: int in areas.paint.values():
 		areas._counts[terminal] = areas._counts.get(terminal, 0) + 1
 	return areas

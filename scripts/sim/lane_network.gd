@@ -9,7 +9,8 @@ extends RefCounted
 ## Piece id -> {"points": PackedVector2Array in grid units, in driving order;
 ## "length": cells; "segment": its road, or 0 for a connection; "lane": its
 ## lane's index across the road, or -1; "next": the piece ids it leads into;
-## "lorries": whether lorries may use it; "node": the node a connection
+## "lorries": whether lorries may use it; "agv": whether it is in the AGV
+## zone, for AGVs alone (see may_use); "node": the node a connection
 ## crosses (minus its road's segment for a lane change), or 0; "kmh": its speed limit, a connection's the lower of the
 ## two roads it joins; "area": the area it is inside, or 0; "slot":
 ## Vector2i(area, slot) of the handover slot it is in, or (-1, -1)}.
@@ -164,16 +165,16 @@ func conflicts(piece: int) -> Array:
 ## The pieces along a route from piece `from` to piece `to`, both included,
 ## shortest by length; [] when there is none. It goes inside an area only if
 ## it starts or ends in it, and into a handover slot only as its start or end,
-## so no route cuts through a buffer or a slot someone stands in. A lorry's
-## (`lorry`) keeps to pieces lorries may use; every route weighs a piece by
+## so no route cuts through a buffer or a slot someone stands in. It keeps
+## to pieces `who` may use (see may_use); every route weighs a piece by
 ## its length plus the cells its delay in `delays` (piece -> seconds) is
 ## worth at `speed` cells a second, so it goes round a jam that costs more.
-func route(from: int, to: int, lorry := false, delays := {}, speed := 1.0) -> Array[int]:
-	return route_to_any(from, [to] as Array[int], lorry, delays, speed)
+func route(from: int, to: int, who: String, delays := {}, speed := 1.0) -> Array[int]:
+	return route_to_any(from, [to] as Array[int], who, delays, speed)
 
 
 ## route()'s way to whichever of `ends` is nearest by its weighing.
-func route_to_any(from: int, ends: Array[int], lorry := false, delays := {}, speed := 1.0) -> Array[int]:
+func route_to_any(from: int, ends: Array[int], who: String, delays := {}, speed := 1.0) -> Array[int]:
 	var areas := [pieces[from].area]
 	var slots := [pieces[from].slot]
 	for end in ends:
@@ -195,7 +196,7 @@ func route_to_any(from: int, ends: Array[int], lorry := false, delays := {}, spe
 		for next: int in pieces[at].next:
 			if next not in ends and (pieces[next].area != 0 and pieces[next].area not in areas or pieces[next].slot != NO_SLOT and pieces[next].slot not in slots):
 				continue
-			if lorry and not pieces[next].lorries:
+			if not may_use(pieces[next], who):
 				continue
 			var through: float = cost[at] + pieces[next].length + delays.get(next, 0.0) * speed
 			if through < cost.get(next, INF):
@@ -242,7 +243,7 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 	var out := func(k: int) -> Vector2: return curve.right_at(area.from + k + 0.5) * area.side
 	# The road lane beside the buffer's middle sets the way traffic runs.
 	var middle: Vector2i = layout.buffer[layout.buffer.size() / 2]
-	var beside := nearest(centre[middle] - out.call(middle.x), false)
+	var beside := nearest(centre[middle] - out.call(middle.x), "service")
 	if beside[0] == 0 or pieces[beside[0]].segment == 0:
 		return
 	var flow := 1 if point_along(beside[0], beside[1])[1].dot(curve.direction_at(area.from + middle.x + 0.5)) > 0.0 else -1
@@ -322,7 +323,7 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 ## The point on the road lane nearest `position`, its lane split there, or
 ## INF when no road lane is within a cell and a half.
 func _road_point(position: Vector2) -> Vector2:
-	var near := nearest(position, false)
+	var near := nearest(position, "service")
 	if near[0] == 0 or pieces[near[0]].segment == 0:
 		return Vector2.INF
 	var at: Vector2 = point_along(near[0], near[1])[0]
@@ -441,11 +442,11 @@ func point_along(id: int, s: float) -> Array[Vector2]:
 	return [points[-1], Vector2.ZERO]
 
 
-## [the piece a lorry (`lorry`) or a tractor may use nearest `position`,
+## [the piece `who` may use (see may_use) nearest `position`,
 ## how far along it that nearest point is], or [0, 0.0] with none. Of pieces
 ## meeting there it takes a road lane over a connection, then the one that
 ## ends there, so every way on is open.
-func nearest(position: Vector2, lorry: bool) -> Array:
+func nearest(position: Vector2, who: String) -> Array:
 	if _cells.is_empty():
 		_index_cells()
 	var best := [0, 0.0]
@@ -458,7 +459,7 @@ func nearest(position: Vector2, lorry: bool) -> Array:
 		for cell in _ring(centre, r):
 			for entry: Array in _cells.get(cell, []):
 				var id: int = entry[0]
-				if lorry and not pieces[id].lorries:
+				if not may_use(pieces[id], who):
 					continue
 				var points: PackedVector2Array = pieces[id].points
 				var at := Geometry2D.get_closest_point_to_segment(position, points[entry[1] - 1], points[entry[1]])
@@ -636,12 +637,48 @@ func _change(from: Array[int], to: Array[int], node: int) -> void:
 	pieces[id].next.append(to[2])
 
 
+## Whether `who` may drive `piece`: AGVs keep to the AGV zone and nothing
+## else enters it but service vans and fire engines ("service"); lorries
+## keep off roads closed to them too.
+static func may_use(piece: Dictionary, who: String) -> bool:
+	match who:
+		"agv":
+			return piece.agv
+		"tractor":
+			return not piece.agv
+		"lorry":
+			return piece.lorries and not piece.agv
+		"service":
+			return true
+	assert(false, "no one drives as %s" % who)
+	return false
+
+
+## Cuts the road lanes where they cross the edge of `zone` (cell -> true),
+## then marks the pieces whose middle stands in it as the AGV zone's.
+func mark_agv(zone: Dictionary) -> void:
+	var inside := func(point: Vector2) -> bool: return Vector2i(point.floor()) in zone
+	var edges: Array[Vector2] = []
+	for id: int in pieces:
+		var points: PackedVector2Array = pieces[id].points
+		if pieces[id].segment == 0:
+			continue
+		for i in range(1, points.size()):
+			if inside.call(points[i - 1]) != inside.call(points[i]):
+				edges.append(points[i])
+	for point in edges:
+		split_at(point)
+	for id: int in pieces:
+		var points: PackedVector2Array = pieces[id].points
+		pieces[id].agv = Vector2i(points[points.size() / 2].floor()) in zone
+
+
 func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, node: int, kmh: float) -> int:
 	var total := 0.0
 	for i in range(1, points.size()):
 		total += points[i - 1].distance_to(points[i])
 	_ends.clear()
-	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "node": node, "kmh": kmh, "area": 0, "slot": NO_SLOT}
+	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "agv": false, "node": node, "kmh": kmh, "area": 0, "slot": NO_SLOT}
 	_next_id += 1
 	# Kept up to date once built, rather than built again for each piece added.
 	if not _cells.is_empty():

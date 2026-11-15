@@ -67,8 +67,8 @@ func _test_every_slot_and_booth_is_reached() -> void:
 			_expect(ends.is_empty(), false, "a piece ends where a vehicle stands in area %d's slot %d" % [id, s])
 			if ends.is_empty():
 				continue
-			_expect(network.route(start, ends[0]).is_empty(), false, "area %d's slot %d is reached from the entry" % [id, s])
-			_expect(network.route(ends[0], start).is_empty(), false, "and left again for the entry")
+			_expect(network.route(start, ends[0], "tractor").is_empty(), false, "area %d's slot %d is reached from the entry" % [id, s])
+			_expect(network.route(ends[0], start, "tractor").is_empty(), false, "and left again for the entry")
 			kinds[sim.areas.kind_of(sim.areas.list[id])] = true
 	_expect(kinds.keys().size() >= 3, true, "yard block, apron and gate slots are all among them (%s)" % [kinds.keys()])
 
@@ -106,4 +106,4 @@ func _test_driveways_bend_with_their_area() -> void:
 	_expect(off_grid.is_empty(), false, "the bent block's lanes leave the grid's rows")
 	for s: int in layout.slots.size():
 		var ends := network.ending_at(_centre(sim, block, _driven(network, block, layout.slots[s])[-1]))
-		_expect(not ends.is_empty() and not starts.is_empty() and not network.route(starts[0], ends[0]).is_empty(), true, "slot %d on the bend is reached from the buffer" % s)
+		_expect(not ends.is_empty() and not starts.is_empty() and not network.route(starts[0], ends[0], "tractor").is_empty(), true, "slot %d on the bend is reached from the buffer" % s)

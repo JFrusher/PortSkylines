@@ -80,10 +80,10 @@ func _test_routes_go_round_a_jam() -> void:
 	var from := _piece_at(network, Vector2(90, 240.5))
 	var to := _piece_at(network, Vector2(170, 240.5))
 	var direct := _piece_at(network, Vector2(130, 240.5))
-	var clear := network.route(from, to, false)
+	var clear := network.route(from, to, "tractor")
 	_expect(clear.has(direct), true, "with no jam the route takes the direct road")
-	_expect(network.route(from, to, false, {direct: 200.0}, 1.0).has(direct), false, "a jam worth more than the way round sends it round")
-	_expect(network.route(from, to, false, {direct: 5.0}, 1.0).has(direct), true, "a small one doesn't")
+	_expect(network.route(from, to, "tractor", {direct: 200.0}, 1.0).has(direct), false, "a jam worth more than the way round sends it round")
+	_expect(network.route(from, to, "tractor", {direct: 5.0}, 1.0).has(direct), true, "a small one doesn't")
 
 
 ## The direct road is a tractor lane: a tractor takes it, a lorry goes round.
@@ -91,8 +91,8 @@ func _test_lorries_keep_off_tractor_lanes() -> void:
 	var network := _ladder("tractor_lane")
 	var from := _piece_at(network, Vector2(90, 240.5))
 	var to := _piece_at(network, Vector2(170, 240.5))
-	var tractor := network.route(from, to, false)
-	var lorry := network.route(from, to, true)
+	var tractor := network.route(from, to, "tractor")
+	var lorry := network.route(from, to, "lorry")
 	_expect(tractor.any(func(id: int) -> bool: return not network.pieces[id].lorries), true, "a tractor takes the tractor lane")
 	_expect(lorry.is_empty(), false, "a lorry finds a way")
 	_expect(lorry.all(func(id: int) -> bool: return network.pieces[id].lorries), true, "and keeps off it")
