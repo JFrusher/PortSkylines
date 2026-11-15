@@ -15,6 +15,8 @@ func _initialize() -> void:
 	for i: int in roundi(120.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
 	_expect(sim.ledger.moves.total > 0, true, "its ships are worked in the first two hours")
+	# With tides off every ship's channel is deep enough for it: none waits for high water.
+	_expect(sim.events.filter(func(e: Dictionary) -> bool: return "high water" in e.text).map(func(e: Dictionary) -> String: return e.text), [], "no ship waits for high water with tides off")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
