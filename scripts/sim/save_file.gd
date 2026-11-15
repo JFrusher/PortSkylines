@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 51
+const VERSION := 52
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -122,6 +122,16 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v50(data)
 	if data.version < 51:
 		data = _migrate_v51(data)
+	if data.version < 52:
+		data = _migrate_v52(data)
+	return data
+
+
+## v52 times a service boat's work alongside a ship: each boat gets "until".
+static func _migrate_v52(data: Dictionary) -> Dictionary:
+	for boat: Dictionary in data.sim.boats.list.values():
+		boat.until = 0.0
+	data.version = 52
 	return data
 
 
@@ -472,10 +482,10 @@ static func _valid_boats(data: Dictionary) -> bool:
 	var ship_ids: Array = data.ships.map(func(s: Variant) -> Variant: return s.get("id") if s is Dictionary else null)
 	for id: Variant in data.boats.list:
 		var boat: Variant = data.boats.list[id]
-		if not (id is int and boat is Dictionary and _has_fields(boat, {"kind": TYPE_STRING, "base": TYPE_INT, "at": TYPE_VECTOR2, "path": TYPE_ARRAY, "ship": TYPE_INT, "job": TYPE_STRING})):
+		if not (id is int and boat is Dictionary and _has_fields(boat, {"kind": TYPE_STRING, "base": TYPE_INT, "at": TYPE_VECTOR2, "path": TYPE_ARRAY, "ship": TYPE_INT, "job": TYPE_STRING, "until": TYPE_FLOAT})):
 			return false
 		var bases: Dictionary = data.pilot_stations if boat.kind == "pilot" else (data.tug_depots if boat.kind == "tug" else data.service_jetties)
-		if (boat.kind not in ["pilot", "tug"] and boat.kind not in Content.base().water.services.boats) or boat.base not in bases or boat.job not in ["home", "out", "with", "back", "ashore", "fetch"] or not boat.path.all(func(p: Variant) -> bool: return p is Vector2):
+		if (boat.kind not in ["pilot", "tug"] and boat.kind not in Content.base().water.services.boats) or boat.base not in bases or boat.job not in ["home", "out", "with", "back", "ashore", "fetch", "serve"] or not boat.path.all(func(p: Variant) -> bool: return p is Vector2):
 			return false
 		if boat.job == "with" and (boat.kind != "tug" or boat.ship not in ship_ids):
 			return false

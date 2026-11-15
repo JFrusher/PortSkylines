@@ -19,7 +19,9 @@ const STEP := 4
 ## "with": a tug with its ship, moving with it;
 ## "back": sailing home (a pilot boat whose `ship` is set left its pilot aboard);
 ## "ashore": a pilot boat at its base while its pilot is aboard `ship`;
-## "fetch": a pilot boat sailing to take its pilot off}.
+## "fetch": a pilot boat sailing to take its pilot off;
+## "serve": a service boat alongside `ship`, at work until the calendar
+## minute "until" (see Services)}.
 var list := {}
 var _next := 1
 var _grid: AStarGrid2D
@@ -28,7 +30,7 @@ var _grid_version := -1
 
 ## Adds a boat of `kind` at its base `base` standing at `cell`.
 func add(kind: String, base: int, cell: Vector2i) -> void:
-	list[_next] = {"kind": kind, "base": base, "at": _middle(cell), "path": [] as Array[Vector2], "ship": 0, "job": "home"}
+	list[_next] = {"kind": kind, "base": base, "at": _middle(cell), "path": [] as Array[Vector2], "ship": 0, "job": "home", "until": 0.0}
 	_next += 1
 
 
@@ -143,6 +145,13 @@ func _arrive(sim: PortSim, id: int) -> void:
 		"out":
 			if boat.kind == "tug":
 				boat.job = "with"
+			elif boat.kind != "pilot":
+				var ship := _ship(sim, boat.ship)
+				if ship == null:
+					go_home(sim.areas, id, sim.marine_base_cell(boat.base), 0)
+				else:
+					boat.job = "serve"
+					boat.until = sim.clock.calendar_minutes() + sim.rules.ship_classes[ship.kind].services[boat.kind].minutes
 			else:
 				go_home(sim.areas, id, sim.marine_base_cell(boat.base), boat.ship)
 		"fetch":
@@ -157,7 +166,7 @@ func _arrive(sim: PortSim, id: int) -> void:
 func release(sim: PortSim, ship_id: int, at: Vector2) -> void:
 	for id: int in list:
 		var boat: Dictionary = list[id]
-		if boat.ship != ship_id:
+		if boat.ship != ship_id or boat.kind not in ["pilot", "tug"]:
 			continue
 		if boat.kind == "tug":
 			go_home(sim.areas, id, sim.marine_base_cell(boat.base), 0)

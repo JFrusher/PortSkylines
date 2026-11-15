@@ -1811,6 +1811,7 @@ func tick() -> void:
 		_work(ship)
 	_berths_seen = berths_now
 	boats.tick(self)
+	Services.tick(self)
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
@@ -2167,6 +2168,7 @@ func _work(ship: Ship) -> void:
 
 
 func _sail(ship: Ship, crane_count: int) -> void:
+	Services.sailed(self, ship)
 	ship.state = Ship.State.LEAVING
 	var now := clock.calendar_minutes()
 	var hours := (now - ship.berthed) / 60.0

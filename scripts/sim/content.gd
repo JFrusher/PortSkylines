@@ -137,7 +137,7 @@ const SCHEMA := {
 		"anchorage": {"cost_per_cell": TYPE_INT, "spacing": TYPE_INT}, "max_wait_hours": TYPE_FLOAT,
 		"pilots": {"station_cost": TYPE_INT, "pilot_cost": TYPE_INT, "upkeep_per_pilot": TYPE_INT, "boat_speed": TYPE_FLOAT, "fee": TYPE_INT},
 		"tugs": {"depot_cost": TYPE_INT, "tug_cost": TYPE_INT, "upkeep_per_tug": TYPE_INT, "speed": TYPE_FLOAT}, "slot_margin_minutes": TYPE_FLOAT,
-		"services": {"jetty_cost": TYPE_INT, "boats": {"*": {"name": TYPE_STRING, "cost": TYPE_INT, "upkeep": TYPE_INT, "speed": TYPE_FLOAT}}},
+		"services": {"jetty_cost": TYPE_INT, "unserved_reputation": TYPE_FLOAT, "boats": {"*": {"name": TYPE_STRING, "cost": TYPE_INT, "upkeep": TYPE_INT, "speed": TYPE_FLOAT}}},
 		"breakwater": {"cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT},
 		"dredge": {"max_depth": TYPE_FLOAT, "cost_per_cell_metre": TYPE_INT, "maintenance_per_cell_metre": TYPE_INT, "maintenance_days": TYPE_INT}},
 	# The site is split into square land tiles `metres` across; the port owns
