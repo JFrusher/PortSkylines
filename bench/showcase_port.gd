@@ -1,4 +1,6 @@
 extends RefCounted
+
+const RandomPort := preload("res://tests/random_port.gd")
 ## The showcase port, for testing and showing the game's parts: a dense
 ## two-terminal port on the Estuary's natural coast, built by the commands
 ## the toolbar sends, with one of nearly everything the game has. Grown as
@@ -62,7 +64,7 @@ const LANE_YARDS: Array = [[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"],
 ## The rules the showcase plays by: the game's own, with every milestone
 ## reached and cranes standing the moment they're ordered.
 static func rules() -> Dictionary:
-	var copy := Content.base().duplicate(true)
+	var copy := RandomPort.small_site(Content.base())
 	for milestone: Dictionary in copy.milestones.values():
 		milestone.teu = 0
 		milestone.reputation = 0.0

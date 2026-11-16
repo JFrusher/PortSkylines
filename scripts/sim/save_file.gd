@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 65
+const VERSION := 66
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -150,6 +150,18 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v64(data)
 	if data.version < 65:
 		data = _migrate_v65(data)
+	if data.version < 66:
+		data = _migrate_v66(data)
+	return data
+
+
+## v66 adds scenarios and the morning paper (M11): older games are
+## sandbox games, with no papers filed yet.
+static func _migrate_v66(data: Dictionary) -> Dictionary:
+	data.sim.scenario = Scenario.none()
+	data.sim.reports = []
+	data.sim.today_calls = {"calls": 0, "on_time": 0}
+	data.version = 66
 	return data
 
 
@@ -683,7 +695,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "serviced": TYPE_DICTIONARY, "agv_home": TYPE_DICTIONARY, "racks": TYPE_DICTIONARY, "town": TYPE_DICTIONARY, "fires": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "serviced": TYPE_DICTIONARY, "agv_home": TYPE_DICTIONARY, "racks": TYPE_DICTIONARY, "town": TYPE_DICTIONARY, "scenario": TYPE_DICTIONARY, "reports": TYPE_ARRAY, "today_calls": TYPE_DICTIONARY, "fires": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
@@ -692,6 +704,14 @@ static func _valid_sim(data: Variant) -> bool:
 	if not _has_fields(data.ledger, {
 		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "terminals": TYPE_DICTIONARY, "moves": TYPE_DICTIONARY, "days": TYPE_ARRAY,
 	}):
+		return false
+	if not _has_fields(data.scenario, {"key": TYPE_STRING, "fresh": TYPE_BOOL, "status": TYPE_STRING, "medal": TYPE_STRING, "moves": TYPE_INT, "on_time_calls": TYPE_INT}):
+		return false
+	if data.scenario.key != "" and data.scenario.key not in Content.base().scenarios:
+		return false
+	if data.scenario.fresh and not data.map.begins_with(MapGen.PREFIX):
+		return false
+	if not _has_fields(data.today_calls, {"calls": TYPE_INT, "on_time": TYPE_INT}):
 		return false
 	if not _has_fields(data.town, {"mood": TYPE_FLOAT, "fund": TYPE_INT, "bypass": TYPE_BOOL, "said": TYPE_STRING}):
 		return false

@@ -16,6 +16,8 @@ signal new_game_pressed(creative: bool, generated: bool)
 signal mega_port_pressed
 ## The showcase port, from the pause menu in debug builds.
 signal showcase_port_pressed
+## A scenario chosen from the menu: on its own map, or a fresh coast.
+signal scenario_pressed(key: String, fresh: bool)
 ## A recent event was clicked: the camera goes to grid cell `cell`.
 signal event_picked(cell: Vector2i)
 
@@ -147,6 +149,15 @@ var _left_scrolls: Array[ScrollContainer] = []
 var _confirm := ConfirmationDialog.new()
 ## The pause menu (Esc), the speed buttons, and the speed to go back to.
 var _menu: PanelContainer
+## The scenario list, the scenario's goals as it is played, and the morning
+## paper with the last report it showed.
+var _scenarios: PanelContainer
+var _goals := Label.new()
+var _paper: PanelContainer
+var _paper_text := RichTextLabel.new()
+var _paper_shown := -1
+## The game the goals and paper were last shown for: a new game shows them afresh.
+var _shown_for: PortSim
 var _speed_buttons: Array[Button] = []
 var _speed_before_menu := 1
 ## Text beside the mouse, such as the road under it.
@@ -243,6 +254,10 @@ func _ready() -> void:
 	_ask(menu, "New game, new coast", "Start a new game on a coast drawn for it: its own bays, river and islands. The port you're playing is lost unless it is saved.", func() -> void:
 		_menu.visible = false
 		new_game_pressed.emit(false, true))
+	var scenarios_button := Button.new()
+	scenarios_button.text = "Scenarios"
+	scenarios_button.pressed.connect(func() -> void: _scenarios.visible = true)
+	menu.add_child(scenarios_button)
 	if OS.is_debug_build():
 		_ask(menu, "Mega port (debug)", "Start the big test port: 6 berths, 18 STS cranes, 80 RTG blocks holding 20,000 boxes, 12 gates and ships in. The port you're playing is lost unless it is saved.", func() -> void:
 			_menu.visible = false
@@ -271,6 +286,13 @@ func _ready() -> void:
 				command_issued.emit({"op": "set_event_kind", "kind": kind, "on": on}))
 		menu.add_child(check)
 		_event_checks[kind] = check
+
+	var goals := _panel(right, "Scenario")
+	_goals.custom_minimum_size.x = 320
+	_goals.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	goals.add_child(_goals)
+	_build_scenarios()
+	_build_paper()
 
 	var guide := _panel(right, "Getting started")
 	_guide_step.theme_type_variation = "MutedLabel"
@@ -695,6 +717,8 @@ func _process(dt: float) -> void:
 			control.tooltip_text = locked if locked else control.get_meta("tip")
 
 	_events.visible = _message.text != ""
+	_show_scenario()
+	_show_paper()
 	_show_guide()
 	_fit_left_panels()
 
@@ -894,6 +918,108 @@ func _gate(name: String, control: Control) -> Control:
 		_gated[name] = []
 	_gated[name].append(control)
 	return control
+
+
+## The scenario list: each scenario's name, best medal and blurb, played on
+## its own map or a fresh coast.
+func _build_scenarios() -> void:
+	var list := _panel(_corner(Control.PRESET_CENTER), "Scenarios")
+	_scenarios = _panel_of(list)
+	_scenarios.visible = false
+	_scenarios.visibility_changed.connect(func() -> void:
+		if _scenarios.visible:
+			_fill_scenarios(list))
+
+
+func _fill_scenarios(list: VBoxContainer) -> void:
+	for child: Node in list.get_children().slice(1):
+		child.queue_free()
+	var settings := ConfigFile.new()
+	settings.load(SETTINGS_PATH)
+	for key: String in sim.rules.scenarios:
+		var scenario: Dictionary = sim.rules.scenarios[key]
+		var medal: String = settings.get_value("medals", key, "")
+		var name := _label("%s%s" % [scenario.name, "  (%s)" % medal.capitalize() if medal else ""])
+		name.theme_type_variation = "PanelTitle"
+		list.add_child(name)
+		var blurb := _label("%s %d days." % [scenario.blurb, scenario.days])
+		blurb.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		blurb.custom_minimum_size.x = 460
+		list.add_child(blurb)
+		var row := _row(list)
+		for fresh: bool in [false, true]:
+			_ask(row, "Fresh coast" if fresh else "Play", "Start %s%s? The port you're playing is lost unless it is saved." % [scenario.name, " on a coast drawn for it" if fresh else ""], func() -> void:
+				_scenarios.visible = false
+				_menu.visible = false
+				scenario_pressed.emit(key, fresh))
+
+
+## The scenario's goals and days left; a medal won is kept in the settings.
+func _show_scenario() -> void:
+	if _shown_for != sim:
+		_shown_for = sim
+		_paper_shown = -1
+		_panel_of(_goals).visible = sim.scenario.key != ""
+	if sim.scenario.key == "":
+		return
+	var scenario: Dictionary = sim.rules.scenarios[sim.scenario.key]
+	var lines: Array[String] = ["%s, day %d of %d%s" % [scenario.name, sim.clock.game_day() + 1, scenario.days, " (fresh coast)" if sim.scenario.fresh else ""]]
+	for goal: Dictionary in Scenario.progress(sim):
+		lines.append("%s %s: %d / %d" % ["✓" if goal.met else "·", goal.text, goal.now, goal.target])
+	if sim.scenario.status == "won":
+		lines.append("Won: %s medal" % sim.scenario.medal.capitalize())
+		_keep_medal()
+	elif sim.scenario.status == "lost":
+		lines.append("Lost. Try again from the menu.")
+	_goals.text = "\n".join(lines)
+
+
+func _keep_medal() -> void:
+	var order := ["", "bronze", "silver", "gold"]
+	var settings := ConfigFile.new()
+	settings.load(SETTINGS_PATH)
+	var best: String = settings.get_value("medals", sim.scenario.key, "")
+	if order.find(sim.scenario.medal) > order.find(best):
+		settings.set_value("medals", sim.scenario.key, sim.scenario.medal)
+		settings.save(SETTINGS_PATH)
+
+
+## The morning paper: yesterday's numbers and news, shown from 06:00 unless
+## the player stops it.
+func _build_paper() -> void:
+	var page := _panel(_corner(Control.PRESET_CENTER), "Morning paper")
+	_paper = _panel_of(page)
+	_paper.visible = false
+	_paper_text.bbcode_enabled = true
+	_paper_text.fit_content = true
+	_paper_text.custom_minimum_size.x = 440
+	page.add_child(_paper_text)
+	var stop := CheckButton.new()
+	stop.text = "Deliver it each morning"
+	var settings := ConfigFile.new()
+	settings.load(SETTINGS_PATH)
+	stop.button_pressed = settings.get_value("ui", "paper", true)
+	stop.toggled.connect(func(on: bool) -> void:
+		settings.set_value("ui", "paper", on)
+		settings.save(SETTINGS_PATH))
+	page.add_child(stop)
+
+
+func _show_paper() -> void:
+	if sim.reports.is_empty() or sim.reports[-1].day == _paper_shown or sim.clock.game_hour() < 6:
+		return
+	_paper_shown = sim.reports[-1].day
+	var settings := ConfigFile.new()
+	settings.load(SETTINGS_PATH)
+	if not settings.get_value("ui", "paper", true):
+		return
+	var report: Dictionary = sim.reports[-1]
+	var text := "[center][b][font_size=22]The %s Gazette[/font_size][/b]\nDay %d[/center]\n" % [sim.rules.town.name, report.day]
+	text += "[b]%d[/b] moves across the quay.  [b]%d[/b] calls, %d on time.  %s the day.\n" % [report.moves, report.calls, report.on_time, ("Made " + HudDetails.dollars(report.net)) if report.net >= 0 else ("Lost " + HudDetails.dollars(-report.net))]
+	for headline: String in report.headlines:
+		text += "\n• " + headline
+	_paper_text.text = text
+	_paper.visible = true
 
 
 ## The guided start's current step; its panel hides once the first ship is worked.

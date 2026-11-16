@@ -185,6 +185,10 @@ const SCHEMA := {
 	# the port reaches it, its mood's base and pace, noise and light by area
 	# kind, jobs by kind of worker, and what its fixes cost.
 	"town": {"name": TYPE_STRING, "offset_cells": TYPE_ARRAY, "reach_m": TYPE_FLOAT, "base_mood": TYPE_FLOAT, "ease_per_hour": TYPE_FLOAT, "sour_below": TYPE_FLOAT, "warm_above": TYPE_FLOAT, "night_starts_hour": TYPE_FLOAT, "noise": {"*": TYPE_FLOAT}, "light": {"*": TYPE_FLOAT}, "ship_noise": TYPE_FLOAT, "lorry_noise": TYPE_FLOAT, "belt_factor": TYPE_FLOAT, "jobs": {"crane": TYPE_FLOAT, "machine": TYPE_FLOAT, "tractor": TYPE_FLOAT, "person": TYPE_FLOAT}, "points_per_job": TYPE_FLOAT, "max_job_points": TYPE_FLOAT, "fund_per_point": TYPE_FLOAT, "max_fund_points": TYPE_FLOAT, "max_fund": TYPE_INT, "bypass_cost": TYPE_INT, "shore_power_cost": TYPE_INT, "houses": TYPE_INT, "houses_per_job": TYPE_FLOAT},
+	# Scenarios (M11, see Scenario): a set game's map, days, start money, rule
+	# changes ({"path": "a.b.c", "value"}), goals and kept conditions
+	# ({"kind", "count"}), and the last day each medal is won by.
+	"scenarios": {"*": {"name": TYPE_STRING, "blurb": TYPE_STRING, "map": TYPE_STRING, "days": TYPE_FLOAT, "start_money": TYPE_FLOAT, "patch": TYPE_ARRAY, "goals": TYPE_ARRAY, "keep": TYPE_ARRAY, "medals": {"gold": TYPE_FLOAT, "silver": TYPE_FLOAT}}},
 	"box_look": {"own_share": TYPE_FLOAT, "stripe_share": TYPE_FLOAT, "weathering": TYPE_FLOAT, "rust_share": TYPE_FLOAT, "reefer": TYPE_STRING, "rust": TYPE_STRING, "placard": TYPE_STRING, "lessors": TYPE_ARRAY},
 	# An AGV (M11): bought at an AGV depot, driverless, so dear to buy and cheap to keep.
 	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT, "battery_hours": TYPE_FLOAT, "charge_hours": TYPE_FLOAT, "low_share": TYPE_FLOAT, "charger_cost": TYPE_INT, "max_chargers": TYPE_INT, "rack_cost": TYPE_INT, "safety_cells": TYPE_FLOAT},
@@ -300,12 +304,42 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):
 				return {"error": "lines.%s.classes: unknown ship class \"%s\"" % [line, kind]}
+	for key: String in rules.scenarios:
+		var err := _scenario_error(rules, rules.scenarios[key])
+		if err:
+			return {"error": "scenarios.%s.%s" % [key, err]}
 	var shares := 0.0
 	for place: Dictionary in rules.hinterland.places.values():
 		shares += place.share
 	if not is_equal_approx(shares, 1.0):
 		return {"error": "hinterland.places: shares must add up to 1"}
 	return {"rules": rules}
+
+
+## Why `scenario` won't play under `rules`, or "": its map is known, every
+## patched path is a rule already, every goal and kept condition a known
+## kind, and its medals fall within its days.
+static func _scenario_error(rules: Dictionary, scenario: Dictionary) -> String:
+	if scenario.map not in rules.maps and not (scenario.map.begins_with(MapGen.PREFIX) and scenario.map.trim_prefix(MapGen.PREFIX).is_valid_int()):
+		return "map: unknown map \"%s\"" % scenario.map
+	for change: Variant in scenario.patch:
+		if not (change is Dictionary and change.get("path") is String and change.has("value")):
+			return "patch: each change needs a path and a value"
+		var at: Variant = rules
+		for part: String in change.path.split("."):
+			if not (at is Dictionary and at.has(part)):
+				return "patch: no rule %s" % change.path
+			at = at[part]
+		if typeof(at) != typeof(change.value):
+			return "patch: %s must stay the same type" % change.path
+	for goal: Variant in scenario.goals + scenario.keep:
+		if not (goal is Dictionary and goal.get("kind") in Scenario.GOALS and goal.get("count") is float):
+			return "goals: each needs a kind (one of %s) and a count" % [Scenario.GOALS]
+	if scenario.goals.is_empty():
+		return "goals: needs at least one"
+	if not (scenario.medals.gold <= scenario.medals.silver and scenario.medals.silver <= scenario.days):
+		return "medals: gold by silver by the last day"
+	return ""
 
 
 ## Why `map` isn't a coast on `site`, or "": polygons of at least three

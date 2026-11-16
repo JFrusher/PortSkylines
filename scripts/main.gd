@@ -64,6 +64,7 @@ func _ready() -> void:
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
 	hud.new_game_pressed.connect(_new_game)
+	hud.scenario_pressed.connect(func(key: String, fresh: bool) -> void: _use(Scenario.start(key, randi(), fresh)))
 	# Loaded, not preloaded: bench/ is left out of exported builds, which have no such button.
 	hud.mega_port_pressed.connect(func() -> void: _use(load("res://bench/endgame_port.gd").debug_port()))
 	hud.showcase_port_pressed.connect(func() -> void: _use(load("res://bench/showcase_port.gd").debug_port()))

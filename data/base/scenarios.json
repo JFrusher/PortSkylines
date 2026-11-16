@@ -1,0 +1,55 @@
+{
+	"scenarios": {
+		"peak_rush": {
+			"name": "Peak season rush",
+			"blurb": "The lines bring the peak early. Build a port that works thirty calls inside their windows before the season ends.",
+			"map": "generated:1101",
+			"days": 28.0,
+			"start_money": 30000000.0,
+			"patch": [
+				{"path": "contracts.offer_check_minutes", "value": 240.0}
+			],
+			"goals": [{"kind": "on_time_calls", "count": 30.0}],
+			"keep": [],
+			"medals": {"gold": 18.0, "silver": 23.0}
+		},
+		"storm_week": {
+			"name": "Storm week",
+			"blurb": "Gale after gale is forecast. Keep the berths turning: move 20,000 boxes across the quay through the storms.",
+			"map": "generated:2202",
+			"days": 21.0,
+			"start_money": 30000000.0,
+			"patch": [
+				{"path": "events.storms.per_season", "value": 4.0},
+				{"path": "events.storms.peak_min_kmh", "value": 80.0}
+			],
+			"goals": [{"kind": "moves", "count": 20000.0}],
+			"keep": [],
+			"medals": {"gold": 12.0, "silver": 16.0}
+		},
+		"automate_or_bust": {
+			"name": "Automate or bust",
+			"blurb": "A rival port has gone driverless and the line is watching. Run twelve AGVs and move 15,000 boxes before they sign with the rival.",
+			"map": "estuary",
+			"days": 28.0,
+			"start_money": 60000000.0,
+			"patch": [],
+			"goals": [{"kind": "agvs", "count": 12.0}, {"kind": "moves", "count": 15000.0}],
+			"keep": [],
+			"medals": {"gold": 16.0, "silver": 22.0}
+		},
+		"angry_neighbours": {
+			"name": "Angry neighbours",
+			"blurb": "Saltmarsh has had enough of the old port. Grow it to 25,000 moves without the town's mood ever falling below 35.",
+			"map": "strait",
+			"days": 28.0,
+			"start_money": 40000000.0,
+			"patch": [
+				{"path": "town.base_mood", "value": 45.0}
+			],
+			"goals": [{"kind": "moves", "count": 25000.0}],
+			"keep": [{"kind": "mood", "count": 35.0}],
+			"medals": {"gold": 18.0, "silver": 23.0}
+		}
+	}
+}

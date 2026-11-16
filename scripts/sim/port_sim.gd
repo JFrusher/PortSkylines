@@ -69,6 +69,13 @@ var racks := {}
 ## The town next door (see Town): its mood, the community fund a day, whether
 ## the bypass is built, and what the news said of it last ("sour", "warm" or "").
 var town := {"mood": 60.0, "fund": 0, "bypass": false, "said": ""}
+## The scenario being played and how it stands (see Scenario).
+var scenario := Scenario.none()
+## The morning paper: each closed day's {"day", "moves", "net", "calls",
+## "on_time", "headlines"}, the last REPORT_DAYS of them; and today's calls
+## so far, {"calls", "on_time"}.
+var reports: Array[Dictionary] = []
+var today_calls := {"calls": 0, "on_time": 0}
 ## Fires burning, and the fire engines.
 var fires := Fires.new()
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
@@ -169,6 +176,7 @@ const BERTH_TURN := 15
 ## How many calls the ship log keeps, which milestones' on-time and
 ## productivity gates look back over.
 const SHIP_LOG_CALLS := 20
+const REPORT_DAYS := 7
 ## A pilot station or tug depot stands within this many cells of land, and
 ## at least MARINE_BASE_GAP cells from another.
 const MARINE_BASE_SHORE := 10
@@ -449,6 +457,9 @@ func to_dict() -> Dictionary:
 		"agv_home": agv_home.duplicate(true),
 		"racks": racks.duplicate(true),
 		"town": town.duplicate(),
+		"scenario": scenario.duplicate(),
+		"reports": reports.duplicate(true),
+		"today_calls": today_calls.duplicate(),
 		"fires": fires.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
@@ -511,7 +522,8 @@ func _area_stacks_dict() -> Dictionary:
 
 
 static func from_dict(d: Dictionary) -> PortSim:
-	var sim := PortSim.new()
+	# A scenario plays by its own rules, on a fresh coast its map names the seed of.
+	var sim := PortSim.new(0, Scenario.rules_for(d.scenario.key, int(d.map.trim_prefix(MapGen.PREFIX)) if d.scenario.fresh else -1))
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types, sim.rules.junctions)
 	sim.roads.anchors = [Vector2(sim.site_entry_point())]
 	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types(), sim.rules.junctions)
@@ -540,6 +552,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.serviced = d.serviced.duplicate()
 	sim.racks = d.racks.duplicate(true)
 	sim.town = d.town.duplicate()
+	sim.scenario = d.scenario.duplicate()
+	sim.reports.assign(d.reports.duplicate(true))
+	sim.today_calls = d.today_calls.duplicate()
 	for depot: int in d.agv_home:
 		var home: Array[float] = []
 		home.assign(d.agv_home[depot])
@@ -2077,6 +2092,17 @@ func last_event() -> String:
 
 
 ## Logs `text`; `at` is the grid cell it happened at, which the HUD links to.
+## Files the morning paper for the day `closed` (a ledger day just closed):
+## its numbers, and the news it brought, routine lines left out.
+func _report(closed: Dictionary) -> void:
+	var from := float(closed.day) * SimClock.MINUTES_PER_DAY
+	var headlines: Array = events.filter(func(e: Dictionary) -> bool: return e.minute >= from and e.minute < from + SimClock.MINUTES_PER_DAY and not e.text.begins_with("Upkeep")).map(func(e: Dictionary) -> String: return e.text)
+	reports.append({"day": closed.day, "moves": closed.moves.total, "net": closed.closed - closed.opened, "calls": today_calls.calls, "on_time": today_calls.on_time, "headlines": headlines.slice(-5)})
+	if reports.size() > REPORT_DAYS:
+		reports.pop_front()
+	today_calls = {"calls": 0, "on_time": 0}
+
+
 func _event(text: String, at := Grid.NONE) -> void:
 	if last_event() == text:
 		return
@@ -2114,6 +2140,8 @@ func _end_of_day() -> void:
 	_check_milestones()
 	_check_objectives()
 	ledger.close_day(clock.game_day() - 1)
+	Scenario.close_day(self, clock.game_day() - 1, ledger.days[-1].moves.total)
+	_report(ledger.days[-1])
 	if clock.game_day() % rules.year_days == 0:
 		_end_of_year()
 	delivered_yesterday = delivered - _delivered_at_midnight
@@ -2378,8 +2406,11 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	var late := maxf(now - ship.due, 0.0) / 60.0
 	var terminal: int = areas.list[ship.apron].terminal
 	ship_log.append({"kind": ship.kind, "line": ship.line, "terminal": terminal, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
+	today_calls.calls += 1
+	today_calls.on_time += 1 if late == 0.0 else 0
 	if late == 0.0:
 		on_time_calls[ship.kind] = on_time_calls.get(ship.kind, 0) + 1
+		Scenario.sailed_on_time(self)
 	if ship_log.size() > SHIP_LOG_CALLS:
 		ship_log.pop_front()
 	year.calls += 1
