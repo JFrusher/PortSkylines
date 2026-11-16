@@ -2285,6 +2285,11 @@ static func _bypass(port: PortSim) -> RoadCurve:
 const TOWN_HALF := Vector2(220, 170)
 const HOUSE_GRID := 16.0
 const STREET_EVERY := Vector2i(4, 3)
+## The town square, north of the high street (the highway), relative to the
+## town's middle in metres: a rectangle from its first corner to its second.
+const SQUARE := Rect2(-56, -44, 112, 36)
+## How far from the middle along the high street its houses are shops.
+const HIGH_STREET := Vector2(120, 40)
 
 
 ## Where the town's houses stand, nearest its middle first, in metres: on a
@@ -2308,7 +2313,7 @@ static func town_spots(port: PortSim) -> Array[Vector3]:
 				continue
 			var spot := middle + Vector2(gx, gy) * HOUSE_GRID + Vector2(rng.randf_range(-2, 2), rng.randf_range(-2, 2))
 			var ellipse := pow((spot.x - middle.x) / TOWN_HALF.x, 2.0) + pow((spot.y - middle.y) / TOWN_HALF.y, 2.0)
-			if ellipse > 1.0 or spot.x < edge or absf(spot.y - road_y) < 16.0 or curve.any(func(p: Vector2) -> bool: return p.distance_to(spot) < 22.0):
+			if ellipse > 1.0 or SQUARE.has_point(spot - middle) or spot.x < edge or absf(spot.y - road_y) < 16.0 or curve.any(func(p: Vector2) -> bool: return p.distance_to(spot) < 22.0):
 				continue
 			near[spot] = ellipse + rng.randf() * 0.15
 			found.append(Vector3(spot.x, spot.y, rng.randi() % 6))
@@ -2338,14 +2343,19 @@ func _draw_town() -> void:
 		reach = reach.max((Vector2(spot.x, spot.y) - middle).abs() + Vector2(10, 10))
 	for gx in range(-14, 15, 1):
 		if posmod(gx, STREET_EVERY.x) == 0 and absf(gx * HOUSE_GRID) < reach.x:
-			parts.append([Vector3(0.36, 0.01, reach.y * 2.0 / METRES_PER_UNIT), _world(middle + Vector2(gx * HOUSE_GRID, 0), 0.1), Color(0.34, 0.35, 0.37)])
+			parts.append([Vector3(0.26, 0.01, reach.y * 2.0 / METRES_PER_UNIT), _world(middle + Vector2(gx * HOUSE_GRID, 0), 0.1), Color(0.3, 0.3, 0.3)])
 	for gy in range(-11, 12, 1):
 		if posmod(gy, STREET_EVERY.y) == 0 and absf(gy * HOUSE_GRID) < reach.y:
-			parts.append([Vector3(reach.x * 2.0 / METRES_PER_UNIT, 0.01, 0.36), _world(middle + Vector2(0, gy * HOUSE_GRID), 0.1), Color(0.34, 0.35, 0.37)])
+			parts.append([Vector3(reach.x * 2.0 / METRES_PER_UNIT, 0.01, 0.26), _world(middle + Vector2(0, gy * HOUSE_GRID), 0.1), Color(0.3, 0.3, 0.3)])
+	parts.append_array(_town_centre(middle))
 	for i in drawn.size():
 		var spot: Vector3 = spots[i]
 		var look := int(spot.z)
 		var at := _world(Vector2(spot.x, spot.y), 0.0)
+		var off := Vector2(spot.x, spot.y) - middle
+		if absf(off.x) < HIGH_STREET.x and absf(off.y) < HIGH_STREET.y:
+			_shop(parts, lit, at, i, signf(-off.y))
+			continue
 		var size := Vector2(0.4, 0.3) if look % 2 == 0 else Vector2(0.3, 0.4)
 		var h := 0.22 if look < 4 else 0.34  # some houses have two storeys
 		var roof: Color = roofs[look % roofs.size()]
@@ -2384,3 +2394,52 @@ func _draw_town() -> void:
 	if windows:
 		windows.surface_set_material(0, _bright)
 	_town_windows.mesh = windows
+
+
+## The square and its church, the town's middle at `middle` (metres).
+static func _town_centre(middle: Vector2) -> Array:
+	var square := _world(middle + SQUARE.get_center(), 0.0)
+	var stone := Color(0.72, 0.68, 0.6)
+	var church := square + Vector3(0, 0, -SQUARE.size.y / 2.0 / METRES_PER_UNIT + 0.35)
+	var wall := Color(0.62, 0.58, 0.5)
+	var slate := Color(0.28, 0.3, 0.34)
+	return [
+		[Vector3(SQUARE.size.x, 0.6, SQUARE.size.y) / METRES_PER_UNIT, square + Vector3(0, 0.012, 0), stone],
+		# Benches and a fountain in the square.
+		[Vector3(0.22, 0.03, 0.22), square + Vector3(0, 0.03, 0.15), Color(0.6, 0.6, 0.62)],
+		[Vector3(0.12, 0.05, 0.12), square + Vector3(0, 0.05, 0.15), Color(0.35, 0.55, 0.75)],
+		# The church: a nave with a pitched roof in steps, a tower and its spire.
+		[Vector3(0.9, 0.36, 0.42), church + Vector3(0, 0.18, 0), wall],
+		[Vector3(0.92, 0.06, 0.44), church + Vector3(0, 0.39, 0), slate],
+		[Vector3(0.92, 0.06, 0.28), church + Vector3(0, 0.45, 0), slate],
+		[Vector3(0.92, 0.05, 0.12), church + Vector3(0, 0.505, 0), slate],
+		[Vector3(0.24, 0.8, 0.24), church + Vector3(-0.5, 0.4, 0), wall],
+		[Vector3(0.18, 0.2, 0.18), church + Vector3(-0.5, 0.9, 0), slate],
+		[Vector3(0.11, 0.2, 0.11), church + Vector3(-0.5, 1.1, 0), slate],
+		[Vector3(0.05, 0.22, 0.05), church + Vector3(-0.5, 1.31, 0), slate],
+		[Vector3(0.1, 0.1, 0.01), church + Vector3(-0.5, 0.65, 0.125), Color(0.9, 0.85, 0.6)],
+		[Vector3(0.1, 0.16, 0.01), church + Vector3(0, 0.12, 0.215), Color(0.3, 0.2, 0.12)],
+	]
+
+
+## A shop on the high street at `at`: three storeys, a flat roof, and an
+## awning over its window on the side facing the street (`face` +1 south, -1 north).
+func _shop(parts: Array, lit: Array, at: Vector3, i: int, face: float) -> void:
+	var fronts := [Color(0.85, 0.8, 0.7), Color(0.7, 0.45, 0.35), Color(0.92, 0.92, 0.88), Color(0.55, 0.62, 0.66)]
+	var awnings := [Color(0.75, 0.15, 0.12), Color(0.12, 0.45, 0.3), Color(0.15, 0.3, 0.6), Color(0.9, 0.7, 0.15)]
+	var size := Vector2(0.48, 0.36)
+	var h := 0.42 + (i % 3) * 0.06
+	var front := face * (size.y / 2.0 + 0.004)
+	parts.append_array([
+		[Vector3(size.x, h, size.y), at + Vector3(0, h / 2.0, 0), fronts[i % fronts.size()]],
+		[Vector3(size.x + 0.02, 0.03, size.y + 0.02), at + Vector3(0, h + 0.015, 0), Color(0.35, 0.35, 0.36)],
+		[Vector3(size.x * 0.8, 0.08, 0.006), at + Vector3(0, 0.07, front), Color(0.2, 0.24, 0.3)],
+		[Vector3(size.x * 0.9, 0.02, 0.1), at + Vector3(0, 0.13, front + face * 0.05), awnings[i % awnings.size()]],
+	])
+	lit.append([Vector3(size.x * 0.8, 0.08, 0.008), at + Vector3(0, 0.07, front + face * 0.002), Color(1.0, 0.9, 0.65)])
+	for floor_y: float in [0.22, 0.33]:
+		for k: float in [-0.3, 0.0, 0.3]:
+			var pane := at + Vector3(size.x * k, floor_y, front)
+			parts.append([Vector3(0.06, 0.06, 0.004), pane, Color(0.2, 0.24, 0.3)])
+			if (i + int(k * 10.0)) % 2 == 0:
+				lit.append([Vector3(0.062, 0.062, 0.006), pane, Color(1.0, 0.82, 0.5)])

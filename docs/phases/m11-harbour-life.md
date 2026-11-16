@@ -40,7 +40,7 @@ The developer chose all ten on 15 Nov 2026, from a brainstorm of what a harbour 
 - An AGV fleet works a ship through its zone over a soak, with no deadlock and no two AGVs in one cell. An AGV below its charge limit charges before its next job.
 - Moving a call on the harbour master's timeline moves its berth window.
 - Lighting changes no sim state (the replay hash is the same). The night-shift setting changes night rates as the data says.
-- The town's mood follows noise, light and jobs, and a low mood refuses an expansion.
+- The town's mood follows noise, light and jobs, and each fix lifts it.
 - A scenario can be won and lost. The daily port report lists the day's numbers.
 - Saves migrate at every step, the soak passes with all of it on, and the replay hash holds.
 
@@ -90,8 +90,8 @@ Each step is one commit, with a headless test in the same commit, or a screensho
 25. **Night shifts.** A setting per terminal: work through the night at the data's labour premium, or stand yard gear down at night. Test: night rates and costs follow the setting.
 
 ### I. The town next door
-26. **The town and its mood.** A town at the map's land edge. Noise from equipment and light near it lower its mood, and jobs at the port raise it. A viewing tower area type raises it too. The HUD shows the mood. Save bump. Test: the mood follows noise, light and jobs as the data says.
-27. **Approvals.** Buying land and building large areas near the town need the mood above the data's threshold. Below it they are refused, with the reason. Test: the approvals exit criterion.
+26. **The town and its mood.** Saltmarsh, just past the east edge astride the highway, growing with the port's jobs (AGVs bring none), with a square, a church and a high street of shops. Noise from areas, ships at berth and highway lorries, and floodlight at night, lower its mood; jobs and a community fund raise it. The HUD's Port drawer shows the mood and why. Save bump. Test: the mood follows noise, light and jobs as the data says.
+27. **Winning it back.** Tree belts (an area type) halve what is behind them, a bought bypass takes the highway's lorries round the town, shore power silences a quay's ships, and a daily community fund. The mood is visual only (decided 16 Nov 2026): protest boards when sour, flags when warm, news when it turns; it refuses nothing. Test: each fix lowers what reaches the town.
 
 ### J. Scenarios and the port report
 28. **Scenario format.** A scenario is a data file: a start (map and port, or a save), goals with a time limit, and medal thresholds. It is won, lost or in play, shown on the HUD. Test: a scripted scenario is won, and lost when its time runs out.
