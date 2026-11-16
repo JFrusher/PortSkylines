@@ -98,6 +98,8 @@ var _event_list := VBoxContainer.new()
 var _events_drawn := []
 var _ledger := Label.new()
 var _borrow := HBoxContainer.new()
+## A switch per policy, in rules.policies' order.
+var _policies := VBoxContainer.new()
 ## Controls shown only once a milestone unlocks them: name -> controls.
 var _gated := {}
 ## The berth board, opened by the Contracts button.
@@ -499,6 +501,15 @@ func _build_drawer(left: Control) -> void:
 	for kind: String in sim.rules.loans:
 		var terms: Dictionary = sim.rules.loans[kind]
 		_gate("loans", _action_button(_borrow, "Borrow %s\n%d days, %d%% a year" % [HudDetails.dollars(terms.amount), terms.days, roundi(terms.yearly_rate * 100)], {"op": "take_loan", "kind": kind}))
+	_drawer_extra_container.add_child(_label("Policies"))
+	_drawer_extra_container.add_child(_policies)
+	for key: String in sim.rules.policies:
+		var policy: Dictionary = sim.rules.policies[key]
+		var switch := CheckButton.new()
+		switch.text = policy.name if policy.cost_per_day == 0 else "%s, %s a day" % [policy.name, HudDetails.dollars(policy.cost_per_day)]
+		switch.tooltip_text = policy.text
+		switch.toggled.connect(func(on: bool) -> void: command_issued.emit({"op": "set_policy", "policy": key, "on": on}))
+		_policies.add_child(_gate("policies", switch))
 
 
 func _toggle_drawer(group_name: String) -> void:
@@ -745,6 +756,8 @@ func _refresh_drawer() -> void:
 
 	if _active_drawer_group == HudDetails.GROUP_FINANCE:
 		_ledger.text = HudDetails.ledger_text(sim)
+		for i in _policies.get_child_count():
+			(_policies.get_child(i) as CheckButton).set_pressed_no_signal(sim.rules.policies.keys()[i] in sim.policies)
 
 
 ## Opens the pause menu, pausing the game, or closes it and resumes.

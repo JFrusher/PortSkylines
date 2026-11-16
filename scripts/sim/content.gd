@@ -180,8 +180,15 @@ const SCHEMA := {
 	"berths": {"*": {"name": TYPE_STRING, "length": TYPE_INT, "crane_spots": TYPE_INT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
+	# Port-wide policies the player switches on: each costs cost_per_day while
+	# on and sets the sim parameters in effects (keys of POLICY_EFFECTS); no
+	# two policies set the same one.
+	"policies": {"*": {"name": TYPE_STRING, "text": TYPE_STRING, "cost_per_day": TYPE_INT, "effects": {"*": TYPE_FLOAT}}},
 	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL, "carries": TYPE_BOOL}},
 }
+
+## Every sim parameter a policy may set (see PortSim.policy_value).
+const POLICY_EFFECTS := ["gate_open_from", "gate_open_to", "gate_upkeep_factor"]
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
@@ -262,7 +269,23 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		shares += place.share
 	if not is_equal_approx(shares, 1.0):
 		return {"error": "hinterland.places: shares must add up to 1"}
+	if policies_error(rules.policies):
+		return {"error": policies_error(rules.policies)}
 	return {"rules": rules}
+
+
+## Why `policies` can't all stand, or "": each sets only parameters the sim
+## reads, and none sets one another does, so switching one changes exactly its own.
+static func policies_error(policies: Dictionary) -> String:
+	var set_by := {}
+	for policy: String in policies:
+		for key: String in policies[policy].effects:
+			if key not in POLICY_EFFECTS:
+				return "policies.%s.effects: the sim reads no \"%s\"" % [policy, key]
+			if key in set_by:
+				return "policies.%s.effects: \"%s\" is already set by %s" % [policy, key, set_by[key]]
+			set_by[key] = policy
+	return ""
 
 
 ## Why `map` isn't a coast on `site`, or "": polygons of at least three

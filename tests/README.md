@@ -34,6 +34,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | `test_assets.gd` | Every model in `assets/` imports with LODs |
 | `test_content.gd` | The game data loader and its error messages |
 | `test_economy_scenarios.gd` | M3's scripted scenarios: overbooking makes calls late, higher storage fees lower dwell, and dredging lets a Panamax call |
+| `test_policies.gd` | M12's policies: one changes exactly its parameters, is a saved command with a daily ledger line, and a scenario for each |
 | `test_soak.gd` | Two game days of calm and congested ports, each with an RMG rail yard sending boxes by train, under random commands, with ledger invariants checked every tick and midnight, and stack, box, cell, slot and machine invariants every vehicle second |
 
 ## Save fixtures

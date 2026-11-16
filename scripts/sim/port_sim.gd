@@ -210,6 +210,8 @@ var on_time_calls := {}
 ## Lorries booked in at gates taking bookings: gate id -> {hour of the
 ## calendar: lorries booked}, for this hour and those ahead.
 var bookings := {}
+## Policies switched on: key of rules.policies -> true.
+var policies := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
@@ -440,6 +442,7 @@ func to_dict() -> Dictionary:
 		"objectives_done": objectives_done.duplicate(),
 		"on_time_calls": on_time_calls.duplicate(),
 		"bookings": bookings.duplicate(true),
+		"policies": policies.duplicate(),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"junctions": junctions.to_dict(),
@@ -526,6 +529,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.objectives_done = d.objectives_done.duplicate()
 	sim.on_time_calls = d.on_time_calls.duplicate()
 	sim.bookings = d.bookings.duplicate(true)
+	sim.policies = d.policies.duplicate()
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
@@ -586,6 +590,8 @@ func apply(command: Dictionary) -> String:
 			return cancel_service(command.id)
 		"set_storage":
 			return set_storage(command.free_days, command.fee)
+		"set_policy":
+			return set_policy(command.policy, command.on)
 		"set_rail_discount":
 			return set_rail_discount(command.dollars)
 		"set_barge_discount":
@@ -1736,6 +1742,43 @@ func set_storage(free_days: int, fee: int) -> String:
 	return ""
 
 
+## Switches policy `policy` (a key of rules.policies) on or off.
+func set_policy(policy: String, on: bool) -> String:
+	if policy not in rules.policies:
+		return "Unknown policy: %s" % policy
+	var locked := lock_error("policies")
+	if locked:
+		return locked
+	if on:
+		policies[policy] = true
+	else:
+		policies.erase(policy)
+	return ""
+
+
+## Sim parameter `key` (one of Content.POLICY_EFFECTS): what the policy now
+## on sets it to, else `default`. Content lets only one policy set each.
+func policy_value(key: String, default: float) -> float:
+	for policy: String in policies:
+		if key in rules.policies[policy].effects:
+			return rules.policies[policy].effects[key]
+	return default
+
+
+## What the policies now on cost a day.
+func policies_cost() -> int:
+	var total := 0
+	for policy: String in policies:
+		total += rules.policies[policy].cost_per_day
+	return total
+
+
+## Whether the gates take lorries in at this hour: always, but for a policy.
+func gates_open() -> bool:
+	var hour := clock.game_hour()
+	return hour >= policy_value("gate_open_from", 0.0) and hour < policy_value("gate_open_to", 24.0)
+
+
 ## What a crane move of `box` earns from the line: by size, plus a reefer premium.
 func move_price(box: Dictionary) -> int:
 	var price: float = rules.move_price.per_20ft * (rules.move_price.forty_factor if box.teu == 2 else 1.0)
@@ -1768,14 +1811,15 @@ func tick() -> void:
 			continue
 		_work(ship)
 	_berths_seen = berths_now
+	var open := gates_open()
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
+	if open and _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
+	if open and _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
+	if open and _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
 	Drive.signals(self)
 	AreaFlow.tick(self)
@@ -1818,7 +1862,7 @@ func upkeep_parts() -> Dictionary:
 		var area: Dictionary = areas.list[id]
 		add.call(area.terminal, areas.cells(id).size() * rules.area_types[area.type].upkeep_per_cell)
 		if areas.kind_of(area) == "gate":
-			add.call(area.terminal, rules.gate_levels[area.settings.level].upkeep_per_lane * areas.layout(id).lanes.size())
+			add.call(area.terminal, rules.gate_levels[area.settings.level].upkeep_per_lane * areas.layout(id).lanes.size() * policy_value("gate_upkeep_factor", 1.0))
 	for machine: Dictionary in machines.list.values():
 		add.call(areas.list[machine.area].terminal, rules.yard_gear[machine.gear].upkeep_per_machine)
 	for crane in cranes:
@@ -1916,6 +1960,8 @@ func _end_of_day() -> void:
 			ledger.post("upkeep", -roundi(parts[terminal]), terminal)
 			upkeep -= roundi(parts[terminal])
 	ledger.post("upkeep", -upkeep)
+	if policies_cost() != 0:
+		ledger.post("policies", -policies_cost())
 	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
 	if bill > 0:
 		ledger.post("power", -bill)

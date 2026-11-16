@@ -1,0 +1,10 @@
+{
+	"policies": {
+		"day_gates": {
+			"name": "Day gates only",
+			"text": "Gates take lorries from 06:00 to 22:00 only, and cost less to staff. Lorries due at night wait for the morning.",
+			"cost_per_day": 0,
+			"effects": {"gate_open_from": 6, "gate_open_to": 22, "gate_upkeep_factor": 0.7}
+		}
+	}
+}
