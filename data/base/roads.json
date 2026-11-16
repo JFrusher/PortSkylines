@@ -7,5 +7,5 @@
 		"tractor_lane": {"name": "Tractor lane", "forward": 1, "backward": 1, "lorries": false, "cost_per_cell": 10, "upkeep_per_cell": 1.0, "speed_kmh": 25.0, "ring": false, "min_radius_cells": 2.0},
 		"roundabout": {"name": "Roundabout", "forward": 2, "backward": 0, "lorries": true, "cost_per_cell": 30, "upkeep_per_cell": 3.0, "speed_kmh": 30.0, "ring": true, "min_radius_cells": 2.0}
 	},
-	"junctions": {"min_angle": 30.0, "corner_cells": 1.0, "lane_change_cells": 4.0, "lane_change_clear_cells": 5.0}
+	"junctions": {"min_angle": 30.0, "corner_cells": 1.0, "lane_change_cells": 4.0, "lane_change_clear_cells": 5.0, "interchange_cells": 60.0}
 }

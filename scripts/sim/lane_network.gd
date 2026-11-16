@@ -13,7 +13,8 @@ extends RefCounted
 ## zone, for AGVs alone (see may_use); "node": the node a connection
 ## crosses (minus its road's segment for a lane change), or 0; "kmh": its speed limit, a connection's the lower of the
 ## two roads it joins; "area": the area it is inside, or 0; "slot":
-## Vector2i(area, slot) of the handover slot it is in, or (-1, -1)}.
+## Vector2i(area, slot) of the handover slot it is in, or (-1, -1); "offmap":
+## whether it is the highway's interchange off the map (see _join)}.
 var pieces := {}
 ## Connection piece -> the connection pieces at its node that cross it or
 ## come within CLEAR cells of it: a vehicle may take one only while none of
@@ -105,6 +106,11 @@ func _init(net: RoadNet, rules: Dictionary, arrows := {}) -> void:
 					var piece: int = lane_pieces[[arm.segment, _segment_lane(arm, k)]]
 					_junctions.get_or_add(point, {}).get_or_add(way, []).append(piece)
 					_arm_of[piece] = [point, way]
+	# A road ending where the highway meets the site turns back off the map.
+	var interchanges := {}
+	for node: int in net.nodes:
+		if net.anchors.any(func(point: Vector2) -> bool: return net.nodes[node].distance_to(point) < 0.01):
+			interchanges[node] = true
 	for node: int in arms_at:
 		var arms: Array[Dictionary] = arms_at[node]
 		var pairs: Array = []
@@ -118,7 +124,7 @@ func _init(net: RoadNet, rules: Dictionary, arrows := {}) -> void:
 		for pair: Array in pairs:
 			var into: Dictionary = arms[pair[0][0]]
 			var out: Dictionary = arms[pair[1][0]]
-			_join(lane_pieces[[into.segment, _segment_lane(into, pair[0][1])]], lane_starts[[out.segment, _segment_lane(out, pair[1][1])]], node, arms.size() == 1)
+			_join(lane_pieces[[into.segment, _segment_lane(into, pair[0][1])]], lane_starts[[out.segment, _segment_lane(out, pair[1][1])]], node, arms.size() == 1, rules.interchange_cells if node in interchanges and arms.size() == 1 else 0.0)
 	_find_conflicts()
 
 
@@ -479,7 +485,7 @@ func nearest(position: Vector2, who: String) -> Array:
 		for cell in _ring(centre, r):
 			for entry: Array in _cells.get(cell, []):
 				var id: int = entry[0]
-				if not may_use(pieces[id], who):
+				if not may_use(pieces[id], who) or pieces[id].offmap:
 					continue
 				var points: PackedVector2Array = pieces[id].points
 				var at := Geometry2D.get_closest_point_to_segment(position, points[entry[1] - 1], points[entry[1]])
@@ -629,8 +635,11 @@ static func _carry_on(arms: Array[Dictionary]) -> Array:
 ## Joins piece `into` to piece `out` across node `node`: straight on where
 ## they meet, else along a connection curve from one's end to the other's
 ## start, its control point where their lines cross (beyond the road's end
-## for a turn back at a dead end).
-func _join(into: int, out: int, node: int, dead_end: bool) -> void:
+## for a turn back at a dead end). With `interchange` cells, a turn back
+## where the highway meets the site goes round an interchange off the map
+## first: a lane that long, not a junction, so vehicles queue there out of
+## the way of traffic leaving, rather than at the end of the road.
+func _join(into: int, out: int, node: int, dead_end: bool, interchange := 0.0) -> void:
 	var start: Vector2 = pieces[into].points[-1]
 	var end: Vector2 = pieces[out].points[0]
 	if start.distance_to(end) < 0.001:
@@ -641,7 +650,14 @@ func _join(into: int, out: int, node: int, dead_end: bool) -> void:
 	var control := (start + end) / 2.0 + heading * start.distance_to(end) if dead_end else RoadJunction._control(start, heading, end, away)
 	var curve := RoadCurve.new(start, control, end)
 	var id := _add(_along(curve, 0.0, 0.0, curve.length), 0, -1, pieces[into].lorries and pieces[out].lorries, node, minf(pieces[into].kmh, pieces[out].kmh))
-	pieces[into].next.append(id)
+	if interchange > 0.0:
+		var loop := _add(PackedVector2Array([start, start + heading * 0.01]), 0, -1, pieces[id].lorries, 0, pieces[id].kmh)
+		pieces[loop].length = interchange
+		pieces[loop].offmap = true
+		pieces[into].next.append(loop)
+		pieces[loop].next.append(id)
+	else:
+		pieces[into].next.append(id)
 	pieces[id].next.append(out)
 
 
@@ -698,7 +714,7 @@ func _add(points: PackedVector2Array, segment: int, lane: int, lorries: bool, no
 	for i in range(1, points.size()):
 		total += points[i - 1].distance_to(points[i])
 	_ends.clear()
-	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "agv": false, "node": node, "kmh": kmh, "area": 0, "slot": NO_SLOT}
+	pieces[_next_id] = {"points": points, "length": total, "segment": segment, "lane": lane, "next": [] as Array[int], "lorries": lorries, "agv": false, "node": node, "kmh": kmh, "area": 0, "slot": NO_SLOT, "offmap": false}
 	_next_id += 1
 	# Kept up to date once built, rather than built again for each piece added.
 	if not _cells.is_empty():

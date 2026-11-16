@@ -199,7 +199,7 @@ const SCHEMA := {
 	# beside one running the same way change over lane_change_cells at a
 	# road's middle, where it leaves lane_change_clear_cells each side (the
 	# longest vehicle and its standstill gap) clear of the next stop line.
-	"junctions": {"min_angle": TYPE_FLOAT, "corner_cells": TYPE_FLOAT, "lane_change_cells": TYPE_FLOAT, "lane_change_clear_cells": TYPE_FLOAT},
+	"junctions": {"min_angle": TYPE_FLOAT, "corner_cells": TYPE_FLOAT, "lane_change_cells": TYPE_FLOAT, "lane_change_clear_cells": TYPE_FLOAT, "interchange_cells": TYPE_FLOAT},
 	# The tightest a road of the type may curve, at its line, is min_radius_cells.
 	# A ring type is the roundabout tool's: one-way round a centre, the roads joining it giving way.
 	"road_types": {"*": {"name": TYPE_STRING, "forward": TYPE_INT, "backward": TYPE_INT, "lorries": TYPE_BOOL, "cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT, "speed_kmh": TYPE_FLOAT, "ring": TYPE_BOOL, "min_radius_cells": TYPE_FLOAT}},
