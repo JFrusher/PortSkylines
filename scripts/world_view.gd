@@ -2399,7 +2399,7 @@ func _draw_town() -> void:
 ## The square and its church, the town's middle at `middle` (metres).
 static func _town_centre(middle: Vector2) -> Array:
 	var square := _world(middle + SQUARE.get_center(), 0.0)
-	var stone := Color(0.72, 0.68, 0.6)
+	var stone := Color(0.5, 0.47, 0.42)
 	var church := square + Vector3(0, 0, -SQUARE.size.y / 2.0 / METRES_PER_UNIT + 0.35)
 	var wall := Color(0.62, 0.58, 0.5)
 	var slate := Color(0.28, 0.3, 0.34)
