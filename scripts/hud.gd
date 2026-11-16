@@ -147,6 +147,10 @@ var _inspect_column: VBoxContainer
 var _inspect_cell := Grid.NONE
 var to_screen: Callable
 var _last_drawer_group := HudDetails.GROUP_PORT
+## The info views popup, the view chosen there ("" for none), and its legend.
+var _views: PanelContainer
+var _info_mode := ""
+var _view_legend: HBoxContainer
 ## What the inspect panel shows, from Inspect.pick.
 var _inspected: Variant
 var _inspect_name := Label.new()
@@ -246,6 +250,7 @@ func _ready() -> void:
 	# Top right: the scenario and the guide, for now.
 	var right := _corner(Control.PRESET_TOP_RIGHT)
 	_build_status_bar()
+	_build_views()
 
 	# The pause menu: the game's file and settings actions, as CS's Esc menu.
 	var middle := _corner(Control.PRESET_CENTER)
@@ -495,7 +500,7 @@ func _build_status_bar() -> void:
 	strip.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	strip.offset_top = -STATUS_BAR_HEIGHT
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 6)
 	strip.add_child(row)
 	var window := func(glyph: String, tip: String, open: Callable) -> void:
 		var button := Button.new()
@@ -506,6 +511,7 @@ func _build_status_bar() -> void:
 		button.add_child(icon)
 		button.pressed.connect(open)
 		row.add_child(button)
+	window.call("views", "Info views: colour the map by traffic, yard fill or town noise", func() -> void: _views.visible = not _views.visible)
 	window.call("statistics", "Statistics", func() -> void: _toggle_drawer(_last_drawer_group))
 	window.call("map", "Port map: terminals, land and the AGV zone (M)", func() -> void: _map.visible = not _map.visible)
 	window.call("harbour", "Berth board and harbour master", func() -> void: _board.visible = not _board.visible)
@@ -614,7 +620,41 @@ func _toggle_drawer(group_name: String) -> void:
 
 ## The info view the map should draw: the open drawer's group, or "".
 func info_view() -> String:
+	if _info_mode != "":
+		return _info_mode
 	return _active_drawer_group if _drawer_panel.visible else ""
+
+
+## The info views popup above the status bar, a button per view, and the
+## legend of the chosen one in the corner above it, as in Cities: Skylines.
+func _build_views() -> void:
+	var corner := _corner(Control.PRESET_BOTTOM_LEFT)
+	corner.offset_top -= STATUS_BAR_HEIGHT + 4.0
+	corner.offset_bottom -= STATUS_BAR_HEIGHT + 4.0
+	var legend := _panel(corner)
+	_view_legend = _row(legend)
+	_panel_of(legend).visible = false
+	var list := _panel(corner, "Info views")
+	_views = _panel_of(list)
+	_views.visible = false
+	var group := ButtonGroup.new()
+	for view: String in [""] + WorldView.INFO_LEGENDS.keys():
+		_button(_row(list), view if view else "None", group, view == "", func() -> void:
+			_info_mode = view
+			_views.visible = false
+			_panel_of(legend).visible = view != ""
+			for child: Node in _view_legend.get_children():
+				child.queue_free()
+			if view == "":
+				return
+			_view_legend.add_child(_label(view + ":"))
+			for entry: Array in WorldView.INFO_LEGENDS[view]:
+				var swatch := ColorRect.new()
+				swatch.color = entry[1]
+				swatch.custom_minimum_size = Vector2(12, 12)
+				swatch.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+				_view_legend.add_child(swatch)
+				_view_legend.add_child(_label(entry[0])))
 
 
 func _close_drawer() -> void:
@@ -1227,8 +1267,8 @@ func _corner(preset: Control.LayoutPreset) -> VBoxContainer:
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(column)
 	column.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, 0)
-	column.grow_horizontal = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER_TOP: Control.GROW_DIRECTION_BOTH}[preset]
-	column.grow_vertical = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_END, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER_TOP: Control.GROW_DIRECTION_END}[preset]
+	column.grow_horizontal = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER_TOP: Control.GROW_DIRECTION_BOTH, Control.PRESET_BOTTOM_LEFT: Control.GROW_DIRECTION_END}[preset]
+	column.grow_vertical = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_END, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER_TOP: Control.GROW_DIRECTION_END, Control.PRESET_BOTTOM_LEFT: Control.GROW_DIRECTION_BEGIN}[preset]
 	return column
 
 

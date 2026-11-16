@@ -119,7 +119,10 @@ var _deck_box := Basis()
 const INFO_LEGENDS := {
 	HudDetails.GROUP_TRAFFIC: [["Flowing", Color(0.2, 0.8, 0.35)], ["Slow", Color(0.95, 0.75, 0.15)], ["Jammed", Color(0.9, 0.2, 0.15)]],
 	HudDetails.GROUP_CONTAINERS: [["Empty", Color(0.2, 0.8, 0.35)], ["Half full", Color(0.95, 0.75, 0.15)], ["Full", Color(0.9, 0.2, 0.15)]],
+	TOWN_NOISE: [["Quiet", Color(0.2, 0.8, 0.35)], ["Heard", Color(0.95, 0.75, 0.15)], ["Loud", Color(0.9, 0.2, 0.15)]],
 }
+## The info view of what each area's noise does to the town next door.
+const TOWN_NOISE := "Town noise"
 const INFO_TOP := 0.6
 ## Seconds of waiting per vehicle passing a cell that the Traffic view shows
 ## as jammed: about a manual gate check (2 game minutes, which pass in 2 s of
@@ -846,6 +849,8 @@ static func info_shares(sim: PortSim, view: String) -> Dictionary:
 		var delays := Drive.delays(sim)
 		for cell: Vector2i in delays:
 			shares[[cell]] = minf(delays[cell] / JAM_SECONDS, 1.0)
+	elif view == TOWN_NOISE:
+		shares = Town.noise_shares(sim)
 	else:
 		for id: int in sim.areas.list:
 			if sim.areas.list[id].type in Areas.BLOCK_TYPES:

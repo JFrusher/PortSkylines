@@ -4,7 +4,7 @@ extends Control
 ## game has no icon art, and drawn icons stay sharp at every interface size.
 ## Set `glyph` to one of GLYPHS; it fills its rect, centred, in `color`.
 
-const GLYPHS := ["roads", "quay", "cranes", "yard", "gate", "water", "bulldoze", "inspect", "map", "statistics", "harbour", "menu", "news", "advisor", "scenario"]
+const GLYPHS := ["roads", "quay", "cranes", "yard", "gate", "water", "bulldoze", "inspect", "map", "statistics", "harbour", "menu", "news", "advisor", "scenario", "views"]
 
 @export var glyph := "roads"
 var color := Color(0.92, 0.95, 1.0)
@@ -95,6 +95,10 @@ func _draw() -> void:
 			line.call(Vector2(0.32, 0.72), Vector2(0.22, 0.95))
 			draw_circle(p.call(0.5, 0.58), s * 0.05, color)
 			line.call(Vector2(0.5, 0.25), Vector2(0.5, 0.45))
+		"views":
+			# Three stacked map layers.
+			for y: float in [0.3, 0.5, 0.7]:
+				draw_polyline(PackedVector2Array([p.call(0.1, y), p.call(0.5, y - 0.15), p.call(0.9, y), p.call(0.5, y + 0.15), p.call(0.1, y)]), color, w, true)
 		"scenario":
 			line.call(Vector2(0.22, 0.95), Vector2(0.22, 0.08))
 			draw_colored_polygon(PackedVector2Array([p.call(0.24, 0.1), p.call(0.85, 0.25), p.call(0.24, 0.42)]), color)

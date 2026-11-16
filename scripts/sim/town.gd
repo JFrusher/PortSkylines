@@ -29,14 +29,7 @@ static func parts(sim: PortSim) -> Dictionary:
 	var light := 0.0
 	for id: int in sim.areas.list:
 		var kind := sim.areas.kind_of(sim.areas.list[id])
-		var cells := sim.areas.cells(id)
-		var middle := Vector2.ZERO
-		for cell in cells:
-			middle += Vector2(cell)
-		middle /= cells.size()
-		var near: float = _falloff(middle, town, reach) * (rules.belt_factor if _behind_belt(middle, town, belts) else 1.0)
-		if near == 0.0:
-			continue
+		var near := reaching(sim, id, town, reach, belts)
 		noise += rules.noise.get(kind, 0.0) * near
 		if night:
 			light += rules.light.get(kind, 0.0) * near
@@ -53,6 +46,32 @@ static func parts(sim: PortSim) -> Dictionary:
 		"light": light,
 	}
 	found.target = clampf(rules.base_mood + found.jobs + found.fund - noise - light, 0.0, 100.0)
+	return found
+
+
+## How much of area `id`'s noise and light reaches the town: 1 at the town,
+## 0 at `reach` cells, halved behind a tree belt among `belts`.
+static func reaching(sim: PortSim, id: int, town: Vector2, reach: float, belts: Dictionary) -> float:
+	var cells := sim.areas.cells(id)
+	var middle := Vector2.ZERO
+	for cell in cells:
+		middle += Vector2(cell)
+	middle /= cells.size()
+	var near := _falloff(middle, town, reach)
+	return near * sim.rules.town.belt_factor if near > 0.0 and _behind_belt(middle, town, belts) else near
+
+
+## Each area's noise reaching the town, as a share of the loudest kind's at
+## the town itself: the Town noise info view's colours.
+static func noise_shares(sim: PortSim) -> Dictionary:
+	var rules: Dictionary = sim.rules.town
+	var loudest: float = rules.noise.values().max()
+	var belts := _belts(sim)
+	var found := {}
+	for id: int in sim.areas.list:
+		var noise: float = rules.noise.get(sim.areas.kind_of(sim.areas.list[id]), 0.0)
+		if noise > 0.0:
+			found[sim.areas.cells(id)] = noise * reaching(sim, id, centre(sim), rules.reach_m / Grid.CELL, belts) / loudest
 	return found
 
 
