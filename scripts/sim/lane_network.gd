@@ -249,9 +249,19 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 		centre[Vector2i(cell.k, cell.r)] = cell.centre
 	# Out from the area to the road its buffer is beside: the back's road is behind it.
 	var out := func(k: int) -> Vector2: return curve.right_at(area.from + k + 0.5) * area.side * (-1.0 if back else 1.0)
-	# The road lane beside the buffer's middle sets the way traffic runs.
-	var middle: Vector2i = layout.buffer[layout.buffer.size() / 2]
-	var beside := nearest(centre[middle] - out.call(middle.x), "service")
+	# The road lane beside the buffer sets the way traffic runs: beside its
+	# middle, or the nearest cell to it with a road lane beside it, as a road
+	# meeting it at its middle puts a junction there, whose pieces run every way.
+	var by_middle: Array = layout.buffer.duplicate()
+	var half: int = layout.buffer.size() / 2
+	by_middle.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return absi(layout.buffer.find(a) - half) < absi(layout.buffer.find(b) - half))
+	var middle := Vector2i.ZERO
+	var beside := [0, 0.0]
+	for cell: Vector2i in by_middle:
+		beside = nearest(centre[cell] - out.call(cell.x), "service")
+		if beside[0] != 0 and pieces[beside[0]].segment != 0:
+			middle = cell
+			break
 	if beside[0] == 0 or pieces[beside[0]].segment == 0:
 		return
 	var flow := 1 if point_along(beside[0], beside[1])[1].dot(curve.direction_at(area.from + middle.x + 0.5)) > 0.0 else -1
