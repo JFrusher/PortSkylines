@@ -95,13 +95,15 @@ Each step is one commit, with a headless test in the same commit, or a screensho
 
 ### J. Scenarios and the port report
 28. **Scenario format.** A scenario is a data file: a start (map and port, or a save), goals with a time limit, and medal thresholds. It is won, lost or in play, shown on the HUD. Test: a scripted scenario is won, and lost when its time runs out.
-29. **Three scenarios**: *Peak season rush* (move a surge of calls on time), *Storm week* (keep the berths turning through forecast storms) and *Automate or bust* (convert a terminal to AGVs before its rivals win the line). Test: each loads and each can be won by its scripted solution.
+29. **Four scenarios**: *Peak season rush* (move a surge of calls on time), *Storm week* (keep the berths turning through forecast storms), *Automate or bust* (convert a terminal to AGVs before its rivals win the line) and *Angry neighbours* (grow the port with the town's mood held up). Each on a fixed map or a fresh coast; medals only. Test: each loads, and the win, loss and medal rules hold. Targets set from measured rates rather than scripted wins, which take about 40 minutes of sim each (decided 16 Nov 2026).
 30. **The daily port report.** A newspaper panel each morning: the day's moves, calls, money, on-time share, incidents, and headlines from the day's events. Test: the report's numbers match the ledger and ship log for that day.
 
 ### Close
 31. **Fixture and soak.** A new save fixture, and every system above in the soak test.
 32. **Public playtest build.** Notes go in `docs/playtests/m11.md`, including whether there was enough to build and choose between.
 33. **Close the phase.** Tag `m11`.
+
+**Closed 16 Nov 2026.** Notes and open issues in `docs/playtests/m11.md`; the showcase's highway choke goes on to M12.
 
 ## Questions for the developer, asked when their section starts
 

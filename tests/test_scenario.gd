@@ -42,8 +42,8 @@ func _test_won_by_the_day() -> void:
 	Scenario.close_day(sim, 1, 15000)
 	_expect([sim.scenario.status, sim.scenario.medal], ["won", "gold"], "won on day 2: gold")
 	sim = Scenario.start("storm_week", 1, false)
-	Scenario.close_day(sim, 13, 20000)
-	_expect(sim.scenario.medal, "silver", "won on day 14: silver")
+	Scenario.close_day(sim, 16, 20000)
+	_expect(sim.scenario.medal, "silver", "won on day 17: silver")
 
 
 func _test_lost() -> void:
