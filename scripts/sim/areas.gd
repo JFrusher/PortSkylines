@@ -408,11 +408,11 @@ func _idle_reason(id: int) -> String:
 	if kind_of(area) == "tree_belt":
 		return ""  # it only stands between the port and the town
 	if area.terminal == 0:
-		return "Paint this %s into a terminal on the map (Map, key 6)" % types[area.type].name.to_lower()
+		return "Paint this %s into a terminal on the map (M)" % types[area.type].name.to_lower()
 	if not road_beside(id):
 		return "No road runs along this %s" % types[area.type].name.to_lower()
 	if kind_of(area) == "agv_depot" and not cells(id).all(func(cell: Vector2i) -> bool: return cell in agv_zone):
-		return "Paint this AGV depot into the AGV zone on the map (Map, key 6)"
+		return "Paint this AGV depot into the AGV zone on the map (M)"
 	return ""
 
 

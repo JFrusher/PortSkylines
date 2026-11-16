@@ -44,7 +44,12 @@ const MOVE_ROAD := -15
 const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "agv_depot": "Yard", "transfer_block": "Yard", "tree_belt": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
-const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Water", "Bulldoze", "Inspect"]
+## The build toolbar's categories, keys 1 to 7, and each one's icon. With
+## none open, a click inspects what is under it, as in Cities: Skylines.
+const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Water", "Bulldoze"]
+const CATEGORY_ICONS := {"Roads": "roads", "Quay": "quay", "Cranes": "cranes", "Yard": "yard", "Gate": "gate", "Water": "water", "Bulldoze": "bulldoze"}
+## The status bar along the bottom edge, in pixels before the interface scale.
+const STATUS_BAR_HEIGHT := 44.0
 const FLASH_SECONDS := 2.5
 ## UI scales the settings button steps through, and where the choice is kept.
 const UI_SCALES: Array[float] = [1.0, 1.25, 1.5]
@@ -62,7 +67,7 @@ const WEEKDAYS: Array[String] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"
 const REFRESH_SECONDS := 0.25
 
 var sim: PortSim
-var tool := DRAW_ROAD
+var tool := INSPECT
 ## The road type DRAW_ROAD draws, a key of rules.road_types.
 var road_type := ""
 ## With DRAW_ROAD, clicking a road changes it to road_type instead of drawing.
@@ -99,7 +104,8 @@ var speed := 1
 var _money := Label.new()
 var _milestone := Label.new()
 var _milestone_bar := ProgressBar.new()
-var _kpi_cards: Array[Dictionary] = []
+## Today's takings so far, beside the money in the status bar.
+var _today := Label.new()
 var _clock := Label.new()
 ## The latest event, or a flash; pressing it lists the recent ones.
 var _message := Button.new()
@@ -117,11 +123,16 @@ var _gated := {}
 var _board := BerthBoard.new()
 ## The port map, where terminals are painted and land bought, opened by Map.
 var _map := PortMap.new()
-var _contracts_button: Button
 var _flash_left := 0.0
 var _refresh_left := 0.0
 var _category_buttons: Array[Button] = []
-var _figure_buttons := {}
+## The build toolbar's flyout, holding the open category's tools.
+var _flyout: PanelContainer
+## The Statistics window's tabs, by figure group, and the tab it opens on.
+var _stats_tabs := {}
+## The column the big windows open in, top centre.
+var _windows: VBoxContainer
+var _last_drawer_group := HudDetails.GROUP_PORT
 ## What the inspect panel shows, from Inspect.pick.
 var _inspected: Variant
 var _inspect_name := Label.new()
@@ -134,7 +145,6 @@ var _guide_text := Label.new()
 
 ## The details drawer panel and its internal layout.
 var _drawer_panel: PanelContainer
-var _drawer_title_label: Label
 var _drawer_cards_container: HBoxContainer
 var _drawer_rows_container: VBoxContainer
 var _drawer_extra_container: VBoxContainer
@@ -169,26 +179,8 @@ func _ready() -> void:
 	_hint.add_theme_color_override("font_outline_color", Color.BLACK)
 	_hint.visible = false
 	add_child(_hint)
-	# Left column: city stats, headline KPI cards, detail drawer, and panels.
+	# Left column: the news, then the inspect panel.
 	var left := _corner(Control.PRESET_TOP_LEFT)
-	var stats := _panel(left)
-	_money.theme_type_variation = "MoneyLabel"
-	stats.add_child(_money)
-
-	var progress := HBoxContainer.new()
-	stats.add_child(progress)
-	progress.add_child(_milestone)
-	_milestone_bar.custom_minimum_size = Vector2(160, 8)
-	_milestone_bar.show_percentage = false
-	_milestone_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	progress.add_child(_milestone_bar)
-
-	# Headline KPI cards row across the top of the port status panel.
-	var kpi_row := HBoxContainer.new()
-	kpi_row.add_theme_constant_override("separation", 6)
-	stats.add_child(kpi_row)
-	_build_kpi_cards(kpi_row)
-
 	var ticker := _panel(left)
 	_message.theme_type_variation = "EventLink"
 	_message.toggle_mode = true
@@ -200,8 +192,11 @@ func _ready() -> void:
 	ticker.add_child(_event_list)
 	_events = _panel_of(_message)
 
-	# The Details Drawer: shows detailed metrics for whichever figure group is open.
-	_build_drawer(left)
+	# The Statistics window: each figure group's numbers on its own tab.
+	# Top centre, a little down, so it ends above the toolbar.
+	_windows = _corner(Control.PRESET_CENTER_TOP)
+	_windows.offset_top = 12.0
+	_build_drawer(_windows)
 
 	var inspect_panel := _panel(left, "Inspect")
 	_inspect_name.theme_type_variation = "ClockLabel"
@@ -210,20 +205,9 @@ func _ready() -> void:
 	inspect_panel.add_child(_inspect_actions)
 	_panel_of(inspect_panel).visible = false
 
-	# Top right: the clock and speeds, then the panels and the game menu.
+	# Top right: the scenario and the guide, for now.
 	var right := _corner(Control.PRESET_TOP_RIGHT)
-	var time := _panel(right)
-	var speeds_row := _row(time)
-	_clock.theme_type_variation = "ClockLabel"
-	speeds_row.add_child(_clock)
-	var speeds := ButtonGroup.new()
-	for s: int in SPEEDS:
-		_speed_buttons.append(_button(speeds_row, "%d×" % s if s else "Pause", speeds, s == speed, func() -> void: speed = s))
-	var menu_button := Button.new()
-	menu_button.text = "Menu"
-	menu_button.tooltip_text = "Save, load, new game and settings (Esc)"
-	menu_button.pressed.connect(_toggle_menu)
-	speeds_row.add_child(menu_button)
+	_build_status_bar()
 
 	# The pause menu: the game's file and settings actions, as CS's Esc menu.
 	var middle := _corner(Control.PRESET_CENTER)
@@ -301,70 +285,46 @@ func _ready() -> void:
 	_guide_text.custom_minimum_size.x = 320
 	guide.add_child(_guide_text)
 
-	# Bottom centre: unified toolbar containing build menu categories and figure groups.
+	# Bottom centre, above the status bar: the build toolbar, a row of
+	# category icons, and the open category's tools in a flyout above it, as in
+	# Cities: Skylines. Clicking the open category again closes it.
 	var bottom := _corner(Control.PRESET_CENTER_BOTTOM)
+	bottom.offset_top -= STATUS_BAR_HEIGHT
+	bottom.offset_bottom -= STATUS_BAR_HEIGHT
 	_bottom = bottom
 	var items := _panel(bottom)
+	_flyout = _panel_of(items)
+	_flyout.visible = false
 	var tools := ButtonGroup.new()
 	var rows := {}
 	for category: String in CATEGORIES:
 		rows[category] = _row(items)
-
-	var bar_container := _panel(bottom)
-	var bar := _row(bar_container)
+	var bar := _row(_panel(bottom))
 	_panel_of(bar).theme_type_variation = "Toolbar"
-
-	# Group 1: Build Menu Categories
-	var build_group := PanelContainer.new()
-	build_group.theme_type_variation = "ToolbarGroup"
-	bar.add_child(build_group)
-	var cat_row := HBoxContainer.new()
-	cat_row.add_theme_constant_override("separation", 4)
-	build_group.add_child(cat_row)
-
+	_panel_of(bar).size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var categories := ButtonGroup.new()
+	categories.allow_unpress = true
 	for category: String in CATEGORIES:
 		var row: HBoxContainer = rows[category]
 		row.visible = false
-		var open := _button(cat_row, "%s\n%d" % [category, _category_buttons.size() + 1], categories, false, func() -> void:
-			for other: HBoxContainer in rows.values():
-				other.visible = other == row
-			if category == "Map":
-				_map.visible = true
+		var open := _button(bar, "", categories, false, func() -> void: pass)
+		open.tooltip_text = "%s (%d)" % [category, _category_buttons.size() + 1]
+		open.theme_type_variation = "CategoryButton"
+		open.custom_minimum_size = Vector2(52, 52)
+		var icon := UiIcon.make(CATEGORY_ICONS[category], 30.0)
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE, 10)
+		open.add_child(icon)
+		open.toggled.connect(func(on: bool) -> void:
+			row.visible = on
+			_flyout.visible = rows.values().any(func(r: HBoxContainer) -> bool: return r.visible)
+			if not on:
+				if not _flyout.visible:
+					tool = INSPECT
 				return
 			var first: Button = row.get_children().filter(func(b: Node) -> bool: return b is Button and b.visible and b.toggle_mode).front()
 			if first:
 				first.button_pressed = true)
-		open.theme_type_variation = "CategoryButton"
-		open.custom_minimum_size = Vector2(60, 48)
 		_category_buttons.append(open)
-
-	# Group 2: Figure / Info-Views Group
-	var figures_group := PanelContainer.new()
-	figures_group.theme_type_variation = "ToolbarGroup"
-	bar.add_child(figures_group)
-	var fig_row := HBoxContainer.new()
-	fig_row.add_theme_constant_override("separation", 4)
-	figures_group.add_child(fig_row)
-
-	# Names only: the numbers live in the info bar and in each panel.
-	for group_name: String in HudDetails.GROUPS:
-		var fig_btn := Button.new()
-		fig_btn.theme_type_variation = "CategoryButton"
-		fig_btn.custom_minimum_size = Vector2(60, 48)
-		fig_btn.toggle_mode = true
-		fig_btn.text = group_name
-		fig_btn.pressed.connect(func() -> void: _toggle_drawer(group_name))
-		fig_row.add_child(fig_btn)
-		_figure_buttons[group_name] = fig_btn
-	_contracts_button = Button.new()
-	_contracts_button.text = "Contracts"
-	_contracts_button.toggle_mode = true
-	_contracts_button.theme_type_variation = "CategoryButton"
-	_contracts_button.custom_minimum_size = Vector2(60, 48)
-	_contracts_button.toggled.connect(func(on: bool) -> void: _board.visible = on)
-	fig_row.add_child(_contracts_button)
-	_gate("contracts", _contracts_button)
 
 	# Build tool item buttons
 	for key: String in sim.rules.road_types:
@@ -461,64 +421,86 @@ func _ready() -> void:
 		marine_base = "services_jetty")).tooltip_text = "Click the water near the shore. Its boats see to ships at berth or at anchor: a bunker barge fuels them, a supply boat brings provisions and a waste boat takes waste off, each for a fee. A ship never waits for them; one that sails with a need unserved costs a little reputation, but only for a service you offer. Buy boats by inspecting it."
 	_item(_button(rows.Water, "Breakwater\n%s a cell" % HudDetails.dollars(water.breakwater.cost_per_cell), tools, false, func() -> void: tool = BUILD_BREAKWATER)).tooltip_text = "Drag a breakwater across open water, straight or at 45°: a rock wall 8 m thick that no ship lane crosses, to shelter berths and anchorages."
 	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane, area or water", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane, area, ship lane or anchorage to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
-	_item(_button(rows.Inspect, "Inspect\nclick anything", tools, false, func() -> void: tool = INSPECT)).tooltip_text = "Click a ship, crane, vehicle or area to see what it's doing. Click a box to follow it."
-	_category_buttons[0].button_pressed = true
 
 	# The berth board, over everything else while it is open.
 	_board.visible = false
 	_board.sim = sim
 	_board.command_issued.connect(func(command: Dictionary) -> void: command_issued.emit(command))
-	_board.closed.connect(func() -> void: _contracts_button.button_pressed = false)
+	_board.closed.connect(func() -> void: _board.visible = false)
 	add_child(_board)
 	_map.visible = false
 	_map.sim = sim
 	_map.command_issued.connect(func(command: Dictionary) -> void: command_issued.emit(command))
-	_map.closed.connect(func() -> void:
-		_map.visible = false
-		_category_buttons[0].button_pressed = true)
+	_map.closed.connect(func() -> void: _map.visible = false)
 	add_child(_map)
+	# The windows draw over the corner panels.
+	move_child(_windows, -1)
 
 
-func _build_kpi_cards(row: HBoxContainer) -> void:
-	for kpi: Dictionary in HudDetails.port_kpis(sim):
-		var card := PanelContainer.new()
-		card.theme_type_variation = "StatCard"
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 2)
-		card.add_child(col)
-
-		var lbl := Label.new()
-		lbl.theme_type_variation = "StatLabel"
-		lbl.text = kpi.label
-		col.add_child(lbl)
-
-		var val := Label.new()
-		val.theme_type_variation = "StatValue"
-		val.add_theme_font_size_override("font_size", 16)
-		val.text = kpi.value
-		col.add_child(val)
-
-		row.add_child(card)
-		_kpi_cards.append({"panel": card, "label": lbl, "value": val, "state": ""})
+## The status bar along the bottom edge, as in Cities: Skylines: the big
+## windows' buttons, the milestone, money and the day's net, and the clock
+## with the speeds and the menu.
+func _build_status_bar() -> void:
+	var strip := PanelContainer.new()
+	strip.theme_type_variation = "Toolbar"
+	add_child(strip)
+	strip.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+	strip.offset_top = -STATUS_BAR_HEIGHT
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	strip.add_child(row)
+	var window := func(glyph: String, tip: String, open: Callable) -> void:
+		var button := Button.new()
+		button.tooltip_text = tip
+		button.custom_minimum_size = Vector2(36, 36)
+		var icon := UiIcon.make(glyph, 22.0)
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE, 7)
+		button.add_child(icon)
+		button.pressed.connect(open)
+		row.add_child(button)
+	window.call("statistics", "Statistics", func() -> void: _toggle_drawer(_last_drawer_group))
+	window.call("map", "Port map: terminals, land and the AGV zone (M)", func() -> void: _map.visible = not _map.visible)
+	window.call("harbour", "Berth board and harbour master", func() -> void: _board.visible = not _board.visible)
+	_gate("contracts", row.get_child(-1) as Control)
+	row.add_child(VSeparator.new())
+	_milestone.theme_type_variation = "MutedLabel"
+	row.add_child(_milestone)
+	_milestone_bar.custom_minimum_size = Vector2(140, 8)
+	_milestone_bar.show_percentage = false
+	_milestone_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(_milestone_bar)
+	var gap := Control.new()
+	gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(gap)
+	_money.theme_type_variation = "ClockLabel"
+	row.add_child(_money)
+	_today.theme_type_variation = "MutedLabel"
+	row.add_child(_today)
+	var gap2 := Control.new()
+	gap2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(gap2)
+	_clock.theme_type_variation = "MutedLabel"
+	row.add_child(_clock)
+	var speeds := ButtonGroup.new()
+	for s: int in SPEEDS:
+		_speed_buttons.append(_button(row, "%d×" % s if s else "❚❚", speeds, s == speed, func() -> void: speed = s))
+	window.call("menu", "Save, load, new game and settings (Esc)", _toggle_menu)
 
 
 func _build_drawer(left: Control) -> void:
-	var drawer := _panel(left, "Details")
+	var drawer := _panel(left, "Statistics")
 	_drawer_panel = _panel_of(drawer)
 	_drawer_panel.visible = false
-
-	# Find the panel title label so we can change it dynamically
-	for child in _drawer_panel.find_children("", "Label", true, false):
-		if (child as Label).theme_type_variation == "PanelTitle":
-			_drawer_title_label = child as Label
-			break
-
-	# When the drawer is closed via the '×' button, deselect the figure buttons
 	_drawer_panel.visibility_changed.connect(func() -> void:
 		if not _drawer_panel.visible:
-			_active_drawer_group = ""
-			for g: String in _figure_buttons:
-				(_figure_buttons[g] as Button).set_pressed_no_signal(false))
+			_active_drawer_group = "")
+	# A tab per figure group across the top.
+	var tabs := _row(drawer)
+	var tab_group := ButtonGroup.new()
+	for group_name: String in HudDetails.GROUPS:
+		_stats_tabs[group_name] = _button(tabs, group_name, tab_group, false, func() -> void:
+			if _active_drawer_group != group_name:
+				_toggle_drawer(group_name))
 
 	_legend.add_theme_constant_override("separation", 6)
 	drawer.add_child(_legend)
@@ -531,12 +513,20 @@ func _build_drawer(left: Control) -> void:
 	div.custom_minimum_size = Vector2(0, 1)
 	drawer.add_child(div)
 
+	# The rows scroll, so the window keeps its size from tab to tab.
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(720, 270)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	drawer.add_child(scroll)
+	var body := VBoxContainer.new()
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(body)
 	_drawer_rows_container = VBoxContainer.new()
 	_drawer_rows_container.add_theme_constant_override("separation", 4)
-	drawer.add_child(_drawer_rows_container)
+	body.add_child(_drawer_rows_container)
 
 	_drawer_extra_container = VBoxContainer.new()
-	drawer.add_child(_drawer_extra_container)
+	body.add_child(_drawer_extra_container)
 	_ledger.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_ledger.custom_minimum_size.x = 340
 	_drawer_extra_container.add_child(_ledger)
@@ -568,12 +558,9 @@ func _toggle_drawer(group_name: String) -> void:
 		_close_drawer()
 		return
 	_active_drawer_group = group_name
-	_show_only(_drawer_panel)
-	if _drawer_title_label:
-		_drawer_title_label.text = "%s Details" % group_name
+	_last_drawer_group = group_name
 	_drawer_panel.visible = true
-	for g: String in _figure_buttons:
-		(_figure_buttons[g] as Button).set_pressed_no_signal(g == group_name)
+	(_stats_tabs[group_name] as Button).set_pressed_no_signal(true)
 	_fill_drawer(group_name)
 
 
@@ -585,8 +572,6 @@ func info_view() -> String:
 func _close_drawer() -> void:
 	_active_drawer_group = ""
 	_drawer_panel.visible = false
-	for g: String in _figure_buttons:
-		(_figure_buttons[g] as Button).set_pressed_no_signal(false)
 
 
 func _fill_drawer(group_name: String) -> void:
@@ -663,11 +648,21 @@ func _card_style(state: String) -> String:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
-	if key.pressed and not key.echo and key.keycode == KEY_ESCAPE:
-		_toggle_menu()
+	if not key.pressed or key.echo:
+		return
+	# Esc closes the open tool first, as in Cities: Skylines, then opens the menu.
+	if key.keycode == KEY_ESCAPE:
+		var open := _category_buttons.filter(func(b: Button) -> bool: return b.button_pressed)
+		if open.is_empty():
+			_toggle_menu()
+		else:
+			open[0].button_pressed = false
+		return
+	if key.keycode == KEY_M:
+		_map.visible = not _map.visible
 		return
 	var i := key.keycode - KEY_1
-	if key.pressed and not key.echo and i >= 0 and i < _category_buttons.size() and not _category_buttons[i].disabled:
+	if i >= 0 and i < _category_buttons.size() and not _category_buttons[i].disabled:
 		_category_buttons[i].button_pressed = true
 
 
@@ -739,7 +734,8 @@ func _process(dt: float) -> void:
 	_refresh_left -= dt
 	if _refresh_left <= 0.0:
 		_refresh_left = REFRESH_SECONDS
-		_update_kpis()
+		var net := sim.ledger.today_total()
+		_today.text = "%s today" % HudDetails.signed(net)
 		if _drawer_panel.visible and _active_drawer_group != "":
 			_refresh_drawer()
 
@@ -774,18 +770,6 @@ func _draw_events() -> void:
 		else:
 			_event_list.add_child(_label(_stamp(event)))
 		_event_list.move_child(_event_list.get_child(-1), 0)
-
-
-func _update_kpis() -> void:
-	var kpis := HudDetails.port_kpis(sim)
-	for i in mini(kpis.size(), _kpi_cards.size()):
-		var data: Dictionary = kpis[i]
-		var item: Dictionary = _kpi_cards[i]
-		(item.value as Label).text = data.value
-		var state: String = data.state
-		if item.state != state:
-			item.state = state
-			(item.panel as PanelContainer).theme_type_variation = _card_style(state)
 
 
 func _refresh_drawer() -> void:
@@ -1164,8 +1148,8 @@ func _corner(preset: Control.LayoutPreset) -> VBoxContainer:
 	column.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(column)
 	column.set_anchors_and_offsets_preset(preset, Control.PRESET_MODE_MINSIZE, 0)
-	column.grow_horizontal = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH}[preset]
-	column.grow_vertical = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_END, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH}[preset]
+	column.grow_horizontal = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER_TOP: Control.GROW_DIRECTION_BOTH}[preset]
+	column.grow_vertical = {Control.PRESET_TOP_LEFT: Control.GROW_DIRECTION_END, Control.PRESET_TOP_RIGHT: Control.GROW_DIRECTION_END, Control.PRESET_CENTER_BOTTOM: Control.GROW_DIRECTION_BEGIN, Control.PRESET_CENTER: Control.GROW_DIRECTION_BOTH, Control.PRESET_CENTER_TOP: Control.GROW_DIRECTION_END}[preset]
 	return column
 
 
