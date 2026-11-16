@@ -124,6 +124,15 @@ var _board := BerthBoard.new()
 ## The port map, where terminals are painted and land bought, opened by Map.
 var _map := PortMap.new()
 var _flash_left := 0.0
+## How long the newest message stays out beside the news icon, and the
+## message it was shown for.
+const NEWS_SECONDS := 6.0
+## The advisor's button, the guide step it last saw, and whether that step is unread.
+var _advisor := Button.new()
+var _guide_seen := []
+var _advisor_new := false
+var _news_left := 0.0
+var _news_seen := []
 var _refresh_left := 0.0
 var _category_buttons: Array[Button] = []
 ## The build toolbar's flyout, holding the open category's tools.
@@ -132,6 +141,11 @@ var _flyout: PanelContainer
 var _stats_tabs := {}
 ## The column the big windows open in, top centre.
 var _windows: VBoxContainer
+## The inspect panel's column, the cell it is beside, and how main turns a
+## grid cell into a point on screen.
+var _inspect_column: VBoxContainer
+var _inspect_cell := Grid.NONE
+var to_screen: Callable
 var _last_drawer_group := HudDetails.GROUP_PORT
 ## What the inspect panel shows, from Inspect.pick.
 var _inspected: Variant
@@ -182,12 +196,32 @@ func _ready() -> void:
 	# Left column: the news, then the inspect panel.
 	var left := _corner(Control.PRESET_TOP_LEFT)
 	var ticker := _panel(left)
+	# The news: an icon, with each new message popping out beside it for a
+	# few seconds, as CS's Chirper; the icon opens the recent ones.
+	var top := _row(ticker)
+	var news := Button.new()
+	news.toggle_mode = true
+	news.tooltip_text = "Recent news"
+	news.custom_minimum_size = Vector2(36, 36)
+	var paper_icon := UiIcon.make("news", 22.0)
+	paper_icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE, 7)
+	news.add_child(paper_icon)
+	news.toggled.connect(func(on: bool) -> void: _event_list.visible = on)
+	top.add_child(news)
+	# The advisor: the guide's current step, opened from its icon, which
+	# pulses when there is a new step and never opens over the port by itself.
+	_advisor.toggle_mode = true
+	_advisor.tooltip_text = "Advisor: what to do next"
+	_advisor.custom_minimum_size = Vector2(36, 36)
+	var face := UiIcon.make("advisor", 22.0)
+	face.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE, 7)
+	_advisor.add_child(face)
+	top.add_child(_advisor)
 	_message.theme_type_variation = "EventLink"
-	_message.toggle_mode = true
 	_message.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_message.tooltip_text = "Show or hide recent events"
-	_message.toggled.connect(func(on: bool) -> void: _event_list.visible = on)
-	ticker.add_child(_message)
+	_message.tooltip_text = "Show recent news"
+	_message.pressed.connect(func() -> void: news.button_pressed = not news.button_pressed)
+	top.add_child(_message)
 	_event_list.visible = false
 	ticker.add_child(_event_list)
 	_events = _panel_of(_message)
@@ -198,10 +232,14 @@ func _ready() -> void:
 	_windows.offset_top = 12.0
 	_build_drawer(_windows)
 
-	var inspect_panel := _panel(left, "Inspect")
+	# The inspect panel stands beside what was clicked, as in Cities: Skylines.
+	_inspect_column = _corner(Control.PRESET_TOP_LEFT)
+	var inspect_panel := _panel(_inspect_column, "Inspect")
 	_inspect_name.theme_type_variation = "ClockLabel"
 	inspect_panel.add_child(_inspect_name)
 	inspect_panel.add_child(_inspect_lines)
+	# Wide enough that its buttons wrap in rows rather than stack.
+	_inspect_actions.custom_minimum_size.x = 360
 	inspect_panel.add_child(_inspect_actions)
 	_panel_of(inspect_panel).visible = false
 
@@ -278,12 +316,15 @@ func _ready() -> void:
 	_build_scenarios()
 	_build_paper()
 
-	var guide := _panel(right, "Getting started")
+	var guide := _panel(left, "Advisor")
 	_guide_step.theme_type_variation = "MutedLabel"
 	guide.add_child(_guide_step)
 	_guide_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_guide_text.custom_minimum_size.x = 320
 	guide.add_child(_guide_text)
+	_panel_of(guide).visible = false
+	_advisor.toggled.connect(func(on: bool) -> void: _panel_of(guide).visible = on)
+	_panel_of(guide).visibility_changed.connect(func() -> void: _advisor.set_pressed_no_signal(_panel_of(guide).visible))
 
 	# Bottom centre, above the status bar: the build toolbar, a row of
 	# category icons, and the open category's tools in a flyout above it, as in
@@ -433,8 +474,15 @@ func _ready() -> void:
 	_map.command_issued.connect(func(command: Dictionary) -> void: command_issued.emit(command))
 	_map.closed.connect(func() -> void: _map.visible = false)
 	add_child(_map)
-	# The windows draw over the corner panels.
+	# The windows draw over the corner panels, and one is open at a time.
 	move_child(_windows, -1)
+	var windows: Array[Control] = [_drawer_panel, _board, _map, _scenarios, _paper]
+	for window: Control in windows:
+		window.visibility_changed.connect(func() -> void:
+			if window.visible:
+				for other: Control in windows:
+					if other != window:
+						other.visible = false)
 
 
 ## The status bar along the bottom edge, as in Cities: Skylines: the big
@@ -671,10 +719,25 @@ func _set_ui_scale(factor: float, button: Button) -> void:
 	button.text = "UI %d%%" % roundi(factor * 100)
 
 
-## Opens the inspect panel on whatever is at grid cell `cell`.
+## Opens the inspect panel on whatever is at grid cell `cell`, beside it.
 func inspect(cell: Vector2i) -> void:
 	_inspected = Inspect.pick(sim, cell)
+	_inspect_cell = cell
 	_show_only(_panel_of(_inspect_name))
+
+
+## Keeps the inspect panel beside its cell on screen as the camera moves,
+## to the right of it or, near the right edge, to its left, inside the
+## screen above the toolbar.
+func _place_inspect() -> void:
+	var panel := _panel_of(_inspect_name)
+	if not panel.visible:
+		return
+	var at: Vector2 = to_screen.call(_inspect_cell)
+	var room := get_viewport().get_visible_rect().size - Vector2(0, STATUS_BAR_HEIGHT + 8)
+	var size := panel.size
+	var x := at.x + 28.0 if at.x + 28.0 + size.x < room.x else at.x - 28.0 - size.x
+	_inspect_column.position = Vector2(clampf(x, 8.0, room.x - size.x - 8.0), clampf(at.y - size.y / 2.0, 8.0, room.y - size.y))
 
 
 ## Shows a short-lived message, such as why a build was refused.
@@ -711,12 +774,12 @@ func _process(dt: float) -> void:
 			(control as BaseButton).disabled = locked != ""
 			control.tooltip_text = locked if locked else control.get_meta("tip")
 
-	_events.visible = _message.text != ""
 	_show_scenario()
 	_show_paper()
 	_show_guide()
 	_fit_left_panels()
 
+	_place_inspect()
 	if _inspect_name.is_visible_in_tree():
 		var lines := Inspect.describe(sim, _inspected)
 		_panel_of(_inspect_name).visible = not lines.is_empty()
@@ -740,8 +803,13 @@ func _process(dt: float) -> void:
 			_refresh_drawer()
 
 	_flash_left -= dt
+	_news_left -= dt
+	if [sim, sim.last_event()] != _news_seen:
+		_news_seen = [sim, sim.last_event()]
+		_news_left = NEWS_SECONDS
 	if _flash_left <= 0.0:
-		_message.text = "Recent events" if _event_list.visible else _stamp(sim.events[-1]) if not sim.events.is_empty() else ""
+		_message.text = "Recent news" if _event_list.visible else _stamp(sim.events[-1]) if not sim.events.is_empty() else ""
+	_message.visible = _event_list.visible or _flash_left > 0.0 or (_news_left > 0.0 and _message.text != "")
 	if _event_list.visible and _events_drawn != [sim, sim.last_event(), sim.events.size()]:
 		_draw_events()
 
@@ -764,7 +832,7 @@ func _draw_events() -> void:
 			link.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			link.tooltip_text = "Go there"
 			link.pressed.connect(func() -> void:
-				_message.button_pressed = false
+				_message.pressed.emit()
 				event_picked.emit(event.at))
 			_event_list.add_child(link)
 		else:
@@ -999,6 +1067,9 @@ func _build_paper() -> void:
 func _show_paper() -> void:
 	if sim.reports.is_empty() or sim.reports[-1].day == _paper_shown or sim.clock.game_hour() < 6:
 		return
+	# It waits on the doormat while another window is open.
+	if [_drawer_panel, _board, _map, _scenarios].any(func(w: Control) -> bool: return w.visible):
+		return
 	_paper_shown = sim.reports[-1].day
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)
@@ -1017,9 +1088,17 @@ func _show_paper() -> void:
 func _show_guide() -> void:
 	var step := Guide.current(sim)
 	var count := Guide.steps(sim).size()
+	_advisor.visible = step < count
 	if step == count:
 		_panel_of(_guide_text).visible = false
 		return
+	# A new step pulses the advisor until it is opened.
+	if [sim, step] != _guide_seen:
+		_guide_seen = [sim, step]
+		_advisor_new = true
+	if _panel_of(_guide_text).visible:
+		_advisor_new = false
+	_advisor.modulate = Color(1, 1, 1).lerp(Color(1.0, 0.8, 0.3), (sin(Time.get_ticks_msec() / 200.0) + 1.0) / 2.0) if _advisor_new else Color.WHITE
 	_guide_step.text = "Step %d of %d" % [step + 1, count]
 	_guide_text.text = Guide.steps(sim)[step].text
 

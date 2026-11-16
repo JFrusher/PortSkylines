@@ -63,6 +63,7 @@ func _ready() -> void:
 	hud.save_pressed.connect(_save)
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
+	hud.to_screen = func(cell: Vector2i) -> Vector2: return rig.camera.unproject_position(_over(cell))
 	hud.new_game_pressed.connect(_new_game)
 	hud.scenario_pressed.connect(func(key: String, fresh: bool) -> void: _use(Scenario.start(key, randi(), fresh)))
 	# Loaded, not preloaded: bench/ is left out of exported builds, which have no such button.
