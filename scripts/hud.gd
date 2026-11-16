@@ -187,6 +187,8 @@ var _paper_shown := -1
 ## The game the goals and paper were last shown for: a new game shows them afresh.
 var _shown_for: PortSim
 var _speed_buttons: Array[Button] = []
+## The screen dimmed behind the pause menu.
+var _dim := ColorRect.new()
 var _speed_before_menu := 1
 ## Text beside the mouse, such as the road under it.
 var _hint := Label.new()
@@ -253,13 +255,32 @@ func _ready() -> void:
 	_build_views()
 
 	# The pause menu: the game's file and settings actions, as CS's Esc menu.
+	# The game dims behind it, and it holds the game's actions on the left and
+	# its settings on the right.
+	var dim := _dim
+	dim.color = Color(0, 0, 0, 0.45)
+	dim.visible = false
+	add_child(dim)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var middle := _corner(Control.PRESET_CENTER)
-	var menu := _panel(middle, "Menu")
-	_menu = _panel_of(menu)
+	var frame := _panel(middle, "Menu")
+	_menu = _panel_of(frame)
 	_menu.visible = false
 	_menu.visibility_changed.connect(func() -> void:
+		dim.visible = _menu.visible
 		if not _menu.visible:
 			_set_speed(_speed_before_menu))
+	var sides := _row(frame)
+	sides.add_theme_constant_override("separation", 24)
+	var menu := VBoxContainer.new()
+	menu.custom_minimum_size.x = 220
+	sides.add_child(menu)
+	var options := VBoxContainer.new()
+	options.custom_minimum_size.x = 220
+	sides.add_child(options)
+	var heading := _label("Settings")
+	heading.theme_type_variation = "CategoryHeader"
+	options.add_child(heading)
 	var resume := Button.new()
 	resume.text = "Resume"
 	resume.pressed.connect(func() -> void: _menu.visible = false)
@@ -301,7 +322,7 @@ func _ready() -> void:
 		_set_ui_scale(UI_SCALES[(UI_SCALES.find(get_tree().root.content_scale_factor) + 1) % UI_SCALES.size()], scale_button)
 		settings.set_value("ui", "scale", get_tree().root.content_scale_factor)
 		settings.save(SETTINGS_PATH))
-	menu.add_child(scale_button)
+	options.add_child(scale_button)
 	_set_ui_scale(settings.get_value("ui", "scale", 1.0), scale_button)
 	# Events this game has, each switched on or off as a command.
 	for kind: String in EVENT_NAMES:
@@ -311,7 +332,7 @@ func _ready() -> void:
 		check.toggled.connect(func(on: bool) -> void:
 			if on != sim.event_plan.on[kind]:
 				command_issued.emit({"op": "set_event_kind", "kind": kind, "on": on}))
-		menu.add_child(check)
+		options.add_child(check)
 		_event_checks[kind] = check
 
 	var goals := _panel(right, "Scenario")
@@ -479,8 +500,11 @@ func _ready() -> void:
 	_map.command_issued.connect(func(command: Dictionary) -> void: command_issued.emit(command))
 	_map.closed.connect(func() -> void: _map.visible = false)
 	add_child(_map)
-	# The windows draw over the corner panels, and one is open at a time.
+	# The windows draw over the corner panels, and one is open at a time; the
+	# menu, over its dimmed screen, over everything.
 	move_child(_windows, -1)
+	move_child(_dim, -1)
+	move_child(_menu.get_parent(), -1)
 	var windows: Array[Control] = [_drawer_panel, _board, _map, _scenarios, _paper]
 	for window: Control in windows:
 		window.visibility_changed.connect(func() -> void:

@@ -42,8 +42,9 @@ func _ready() -> void:
 	_canvas.map = self
 	add_theme_stylebox_override("panel", _card(Color(0.07, 0.09, 0.12), 16))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Clear of the status bar along the bottom.
 	for side: String in ["left", "top", "right", "bottom"]:
-		set("offset_" + side, 24.0 if side in ["left", "top"] else -24.0)
+		set("offset_" + side, {"left": 24.0, "top": 16.0, "right": -24.0, "bottom": -Hud.STATUS_BAR_HEIGHT - 12.0}[side])
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 10)
 	add_child(column)

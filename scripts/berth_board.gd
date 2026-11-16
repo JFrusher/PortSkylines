@@ -36,6 +36,9 @@ var _footer: VBoxContainer
 var _timelines: Array[Control] = []
 ## Whether the Live tab (the next LIVE_HOURS, as they happen) shows, not the week plan.
 var live := false
+## Whether the Terms tab is open: storage, rail and barge prices, out of the plan's way.
+var terms := false
+var _body: HBoxContainer
 const LIVE_HOURS := 72.0
 const LOW_WATER := Color(0.25, 0.45, 0.85, 0.16)
 const STORM := Color(0.9, 0.3, 0.25, 0.18)
@@ -49,8 +52,9 @@ func _ready() -> void:
 	_footer = VBoxContainer.new()
 	add_theme_stylebox_override("panel", _card(Color(0.07, 0.09, 0.12), Color.TRANSPARENT, 16))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Clear of the status bar along the bottom.
 	for side: String in ["left", "top", "right", "bottom"]:
-		set("offset_" + side, 24.0 if side in ["left", "top"] else -24.0)
+		set("offset_" + side, {"left": 24.0, "top": 16.0, "right": -24.0, "bottom": -Hud.STATUS_BAR_HEIGHT - 12.0}[side])
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 10)
 	add_child(column)
@@ -61,14 +65,15 @@ func _ready() -> void:
 	title.theme_type_variation = "ClockLabel"
 	header.add_child(title)
 	var tabs := ButtonGroup.new()
-	for pick: Array in [[false, "Week plan"], [true, "Live, next 3 days"]]:
+	for pick: Array in [[false, false, "Week plan"], [true, false, "Live, next 3 days"], [false, true, "Terms"]]:
 		var tab := Button.new()
-		tab.text = pick[1]
+		tab.text = pick[2]
 		tab.toggle_mode = true
 		tab.button_group = tabs
-		tab.button_pressed = pick[0] == live
+		tab.button_pressed = pick[0] == live and pick[1] == terms
 		tab.pressed.connect(func() -> void:
 			live = pick[0]
+			terms = pick[1]
 			_drawn = [])
 		header.add_child(tab)
 	var gap := Control.new()
@@ -85,6 +90,7 @@ func _ready() -> void:
 	_help.add_theme_color_override("font_color", MUTED)
 	column.add_child(_help)
 	var body := HBoxContainer.new()
+	_body = body
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_theme_constant_override("separation", 16)
 	column.add_child(body)
@@ -105,7 +111,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 func _process(_dt: float) -> void:
 	if not visible or sim == null:
 		return
-	var now := [live, sim, sim.contracts.version, sim.areas.version, sim.cranes.size(), sim.storage.duplicate(), sim.rail_discount, sim.barge_discount, roundi(sim.clock.calendar_minutes() / 60.0), sim.ships.map(func(s: PortSim.Ship) -> Array: return [s.id, s.state, s.kept, s.apron])]
+	var now := [live, terms, sim, sim.contracts.version, sim.areas.version, sim.cranes.size(), sim.storage.duplicate(), sim.rail_discount, sim.barge_discount, roundi(sim.clock.calendar_minutes() / 60.0), sim.ships.map(func(s: PortSim.Ship) -> Array: return [s.id, s.state, s.kept, s.apron])]
 	if now != _drawn:
 		_drawn = now
 		_build()
@@ -172,6 +178,11 @@ func _build() -> void:
 		for child in box.get_children():
 			child.queue_free()
 	_timelines.clear()
+	_body.visible = not terms
+	if terms:
+		_help.text = "What the port charges and gives: storage after the free days, and the discounts that send boxes by train and barge."
+		_build_footer()
+		return
 	if live:
 		_help.text = "Each berth's next three days: ships alongside (filled as they are worked, a tick at when they are due out) and the calls coming. Shaded: forecast storms (red) and low water (blue). Drag a waiting ship onto a berth to send it in; drag a coming call along its row to move just that call, within %d h of its weekly time." % sim.rules.contracts.flex_hours
 		_build_waiting()
@@ -179,7 +190,6 @@ func _build() -> void:
 		return
 	_build_inbox()
 	_build_rows()
-	_build_footer()
 
 
 ## The ships waiting at anchor, first in line first: each a card to drag
