@@ -15,7 +15,10 @@ const RandomPort := preload("res://tests/random_port.gd")
 ## berth on the river's south bank joins the spine's north end. M10's curves:
 ## a yard road curving south off the spine to a roundabout, with blocks on
 ## its bend, the track's corner to the rail block on a curve, and the river
-## channel curving down the river.
+## channel curving down the river. M11's harbour life: every event kind on,
+## a manned workshop and fire station, a customs block with inspectors and a
+## gate scanner, shore power at the ULCV berth, a tree belt toward the town
+## and a fund for it.
 
 ## The grid line the spine road runs down, and the rows it spans.
 const SPINE := 300
@@ -172,7 +175,15 @@ static func build(refused: Array[String]) -> PortSim:
 	_do(sim, refused, {"op": "set_area", "id": north[-1], "settings": {"level": "ocr"}})
 	north.append(_area(sim, refused, {"op": "build_area", "type": "gate", "segment": spine_north, "side": -1, "from": 20, "to": 34}))
 	_do(sim, refused, {"op": "set_area", "id": north[-1], "settings": {"level": "ocr"}})
-	# Two terminals, painted over exactly their areas.
+	# M11's harbour life, south of the highway road west of the gates: a
+	# workshop and a fire station, a customs block, and a tree belt east of
+	# the gates, between the port and the town.
+	var workshop := _area(sim, refused, {"op": "build_area", "type": "workshop", "segment": highway, "side": 1, "from": 10, "to": 18})
+	var station := _area(sim, refused, {"op": "build_area", "type": "fire_station", "segment": highway, "side": 1, "from": 22, "to": 30})
+	# Clear of the dangerous-goods block across the road, between the rail block and the gates.
+	var customs := _area(sim, refused, {"op": "build_area", "type": "yard_block", "segment": highway, "side": 1, "from": 172, "to": 172 + BLOCK - 1})
+	var belt := _area(sim, refused, {"op": "build_area", "type": "tree_belt", "segment": highway, "side": 1, "from": 256, "to": 290})
+	south.append_array([workshop, station, customs, belt])
 	for group: Array[int] in [north, south]:
 		var cells: Array[Vector2i] = []
 		for id: int in group:
@@ -191,6 +202,18 @@ static func build(refused: Array[String]) -> PortSim:
 			_do(sim, refused, {"op": "place_sts", "apron": berth.apron, "along": spots[k], "kind": cranes[berth.kind]})
 	_do(sim, refused, {"op": "place_sts", "apron": barge, "along": AreaFlow.crane_spots(sim, barge)[0], "kind": "barge_crane"})
 	_do(sim, refused, {"op": "buy_tractors", "count": 150})
+	# Harbour life switched on and manned: every event kind, mechanics, a fire
+	# engine, customs inspectors and a scanner, shore power at the ULCV berth,
+	# and a fund for the town.
+	for kind: String in ["tides", "breakdowns", "fires"]:
+		_do(sim, refused, {"op": "set_event_kind", "kind": kind, "on": true})
+	_do(sim, refused, {"op": "hire_mechanics", "area": workshop, "count": 2})
+	_do(sim, refused, {"op": "buy_engines", "area": station, "count": 1})
+	_do(sim, refused, {"op": "set_area", "id": customs, "settings": {"role": "customs"}})
+	_do(sim, refused, {"op": "hire_inspectors", "area": customs, "count": 2})
+	_do(sim, refused, {"op": "buy_scanner", "gate": gate})
+	_do(sim, refused, {"op": "buy_shore_power", "area": berths[1].apron})
+	_do(sim, refused, {"op": "set_town_fund", "per_day": 1000})
 	_water(sim, refused, berths)
 	_river(sim, refused)
 	_fill(sim)
