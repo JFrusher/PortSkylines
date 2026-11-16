@@ -373,13 +373,13 @@ func _ready() -> void:
 		# Ring road comes only as a roundabout, from the Shape button.
 		if road.ring:
 			continue
-		_item(_button(rows.Roads, "%s\n%s, $%d" % [road.name, _lanes_of(road), road.cost_per_cell], tools, false, func() -> void:
+		_pictured(_item(_button(rows.Roads, "%s\n%s, $%d" % [road.name, _lanes_of(road), road.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_ROAD
-			road_type = key)).tooltip_text = _road_tip(road)
+			road_type = key)), key).tooltip_text = _road_tip(road)
 	var rail: Dictionary = sim.rules.rail
-	_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
+	_pictured(_item(_button(rows.Roads, "%s\n$%d per 4 m" % [rail.name, rail.cost_per_cell], tools, false, func() -> void:
 		tool = DRAW_ROAD
-		road_type = "track")).tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge, straight or curved (Shape), bending no tighter than %d m; it crosses roads at level crossings. $%d per 4 m, $%.1f a day upkeep." % [roundi(rail.min_radius_cells * Grid.CELL), rail.cost_per_cell, rail.upkeep_per_cell]
+		road_type = "track")), "track").tooltip_text = "Rail track, for trains to an RMG block's siding. Draw it from the main line at the east edge, straight or curved (Shape), bending no tighter than %d m; it crosses roads at level crossings. $%d per 4 m, $%.1f a day upkeep." % [roundi(rail.min_radius_cells * Grid.CELL), rail.cost_per_cell, rail.upkeep_per_cell]
 	rows.Roads.add_child(VSeparator.new())
 	_shape_button(rows.Roads)
 	var grid := _item(Button.new())
@@ -404,9 +404,9 @@ func _ready() -> void:
 		if area.kind in ["depot", "quay_apron"]:
 			continue
 		var detail := "%d lanes, $%d a cell" % [area.depth - 2, area.cost_per_cell] if area.kind == "gate" else "$%d per 4 m cell" % area.cost_per_cell
-		_item(_button(rows[AREA_ROWS[area.kind]], "%s\n%s" % [area.name, detail], tools, false, func() -> void:
+		_pictured(_item(_button(rows[AREA_ROWS[area.kind]], "%s\n%s" % [area.name, detail], tools, false, func() -> void:
 			tool = DRAW_AREA
-			area_type = key)).tooltip_text = _area_tip(area, false)
+			area_type = key)), key).tooltip_text = _area_tip(area, false)
 	rows.Gate.add_child(VSeparator.new())
 	var both := _item(Button.new())
 	both.text = "Two-way\nboth sides"
@@ -417,9 +417,9 @@ func _ready() -> void:
 	for key: String in sim.rules.berths:
 		var spec: Dictionary = sim.rules.berths[key]
 		var apron: Dictionary = sim.rules.area_types.quay_apron
-		_gate(key, _item(_button(rows.Quay, "%s\n%d m, %d crane spots" % [spec.name, Grid.metres(spec.length), spec.crane_spots], tools, false, func() -> void:
+		_gate(key, _pictured(_item(_button(rows.Quay, "%s\n%d m, %d crane spots" % [spec.name, Grid.metres(spec.length), spec.crane_spots], tools, false, func() -> void:
 			tool = BUILD_BERTH
-			berth = key))).tooltip_text = "Click the coast to place a %d m quay with its road along the back. It turns to the way that fills the least water, or Turn it. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
+			berth = key)), key)).tooltip_text = "Click the coast to place a %d m quay with its road along the back. It turns to the way that fills the least water, or Turn it. Its quay is one straight wall; water behind it is filled at %s a cell. Cranes stand at its %d spots.\n%s with its road, before any filling." % [Grid.metres(spec.length), HudDetails.dollars(sim.rules.reclaim.cost_per_cell), spec.crane_spots, HudDetails.dollars(spec.length * apron.depth * apron.cost_per_cell + (spec.length + 2) * sim.rules.road_types[PortSim.BERTH_ROAD].cost_per_cell)]
 	rows.Quay.add_child(VSeparator.new())
 	var turn := _item(Button.new())
 	turn.text = "Turn\nauto"
@@ -437,30 +437,30 @@ func _ready() -> void:
 	rows.Quay.add_child(auto)
 	for key: String in sim.rules.sts_cranes:
 		var crane: Dictionary = sim.rules.sts_cranes[key]
-		_gate(key, _item(_button(rows.Cranes, "%s\n%s" % [crane.name, HudDetails.dollars(crane.cost)], tools, false, func() -> void:
+		_gate(key, _pictured(_item(_button(rows.Cranes, "%s\n%s" % [crane.name, HudDetails.dollars(crane.cost)], tools, false, func() -> void:
 			tool = CRANE
-			crane_kind = key))).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
+			crane_kind = key)), key)).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
 	for key: String in sim.rules.water.lanes:
 		var lane: Dictionary = sim.rules.water.lanes[key]
-		_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
+		_pictured(_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
 			tool = DRAW_LANE
-			lane_type = key)).tooltip_text = "Draw a ship lane over open water, straight or curved (Shape), bending no tighter than %d m. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % [roundi(lane.min_radius_cells * Grid.CELL), "One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
+			lane_type = key)), key).tooltip_text = "Draw a ship lane over open water, straight or curved (Shape), bending no tighter than %d m. Ships sail in from a lane end on the map's edge to a berth whose water a lane ends in, through lanes as deep as their draft (Inspect a lane or berth to dredge it). %s.\n$%d a 4 m cell of water it covers." % [roundi(lane.min_radius_cells * Grid.CELL), "One ship at a time" if key == "narrow" else "Ships pass both ways", lane.cost_per_cell]
 	_shape_button(rows.Water)
 	rows.Water.add_child(VSeparator.new())
 	var anchorage: Dictionary = sim.rules.water.anchorage
-	_item(_button(rows.Water, "Anchorage\n$%d a cell" % anchorage.cost_per_cell, tools, false, func() -> void: tool = BUILD_ANCHORAGE)).tooltip_text = "Drag out an anchorage over open water, with a ship lane ending in it. Ships that find no free berth wait here, one every %d m each way; with no room at anchor a ship waits out at sea %.0f hours, then goes elsewhere." % [Grid.metres(anchorage.spacing), sim.rules.water.max_wait_hours]
+	_pictured(_item(_button(rows.Water, "Anchorage\n$%d a cell" % anchorage.cost_per_cell, tools, false, func() -> void: tool = BUILD_ANCHORAGE)), "anchorage").tooltip_text = "Drag out an anchorage over open water, with a ship lane ending in it. Ships that find no free berth wait here, one every %d m each way; with no room at anchor a ship waits out at sea %.0f hours, then goes elsewhere." % [Grid.metres(anchorage.spacing), sim.rules.water.max_wait_hours]
 	var water: Dictionary = sim.rules.water
-	_item(_button(rows.Water, "Pilot station\n%s" % HudDetails.dollars(water.pilots.station_cost), tools, false, func() -> void:
+	_pictured(_item(_button(rows.Water, "Pilot station\n%s" % HudDetails.dollars(water.pilots.station_cost), tools, false, func() -> void:
 		tool = BUILD_MARINE
-		marine_base = "pilot_station")).tooltip_text = "Click the water near the shore. Panamaxes and bigger take a pilot in and out; the pilot boat comes from the nearest station. Hire pilots by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.pilots.pilot_cost), HudDetails.dollars(water.pilots.upkeep_per_pilot)]
-	_item(_button(rows.Water, "Tug depot\n%s" % HudDetails.dollars(water.tugs.depot_cost), tools, false, func() -> void:
+		marine_base = "pilot_station")), "pilot_station").tooltip_text = "Click the water near the shore. Panamaxes and bigger take a pilot in and out; the pilot boat comes from the nearest station. Hire pilots by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.pilots.pilot_cost), HudDetails.dollars(water.pilots.upkeep_per_pilot)]
+	_pictured(_item(_button(rows.Water, "Tug depot\n%s" % HudDetails.dollars(water.tugs.depot_cost), tools, false, func() -> void:
 		tool = BUILD_MARINE
-		marine_base = "tug_depot")).tooltip_text = "Click the water near the shore. Panamaxes and bigger wait for tugs to berth and unberth; tugs sail out from the nearest depot with enough free, so a depot near the berths berths ships sooner. Buy tugs by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.tugs.tug_cost), HudDetails.dollars(water.tugs.upkeep_per_tug)]
-	_item(_button(rows.Water, "Services jetty\n%s" % HudDetails.dollars(water.services.jetty_cost), tools, false, func() -> void:
+		marine_base = "tug_depot")), "tug_depot").tooltip_text = "Click the water near the shore. Panamaxes and bigger wait for tugs to berth and unberth; tugs sail out from the nearest depot with enough free, so a depot near the berths berths ships sooner. Buy tugs by inspecting it: %s each, %s a day." % [HudDetails.dollars(water.tugs.tug_cost), HudDetails.dollars(water.tugs.upkeep_per_tug)]
+	_pictured(_item(_button(rows.Water, "Services jetty\n%s" % HudDetails.dollars(water.services.jetty_cost), tools, false, func() -> void:
 		tool = BUILD_MARINE
-		marine_base = "services_jetty")).tooltip_text = "Click the water near the shore. Its boats see to ships at berth or at anchor: a bunker barge fuels them, a supply boat brings provisions and a waste boat takes waste off, each for a fee. A ship never waits for them; one that sails with a need unserved costs a little reputation, but only for a service you offer. Buy boats by inspecting it."
-	_item(_button(rows.Water, "Breakwater\n%s a cell" % HudDetails.dollars(water.breakwater.cost_per_cell), tools, false, func() -> void: tool = BUILD_BREAKWATER)).tooltip_text = "Drag a breakwater across open water, straight or at 45°: a rock wall 8 m thick that no ship lane crosses, to shelter berths and anchorages."
+		marine_base = "services_jetty")), "services_jetty").tooltip_text = "Click the water near the shore. Its boats see to ships at berth or at anchor: a bunker barge fuels them, a supply boat brings provisions and a waste boat takes waste off, each for a fee. A ship never waits for them; one that sails with a need unserved costs a little reputation, but only for a service you offer. Buy boats by inspecting it."
+	_pictured(_item(_button(rows.Water, "Breakwater\n%s a cell" % HudDetails.dollars(water.breakwater.cost_per_cell), tools, false, func() -> void: tool = BUILD_BREAKWATER)), "breakwater").tooltip_text = "Drag a breakwater across open water, straight or at 45°: a rock wall 8 m thick that no ship lane crosses, to shelter berths and anchorages."
 	_item(_button(rows.Bulldoze, "Bulldoze\nroad, track, crane, area or water", tools, false, func() -> void: tool = BULLDOZE)).tooltip_text = "Click a road, track, crane, area, ship lane or anchorage to remove it. A crane comes down alone, once its ship has sailed. Boxes stored in an area are lost."
 
 	# The berth board, over everything else while it is open.
@@ -1287,6 +1287,18 @@ func _panel_of(column: Control) -> PanelContainer:
 func _item(button: Button) -> Button:
 	button.theme_type_variation = "ItemButton"
 	button.custom_minimum_size = Vector2(96, 56)
+	return button
+
+
+## Gives build-menu tile `button` item `key`'s thumbnail above its name and
+## price, as Cities: Skylines' asset tiles (tools/make_thumbnails.gd renders them).
+func _pictured(button: Button, key: String) -> Button:
+	button.icon = load("res://ui/thumbnails/%s.png" % key)
+	button.expand_icon = true
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	button.custom_minimum_size = Vector2(112, 118)
+	button.add_theme_font_size_override("font_size", 12)
 	return button
 
 
