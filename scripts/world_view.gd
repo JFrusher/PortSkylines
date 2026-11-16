@@ -2280,9 +2280,16 @@ static func _bypass(port: PortSim) -> RoadCurve:
 	return RoadCurve.new(entry + Vector2(8, 0), Vector2(middle.x, entry.y + 120), Vector2(middle.x * 2.0 - entry.x - 8, entry.y))
 
 
+## The town's size in metres: half its width and depth, and the grid its
+## houses stand on, every STREET_EVERY-th line of which is a street.
+const TOWN_HALF := Vector2(220, 170)
+const HOUSE_GRID := 16.0
+const STREET_EVERY := Vector2i(4, 3)
+
+
 ## Where the town's houses stand, nearest its middle first, in metres: on a
-## 16 m grid, jittered, clear of the highway and the bypass. z is which way
-## a house faces (0 or 1) and which look it takes.
+## 16 m grid between its streets, jittered, clear of the highway and the
+## bypass. z is which look a house takes; odd ones face the other way.
 static func town_spots(port: PortSim) -> Array[Vector3]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
@@ -2297,8 +2304,10 @@ static func town_spots(port: PortSim) -> Array[Vector3]:
 	var near := {}
 	for gx in range(-14, 15):
 		for gy in range(-11, 12):
-			var spot := middle + Vector2(gx, gy) * 16.0 + Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3))
-			var ellipse := pow((spot.x - middle.x) / 220.0, 2.0) + pow((spot.y - middle.y) / 170.0, 2.0)
+			if posmod(gx, STREET_EVERY.x) == 0 or posmod(gy, STREET_EVERY.y) == 0:
+				continue
+			var spot := middle + Vector2(gx, gy) * HOUSE_GRID + Vector2(rng.randf_range(-2, 2), rng.randf_range(-2, 2))
+			var ellipse := pow((spot.x - middle.x) / TOWN_HALF.x, 2.0) + pow((spot.y - middle.y) / TOWN_HALF.y, 2.0)
 			if ellipse > 1.0 or spot.x < edge or absf(spot.y - road_y) < 16.0 or curve.any(func(p: Vector2) -> bool: return p.distance_to(spot) < 22.0):
 				continue
 			near[spot] = ellipse + rng.randf() * 0.15
@@ -2321,7 +2330,19 @@ func _draw_town() -> void:
 	var parts: Array = []
 	var lit: Array = []
 	var spots := town_spots(sim)
-	for i in mini(count, spots.size()):
+	var drawn := spots.slice(0, count)
+	# Streets along the grid's street lines, as far as the houses reach.
+	var middle := Town.centre(sim) * Grid.CELL
+	var reach := Vector2.ZERO
+	for spot: Vector3 in drawn:
+		reach = reach.max((Vector2(spot.x, spot.y) - middle).abs() + Vector2(10, 10))
+	for gx in range(-14, 15, 1):
+		if posmod(gx, STREET_EVERY.x) == 0 and absf(gx * HOUSE_GRID) < reach.x:
+			parts.append([Vector3(0.36, 0.01, reach.y * 2.0 / METRES_PER_UNIT), _world(middle + Vector2(gx * HOUSE_GRID, 0), 0.1), Color(0.34, 0.35, 0.37)])
+	for gy in range(-11, 12, 1):
+		if posmod(gy, STREET_EVERY.y) == 0 and absf(gy * HOUSE_GRID) < reach.y:
+			parts.append([Vector3(reach.x * 2.0 / METRES_PER_UNIT, 0.01, 0.36), _world(middle + Vector2(0, gy * HOUSE_GRID), 0.1), Color(0.34, 0.35, 0.37)])
+	for i in drawn.size():
 		var spot: Vector3 = spots[i]
 		var look := int(spot.z)
 		var at := _world(Vector2(spot.x, spot.y), 0.0)
