@@ -1779,6 +1779,12 @@ func gates_open() -> bool:
 	return hour >= policy_value("gate_open_from", 0.0) and hour < policy_value("gate_open_to", 24.0)
 
 
+## Whether quay cranes work at this hour: always, but for a policy.
+func quay_works() -> bool:
+	var hour := clock.game_hour()
+	return hour >= policy_value("quay_work_from", 0.0) and hour < policy_value("quay_work_to", 24.0)
+
+
 ## What a crane move of `box` earns from the line: by size, plus a reefer premium.
 func move_price(box: Dictionary) -> int:
 	var price: float = rules.move_price.per_20ft * (rules.move_price.forty_factor if box.teu == 2 else 1.0)
@@ -1847,7 +1853,8 @@ func upkeep_parts() -> Dictionary:
 		parts[0] += RoadNet.cells_long(roads.curve(segment).length) * rules.road_types[road.type].upkeep_per_cell
 	for segment: int in rails.segments:
 		parts[0] += RoadNet.cells_long(rails.curve(segment).length) * rules.rail.upkeep_per_cell
-	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
+	var labour := policy_value("labour_upkeep_factor", 1.0)
+	parts[0] += rules.upkeep.tractor * tractors * labour + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
 		parts[0] += ship_lanes.area(segment).size() * rules.water.lanes[lane.type].upkeep_per_cell
@@ -1866,7 +1873,7 @@ func upkeep_parts() -> Dictionary:
 	for machine: Dictionary in machines.list.values():
 		add.call(areas.list[machine.area].terminal, rules.yard_gear[machine.gear].upkeep_per_machine)
 	for crane in cranes:
-		add.call(areas.list[crane.apron].terminal, rules.upkeep.sts_crane)
+		add.call(areas.list[crane.apron].terminal, rules.upkeep.sts_crane * labour)
 	return parts
 
 
@@ -2150,7 +2157,8 @@ func _work(ship: Ship) -> void:
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind, areas.cell_at(ship.apron, 0, 0))
 		Ship.State.WORKING:
-			AreaFlow.work(self, ship)
+			if quay_works():
+				AreaFlow.work(self, ship)
 		Ship.State.LEAVING:
 			if not Marine.under_way(self, ship, -1):
 				return

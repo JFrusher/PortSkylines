@@ -188,7 +188,7 @@ const SCHEMA := {
 }
 
 ## Every sim parameter a policy may set (see PortSim.policy_value).
-const POLICY_EFFECTS := ["gate_open_from", "gate_open_to", "gate_upkeep_factor"]
+const POLICY_EFFECTS := ["gate_open_from", "gate_open_to", "gate_upkeep_factor", "quay_work_from", "quay_work_to", "labour_upkeep_factor", "appointment_share", "dual_cycling"]
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]

@@ -173,7 +173,7 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		return
 	for crane in working:
 		var move_minutes := move_minutes_of(sim, crane)
-		if ship.boxes > 0:
+		if ship.boxes > 0 and not _dual_cycle(sim, crane, ship):
 			_discharge(sim, crane, ship, move_minutes)
 			continue
 		if crane.tractor != 0 and _vehicle(sim, crane.tractor).box == 0:
@@ -190,6 +190,30 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		elif _export_box(sim, ship) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
 			sim._sail(ship, working.size())
 			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.cell_at(ship.apron, 0, 0))
+
+
+## Whether `crane` loads this tick though `ship` still has imports aboard:
+## under the dual-cycling policy, while a tractor is back beneath it with an
+## export. Either way it keeps tractors fetching exports as it discharges.
+static func _dual_cycle(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> bool:
+	if sim.policy_value("dual_cycling", 0.0) <= 0.0:
+		return false
+	var slot := _crane_slot(sim, crane, ship)
+	if crane.tractor != 0:
+		return _vehicle(sim, crane.tractor).home == slot
+	_keep_fetching(sim, crane, ship)
+	return sim.fetching_to(slot).any(func(v: Vehicle) -> bool: return v.state == "under_crane")
+
+
+## Sends `crane` another tractor to fetch for `ship` while the ship has room
+## for more than are already being fetched, up to the crane's max_fetchers.
+static func _keep_fetching(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> void:
+	var fetchers := _fetchers(sim, ship)
+	var slot := _crane_slot(sim, crane, ship)
+	var mine := fetchers.filter(func(v: Vehicle) -> bool: return v.home == slot)
+	var wanted := ship.exports if ship.exports > 0 else ship.empties
+	if wanted > fetchers.size() and mine.size() < sim.rules.sts_cranes[crane.kind].max_fetchers:
+		_send_fetcher(sim, crane, ship)
 
 
 ## One crane's tick discharging: a tractor waits in the apron slot below it
@@ -271,14 +295,9 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 ## them, and lifts each box aboard once its tractor is back beneath it, so
 ## the crane works while others drive.
 static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_minutes: float) -> void:
-	var fetchers := _fetchers(sim, ship)
-	var slot := _crane_slot(sim, crane, ship)
-	var mine := fetchers.filter(func(v: Vehicle) -> bool: return v.home == slot)
-	var wanted := ship.exports if ship.exports > 0 else ship.empties
-	if wanted > fetchers.size() and mine.size() < sim.rules.sts_cranes[crane.kind].max_fetchers:
-		_send_fetcher(sim, crane, ship)
+	_keep_fetching(sim, crane, ship)
 	if crane.tractor == 0:
-		var back := mine.filter(func(v: Vehicle) -> bool: return v.state == "under_crane")
+		var back := sim.fetching_to(_crane_slot(sim, crane, ship)).filter(func(v: Vehicle) -> bool: return v.state == "under_crane")
 		if back.is_empty():
 			return
 		crane.tractor = back[0].id
@@ -304,7 +323,18 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 			sim.ledger.post("barge", -sim.barge_discount, sim.areas.list[ship.apron].terminal)
 	sim._drop_box(tractor.box)
 	ship.moves += 1
-	_gone(sim, tractor)
+	# Dual cycling: with imports still aboard, the tractor stays beneath the
+	# crane for one, bound for an import block, as a tractor sent for it would be.
+	var block := _block_for(sim, "import", sim.areas.list[ship.apron].terminal) if ship.boxes > 0 and tractor.straddle == 0 else 0
+	if block == 0 or carries(sim, block):
+		_gone(sim, tractor)
+		return
+	sim._fetching[tractor.home].erase(tractor)
+	tractor.home = Areas.NO_SPOT
+	tractor.box = 0
+	tractor.loaded = false
+	sim._set_area(tractor, block)
+	crane.tractor = tractor.id
 
 
 ## Sends a tractor from the pool, starting in the apron slot under `crane`,
@@ -882,7 +912,7 @@ static func _block_of(sim: PortSim, box: int) -> int:
 ## in turn (queueing at the park when it is full, so the park feeds the gate
 ## first come, first served); with no park it queues on the road to the gate.
 static func _to_gate(sim: PortSim, lorry: Vehicle, gate: int) -> void:
-	if sim.areas.list[gate].settings.slots_per_hour > 0:
+	if slots_per_hour(sim, gate) > 0:
 		var hour := _free_hour(sim, gate)
 		sim.bookings[gate][hour] = sim.bookings[gate].get(hour, 0) + 1
 		lorry.booked = hour * 60.0
@@ -894,10 +924,17 @@ static func _to_gate(sim: PortSim, lorry: Vehicle, gate: int) -> void:
 		_go_to(sim, lorry, gate)
 
 
+## Lorries `gate` books an hour, 0 for none: its own setting, else under
+## the appointments policy that share of what its lanes can check.
+static func slots_per_hour(sim: PortSim, gate: int) -> int:
+	var own: int = sim.areas.list[gate].settings.slots_per_hour
+	return own if own > 0 else floori(gate_throughput(sim, gate) * sim.policy_value("appointment_share", 0.0))
+
+
 ## The first hour of the calendar, from this one, that `gate` has a booking
 ## left in, forgetting hours gone by; -1 when it takes no bookings.
 static func _free_hour(sim: PortSim, gate: int) -> int:
-	var slots: int = sim.areas.list[gate].settings.slots_per_hour
+	var slots := slots_per_hour(sim, gate)
 	if slots == 0:
 		return -1
 	var now := floori(sim.clock.calendar_minutes() / 60.0)

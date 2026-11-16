@@ -17,6 +17,9 @@ func _initialize() -> void:
 	_test_a_policy_is_a_saved_command_with_a_ledger_line()
 	_test_bad_policy_data_is_refused()
 	_test_day_gates()
+	_test_day_shifts()
+	_test_appointments()
+	_test_dual_cycling()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -112,3 +115,70 @@ func _test_day_gates() -> void:
 	_expect(seen.size() > 0, true, "lorries came in during the day (%d)" % seen.size())
 	_expect(entered.keys().all(func(hour: int) -> bool: return hour >= open and hour < shut), true, "and none while the gates were shut (hours %s)" % [entered.keys()])
 	_expect(always.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry") or always.delivered > 0, true, "the port without the policy takes lorries all day")
+
+
+## Day shifts on the quay: a ship alongside is worked by day and not by
+## night, and cranes and tractors cost less to crew.
+func _test_day_shifts() -> void:
+	var sim := AreaPort.working_terminal(400, 0, RandomPort.quick())
+	var always := AreaPort.working_terminal(400, 0, RandomPort.quick())
+	_expect(sim.apply({"op": "set_policy", "policy": "day_shifts", "on": true}), "", "day shifts switch on")
+	_expect(sim.daily_upkeep() < always.daily_upkeep(), true, "day crews cost less (%d against %d a day)" % [sim.daily_upkeep(), always.daily_upkeep()])
+	var from: int = sim.rules.policies.day_shifts.effects.quay_work_from
+	_run(sim, from * 60.0 - sim.clock.calendar_minutes())
+	_run(always, from * 60.0 - always.clock.calendar_minutes())
+	_expect(sim.ships[0].moves, 0, "no box is moved before the day shift starts")
+	_expect(always.ships[0].moves > 0, true, "the port working nights has moved some (%d)" % always.ships[0].moves)
+	_run(sim, 60.0)
+	_expect(sim.ships[0].moves > 0, true, "and the day shift moves them (%d in its first hour)" % sim.ships[0].moves)
+
+
+## Lorry appointments: no hour takes more lorries than the gate books, and
+## boxes wait longer in the yard for a free hour: the mixed results the
+## roadmap cites. (With no truck park, early lorries also wait in the booths.)
+func _test_appointments() -> void:
+	var with := AreaPort.base(RandomPort.rules())
+	var without := AreaPort.base(RandomPort.rules())
+	_expect(with.apply({"op": "set_policy", "policy": "appointments", "on": true}), "", "appointments switch on")
+	var gate: int = with.areas.working_gates(1)[0]
+	var slots := AreaFlow.slots_per_hour(with, gate)
+	_expect(slots, floori(AreaFlow.gate_throughput(with, gate) * with.rules.policies.appointments.effects.appointment_share), "the gate books the policy's share of what its lanes check")
+	_expect(AreaFlow.slots_per_hour(without, gate), 0, "and none without the policy")
+	var most := 0
+	for tick in roundi(600.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		with.tick()
+		without.tick()
+		for hour: int in with.bookings.get(gate, {}):
+			most = maxi(most, with.bookings[gate][hour])
+	_expect(most > 0 and most <= slots, true, "no hour is booked past the gate's slots (%d of %d)" % [most, slots])
+	_expect(with._average(with.dwell_times) > without._average(without.dwell_times), true, "and imports dwell longer (%.0f against %.0f minutes)" % [with._average(with.dwell_times), without._average(without.dwell_times)])
+
+
+## Dual cycling: exports go aboard while imports are still coming off, on
+## the same tractors, and the ship is done no later.
+func _test_dual_cycling() -> void:
+	var done := []
+	for dual: bool in [true, false]:
+		# No dangerous goods, which this port has no block for and would shut out.
+		var rules := RandomPort.quick()
+		rules.box_mix.dg_share = 0.0
+		var sim := AreaPort.working_terminal(60, 40, rules)
+		# Exports in the yard before the ship works, so there is something to cycle with.
+		var ship: PortSim.Ship = sim.ships[0]
+		sim.ships.clear()
+		_run(sim, 240.0)
+		sim.ships.append(ship)
+		ship.berthed = sim.clock.calendar_minutes()
+		ship.due = sim.clock.calendar_minutes() + 600.0
+		if dual:
+			_expect(sim.apply({"op": "set_policy", "policy": "dual_cycling", "on": true}), "", "dual cycling switches on")
+		var mixed := false
+		var boxes := sim.boxes.size()
+		while ship.state == PortSim.Ship.State.WORKING and sim.clock.calendar_minutes() < ship.berthed + 900.0:
+			sim.tick()
+			mixed = mixed or (ship.exports < 40 and ship.boxes > 0)
+		_expect(mixed, dual, "exports %s loaded while imports are still aboard" % ("are" if dual else "aren't"))
+		_expect(ship.state, PortSim.Ship.State.LEAVING, "the ship is worked and sails")
+		_expect(ship.moves, 100, "every import and export crossed the quay")
+		done.append(sim.clock.calendar_minutes() - ship.berthed)
+	_expect(done[0] <= done[1], true, "and dual cycling is no slower (%.0f against %.0f minutes)" % done)

@@ -4,7 +4,37 @@
 			"name": "Day gates only",
 			"text": "Gates take lorries from 06:00 to 22:00 only, and cost less to staff. Lorries due at night wait for the morning.",
 			"cost_per_day": 0,
-			"effects": {"gate_open_from": 6, "gate_open_to": 22, "gate_upkeep_factor": 0.7}
+			"effects": {
+				"gate_open_from": 6,
+				"gate_open_to": 22,
+				"gate_upkeep_factor": 0.7
+			}
+		},
+		"day_shifts": {
+			"name": "Day shifts on the quay",
+			"text": "The port works its ships day and night unless this is on: then quay cranes work 06:00 to 22:00 only, and cranes and tractors cost less to crew. Ships alongside at night wait for the morning.",
+			"cost_per_day": 0,
+			"effects": {
+				"quay_work_from": 6,
+				"quay_work_to": 22,
+				"labour_upkeep_factor": 0.75
+			}
+		},
+		"appointments": {
+			"name": "Lorry appointments",
+			"text": "Every gate that takes no bookings of its own books lorries by the hour, at a share of what its lanes can check. Queues at the gate shorten; boxes wait longer in the yard for a free hour. Early lorries wait in a truck park, or block a booth without one.",
+			"cost_per_day": 200,
+			"effects": {
+				"appointment_share": 0.25
+			}
+		},
+		"dual_cycling": {
+			"name": "Dual cycling",
+			"text": "Cranes load an export on the tractor's way in and send it off with an import, while exports are ready in the yard, instead of discharging first. Planning it costs a little each day.",
+			"cost_per_day": 150,
+			"effects": {
+				"dual_cycling": 1
+			}
 		}
 	}
 }

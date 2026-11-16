@@ -13,7 +13,7 @@
 
 ### Global policies
 1. **Policy framework.** A policy is a named switch or value from the data that changes sim parameters while active, and is listed in the ledger with its cost. Test: activating a policy changes exactly its parameters.
-2. **Starter policies**: gate opening hours, night shifts (more labour cost, more hours), wind-limit margin, an appointment system for lorries (with the mixed results the roadmap cites), and the dual-cycling preference. Test: one scenario per policy.
+2. **Starter policies**: gate opening hours, night shifts (more labour cost, more hours), wind-limit margin, an appointment system for lorries (with the mixed results the roadmap cites), and the dual-cycling preference. Test: one scenario per policy. *Built: day gates only, day shifts on the quay (the port works nights unless it is on, so the choice is the same one the other way round), lorry appointments and dual cycling. The wind-limit margin waits for M11's wind, which isn't built.*
 
 ### Per-block rules
 3. **Block rules.** Each yard block can set its accepted box kinds, sizes, lines, maximum stack height and reefer use. Placement respects the rules. Test: a box breaking a rule is never placed in that block.
