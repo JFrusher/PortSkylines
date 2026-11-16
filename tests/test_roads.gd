@@ -386,10 +386,10 @@ func _test_area_settings() -> void:
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "gate", "segment": 1, "side": -1, "from": 35, "to": 50})
-	_expect(sim.areas.list[2].settings, {"role": "import", "gear": "reach_stacker", "lines": []}, "a new yard block starts as an import block with reach stackers")
+	_expect(sim.areas.list[2].settings, {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0}, "a new yard block starts as an import block with reach stackers")
 	var line: String = sim.rules.lines.keys()[0]
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "export", "lines": [line]}}), "", "a yard block's role and lines are set")
-	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line]}, "unset rules stay as they were")
+	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line], "sizes": [], "reefers": true, "max_tiers": 0}, "unset rules stay as they were")
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "reefer"}}), "Unlocked at milestone 2: %d TEU across the quay" % sim.rules.milestones.terminal.teu, "reefer blocks wait for the terminal milestone")
 	sim.teu_handled = int(sim.rules.milestones.terminal.teu)
 	sim._check_milestones()

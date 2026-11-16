@@ -926,6 +926,7 @@ func _draw_inspect_actions() -> void:
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
 				button.disabled = sim.lock_error(gear) != ""
 				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]
+		_draw_block_rules(id, settings)
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
@@ -936,6 +937,29 @@ func _draw_inspect_actions() -> void:
 			if to != slots:
 				var button := _action_button(_inspect_actions, "%+d bookings" % change, {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}})
 				button.tooltip_text = "Lorries book an hour and are let in no sooner, %d an hour (0: no bookings, lorries come in as they arrive). Early lorries wait in a truck park, else in a booth." % to
+
+
+## Yard block `id`'s rule buttons: the sizes and lines it takes, reefers,
+## and its stack height.
+func _draw_block_rules(id: int, settings: Dictionary) -> void:
+	var set_rule := func(text: String, rule: Dictionary, tip: String) -> void:
+		_action_button(_inspect_actions, text, {"op": "set_area", "id": id, "settings": rule}).tooltip_text = tip
+	for sizes: Array in [[], [1], [2]]:
+		if sizes != settings.sizes:
+			set_rule.call("Take %s" % ("every size" if sizes.is_empty() else "%d ft only" % (sizes[0] * 20)), {"sizes": sizes}, "Boxes of another size go to a block that takes them, or stay aboard their ship when none does.")
+	set_rule.call("Refuse reefers" if settings.reefers else "Take reefers", {"reefers": not settings.reefers}, "Whether reefers may be stacked here.")
+	var high: int = AreaFlow.tiers(sim, id)
+	if high > 1:
+		set_rule.call("Stack to %d" % (high - 1), {"max_tiers": high - 1}, "Lower stacks hold less and need fewer re-handles.")
+	if settings.max_tiers > 0:
+		set_rule.call("Stack as high as the gear", {"max_tiers": 0}, "")
+	for line: String in sim.rules.lines:
+		var taken: Array = settings.lines.duplicate()
+		if line in taken:
+			taken.erase(line)
+		else:
+			taken.append(line)
+		set_rule.call("%s %s" % ["Not only" if line in settings.lines else "Only", sim.contracts.name_of(line)], {"lines": taken}, "A block that names lines takes only their boxes; one that names none takes every line's.")
 
 
 ## A Dredge 1 m button for `cells` cells of water, locked until dredging is.

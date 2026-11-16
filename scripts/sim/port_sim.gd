@@ -154,7 +154,10 @@ const MARINE_BASE_SHORE := 10
 const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
-	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
+	# A block takes only boxes of its `sizes` (TEU, [] for any) and `lines`
+	# ([] for any), reefers only if `reefers`, and stacks `max_tiers` high (0:
+	# as high as its gear).
+	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0},
 	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 }
@@ -1214,14 +1217,20 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 	if gear != "" and rules.yard_gear[gear].empties_only and role != "empty":
 		var name: String = rules.yard_gear[gear].name
 		return "%s only work empty blocks" % (name[0].to_upper() + name.substr(1))
+	if settings.has("sizes") and not (settings.sizes is Array and settings.sizes.all(func(teu: Variant) -> bool: return teu is int and teu in [1, 2])):
+		return "Sizes are 1 (20 ft) and 2 (40 ft) TEU"
+	if settings.has("reefers") and not settings.reefers is bool:
+		return "Reefers are taken or not"
+	if settings.has("max_tiers") and not (settings.max_tiers is int and settings.max_tiers >= 0):
+		return "The stack height is a whole number of tiers, 0 for as high as the gear goes"
 	if settings.has("lines"):
 		if not settings.lines is Array or not settings.lines.all(func(line: Variant) -> bool: return line is String and rules.lines.has(line)):
 			return "Line priority lists known shipping lines"
 	return ""
 
 
-## Sets some of area `id`'s rules: a yard block's role, gear and the lines it
-## favours; a quay apron's lines.
+## Sets some of area `id`'s rules: a yard block's role, gear and the boxes
+## it takes (see AREA_SETTINGS); a quay apron's lines.
 func set_area(id: int, settings: Dictionary) -> String:
 	var err := set_area_error(id, settings)
 	if err == "":
@@ -1881,7 +1890,7 @@ func upkeep_parts() -> Dictionary:
 ## TEU in yard block `id` and the most it holds, as (held, room). A tier
 ## holds one 40 ft box or two 20 ft boxes, so each stack slot is 2 TEU.
 func block_fill(id: int) -> Vector2i:
-	var room: int = areas.layout(id).stacks.size() * rules.yard_gear[areas.list[id].settings.gear].tiers * 2
+	var room: int = areas.layout(id).stacks.size() * AreaFlow.tiers(self, id) * 2
 	var held := 0
 	if id in area_stacks:
 		for box: int in area_stacks[id].boxes():

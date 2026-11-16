@@ -121,9 +121,13 @@ static func _migrate(data: Dictionary) -> Dictionary:
 	return data
 
 
-## v49 adds M12's policies, none on.
+## v49 adds M12's policies, none on, and each yard block's rules for the
+## boxes it takes: any size, reefers too, as high as its gear stacks.
 static func _migrate_v49(data: Dictionary) -> Dictionary:
 	data.sim.policies = {}
+	for area: Dictionary in data.sim.areas.list.values():
+		if Content.base().area_types[area.type].kind == "yard_block":
+			area.settings.merge({"sizes": [], "reefers": true, "max_tiers": 0})
 	data.version = 49
 	return data
 
