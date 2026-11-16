@@ -39,6 +39,8 @@ var _wall_from := Grid.NONE
 ## The grid point, in cells, the mouse pressed at to start that drag.
 ## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
 var _area_from := {}
+## The sun and sky through the game's day.
+var sky := DayNight.new()
 ## The box the camera follows, or 0.
 var _following := 0
 var _reported := false
@@ -46,8 +48,8 @@ var _reported := false
 
 func _ready() -> void:
 	OS.add_logger(reporter)
-	add_child(_environment())
-	add_child(_sun())
+	sky.sim = sim
+	add_child(sky)
 	view.sim = sim
 	add_child(view)
 	rig.bounds = Rect2(Vector2.ZERO, WorldView.site_size(sim))
@@ -111,6 +113,7 @@ func _use(new_sim: PortSim) -> void:
 	view.queue_free()
 	view = WorldView.new()
 	view.sim = sim
+	sky.sim = sim
 	add_child(view)
 	hud.sim = sim
 
@@ -707,24 +710,4 @@ func _report_crash() -> void:
 	OS.shell_show_in_file_manager(ProjectSettings.globalize_path(dir))
 
 
-func _sun() -> DirectionalLight3D:
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-50, -30, 0)
-	sun.shadow_enabled = true
-	return sun
 
-
-func _environment() -> WorldEnvironment:
-	var sky := Sky.new()
-	var material := ProceduralSkyMaterial.new()
-	# Below the horizon is land, so the view past the map's edge reads as countryside.
-	material.ground_horizon_color = Color(0.42, 0.5, 0.36)
-	material.ground_bottom_color = Color(0.36, 0.42, 0.3)
-	sky.sky_material = material
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	var world := WorldEnvironment.new()
-	world.environment = env
-	return world

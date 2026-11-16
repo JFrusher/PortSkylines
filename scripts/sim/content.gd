@@ -179,6 +179,8 @@ const SCHEMA := {
 	# How boxes look (M11): own_share of a line's boxes in its livery (stripe_share
 	# of those with its stripe), the rest leased in a lessor colour; reefers
 	# white; each faded and darkened up to weathering, rust_share of them rusty.
+	# Floodlights through the night (M11): a flat cost per terminal, paid as night ends.
+	"lighting": {"per_terminal_night": TYPE_INT, "night_ends_hour": TYPE_FLOAT},
 	"box_look": {"own_share": TYPE_FLOAT, "stripe_share": TYPE_FLOAT, "weathering": TYPE_FLOAT, "rust_share": TYPE_FLOAT, "reefer": TYPE_STRING, "rust": TYPE_STRING, "placard": TYPE_STRING, "lessors": TYPE_ARRAY},
 	# An AGV (M11): bought at an AGV depot, driverless, so dear to buy and cheap to keep.
 	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT, "battery_hours": TYPE_FLOAT, "charge_hours": TYPE_FLOAT, "low_share": TYPE_FLOAT, "charger_cost": TYPE_INT, "max_chargers": TYPE_INT, "rack_cost": TYPE_INT, "safety_cells": TYPE_FLOAT},

@@ -65,6 +65,11 @@ const HEADING_EASE := 10.0
 const RACK_HEIGHT := 1.6
 ## Parking lanes in an AGV depot, two AGVs to each.
 const AGV_LANES := 4
+## A floodlight mast's height (30 m) and the cells between masts along an area.
+const MAST_HEIGHT := 30.0 / METRES_PER_UNIT
+const MAST_EVERY := 12.0
+## How many cells out a floodlight's pool of light reaches.
+const MAST_REACH := 7.0
 const AGV_LANE := Color(0.55, 0.42, 0.18)
 ## How high ship lanes are drawn: just over the water.
 const LANE_HEIGHT := -0.2
@@ -178,7 +183,17 @@ var _plain_box := {}
 var _real_box := {}
 var _machine_meshes := {}  # gear -> Mesh
 var _asc_meshes := {}
-var _overlays := {}  # "stripe1".."placard2" -> Mesh, see _box_overlays  # transfer block columns -> its ASCs' Mesh
+var _overlays := {}  # "stripe1".."placard2" -> Mesh, see _box_overlays
+## Night lights (M11): masts on areas, their lamps and pools of light; the
+## glow of vehicles' lamps and of ships' lights. Lit by DayNight.darkness.
+var _masts := _flat_part()
+var _lamps := _flat_part()
+var _pools := _flat_part()
+var _beams := _flat_part()
+var _ship_lights: Array[Node3D] = []
+var _glow := StandardMaterial3D.new()
+var _bright := StandardMaterial3D.new()
+var _dark := 0.0  # transfer block columns -> its ASCs' Mesh
 ## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
@@ -267,6 +282,7 @@ func _ready() -> void:
 		_plain_box[teu] = _merged([[aabb.size, aabb.get_center(), Color.WHITE]])
 	_deck_box = Basis(Vector3.UP, PI / 2) * Basis.from_scale(_real_box[2])
 	_overlays = _box_overlays()
+	_make_lights()
 
 
 ## The site in world units.
@@ -407,6 +423,7 @@ func _process(dt: float) -> void:
 		_draw_land()
 	_draw_ships()
 	_draw_marine()
+	_light_up()
 	_draw_vans()
 	_draw_fires()
 	_animate_barriers(dt)
@@ -476,6 +493,7 @@ func _draw_areas() -> void:
 	_areas.mesh = tool.commit()
 	_draw_area_buildings()
 	_draw_agv_zone()
+	_draw_floodlights()
 
 
 func _draw_agv_zone() -> void:
@@ -562,6 +580,97 @@ func _barrier_mesh() -> Mesh:
 			boom.append([Vector3(0.008, 0.008, lane / stripes), Vector3(0, 0, (k + 0.5) * lane / stripes), Color(0.9, 0.1, 0.1) if k % 2 == 0 else Color.WHITE])
 		_boom_cache = _merged(boom)
 	return _barrier_cache
+
+
+## Night lights' parts and materials: masts in grey steel, lamps and ships'
+## lights glowing in their own colours (unshaded), pools of light and lamps'
+## beams soft and additive, brighter the darker it is.
+func _make_lights() -> void:
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color.WHITE)
+	ramp.set_color(1, Color(1, 1, 1, 0))
+	var soft := GradientTexture2D.new()
+	soft.gradient = ramp
+	soft.fill = GradientTexture2D.FILL_RADIAL
+	soft.fill_from = Vector2(0.5, 0.5)
+	soft.fill_to = Vector2(1.0, 0.5)
+	_glow.albedo_texture = soft
+	_glow.vertex_color_use_as_albedo = true
+	_glow.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_glow.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_glow.no_depth_test = false
+	_bright.vertex_color_use_as_albedo = true
+	_bright.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var flat := QuadMesh.new()
+	flat.orientation = PlaneMesh.FACE_Y
+	flat.size = Vector2.ONE
+	_masts.multimesh.mesh = _merged([[Vector3(0.025, MAST_HEIGHT, 0.025), Vector3(0, MAST_HEIGHT / 2.0, 0), Color(0.55, 0.57, 0.6)], [Vector3(0.12, 0.02, 0.05), Vector3(0, MAST_HEIGHT, 0), Color(0.3, 0.32, 0.35)]])
+	var lamps: Mesh = _merged([[Vector3(0.1, 0.012, 0.04), Vector3(0, MAST_HEIGHT - 0.016, 0), Color.WHITE]])
+	lamps.surface_set_material(0, _bright)
+	_lamps.multimesh.mesh = lamps
+	for part: MultiMeshInstance3D in [_pools, _beams]:
+		part.multimesh.mesh = flat
+		part.material_override = _glow
+		part.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for part: MultiMeshInstance3D in [_masts, _lamps, _pools, _beams]:
+		add_child(part)
+
+
+## A MultiMesh of one part, coloured per instance, to fill with _put.
+func _flat_part() -> MultiMeshInstance3D:
+	var part := MultiMeshInstance3D.new()
+	part.multimesh = MultiMesh.new()
+	part.multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	part.multimesh.use_colors = true
+	return part
+
+
+## A floodlight mast every MAST_EVERY cells along each yard, transfer
+## block, quay apron, gate, truck park and AGV depot, at its back edge
+## (a quay apron's road side), with its lamps and the pool of light under it.
+func _draw_floodlights() -> void:
+	var masts := PackedFloat32Array()
+	var lamps := PackedFloat32Array()
+	var pools := PackedFloat32Array()
+	var pool := MAST_REACH * Grid.CELL / METRES_PER_UNIT
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		var kind := sim.areas.kind_of(area)
+		if kind not in ["yard_block", "transfer_block", "quay_apron", "gate", "parking", "agv_depot"]:
+			continue
+		var row: float = 0.0 if kind == "quay_apron" else sim.areas.depth_of(area) - 0.5
+		var k := MAST_EVERY / 2.0
+		while k < area.columns:
+			var at := sim.areas.point(id, k, row) * Grid.CELL / METRES_PER_UNIT
+			var out := sim.areas.out_at(id, k)
+			# The lamps lean out over the area they light.
+			var facing := Basis(Vector3.UP, atan2(out.x, out.y))
+			var foot := Vector3(at.x, AREA_TOP / METRES_PER_UNIT, at.y)
+			_put(masts, Transform3D(facing, foot), Color.WHITE)
+			_put(lamps, Transform3D(facing, foot), Color(1.0, 0.92, 0.75))
+			var lit := sim.areas.point(id, k, row - MAST_REACH * 0.5 * (1.0 if kind != "quay_apron" else -1.0)) * Grid.CELL / METRES_PER_UNIT
+			_put(pools, Transform3D(Basis.IDENTITY.scaled(Vector3(pool * 2.0, 1.0, pool * 2.0)), Vector3(lit.x, AREA_TOP / METRES_PER_UNIT + 0.03, lit.y)), Color(1.0, 0.85, 0.6))
+			k += MAST_EVERY
+	for pair: Array in [[_masts, masts], [_lamps, lamps], [_pools, pools]]:
+		var multimesh: MultiMesh = pair[0].multimesh
+		multimesh.instance_count = pair[1].size() / 16
+		if not pair[1].is_empty():
+			multimesh.buffer = pair[1]
+
+
+## Each frame, the lights as dark as the hour is: lamps and ships' lights
+## on after dusk, the pools of light and beams fading in with the dark.
+func _light_up() -> void:
+	_dark = DayNight.darkness(fmod(sim.clock.calendar_minutes() / 60.0, 24.0))
+	var on := _dark > 0.05
+	_lamps.visible = on
+	_pools.visible = on
+	_beams.visible = on
+	_glow.albedo_color = Color(1, 1, 1, _dark * 0.3)
+	for lights: Node3D in _ship_lights:
+		if is_instance_valid(lights):
+			lights.visible = on
 
 
 ## The building on each area that has one, built again with the areas: a
@@ -1508,6 +1617,20 @@ func _ship_model(ship: PortSim.Ship, length: float) -> Node3D:
 	deck.multimesh.use_colors = true
 	deck.multimesh.mesh = _stack_meshes[2]
 	model.add_child(deck)
+	# At night: deck lights along the ship, a white masthead light on the
+	# bridge, red to port and green to starboard at the bow.
+	var lights := MeshInstance3D.new()
+	var parts: Array = [[Vector3(0.05, 0.05, 0.05), Vector3(0, SHIP_DECK + 1.0, -half + 0.35), Color.WHITE]]
+	for z: float in range(int(-half) + 1, int(half - 1.0)):
+		for x: float in [-side_x + 0.05, side_x - 0.05]:
+			parts.append([Vector3(0.035, 0.035, 0.035), Vector3(x, SHIP_DECK + 0.05, z), Color(1.0, 0.95, 0.8)])
+	parts.append([Vector3(0.06, 0.06, 0.06), Vector3(-side_x, SHIP_DECK + 0.1, half - 1.0), Color(1.0, 0.1, 0.1)])
+	parts.append([Vector3(0.06, 0.06, 0.06), Vector3(side_x, SHIP_DECK + 0.1, half - 1.0), Color(0.1, 1.0, 0.2)])
+	lights.mesh = _merged(parts)
+	lights.mesh.surface_set_material(0, _bright)
+	lights.visible = _dark > 0.05
+	model.add_child(lights)
+	_ship_lights.append(lights)
 	add_child(model)
 	return model
 
@@ -1698,6 +1821,7 @@ func _draw_vehicles(dt: float) -> void:
 	for part: Variant in _vehicle_parts:
 		buffers[part] = PackedFloat32Array()
 	var headings := {}
+	var beams := PackedFloat32Array()
 	for vehicle: Vehicle in sim.vehicles:
 		var pose := Drive.pose(sim, vehicle, alpha)
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
@@ -1709,6 +1833,12 @@ func _draw_vehicles(dt: float) -> void:
 		var at: Vector2 = (pose[0] + Vector2(0.5, 0.5)) * Grid.CELL / METRES_PER_UNIT
 		var basis := Basis(Vector3.UP, atan2(heading.x, heading.y)).scaled_local(AREA_VEHICLE_SCALE)
 		var placed := Transform3D(basis, Vector3(at.x, 0.04, at.y))
+		if _dark > 0.05:
+			# Its headlights' beam on the road ahead, its tail lights' glow behind.
+			var ahead := Vector3(heading.x, 0.0, heading.y)
+			var turned := Basis(Vector3.UP, atan2(heading.x, heading.y))
+			_put(beams, Transform3D(turned.scaled(Vector3(0.16, 1.0, 0.5)), placed.origin + ahead * 0.5 + Vector3(0, 0.006, 0)), Color(1.0, 0.95, 0.8))
+			_put(beams, Transform3D(turned.scaled(Vector3(0.12, 1.0, 0.1)), placed.origin - ahead * 0.32 + Vector3(0, 0.006, 0)), Color(1.0, 0.1, 0.05))
 		# A straddle carrier is a tall frame with the box slung inside it.
 		var carried := placed * _vehicle_box
 		if vehicle.straddle:
@@ -1727,6 +1857,9 @@ func _draw_vehicles(dt: float) -> void:
 		if vehicle.loaded:
 			_put_box(buffers, carried, vehicle.box)
 	_headings = headings
+	_beams.multimesh.instance_count = beams.size() / 16
+	if not beams.is_empty():
+		_beams.multimesh.buffer = beams
 	_park_agvs(buffers)
 	_draw_racks(buffers)
 	for part: Variant in _vehicle_parts:

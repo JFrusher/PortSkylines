@@ -1897,6 +1897,8 @@ func tick() -> void:
 	clock.tick()
 	if clock.ticks % SimClock.TICKS_PER_DAY == 0:
 		_end_of_day()
+	if clock.ticks % SimClock.TICKS_PER_DAY == roundi(rules.lighting.night_ends_hour * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		_pay_lighting()
 	if not crane_orders.is_empty():
 		_deliver_cranes()
 	for service in contracts.due(clock.ticks % (SimClock.TICKS_PER_DAY * 7)):
@@ -2227,6 +2229,17 @@ func move_service_error(id: int, apron: int) -> String:
 func move_service(id: int, apron: int) -> String:
 	var err := move_service_error(id, apron)
 	return err if err else contracts.move(id, apron)
+
+
+## The night's floodlights, as night ends: a flat cost for each terminal
+## with something built in it.
+func _pay_lighting() -> void:
+	var lit := {}
+	for area: Dictionary in areas.list.values():
+		if area.terminal:
+			lit[area.terminal] = true
+	for terminal: int in lit:
+		ledger.post("lighting", -rules.lighting.per_terminal_night, terminal)
 
 
 ## The ship with id `id`, or null.

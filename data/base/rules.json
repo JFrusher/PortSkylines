@@ -105,6 +105,7 @@
 		"rush_fines": "Rush fines",
 		"connection_fines": "Missed connections",
 		"fire_losses": "Fire losses",
+		"lighting": "Lighting",
 		"port_dues": "Port dues",
 		"pilotage": "Pilotage",
 		"services": "Ship services",
@@ -212,5 +213,6 @@
 		"reputation": -20.0,
 		"no_loans_days": 14.0
 	},
+	"lighting": {"per_terminal_night": 400, "night_ends_hour": 6.0},
 	"box_look": {"own_share": 0.5, "stripe_share": 0.4, "weathering": 0.3, "rust_share": 0.25, "reefer": "#e8ebe8", "rust": "#7a3b22", "placard": "#ff6a13", "lessors": ["#7b2d26", "#3e5f7d", "#c8b48a", "#8a8d8f", "#4f6b3a", "#6b4a32", "#a2412b", "#24375a"]}
 }
