@@ -426,7 +426,7 @@ func _process(dt: float) -> void:
 	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.areas.breakwaters.keys()] != _ship_lanes_drawn:
 		_draw_ship_lanes()
 	_draw_junctions()
-	if sim.areas.filled.size() != _coast_filled.size():
+	if _coast_image == null or sim.areas.filled.size() != _coast_filled.size():
 		_draw_fill()
 	if sim.land.size() != _drawn_land:
 		_draw_land()
