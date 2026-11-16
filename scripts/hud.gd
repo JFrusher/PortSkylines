@@ -923,8 +923,15 @@ func _gate(name: String, control: Control) -> Control:
 ## The scenario list: each scenario's name, best medal and blurb, played on
 ## its own map or a fresh coast.
 func _build_scenarios() -> void:
-	var list := _panel(_corner(Control.PRESET_CENTER), "Scenarios")
-	_scenarios = _panel_of(list)
+	var page := _panel(_corner(Control.PRESET_CENTER), "Scenarios")
+	_scenarios = _panel_of(page)
+	# Scrolled, so a long list stays clear of the toolbar.
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(480, 220)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	page.add_child(scroll)
+	var list := VBoxContainer.new()
+	scroll.add_child(list)
 	_scenarios.visible = false
 	_scenarios.visibility_changed.connect(func() -> void:
 		if _scenarios.visible:
@@ -932,7 +939,7 @@ func _build_scenarios() -> void:
 
 
 func _fill_scenarios(list: VBoxContainer) -> void:
-	for child: Node in list.get_children().slice(1):
+	for child: Node in list.get_children():
 		child.queue_free()
 	var settings := ConfigFile.new()
 	settings.load(SETTINGS_PATH)

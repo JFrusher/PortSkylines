@@ -2099,7 +2099,7 @@ func last_event() -> String:
 ## its numbers, and the news it brought, routine lines left out.
 func _report(closed: Dictionary) -> void:
 	var from := float(closed.day) * SimClock.MINUTES_PER_DAY
-	var headlines: Array = events.filter(func(e: Dictionary) -> bool: return e.minute >= from and e.minute < from + SimClock.MINUTES_PER_DAY and not e.text.begins_with("Upkeep")).map(func(e: Dictionary) -> String: return e.text)
+	var headlines: Array = events.filter(func(e: Dictionary) -> bool: return e.minute >= from and e.minute < from + SimClock.MINUTES_PER_DAY and not e.text.begins_with("Upkeep") and not e.text.begins_with("Place a berth")).map(func(e: Dictionary) -> String: return e.text)
 	reports.append({"day": closed.day, "moves": closed.moves.total, "net": closed.closed - closed.opened, "calls": today_calls.calls, "on_time": today_calls.on_time, "headlines": headlines.slice(-5)})
 	if reports.size() > REPORT_DAYS:
 		reports.pop_front()
