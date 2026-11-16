@@ -1855,10 +1855,6 @@ func _draw_vehicles(dt: float) -> void:
 	var headings := {}
 	var beams := PackedFloat32Array()
 	for vehicle: Vehicle in sim.vehicles:
-		# Off the map, going round the highway's interchange: not drawn.
-		var car: Dictionary = sim.traffic.cars.get(vehicle.id, {})
-		if car and sim.network.pieces[car.route[car.i]].offmap:
-			continue
 		var pose := Drive.pose(sim, vehicle, alpha)
 		var heading: Vector2 = pose[1].normalized() if pose[1] != Vector2.ZERO else _headings.get(vehicle.id, Vector2.DOWN)
 		# Eased toward the way its path runs, so a sharp jog into a slot reads as a turn.
