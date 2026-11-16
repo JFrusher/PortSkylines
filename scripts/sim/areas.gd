@@ -405,6 +405,8 @@ func _keep_for(now: Vector2i) -> void:
 
 func _idle_reason(id: int) -> String:
 	var area: Dictionary = list[id]
+	if kind_of(area) == "tree_belt":
+		return ""  # it only stands between the port and the town
 	if area.terminal == 0:
 		return "Paint this %s into a terminal on the map (Map, key 6)" % types[area.type].name.to_lower()
 	if not road_beside(id):

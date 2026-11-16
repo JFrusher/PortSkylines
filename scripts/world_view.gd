@@ -51,7 +51,7 @@ const AREA_COLOR := {
 	"yard_block": Color(0.56, 0.56, 0.53), "quay_apron": Color(0.66, 0.65, 0.6),
 	"gate": Color(0.42, 0.5, 0.58), "depot": Color(0.6, 0.55, 0.45),
 	"parking": Color(0.38, 0.4, 0.42), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27),
-	"agv_depot": Color(0.45, 0.5, 0.52), "transfer_block": Color(0.56, 0.56, 0.53),
+	"agv_depot": Color(0.45, 0.5, 0.52), "transfer_block": Color(0.56, 0.56, 0.53), "tree_belt": Color(0.3, 0.42, 0.24),
 }
 const AREA_TOP := 0.2
 ## AGV-only lanes, amber over the asphalt.
@@ -194,6 +194,11 @@ var _ship_lights: Array[Node3D] = []
 var _glow := StandardMaterial3D.new()
 var _bright := StandardMaterial3D.new()
 var _dark := 0.0  # transfer block columns -> its ASCs' Mesh
+## The town next door (see Town): its houses, and their windows lit at night,
+## drawn again when it grows, its mood turns or the bypass is built.
+var _town := MeshInstance3D.new()
+var _town_windows := MeshInstance3D.new()
+var _town_drawn := []
 ## Every road on the 4 m grid as one mesh and its markings as another, redrawn when the roads change.
 var _roads := MeshInstance3D.new()
 var _road_marks := MeshInstance3D.new()
@@ -260,6 +265,8 @@ func _ready() -> void:
 	_ship_lanes.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_ship_lanes.material_override.vertex_color_use_as_albedo = true
 	add_child(_info)
+	add_child(_town)
+	add_child(_town_windows)
 	for preview: MeshInstance3D in [_road_preview, _area_preview, _info]:
 		preview.material_override = StandardMaterial3D.new()
 		preview.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -409,7 +416,7 @@ func _process(dt: float) -> void:
 	if _info.visible and _info_left <= 0.0:
 		_info_left = INFO_SECONDS
 		_draw_info()
-	if [sim.roads.version, sim.rails.version] != _roads_drawn:
+	if [sim.roads.version, sim.rails.version, sim.town.bypass] != _roads_drawn:
 		_draw_roads()
 	if [sim.areas.version, sim.roads.version] != _areas_drawn:
 		_draw_areas()
@@ -424,6 +431,7 @@ func _process(dt: float) -> void:
 	_draw_ships()
 	_draw_marine()
 	_light_up()
+	_draw_town()
 	_draw_vans()
 	_draw_fires()
 	_animate_barriers(dt)
@@ -435,7 +443,7 @@ func _process(dt: float) -> void:
 
 
 func _draw_roads() -> void:
-	_roads_drawn = [sim.roads.version, sim.rails.version]
+	_roads_drawn = [sim.roads.version, sim.rails.version, sim.town.bypass]
 	var surface := _road_tool()
 	var marks := _road_tool()
 	# Markings stop where a junction's shape cuts each road back, as its lanes do (LaneNetwork).
@@ -448,6 +456,8 @@ func _draw_roads() -> void:
 	var entry := sim.site_entry_point()
 	var off_map := Vector2i(ceili(-SEA_START * METRES_PER_UNIT / Grid.CELL), 0)
 	_add_road(surface, marks, RoadCurve.straight(Vector2(entry + off_map), Vector2(entry)), sim.rules.road_types.terminal_2_2)
+	if sim.town.bypass:
+		_add_road(surface, marks, _bypass(sim), sim.rules.road_types.terminal_2_2)
 	# The main line the same way, to the rail entry.
 	var rail_entry := Vector2(sim.site_rail_entry()) + Vector2(0.5, 0.5)
 	_add_track(surface, marks, RoadCurve.straight(rail_entry + Vector2(off_map), rail_entry))
@@ -668,6 +678,7 @@ func _light_up() -> void:
 	_pools.visible = on
 	_beams.visible = on
 	_glow.albedo_color = Color(1, 1, 1, _dark * 0.3)
+	_town_windows.visible = on
 	for lights: Node3D in _ship_lights:
 		if is_instance_valid(lights):
 			lights.visible = on
@@ -2259,3 +2270,96 @@ func _box_mesh(size: Vector3, color: Color) -> BoxMesh:
 	mesh.size = size
 	mesh.material = material
 	return mesh
+
+
+## The town's bypass, in grid cells: off the highway west of the town,
+## swinging south round it, back onto the highway east of it.
+static func _bypass(port: PortSim) -> RoadCurve:
+	var entry := Vector2(port.site_entry_point())
+	var middle := Town.centre(port)
+	return RoadCurve.new(entry + Vector2(8, 0), Vector2(middle.x, entry.y + 120), Vector2(middle.x * 2.0 - entry.x - 8, entry.y))
+
+
+## Where the town's houses stand, nearest its middle first, in metres: on a
+## 16 m grid, jittered, clear of the highway and the bypass. z is which way
+## a house faces (0 or 1) and which look it takes.
+static func town_spots(port: PortSim) -> Array[Vector3]:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var middle := Town.centre(port) * Grid.CELL
+	var road_y := float(port.site_entry_point().y * Grid.CELL)
+	var edge := float(port.rules.site.width) + 24.0
+	var bypass := _bypass(port)
+	var curve: Array[Vector2] = []
+	for i in 41:
+		curve.append(bypass.point(i / 40.0) * Grid.CELL)
+	var found: Array[Vector3] = []
+	var near := {}
+	for gx in range(-14, 15):
+		for gy in range(-11, 12):
+			var spot := middle + Vector2(gx, gy) * 16.0 + Vector2(rng.randf_range(-3, 3), rng.randf_range(-3, 3))
+			var ellipse := pow((spot.x - middle.x) / 220.0, 2.0) + pow((spot.y - middle.y) / 170.0, 2.0)
+			if ellipse > 1.0 or spot.x < edge or absf(spot.y - road_y) < 16.0 or curve.any(func(p: Vector2) -> bool: return p.distance_to(spot) < 22.0):
+				continue
+			near[spot] = ellipse + rng.randf() * 0.15
+			found.append(Vector3(spot.x, spot.y, rng.randi() % 6))
+	found.sort_custom(func(a: Vector3, b: Vector3) -> bool: return near[Vector2(a.x, a.y)] < near[Vector2(b.x, b.y)])
+	return found
+
+
+## Draws the town: as many houses as it has grown to, protest boards out
+## when it's sour, flags when it's warm.
+func _draw_town() -> void:
+	var rules: Dictionary = sim.rules.town
+	var count: int = rules.houses + roundi(Town.jobs(sim) * rules.houses_per_job)
+	var mood: String = "sour" if sim.town.mood < rules.sour_below else "warm" if sim.town.mood > rules.warm_above else ""
+	if [count, mood, sim.town.bypass] == _town_drawn:
+		return
+	_town_drawn = [count, mood, sim.town.bypass]
+	var walls := [Color(0.72, 0.4, 0.3), Color(0.9, 0.86, 0.76), Color(0.95, 0.95, 0.92), Color(0.66, 0.6, 0.5), Color(0.8, 0.7, 0.55)]
+	var roofs := [Color(0.5, 0.2, 0.15), Color(0.3, 0.32, 0.36), Color(0.42, 0.3, 0.22)]
+	var parts: Array = []
+	var lit: Array = []
+	var spots := town_spots(sim)
+	for i in mini(count, spots.size()):
+		var spot: Vector3 = spots[i]
+		var look := int(spot.z)
+		var at := _world(Vector2(spot.x, spot.y), 0.0)
+		var size := Vector2(0.4, 0.3) if look % 2 == 0 else Vector2(0.3, 0.4)
+		var h := 0.22 if look < 4 else 0.34  # some houses have two storeys
+		var roof: Color = roofs[look % roofs.size()]
+		parts.append_array([
+			[Vector3(size.x, h, size.y), at + Vector3(0, h / 2.0, 0), walls[(i * 7 + look) % walls.size()]],
+			[Vector3(size.x + 0.03, 0.05, size.y + 0.03), at + Vector3(0, h + 0.025, 0), roof],
+			[Vector3(size.x * 0.75 if look % 2 == 0 else size.x + 0.03, 0.05, size.y + 0.03 if look % 2 == 0 else size.y * 0.75), at + Vector3(0, h + 0.075, 0), roof],
+			[Vector3(size.x * 0.4 if look % 2 == 0 else size.x + 0.03, 0.04, size.y + 0.03 if look % 2 == 0 else size.y * 0.4), at + Vector3(0, h + 0.12, 0), roof],
+		])
+		if i % 3 == 0:
+			parts.append([Vector3(0.04, 0.12, 0.04), at + Vector3(size.x * 0.3, h + 0.1, 0), Color(0.45, 0.3, 0.25)])
+		# Windows on the long sides, dark by day; lit ones sit just proud of them.
+		for side: float in [-1.0, 1.0]:
+			for k: float in [-0.25, 0.25]:
+				for floor_y: float in ([0.12] if h < 0.3 else [0.1, 0.24]):
+					var pane := at + (Vector3(size.x * k, floor_y, side * (size.y / 2.0 + 0.003)) if look % 2 == 0 else Vector3(side * (size.x / 2.0 + 0.003), floor_y, size.y * k))
+					var shape := Vector3(0.06, 0.06, 0.004) if look % 2 == 0 else Vector3(0.004, 0.06, 0.06)
+					parts.append([shape, pane, Color(0.2, 0.24, 0.3)])
+					if (i + int(k * 4.0) + int(side)) % 3 != 0:  # not every room is lit
+						lit.append([shape + Vector3(0.002, 0, 0.002), pane, Color(1.0, 0.82, 0.5)])
+		if mood == "sour" and i % 4 == 0:
+			var front := at + (Vector3(0, 0, size.y / 2.0 + 0.12) if look % 2 == 0 else Vector3(size.x / 2.0 + 0.12, 0, 0))
+			parts.append_array([
+				[Vector3(0.015, 0.16, 0.015), front + Vector3(-0.08, 0.08, 0), Color(0.4, 0.3, 0.2)],
+				[Vector3(0.015, 0.16, 0.015), front + Vector3(0.08, 0.08, 0), Color(0.4, 0.3, 0.2)],
+				[Vector3(0.22, 0.09, 0.01), front + Vector3(0, 0.14, 0), Color(0.95, 0.95, 0.9)],
+				[Vector3(0.16, 0.025, 0.012), front + Vector3(0, 0.15, 0), Color(0.85, 0.1, 0.08)],
+			])
+		elif mood == "warm" and i % 5 == 0:
+			parts.append_array([
+				[Vector3(0.012, 0.3, 0.012), at + Vector3(-size.x / 2.0 - 0.06, 0.15, 0), Color(0.9, 0.9, 0.9)],
+				[Vector3(0.012, 0.07, 0.1), at + Vector3(-size.x / 2.0 - 0.06, 0.26, 0.05), [Color(0.1, 0.55, 0.3), Color(0.95, 0.75, 0.1), Color(0.2, 0.4, 0.8)][i % 3]],
+			])
+	_town.mesh = _merged(parts) if not parts.is_empty() else null
+	var windows: Mesh = _merged(lit) if not lit.is_empty() else null
+	if windows:
+		windows.surface_set_material(0, _bright)
+	_town_windows.mesh = windows

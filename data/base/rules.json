@@ -106,6 +106,7 @@
 		"connection_fines": "Missed connections",
 		"fire_losses": "Fire losses",
 		"lighting": "Lighting",
+		"town": "Community fund",
 		"port_dues": "Port dues",
 		"pilotage": "Pilotage",
 		"services": "Ship services",
@@ -214,5 +215,12 @@
 		"no_loans_days": 14.0
 	},
 	"lighting": {"per_terminal_night": 400, "night_ends_hour": 6.0},
+	"town": {"name": "Saltmarsh", "offset_cells": [55, 0], "reach_m": 2600.0, "base_mood": 55.0, "ease_per_hour": 0.1, "sour_below": 30.0, "warm_above": 70.0, "night_starts_hour": 18.0,
+		"noise": {"quay_apron": 6.0, "yard_block": 4.0, "transfer_block": 4.0, "gate": 3.0, "parking": 2.0, "depot": 2.0, "workshop": 2.0, "agv_depot": 1.0},
+		"light": {"quay_apron": 4.0, "yard_block": 3.0, "transfer_block": 3.0, "gate": 3.0, "parking": 2.0, "agv_depot": 2.0},
+		"ship_noise": 6.0, "lorry_noise": 0.5, "belt_factor": 0.5,
+		"jobs": {"crane": 6.0, "machine": 3.0, "tractor": 2.0, "person": 1.0}, "points_per_job": 0.25, "max_job_points": 30.0,
+		"fund_per_point": 100.0, "max_fund_points": 20.0, "max_fund": 5000,
+		"bypass_cost": 3000000, "shore_power_cost": 1500000, "houses": 40, "houses_per_job": 0.5},
 	"box_look": {"own_share": 0.5, "stripe_share": 0.4, "weathering": 0.3, "rust_share": 0.25, "reefer": "#e8ebe8", "rust": "#7a3b22", "placard": "#ff6a13", "lessors": ["#7b2d26", "#3e5f7d", "#c8b48a", "#8a8d8f", "#4f6b3a", "#6b4a32", "#a2412b", "#24375a"]}
 }

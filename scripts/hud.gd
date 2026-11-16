@@ -39,7 +39,7 @@ const BUILD_BREAKWATER := -14
 ## Drags a road's node, or the point it bends toward, to reshape it (Move It).
 const MOVE_ROAD := -15
 ## The build menu row each area type sits in.
-const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "agv_depot": "Yard", "transfer_block": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
+const AREA_ROWS := {"yard_block": "Yard", "depot": "Yard", "workshop": "Yard", "fire_station": "Yard", "agv_depot": "Yard", "transfer_block": "Yard", "tree_belt": "Yard", "quay_apron": "Quay", "gate": "Gate", "parking": "Gate"}
 const SPEEDS: Array[int] = [0, 1, 2, 3, 6]
 ## The build menu's categories, in key order 1-8.
 const CATEGORIES: Array[String] = ["Roads", "Quay", "Cranes", "Yard", "Gate", "Map", "Water", "Bulldoze", "Inspect"]
@@ -107,6 +107,8 @@ var _event_list := VBoxContainer.new()
 var _events_drawn := []
 var _ledger := Label.new()
 var _borrow := HBoxContainer.new()
+## The town next door's fixes, under the Port drawer's rows.
+var _town_actions := HBoxContainer.new()
 ## Controls shown only once a milestone unlocks them: name -> controls.
 var _gated := {}
 ## The berth board, opened by the Contracts button.
@@ -517,10 +519,26 @@ func _build_drawer(left: Control) -> void:
 	_ledger.custom_minimum_size.x = 340
 	_drawer_extra_container.add_child(_ledger)
 	_drawer_extra_container.add_child(_borrow)
+	_drawer_extra_container.add_child(_town_actions)
 
 	for kind: String in sim.rules.loans:
 		var terms: Dictionary = sim.rules.loans[kind]
 		_gate("loans", _action_button(_borrow, "Borrow %s\n%d days, %d%% a year" % [HudDetails.dollars(terms.amount), terms.days, roundi(terms.yearly_rate * 100)], {"op": "take_loan", "kind": kind}))
+
+
+## The community fund and the bypass, on the Port drawer only.
+func _fill_town_actions(group_name: String) -> void:
+	for child in _town_actions.get_children():
+		child.queue_free()
+	_town_actions.visible = group_name == HudDetails.GROUP_PORT
+	if not _town_actions.visible:
+		return
+	var fund: int = sim.town.fund
+	for change: int in [-500, 500]:
+		var to := clampi(fund + change, 0, sim.rules.town.max_fund)
+		_action_button(_town_actions, "Fund %+d" % change, {"op": "set_town_fund", "per_day": to}).disabled = to == fund
+	if not sim.town.bypass:
+		_action_button(_town_actions, "Build the bypass, %s" % HudDetails.dollars(sim.rules.town.bypass_cost), {"op": "buy_bypass"}).tooltip_text = "Takes the highway round %s, so its lorries no longer rumble through." % sim.rules.town.name
 
 
 func _toggle_drawer(group_name: String) -> void:
@@ -562,6 +580,7 @@ func _fill_drawer(group_name: String) -> void:
 		var label := _label(entry[0] + "  ")
 		label.theme_type_variation = "MutedLabel"
 		_legend.add_child(label)
+	_fill_town_actions(group_name)
 	# Populate cards
 	for child in _drawer_cards_container.get_children():
 		child.queue_free()
@@ -861,6 +880,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"transfer_block": "A high-volume yard block for an AGV terminal, laid across its road: AGVs hand boxes over at the front, in the AGV zone, and lorries at the back, off a road behind it (drag along the zone's road; it reaches back to the next road, 48 to 160 m). Twin ASCs, one at each end, stack between them",
 		"agv_depot": "Home of AGVs, the driverless carriers: built inside the AGV zone, its terminal moves boxes between quay and yard on its AGVs instead of tractors. Dear to buy, cheap to run. Buy AGVs by inspecting it",
 		"fire_station": "Its fire engines drive out to fires in the yard and on ships at berth (switch fires on in the menu); a fire no crew reaches soon burns boxes. Buy engines by inspecting it",
+		"tree_belt": "A belt of trees that screens the town next door: noise and floodlight from behind it reach the town at half strength",
 		"workshop": "Its mechanics drive out in their vans to repair the quay cranes and yard gear that break down in its terminal (switch breakdowns on in the menu). Hire mechanics by inspecting it",
 	}[area.kind]
 	if both_sides:
@@ -936,6 +956,8 @@ func _draw_inspect_actions() -> void:
 		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
 	if sim.areas.list[id].type in Areas.BLOCK_TYPES and sim.areas.list[id].settings.role == "customs":
 		_action_button(_inspect_actions, "Hire an inspector, %s" % HudDetails.dollars(sim.rules.customs.inspector_cost), {"op": "hire_inspectors", "area": id, "count": 1})
+	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron" and not sim.areas.list[id].settings.shore_power:
+		_action_button(_inspect_actions, "Buy shore power, %s" % HudDetails.dollars(sim.rules.town.shore_power_cost), {"op": "buy_shore_power", "area": id}).tooltip_text = "Ships at this quay plug in and stop their engines, so %s no longer hears them." % sim.rules.town.name
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate" and not sim.areas.list[id].settings.scanner:
 		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
 	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":

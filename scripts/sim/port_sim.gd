@@ -66,6 +66,9 @@ var serviced := {}
 var agv_home := {}
 ## Each racked transfer block's racks: see Racks.
 var racks := {}
+## The town next door (see Town): its mood, the community fund a day, whether
+## the bypass is built, and what the news said of it last ("sour", "warm" or "").
+var town := {"mood": 60.0, "fund": 0, "bypass": false, "said": ""}
 ## Fires burning, and the fire engines.
 var fires := Fires.new()
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
@@ -173,7 +176,7 @@ const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
 	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "inspectors": 0},
-	"quay_apron": {"lines": [], "barge": false},
+	"quay_apron": {"lines": [], "barge": false, "shore_power": false},
 	"gate": {"level": "manual", "slots_per_hour": 0, "scanner": false},
 	"workshop": {"mechanics": 0},
 	"fire_station": {"engines": 0},
@@ -445,6 +448,7 @@ func to_dict() -> Dictionary:
 		"serviced": serviced.duplicate(),
 		"agv_home": agv_home.duplicate(true),
 		"racks": racks.duplicate(true),
+		"town": town.duplicate(),
 		"fires": fires.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
@@ -535,6 +539,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.workshops = Workshops.from_dict(d.workshops)
 	sim.serviced = d.serviced.duplicate()
 	sim.racks = d.racks.duplicate(true)
+	sim.town = d.town.duplicate()
 	for depot: int in d.agv_home:
 		var home: Array[float] = []
 		home.assign(d.agv_home[depot])
@@ -694,6 +699,12 @@ func apply(command: Dictionary) -> String:
 				return "No such equipment"
 			serviced[command.kind] = command.on
 			return ""
+		"set_town_fund":
+			return Town.set_fund(self, command.per_day)
+		"buy_bypass":
+			return Town.buy_bypass(self)
+		"buy_shore_power":
+			return Town.buy_shore_power(self, command.area)
 		"buy_scanner":
 			return Customs.buy_scanner(self, command.gate)
 		"hire_inspectors":
@@ -1281,8 +1292,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		if key not in AREA_SETTINGS.get(areas.kind_of(areas.list[id]), {}):
 			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
 		# Bought, not set: by inspecting the area.
-		if key in ["mechanics", "engines", "inspectors", "scanner", "agvs", "chargers", "racks"]:
-			return "Buy %s by inspecting it" % ("a scanner" if key == "scanner" else key)
+		if key in ["mechanics", "engines", "inspectors", "scanner", "agvs", "chargers", "racks", "shore_power"]:
+			return "Buy %s by inspecting it" % {"scanner": "a scanner", "shore_power": "shore power"}.get(key, key)
 		if key == "gear" and areas.kind_of(areas.list[id]) == "transfer_block":
 			return "A transfer block is worked by its two ASCs"
 	if settings.get("gear") == "asc":
@@ -1899,6 +1910,8 @@ func tick() -> void:
 		_end_of_day()
 	if clock.ticks % SimClock.TICKS_PER_DAY == roundi(rules.lighting.night_ends_hour * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		_pay_lighting()
+	if clock.ticks % (SimClock.TICKS_PER_DAY / 24) == 0:
+		Town.tick_hour(self)
 	if not crane_orders.is_empty():
 		_deliver_cranes()
 	for service in contracts.due(clock.ticks % (SimClock.TICKS_PER_DAY * 7)):
@@ -2084,6 +2097,7 @@ func _end_of_day() -> void:
 			ledger.post("upkeep", -roundi(parts[terminal]), terminal)
 			upkeep -= roundi(parts[terminal])
 	ledger.post("upkeep", -upkeep)
+	Town.pay_fund(self)
 	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
 	if bill > 0:
 		ledger.post("power", -bill)

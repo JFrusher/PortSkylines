@@ -181,6 +181,10 @@ const SCHEMA := {
 	# white; each faded and darkened up to weathering, rust_share of them rusty.
 	# Floodlights through the night (M11): a flat cost per terminal, paid as night ends.
 	"lighting": {"per_terminal_night": TYPE_INT, "night_ends_hour": TYPE_FLOAT},
+	# The town next door (M11, see Town): where it sits past the entry, how far
+	# the port reaches it, its mood's base and pace, noise and light by area
+	# kind, jobs by kind of worker, and what its fixes cost.
+	"town": {"name": TYPE_STRING, "offset_cells": TYPE_ARRAY, "reach_m": TYPE_FLOAT, "base_mood": TYPE_FLOAT, "ease_per_hour": TYPE_FLOAT, "sour_below": TYPE_FLOAT, "warm_above": TYPE_FLOAT, "night_starts_hour": TYPE_FLOAT, "noise": {"*": TYPE_FLOAT}, "light": {"*": TYPE_FLOAT}, "ship_noise": TYPE_FLOAT, "lorry_noise": TYPE_FLOAT, "belt_factor": TYPE_FLOAT, "jobs": {"crane": TYPE_FLOAT, "machine": TYPE_FLOAT, "tractor": TYPE_FLOAT, "person": TYPE_FLOAT}, "points_per_job": TYPE_FLOAT, "max_job_points": TYPE_FLOAT, "fund_per_point": TYPE_FLOAT, "max_fund_points": TYPE_FLOAT, "max_fund": TYPE_INT, "bypass_cost": TYPE_INT, "shore_power_cost": TYPE_INT, "houses": TYPE_INT, "houses_per_job": TYPE_FLOAT},
 	"box_look": {"own_share": TYPE_FLOAT, "stripe_share": TYPE_FLOAT, "weathering": TYPE_FLOAT, "rust_share": TYPE_FLOAT, "reefer": TYPE_STRING, "rust": TYPE_STRING, "placard": TYPE_STRING, "lessors": TYPE_ARRAY},
 	# An AGV (M11): bought at an AGV depot, driverless, so dear to buy and cheap to keep.
 	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT, "battery_hours": TYPE_FLOAT, "charge_hours": TYPE_FLOAT, "low_share": TYPE_FLOAT, "charger_cost": TYPE_INT, "max_chargers": TYPE_INT, "rack_cost": TYPE_INT, "safety_cells": TYPE_FLOAT},
@@ -223,7 +227,7 @@ const SCHEMA := {
 }
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
-const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop", "fire_station", "agv_depot", "transfer_block"]
+const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop", "fire_station", "agv_depot", "transfer_block", "tree_belt"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
 const POSITIVE := ["min_radius_cells", "width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
