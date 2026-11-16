@@ -141,7 +141,10 @@ var _land := ShaderMaterial.new()
 ## The coast as a texture a pixel a cell: red is land, green the water's depth
 ## against its map's deepest; redrawn when water is filled.
 var _coast := ImageTexture.new()
-var _coast_filled := -1
+## The coast as drawn, and the cells filled since: drawn once whole, then
+## only the new fill, as a whole redraw takes seconds on a big site.
+var _coast_image: Image
+var _coast_filled := {}
 ## Each land tile a pixel, red where the port owns it.
 var _owned := ImageTexture.new()
 var _stack_meshes := {}  # TEU -> Mesh, tinted per instance
@@ -423,9 +426,8 @@ func _process(dt: float) -> void:
 	if [sim.ship_lanes.version, sim.dredge_version, sim.anchorages.keys(), sim.areas.breakwaters.keys()] != _ship_lanes_drawn:
 		_draw_ship_lanes()
 	_draw_junctions()
-	if sim.areas.filled.size() != _coast_filled:
-		_coast_filled = sim.areas.filled.size()
-		_coast.set_image(coast_image(sim))
+	if sim.areas.filled.size() != _coast_filled.size():
+		_draw_fill()
 	if sim.land.size() != _drawn_land:
 		_draw_land()
 	_draw_ships()
@@ -1064,6 +1066,20 @@ static func coast_image(sim: PortSim) -> Image:
 			else:
 				bytes[i] = 255
 	return Image.create_from_data(size.x, size.y, false, Image.FORMAT_RG8, bytes)
+
+
+## Draws the coast whole the first time, then only the cells filled since.
+func _draw_fill() -> void:
+	if _coast_image == null:
+		_coast_image = coast_image(sim)
+		_coast_filled = sim.areas.filled.duplicate()
+		_coast.set_image(_coast_image)
+		return
+	for cell: Vector2i in sim.areas.filled:
+		if cell not in _coast_filled:
+			_coast_filled[cell] = true
+			_coast_image.set_pixelv(cell, Color(1, 0, 0))
+	_coast.update(_coast_image)
 
 
 ## The 4 m grid cell at world point `at`.
