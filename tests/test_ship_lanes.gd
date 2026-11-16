@@ -108,7 +108,7 @@ func _test_breakwaters_and_islands() -> void:
 	_expect(sim.apply({"op": "remove_breakwater", "id": sim.areas.breakwater_at(Vector2i(30, 120))}), "", "a breakwater is taken out")
 	_expect(sim.areas.is_water(Vector2i(30, 120)), true, "leaving open water")
 	var estuary := PortSim.new(0, Content.base(), true)
-	var island := Vector2i(50, 340)
+	var island := Vector2i(100, 680)
 	_expect(estuary.areas.is_water(island), false, "the estuary has an island off the coast at %s" % island)
 	_expect(estuary.apply({"op": "build_ship_lane", "from": Vector2i(0, island.y), "to": Vector2i(island.x + 40, island.y), "type": "narrow"}).begins_with("A lane needs open water"), true, "a lane can't cross an island")
 
