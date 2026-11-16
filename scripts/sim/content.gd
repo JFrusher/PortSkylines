@@ -250,6 +250,21 @@ static func base() -> Dictionary:
 	return _base
 
 
+## A copy of `rules` on a site of `site`'s size, its maps drawn to scale:
+## a save keeps the site it was made on (the game's grew in M11).
+static func on_site(rules: Dictionary, site: Dictionary) -> Dictionary:
+	var copy := rules.duplicate(true)
+	var scale: float = site.width / rules.site.width
+	var scaled := func(points: Array) -> Array: return points.map(func(p: Array) -> Array: return [p[0] * scale, p[1] * scale])
+	copy.site = site.duplicate()
+	for map: Dictionary in copy.maps.values():
+		map.land = scaled.call(map.land)
+		map.islands = map.islands.map(func(island: Array) -> Array: return scaled.call(island))
+		for river: Dictionary in map.rivers:
+			river.points = scaled.call(river.points)
+	return copy
+
+
 ## {"rules": Dictionary} from every .json file in `dir`, or {"error": String}.
 static func load_dir(dir: String) -> Dictionary:
 	var rules := {}

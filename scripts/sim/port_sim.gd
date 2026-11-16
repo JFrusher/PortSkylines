@@ -434,6 +434,7 @@ func to_dict() -> Dictionary:
 		"rails": rails.to_dict(),
 		"areas": areas.to_dict(),
 		"map": map,
+		"site": rules.site.duplicate(),
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
@@ -523,7 +524,9 @@ func _area_stacks_dict() -> Dictionary:
 
 static func from_dict(d: Dictionary) -> PortSim:
 	# A scenario plays by its own rules, on a fresh coast its map names the seed of.
-	var sim := PortSim.new(0, Scenario.rules_for(d.scenario.key, int(d.map.trim_prefix(MapGen.PREFIX)) if d.scenario.fresh else -1))
+	var rules := Scenario.rules_for(d.scenario.key, int(d.map.trim_prefix(MapGen.PREFIX)) if d.scenario.fresh else -1)
+	# On the site it was made on, which may be smaller than the game's now.
+	var sim := PortSim.new(0, rules if d.site == rules.site else Content.on_site(rules, d.site))
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types, sim.rules.junctions)
 	sim.roads.anchors = [Vector2(sim.site_entry_point())]
 	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types(), sim.rules.junctions)

@@ -18,14 +18,7 @@ static func strait(game_rules := Content.base()) -> Dictionary:
 ## at half size: the site the tests' ports and the showcase are laid out on
 ## cell by cell, small enough to build and run fast.
 static func small_site(game_rules: Dictionary) -> Dictionary:
-	var copy := game_rules.duplicate(true)
-	var half := func(points: Array) -> Array: return points.map(func(p: Array) -> Array: return [p[0] / 2.0, p[1] / 2.0])
-	copy.site = {"width": copy.site.width / 2.0, "height": copy.site.height / 2.0}
-	for map: Dictionary in copy.maps.values():
-		map.land = half.call(map.land)
-		map.islands = map.islands.map(func(island: Array) -> Array: return half.call(island))
-		for river: Dictionary in map.rivers:
-			river.points = half.call(river.points)
+	var copy := Content.on_site(game_rules, {"width": game_rules.site.width / 2.0, "height": game_rules.site.height / 2.0})
 	copy.land.start = {"x": 0.0, "y": 1.0, "width": 3.0, "height": 1.0}
 	return copy
 
