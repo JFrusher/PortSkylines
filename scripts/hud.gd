@@ -189,6 +189,8 @@ var _shown_for: PortSim
 var _speed_buttons: Array[Button] = []
 ## The screen dimmed behind the pause menu.
 var _dim := ColorRect.new()
+## Whether the sky and lights follow the clock (a setting); off, it stays noon.
+var day_night := true
 var _speed_before_menu := 1
 ## Text beside the mouse, such as the road under it.
 var _hint := Label.new()
@@ -324,6 +326,17 @@ func _ready() -> void:
 		settings.save(SETTINGS_PATH))
 	options.add_child(scale_button)
 	_set_ui_scale(settings.get_value("ui", "scale", 1.0), scale_button)
+	# Day and night is only how the port looks: off, it stays noon.
+	var cycle := CheckButton.new()
+	cycle.text = "Day and night"
+	cycle.tooltip_text = "The sun follows the clock and the port lights up at night. Off, it stays noon; nothing in the game changes."
+	day_night = settings.get_value("ui", "day_night", true)
+	cycle.button_pressed = day_night
+	cycle.toggled.connect(func(on: bool) -> void:
+		day_night = on
+		settings.set_value("ui", "day_night", on)
+		settings.save(SETTINGS_PATH))
+	options.add_child(cycle)
 	# Events this game has, each switched on or off as a command.
 	for kind: String in EVENT_NAMES:
 		var check := CheckButton.new()
@@ -558,6 +571,8 @@ func _build_status_bar() -> void:
 	gap2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(gap2)
 	_clock.theme_type_variation = "MutedLabel"
+	_clock.tooltip_text = "Day of the week and game day, time, wind and tide"
+	_clock.mouse_filter = Control.MOUSE_FILTER_PASS
 	row.add_child(_clock)
 	var speeds := ButtonGroup.new()
 	for s: int in SPEEDS:
@@ -822,10 +837,10 @@ func _process(dt: float) -> void:
 	_show_milestone()
 
 	var minute := sim.clock.calendar_minutes()
-	_clock.text = "%s  Day %d  %02d:%02d" % [WEEKDAYS[sim.clock.game_day() % 7], sim.clock.game_day(), sim.clock.game_hour(), int(minute) % 60]
-	_clock.text += "  Wind %d km/h" % roundi(sim.event_plan.wind(sim.rules, minute))
+	_clock.text = "%s %d  %02d:%02d" % [WEEKDAYS[sim.clock.game_day() % 7], sim.clock.game_day(), sim.clock.game_hour(), int(minute) % 60]
+	_clock.text += "  %d km/h" % roundi(sim.event_plan.wind(sim.rules, minute))
 	if sim.event_plan.on.tides:
-		_clock.text += "  Tide %+.1f m" % Marine.tide(sim, minute)
+		_clock.text += "  %+.1f m" % Marine.tide(sim, minute)
 
 	# Locked controls show greyed, their tooltip naming the milestone.
 	for name: String in _gated:

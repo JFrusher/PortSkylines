@@ -17,6 +17,8 @@ const NIGHT_HORIZON := Color(0.06, 0.08, 0.16)
 const MOONLIGHT := Color(0.3, 0.36, 0.52)
 
 var sim: PortSim
+## Whether the sky follows the clock; off, it stays noon (the player's setting).
+var cycle := true
 var _sun := DirectionalLight3D.new()
 var _sky := ProceduralSkyMaterial.new()
 var _env := Environment.new()
@@ -42,7 +44,7 @@ func _ready() -> void:
 func _process(_dt: float) -> void:
 	if sim == null:
 		return
-	var hour := fmod(sim.clock.calendar_minutes() / 60.0, 24.0)
+	var hour := fmod(sim.clock.calendar_minutes() / 60.0, 24.0) if cycle else 12.0
 	var height := sun_height(hour)
 	var dark := darkness(hour)
 	# The sun crosses from east to west, its elevation following the day.

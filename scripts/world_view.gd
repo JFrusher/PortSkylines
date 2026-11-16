@@ -136,6 +136,8 @@ const LAND_COLOUR := Color(0.36, 0.42, 0.3)
 var sim: PortSim
 ## The info view drawn over the map: a key of INFO_LEGENDS, or "" for none.
 var info_view := ""
+## Whether night falls (the day and night setting); off, the lights stay off.
+var day_night := true
 ## How far play has moved from the last tick towards the next, 0 to 1.
 var alpha := 1.0
 
@@ -677,7 +679,7 @@ func _draw_floodlights() -> void:
 ## Each frame, the lights as dark as the hour is: lamps and ships' lights
 ## on after dusk, the pools of light and beams fading in with the dark.
 func _light_up() -> void:
-	_dark = DayNight.darkness(fmod(sim.clock.calendar_minutes() / 60.0, 24.0))
+	_dark = DayNight.darkness(fmod(sim.clock.calendar_minutes() / 60.0, 24.0)) if day_night else 0.0
 	var on := _dark > 0.05
 	_lamps.visible = on
 	_pools.visible = on
