@@ -209,7 +209,7 @@ static func job_done(sim: PortSim, machine: int) -> void:
 	if job.position >= 0:
 		var box: int = train.wagons[job.wagon]
 		var teu: int = sim.boxes[box].teu
-		stacks.place_at(job.position if stacks.fits(job.position, teu) else AreaFlow._place_spot(sim, train.block, box), box, teu)
+		stacks.place_at(job.position if stacks.fits(job.position, teu) else AreaFlow._place_spot(sim, train.block, box, false), box, teu)
 		sim.boxes[box].in = sim.clock.calendar_minutes()
 		train.wagons[job.wagon] = 0
 	else:

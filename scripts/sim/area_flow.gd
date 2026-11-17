@@ -635,8 +635,8 @@ static func miss_connections(sim: PortSim, now: float) -> int:
 
 ## Where `box` goes in yard block `block`, by the block's stacking strategy
 ## (AreaStacks.place_spot), or -1.
-static func _place_spot(sim: PortSim, block: int, box: int) -> int:
-	return _stacks(sim, block).place_spot(sim.boxes[box].teu, sim.areas.list[block].settings.stacking, sim.boxes[box].due, sim.boxes)
+static func _place_spot(sim: PortSim, block: int, box: int, within_room := true) -> int:
+	return _stacks(sim, block).place_spot(sim.boxes[box].teu, sim.areas.list[block].settings.stacking, sim.boxes[box].due, sim.boxes, within_room)
 
 
 ## How high yard block `block` stacks: as high as its gear, or its own
@@ -1344,7 +1344,7 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 	sim.handovers.leave(block, vehicle.id)
 	if job.position >= 0:
 		var teu: int = sim.boxes[vehicle.box].teu
-		var position: int = job.position if stacks.fits(job.position, teu) else _place_spot(sim, block, vehicle.box)
+		var position: int = job.position if stacks.fits(job.position, teu) else _place_spot(sim, block, vehicle.box, false)
 		stacks.place_at(position, vehicle.box, teu)
 		sim.boxes[vehicle.box].in = sim.clock.calendar_minutes()
 		vehicle.box = 0

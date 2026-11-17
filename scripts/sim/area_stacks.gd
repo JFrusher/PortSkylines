@@ -58,11 +58,15 @@ func fits(position: int, teu: int) -> bool:
 ## `due`, a stack where every box leaves no sooner (`boxes` is the sim's box
 ## table), the one whose first leaver goes soonest so open ground is kept for
 ## last, else the stack whose first leaver goes latest. Ties in layout order.
-func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}) -> int:
+## With `within_room`, only a stack where the box leaves room() at zero or
+## more, so a buried box can always be dug out; a box already in a machine's
+## hand passes false, as it has to go somewhere.
+func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, within_room := true) -> int:
 	var best := -1
 	var best_key := []
+	var spare := room()
 	for position in stacks.size():
-		if not fits(position, teu):
+		if not fits(position, teu) or (within_room and spare < _room_cost(position, teu)):
 			continue
 		var key := [stacks[position].size()]
 		if strategy == "by_departure":
@@ -74,6 +78,17 @@ func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}) -> in
 			best = position
 			best_key = key
 	return best
+
+
+## How much of room() a box of `teu` on `position` uses: a 40 one tier, a 20
+## on a stack open to 40s all its free tiers, as the stack then takes only 20s;
+## admission counts a box as one, so placing must not overspend what is left
+## for digging a buried box out.
+func _room_cost(position: int, teu: int) -> int:
+	var tiers: Array = stacks[position]
+	if not tiers.is_empty() and _teu[tiers[-1][0]] == 1:
+		return 0
+	return 1 if teu == 2 else _tiers - tiers.size()
 
 
 func place_at(position: int, id: int, teu: int) -> void:
