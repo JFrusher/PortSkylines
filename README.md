@@ -135,7 +135,7 @@ You need **[Godot 4.7.2](https://godotengine.org/download)** (the standard build
 | <kbd>Esc</kbd> | Game menu; also stops following a box |
 
 > [!TIP]
-> Want to see everything at once? In a debug run (from the editor), **Menu → Mega port (debug)** loads the big test port with every milestone reached, rail running and the yards full. **Menu → Showcase port (debug)** loads a smaller, dense two-terminal port with one of nearly every part: every berth and STS crane, a grid of yard lanes, reefer, empty, dangerous-goods and rail blocks, OCR and automated gates, a truck park, ship lanes, an anchorage, pilots, tugs and a breakwater. It grows with each new feature.
+> Want to see everything at once? In a debug run (from the editor), **Menu → Mega port (debug)** loads the big test port with every milestone reached, rail running and the yards full. **Menu → Showcase port (debug)** loads a smaller, dense two-terminal port with one of nearly every part: every berth and STS crane, a grid of yard lanes, reefer, empty, dangerous-goods and rail blocks, OCR and automated gates, a truck park, ship lanes, an anchorage, pilots, tugs and a breakwater, plus M12's automation (ASC blocks served by AGVs beside manual ones), policies, block rules and a saved template. It grows with each new feature.
 
 ### Windows build
 

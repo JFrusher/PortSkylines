@@ -10,7 +10,11 @@ extends RefCounted
 ## it, and the highway road from the spine to the site entry, with the
 ## gates and truck park. Yards line the connectors and the yard lanes
 ## between them, parallel lanes from each quay road to the spine. A barge
-## berth on the river's south bank joins the spine's north end. M10's curves:
+## berth on the river's south bank joins the spine's north end. M12's
+## automation: the Panamax and ULCV berths' yards have ASC blocks, served by
+## AGVs, beside manual ones; policies are on, some blocks stack by departure
+## or have rules of their own, and a template is saved and applied.
+## M10's curves:
 ## a yard road curving south off the spine to a roundabout, with blocks on
 ## its bend, the track's corner to the rail block on a curve, and the river
 ## channel curving down the river.
@@ -40,6 +44,11 @@ const BEND_TO := Vector2(460, 480)
 const BEND_RING := 8.0
 const BEND_YARDS: Array = [[1, 4, "import", "rtg"], [1, 50, "export", "rtg"], [-1, 4, "export", "rtg"], [-1, 50, "empty", "empty_handler"]]
 
+## Automated blocks (ASCs, served by AGVs, not tractors) have AGVs bought for them.
+const AGVS := 40
+## Policies switched on; the other two (day gates, day shifts) idle the port at night.
+const POLICIES: Array[String] = ["appointments", "dual_cycling"]
+
 ## Imports stacked in the yards at the start.
 const BOXES := 3000
 ## How long each yard block runs along its road, in cells.
@@ -47,8 +56,8 @@ const BLOCK := 40
 ## The yards along each berth's connector, west to east: [side, from, role, gear].
 const YARDS: Array = [
 	[[-1, 20, "import", "straddle"], [-1, 62, "import", "straddle"], [-1, 104, "export", "rtg"], [1, 20, "reefer", "rtg"], [1, 62, "tranship", "reach_stacker"], [1, 104, "empty", "empty_handler"]],
-	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "rtg"], [1, 62, "reefer", "rtg"]],
-	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "reach_stacker"], [1, 62, "empty", "empty_handler"]],
+	[[-1, 20, "import", "asc"], [-1, 62, "export", "asc"], [1, 20, "import", "rtg"], [1, 62, "reefer", "rtg"]],
+	[[-1, 20, "import", "asc"], [-1, 62, "export", "rtg"], [1, 20, "import", "asc"], [1, 62, "empty", "empty_handler"]],
 	[[-1, 20, "export", "reach_stacker"], [1, 20, "import", "reach_stacker"], [-1, 62, "tranship", "rtg"], [1, 62, "tranship", "rtg"]],
 ]
 
@@ -189,6 +198,10 @@ static func build(refused: Array[String]) -> PortSim:
 			_do(sim, refused, {"op": "place_sts", "apron": berth.apron, "along": spots[k], "kind": cranes[berth.kind]})
 	_do(sim, refused, {"op": "place_sts", "apron": barge, "along": AreaFlow.crane_spots(sim, barge)[0], "kind": "barge_crane"})
 	_do(sim, refused, {"op": "buy_tractors", "count": 150})
+	_do(sim, refused, {"op": "buy_agvs", "count": AGVS})
+	for policy: String in POLICIES:
+		_do(sim, refused, {"op": "set_policy", "policy": policy, "on": true})
+	_rules(sim, refused)
 	_water(sim, refused, berths)
 	_river(sim, refused)
 	_fill(sim)
@@ -212,6 +225,21 @@ static func build(refused: Array[String]) -> PortSim:
 		if not AreaFlow.berth(sim, ship):
 			refused.append("a %s doesn't berth at its berth" % berth.kind)
 	return sim
+
+
+## M12's block rules on the manual import blocks, in order: the first stacks
+## by departure, the second takes no reefers and stacks three high, and a
+## template of the first's rules is saved and applied to the third.
+static func _rules(sim: PortSim, refused: Array[String]) -> void:
+	var blocks: Array[int] = []
+	for id: int in sim.areas.list:
+		var area: Dictionary = sim.areas.list[id]
+		if area.type == "yard_block" and area.settings.role == "import" and not sim.rules.yard_gear[area.settings.gear].automated:
+			blocks.append(id)
+	_do(sim, refused, {"op": "set_area", "id": blocks[0], "settings": {"stacking": "by_departure"}})
+	_do(sim, refused, {"op": "set_area", "id": blocks[1], "settings": {"reefers": false, "max_tiers": 3}})
+	_do(sim, refused, {"op": "save_template", "name": "By departure", "id": blocks[0]})
+	_do(sim, refused, {"op": "apply_template", "name": "By departure", "id": blocks[2]})
 
 
 ## Stacks BOXES imports, due over the next few hours, across the import and
