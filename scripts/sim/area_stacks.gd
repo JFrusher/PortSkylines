@@ -238,10 +238,12 @@ func _boxes(position: int) -> Array:
 
 
 func _other_stack(position: int, teu: int) -> int:
+	var best := -1
 	for to in stacks.size():
-		if to != position and fits(to, teu):
-			return to
-	return -1
+		# The stack that costs room() least, so digging a box out doesn't use up what lets the next be dug out.
+		if to != position and fits(to, teu) and (best < 0 or _room_cost(to, teu) < _room_cost(best, teu)):
+			best = to
+	return best
 
 
 func _remove_top(position: int) -> void:
