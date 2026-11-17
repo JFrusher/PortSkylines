@@ -8,6 +8,7 @@ extends SceneTree
 ## godot --headless --script res://tests/test_area_driveways.gd
 
 const AreaPort := preload("res://tests/area_port.gd")
+const RandomPort := preload("res://tests/random_port.gd")
 
 var _failures := 0
 
@@ -16,6 +17,7 @@ func _initialize() -> void:
 	_test_every_slot_and_booth_is_reached()
 	_test_lanes_run_through_the_cells_middles()
 	_test_driveways_bend_with_their_area()
+	_test_a_junction_at_the_middle_keeps_the_driveways()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -107,3 +109,27 @@ func _test_driveways_bend_with_their_area() -> void:
 	for s: int in layout.slots.size():
 		var ends := network.ending_at(_centre(sim, block, _driven(network, block, layout.slots[s])[-1]))
 		_expect(not ends.is_empty() and not starts.is_empty() and not network.route(starts[0], ends[0]).is_empty(), true, "slot %d on the bend is reached from the buffer" % s)
+
+
+## A road meeting an apron's road at the apron's middle, as the showcase's
+## connectors do: the apron still gets its driveways, so tractors fetching
+## exports come back to their crane and the ship is loaded.
+func _test_a_junction_at_the_middle_keeps_the_driveways() -> void:
+	var rules := RandomPort.quick()
+	rules.box_mix.dg_share = 0.0
+	var sim := AreaPort.working_terminal(10, 20, rules)
+	var middle: Vector2 = sim.areas.point(1, sim.areas.list[1].columns / 2.0, -1.0).round()
+	sim.creative = true
+	_expect(sim.apply({"op": "build_road", "from": middle, "to": middle + Vector2(12, 0), "type": "terminal_1_1"}), "", "a road meets the apron's road at its middle")
+	sim.tick()
+	_expect(sim.roads.degree(sim.roads._node_close(middle)), 3, "making a junction there")
+	_expect(Drive.flow(sim, 1) != 0, true, "the apron still has a way traffic runs")
+	var slots := {}
+	for id: int in sim.network.pieces:
+		if sim.network.pieces[id].slot.x == 1:
+			slots[sim.network.pieces[id].slot.y] = true
+	_expect(slots.size(), sim.areas.layout(1).slots.size(), "and every slot its driveway")
+	var ship: PortSim.Ship = sim.ships[0]
+	while ship.state == PortSim.Ship.State.WORKING and sim.clock.calendar_minutes() < 900.0:
+		sim.tick()
+	_expect(ship.exports, 0, "its exports are fetched back to the crane and loaded")
