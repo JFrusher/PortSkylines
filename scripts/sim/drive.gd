@@ -18,7 +18,7 @@ const STEP := SimClock.CALENDAR_MINUTES_PER_TICK * 60.0
 ## first), if there is room.
 static func place(sim: PortSim, vehicle: Vehicle) -> bool:
 	_refresh(sim)
-	var near := sim.network.nearest(sim.areas.centre(vehicle.path[0]), vehicle.kind == "lorry")
+	var near := sim.network.nearest(sim.areas.centre(vehicle.path[0]), vehicle.kind)
 	if near[0] == 0 or not sim.traffic.fits(near[0], near[1], _length(sim, vehicle)):
 		return false
 	var route: Array[int] = [near[0]]
@@ -37,11 +37,11 @@ static func where(sim: PortSim, vehicle: Vehicle, _alpha := 1.0) -> Vector2:
 
 
 ## [where `vehicle` is, in cells (a cell's corner), the way it heads], for drawing.
-static func pose(sim: PortSim, vehicle: Vehicle, _alpha: float) -> Array[Vector2]:
+static func pose(sim: PortSim, vehicle: Vehicle, alpha: float) -> Array[Vector2]:
 	_refresh(sim)
 	if vehicle.id not in sim.traffic.cars:
 		return [sim.areas.centre(vehicle.path[0]) - Vector2(0.5, 0.5), Vector2.ZERO]
-	var at := sim.traffic.pose(vehicle.id)
+	var at := sim.traffic.pose(vehicle.id, alpha)
 	return [at[0] - Vector2(0.5, 0.5), at[1]]
 
 
@@ -76,7 +76,7 @@ static func move_on(sim: PortSim, vehicle: Vehicle) -> bool:
 	var length := _length(sim, vehicle)
 	for end in sim.network.ending_at(sim.areas.centre(vehicle.target)):
 		var piece: Dictionary = sim.network.pieces[end]
-		if (vehicle.kind != "lorry" or piece.lorries) and sim.traffic.fits(end, piece.length, length):
+		if LaneNetwork.may_use(piece, vehicle.kind) and sim.traffic.fits(end, piece.length, length):
 			sim.traffic.remove(vehicle.id)
 			sim.traffic.place_at(vehicle.id, [end] as Array[int], piece.length, _top(sim, vehicle), length)
 			return true
@@ -94,15 +94,15 @@ static func leave(sim: PortSim, vehicle: Vehicle) -> void:
 		sim.traffic.remove(vehicle.id)
 
 
-## Whether there is a way for a lorry (`lorry`) or a tractor from spot `from` to spot `to`.
-static func reaches(sim: PortSim, from: Vector3i, to: Vector3i, lorry: bool) -> bool:
+## Whether there is a way for `who` (see LaneNetwork.may_use) from spot `from` to spot `to`.
+static func reaches(sim: PortSim, from: Vector3i, to: Vector3i, who: String) -> bool:
 	_refresh(sim)
-	var start: int = sim.network.nearest(sim.areas.centre(from), lorry)[0]
+	var start: int = sim.network.nearest(sim.areas.centre(from), who)[0]
 	if start == 0:
 		return false
-	var key := [start, to, lorry]
+	var key := [start, to, who]
 	if key not in sim._reach:
-		_best_route(sim, start, to, lorry)
+		_best_route(sim, start, to, who)
 	return sim._reach[key]
 
 
@@ -257,6 +257,7 @@ static func _refresh(sim: PortSim) -> void:
 	sim.network.add_driveways(sim.areas, sim.rules.traffic.area_kmh)
 	for cell in edge_cells(sim):
 		sim.network.split_at(Vector2(cell) + Vector2(0.5, 0.5))
+	sim.network.mark_agv(sim.areas.agv_zone)
 	sim.traffic = Traffic.new(sim.network, sim.rules, sim.junctions)
 	sim._crossing_cells = _level_crossings(sim)
 	sim.traffic.set_crossings(sim._crossing_cells)
@@ -272,7 +273,7 @@ static func _refresh(sim: PortSim) -> void:
 	for vehicle: Vehicle in sim.vehicles:
 		# Where its car was; only a vehicle with no car yet goes by its spot.
 		var at: Vector2 = old.pose(vehicle.id)[0] if old != null and vehicle.id in old.cars else sim.areas.centre(vehicle.path[0])
-		var near := sim.network.nearest(at, vehicle.kind == "lorry")
+		var near := sim.network.nearest(at, vehicle.kind)
 		assert(near[0] != 0, "a vehicle stands on the lanes")
 		var route: Array[int] = [near[0]]
 		sim.traffic.place_at(vehicle.id, route, near[1], _top(sim, vehicle), _length(sim, vehicle))
@@ -307,25 +308,25 @@ static func _route_to(sim: PortSim, vehicle: Vehicle, to: Vector3i) -> Array[int
 	if vehicle.id not in sim.traffic.cars:
 		return []
 	var car: Dictionary = sim.traffic.cars[vehicle.id]
-	return _best_route(sim, car.route[car.i], to, vehicle.kind == "lorry")
+	return _best_route(sim, car.route[car.i], to, vehicle.kind)
 
 
-## The best route from piece `start` to `to`'s middle for a lorry (`lorry`)
-## or a tractor, by length and delay; [] when there is none. Whether there
+## The best route from piece `start` to `to`'s middle for `who` (see
+## LaneNetwork.may_use), by length and delay; [] when there is none. Whether there
 ## is one is kept in sim._reach until the network is built again, so a way
 ## that isn't there is searched for once, not every tick.
-static func _best_route(sim: PortSim, start: int, to: Vector3i, lorry: bool) -> Array[int]:
-	var key := [start, to, lorry]
+static func _best_route(sim: PortSim, start: int, to: Vector3i, who: String) -> Array[int]:
+	var key := [start, to, who]
 	if not sim._reach.get(key, true):
 		return []
-	var speed: float = (sim.rules.lorry_speed if lorry else sim.rules.tractor.speed) / 60.0 / Grid.CELL  # m a minute -> cells a second
+	var speed := _speed(sim, who) / 60.0 / Grid.CELL  # m a minute -> cells a second
 	var ends: Array[int] = []
 	for end in sim.network.ending_at(sim.areas.centre(to)):
-		if not lorry or sim.network.pieces[end].lorries:
+		if LaneNetwork.may_use(sim.network.pieces[end], who):
 			ends.append(end)
 	var route: Array[int] = []
 	if not ends.is_empty():
-		route = sim.network.route_to_any(start, ends, lorry, sim._delays, speed)
+		route = sim.network.route_to_any(start, ends, who, sim._delays, speed)
 	sim._reach[key] = not route.is_empty()
 	return route
 
@@ -342,7 +343,17 @@ static func _lane_ending(sim: PortSim, cell: Vector2i, inward: bool) -> int:
 
 ## `vehicle`'s top speed, cells a second.
 static func _top(sim: PortSim, vehicle: Vehicle) -> float:
-	return (sim.rules.lorry_speed if vehicle.kind == "lorry" else sim.rules.tractor.speed) / 60.0 / Grid.CELL
+	return _speed(sim, vehicle.kind) / 60.0 / Grid.CELL
+
+
+## Metres a minute `who` drives at (see LaneNetwork.may_use).
+static func _speed(sim: PortSim, who: String) -> float:
+	match who:
+		"lorry":
+			return sim.rules.lorry_speed
+		"agv":
+			return sim.rules.agv.speed
+	return sim.rules.tractor.speed
 
 
 ## `vehicle`'s length, cells.

@@ -54,7 +54,8 @@ func fits(position: int, teu: int) -> bool:
 
 
 ## Where a box of `teu` goes, or -1 when nothing takes it. "fill_low": the
-## lowest stack, so stacks stay level; "by_departure": for a box leaving at
+## lowest stack, so stacks stay level (a 20 on a stack of 20s first, keeping
+## stacks open to 40s); "by_departure": for a box leaving at
 ## `due`, a stack where every box leaves no sooner (`boxes` is the sim's box
 ## table), the one whose first leaver goes soonest so open ground is kept for
 ## last, else the stack whose first leaver goes latest. Ties in layout order.
@@ -68,7 +69,10 @@ func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, withi
 	for position in stacks.size():
 		if not fits(position, teu) or (within_room and spare < _room_cost(position, teu)):
 			continue
-		var key := [stacks[position].size()]
+		# A 20 goes on a stack of 20s first: on one open to 40s it would close the whole
+		# stack to them, which room() counts as every tier of it lost.
+		var on_twenties: bool = teu == 1 and not stacks[position].is_empty() and _teu[stacks[position][-1][0]] == 1
+		var key := [0 if on_twenties or teu == 2 else 1, stacks[position].size()]
 		if strategy == "by_departure":
 			var soonest := INF
 			for id: int in _boxes(position):
@@ -234,10 +238,12 @@ func _boxes(position: int) -> Array:
 
 
 func _other_stack(position: int, teu: int) -> int:
+	var best := -1
 	for to in stacks.size():
-		if to != position and fits(to, teu):
-			return to
-	return -1
+		# The stack that costs room() least, so digging a box out doesn't use up what lets the next be dug out.
+		if to != position and fits(to, teu) and (best < 0 or _room_cost(to, teu) < _room_cost(best, teu)):
+			best = to
+	return best
 
 
 func _remove_top(position: int) -> void:

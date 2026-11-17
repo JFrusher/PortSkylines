@@ -58,7 +58,7 @@ func _piece_at(network: LaneNetwork, position: Vector2) -> int:
 ## A lorry `id` from the west (east-bound) or north (south-bound), straight over.
 func _send(traffic: Traffic, id: int, from_west: bool) -> void:
 	var network := traffic.network
-	var route := network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5))) if from_west else network.route(_piece_at(network, Vector2(119.5, 235)), _piece_at(network, Vector2(119.5, 265)))
+	var route := network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)), "tractor") if from_west else network.route(_piece_at(network, Vector2(119.5, 235)), _piece_at(network, Vector2(119.5, 265)), "tractor")
 	_expect(traffic.place(id, route, _rules.lorry_speed, _rules.traffic.lorry_m), true, "lorry %d sets off" % id)
 
 
@@ -124,7 +124,7 @@ func _cuts_in(sign: bool) -> bool:
 	_send(traffic, 1, true)
 	for i in roundi(90.0 / STEP):
 		if i % roundi(8.0 / STEP) == 0 and next_id < 30:
-			var north := traffic.network.route(_piece_at(traffic.network, Vector2(119.5, 235)), _piece_at(traffic.network, Vector2(119.5, 265)))
+			var north := traffic.network.route(_piece_at(traffic.network, Vector2(119.5, 235)), _piece_at(traffic.network, Vector2(119.5, 265)), "tractor")
 			if traffic.place(next_id, north, _rules.lorry_speed, _rules.traffic.lorry_m):
 				next_id += 1
 		var was: int = traffic.cars[1].booked.size()
@@ -200,7 +200,7 @@ func _test_junctions_closer_than_a_lorry() -> void:
 		_expect(sim.apply({"op": "build_road", "from": road[0], "to": road[1], "type": "terminal_1_1"}), "", "a road is built")
 	var network := LaneNetwork.new(sim.roads, sim.rules.junctions)
 	var traffic := Traffic.new(network, _rules, Junctions.new(_rules.traffic))
-	var route := network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)))
+	var route := network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)), "tractor")
 	var between: float = network.pieces[route[2]].length
 	_expect(between < _rules.traffic.lorry_m / Grid.CELL, true, "the lane between the junctions (%.2f cells) is shorter than a lorry" % between)
 	_expect(traffic.place(1, route, _rules.lorry_speed, _rules.traffic.lorry_m), true, "a lorry sets off east")
@@ -215,7 +215,7 @@ func _test_junctions_closer_than_a_lorry() -> void:
 func _test_a_queue_goes_on_green() -> void:
 	var traffic := _crossroads()
 	_expect(traffic.junctions.set_signals(traffic.network, POINT, true), "", "signals go up")
-	var route := traffic.network.route(_piece_at(traffic.network, Vector2(119.5, 235)), _piece_at(traffic.network, Vector2(119.5, 265)))
+	var route := traffic.network.route(_piece_at(traffic.network, Vector2(119.5, 235)), _piece_at(traffic.network, Vector2(119.5, 265)), "tractor")
 	var red := roundi(_rules.traffic.signal_green_seconds / SimClock.TICK_SECONDS)
 	var sent := 0
 	var stood := 0  # ticks a lorry behind another stood still
@@ -236,7 +236,7 @@ func _test_a_queue_goes_on_green() -> void:
 func _test_no_lorry_blocks_the_box() -> void:
 	var traffic := _crossroads()
 	var network := traffic.network
-	var east: Array[int] = network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)))
+	var east: Array[int] = network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)), "tractor")
 	var length: float = _rules.traffic.lorry_m / Grid.CELL
 	traffic.place_at(9, [east[2]] as Array[int], length, 0.0, length)
 	_send(traffic, 1, true)
@@ -269,7 +269,7 @@ func _test_signals_run_in_traffic_seconds() -> void:
 func _test_room_past_short_pieces() -> void:
 	var traffic := _crossroads()
 	var network := traffic.network
-	var exit: int = network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)))[2]
+	var exit: int = network.route(_piece_at(network, Vector2(105, 250.5)), _piece_at(network, Vector2(135, 250.5)), "tractor")[2]
 	var start: Vector2 = network.pieces[exit].points[0]
 	for x in range(1, 7):
 		network.split_at(start + Vector2(x, 0))

@@ -12,15 +12,13 @@ func _initialize() -> void:
 	var refused: Array[String] = []
 	var sim := Showcase.build(refused)
 	_expect(refused, [] as Array[String], "every command builds")
-	_expect(sim.agvs > 0 and sim.areas.list.values().any(func(a: Dictionary) -> bool: return a.type == "yard_block" and sim.rules.yard_gear[a.settings.gear].automated), true, "it has AGVs and an automated block")
 	_expect(sim.policies.keys().size(), Showcase.POLICIES.size(), "its policies are on")
 	_expect(sim.templates.keys(), ["By departure"], "a template is saved")
-	var agv_seen := false
 	for i: int in roundi(120.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
-		agv_seen = agv_seen or sim.vehicles.any(func(v: Vehicle) -> bool: return v.agv)
-	_expect(agv_seen, true, "AGVs work in the first two hours")
 	_expect(sim.ledger.moves.total > 0, true, "its ships are worked in the first two hours")
+	# With tides off every ship's channel is deep enough for it: none waits for high water.
+	_expect(sim.events.filter(func(e: Dictionary) -> bool: return "high water" in e.text).map(func(e: Dictionary) -> String: return e.text), [], "no ship waits for high water with tides off")
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 

@@ -159,9 +159,10 @@ godot --export-release "Windows" build/windows/PortSkylines.exe
 | ✅ | [M8 The whole port](docs/phases/m08-whole-port.md): natural coasts, ship lanes, anchorage, pilots, tugs, ULCV | Done |
 | ✅ | [M9 Barge and feeder transhipment](docs/phases/m09-barge-and-feeder.md): transhipment, barges up the river, straddle carriers | Done |
 | ⬜ | [M10 Roads like Cities: Skylines](docs/phases/m10-curved-roads.md) | Planned |
-| ⬜ | [M11 Events and regulations](docs/phases/m11-events.md) | Planned |
-| 🟧 | [M12 Policies, rules and automation](docs/phases/m12-automation.md) | In progress |
-| ⬜ | [M13 Release 1.0 on Windows](docs/phases/m13-release.md) | Planned |
+| ✅ | [M11 Harbour life](docs/phases/m11-harbour-life.md): services, tides and wind, breakdowns, fire, customs, AGVs, the town, scenarios, the new UI | Done |
+| ⬜ | [M12 Events and regulations](docs/phases/m12-events.md) | Planned |
+| 🟧 | [M13 Policies, rules and automation](docs/phases/m13-automation.md) | In progress |
+| ⬜ | [M14 Release 1.0 on Windows](docs/phases/m14-release.md) | Planned |
 
 > [!IMPORTANT]
 > M6's exit target is 60 fps at 1080p on a GTX 1660-class PC with the endgame port at 1×. Today the sim tick at that load is 32 ms on a 2.1 GHz cloud CPU, so it is not met yet. The measurements and the options are in [docs/perf.md](docs/perf.md).

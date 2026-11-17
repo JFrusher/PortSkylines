@@ -49,9 +49,9 @@ func _test_a_ring_is_built() -> void:
 	_expect(sim.roads.curve(east).direction_at(0.0).y < -0.9, true, "from its east point it heads north")
 	Drive._refresh(sim)
 	var network := sim.network
-	var start: int = network.nearest(CENTRE + Vector2(10.5, 0), false)[0]
-	var across: int = network.nearest(CENTRE + Vector2(-10.5, 0), false)[0]
-	_expect(network.route(start, across).is_empty() or network.route(across, start).is_empty(), false, "traffic drives all the way round")
+	var start: int = network.nearest(CENTRE + Vector2(10.5, 0), "tractor")[0]
+	var across: int = network.nearest(CENTRE + Vector2(-10.5, 0), "tractor")[0]
+	_expect(network.route(start, across, "tractor").is_empty() or network.route(across, start, "tractor").is_empty(), false, "traffic drives all the way round")
 
 
 ## A 2+2 road from the west ending on the ring: it gives way, the ring doesn't.

@@ -50,7 +50,34 @@ var _next_anchorage := 1
 ## id -> {"cell", "tugs"}, numbered together.
 var pilot_stations := {}
 var tug_depots := {}
+## Services jetties on the water, numbered with them: id -> {"cell"}; their
+## boats (bunker barges, supply and waste boats) are in `boats`.
+var service_jetties := {}
 var _next_station := 1
+## Their pilot boats and tugs on the water.
+var boats := Boats.new()
+## Planned events (storms) and which kinds are on in this game.
+var event_plan: Events
+## The workshops' mechanics and their vans.
+var workshops := Workshops.new()
+## The kinds of quay crane and yard gear the workshops service (kind -> true).
+var serviced := {}
+## Each AGV depot's AGVs at home: depot id -> their charges, 1 full to 0 (M11).
+var agv_home := {}
+## Each racked transfer block's racks: see Racks.
+var racks := {}
+## The town next door (see Town): its mood, the community fund a day, whether
+## the bypass is built, and what the news said of it last ("sour", "warm" or "").
+var town := {"mood": 60.0, "fund": 0, "bypass": false, "said": ""}
+## The scenario being played and how it stands (see Scenario).
+var scenario := Scenario.none()
+## The morning paper: each closed day's {"day", "moves", "net", "calls",
+## "on_time", "headlines"}, the last REPORT_DAYS of them; and today's calls
+## so far, {"calls", "on_time"}.
+var reports: Array[Dictionary] = []
+var today_calls := {"calls": 0, "on_time": 0}
+## Fires burning, and the fire engines.
+var fires := Fires.new()
 ## Narrow lanes booked by ships: [{"segment", "from", "to" (calendar
 ## minutes), "ship" (its id)}], see Marine.clear.
 var passages: Array[Dictionary] = []
@@ -92,10 +119,10 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
-var _agvs_on_road := 0
 var _fetching := {}  # apron slot spot -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
 var _straddles_out := {}  # straddle block id -> its carriers on the road
+var _agvs_out := {}  # AGV depot id -> its AGVs on the road
 ## Trains on the way to, at, or leaving the rail blocks; see RailFlow.
 var trains: Array[Train] = []
 var _next_train := 1
@@ -134,7 +161,7 @@ var area_stacks := {}
 ## loaded port refits once, which adds nothing.
 var _machines_fit_for := -1
 func _dg_refusal() -> String:
-	return "A dangerous-goods block stands %d m from other yard blocks" % Grid.metres(rules.special_boxes.dg_distance)
+	return "A dangerous-goods block stands %d m from other yard blocks, quays and gates" % Grid.metres(rules.special_boxes.dg_distance)
 
 
 ## The road a berth brings along its back.
@@ -149,6 +176,7 @@ const BERTH_TURN := 15
 ## How many calls the ship log keeps, which milestones' on-time and
 ## productivity gates look back over.
 const SHIP_LOG_CALLS := 20
+const REPORT_DAYS := 7
 ## A pilot station or tug depot stands within this many cells of land, and
 ## at least MARINE_BASE_GAP cells from another.
 const MARINE_BASE_SHORE := 10
@@ -158,13 +186,17 @@ const AREA_SETTINGS := {
 	# A block takes only boxes of its `sizes` (TEU, [] for any) and `lines`
 	# ([] for any), reefers only if `reefers`, and stacks `max_tiers` high (0:
 	# as high as its gear), placing each by `stacking` (AreaStacks.place_spot).
-	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"},
-	"quay_apron": {"lines": [], "barge": false},
-	"gate": {"level": "manual", "slots_per_hour": 0},
+	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low", "inspectors": 0},
+	"quay_apron": {"lines": [], "barge": false, "shore_power": false},
+	"gate": {"level": "manual", "slots_per_hour": 0, "scanner": false},
+	"workshop": {"mechanics": 0},
+	"fire_station": {"engines": 0},
+	"agv_depot": {"agvs": 0, "chargers": 0},
+	"transfer_block": {"role": "import", "gear": "asc", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low", "inspectors": 0, "racks": false},
 }
 ## The yard block rules a template keeps: what a block takes and how it stacks, not its role or gear.
 const TEMPLATE_RULES: Array[String] = ["lines", "sizes", "reefers", "max_tiers", "stacking"]
-const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
+const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship", "customs"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
 ## The roads drawn on the 4 m grid.
@@ -186,8 +218,6 @@ var boxes := {}
 var exports := 0
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
-## AGVs owned, which serve automated blocks; those not on the road wait beside the quay.
-var agvs := 0
 ## The calendar minute each automated yard block was automated: block id -> minute.
 var automated_since := {}
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
@@ -227,6 +257,11 @@ var templates := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
+## Boxes customs holds (box customs not ""), so Customs.tick looks at them
+## alone; not saved, found again from the boxes on load.
+var _flagged := {}
+var _agv_depots := {}  # see AreaFlow.agv_depots
+var _agv_depots_for := Vector2i(-1, -1)
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
@@ -265,6 +300,7 @@ func _init(seed_value := 0, game_rules := Content.base(), creative_mode := false
 			land[Vector2i(x, y)] = true
 	storage = {"free_days": rules.storage.free_days, "fee": rules.storage.fee}
 	rng.seed = seed_value
+	event_plan = Events.create(rules, seed_value)
 	_check_milestones()
 	_event("Place a berth on the coast, then draw a road from the highway to it and add a gate and a yard block along it")
 
@@ -323,6 +359,10 @@ class Ship:
 	## Boxes moved so far, and the calendar minute it berthed (-1 before).
 	var moves := 0
 	var berthed := -1.0
+	## The services it still wants (see Services), given when it calls.
+	var needs: Array[String] = []
+	## Kept at anchor by the harbour master (M11): it doesn't take a berth until let go.
+	var kept := false
 
 	func _init(ship_kind: String, ship_line: String, window_end: float, imports: int, export_room: int) -> void:
 		kind = ship_kind
@@ -333,7 +373,7 @@ class Ship:
 		state = State.ANCHORED
 
 	func to_dict() -> Dictionary:
-		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth}
+		return {"kind": kind, "line": line, "due": due, "boxes": boxes, "exports": exports, "empties": empties, "state": state, "id": id, "light": light, "cleared": cleared, "pilot": pilot, "tugs": tugs, "tug_depot": tug_depot, "tugs_at": tugs_at, "hold_until": hold_until, "anchorage": anchorage, "spot": spot, "arrived": arrived, "path": path.duplicate(), "sail": sail, "prev_sail": prev_sail, "moves": moves, "berthed": berthed, "apron": apron, "from": from, "berth": berth, "any_berth": any_berth, "needs": needs.duplicate(), "kept": kept}
 
 	static func from_dict(d: Dictionary) -> Ship:
 		var ship := Ship.new(d.kind, d.line, d.due, d.boxes, d.exports)
@@ -355,10 +395,12 @@ class Ship:
 		ship.prev_sail = d.prev_sail
 		ship.moves = d.moves
 		ship.berthed = d.berthed
+		ship.needs.assign(d.needs)
 		ship.apron = d.apron
 		ship.from = d.from
 		ship.berth = d.berth
 		ship.any_berth = d.any_berth
+		ship.kept = d.kept
 		return ship
 
 
@@ -374,6 +416,10 @@ class Crane:
 	var timer := 0.0
 	## The tractor sent to it (a vehicle id), or 0.
 	var tractor := 0
+	## Broken down, waiting for a repair, or out for its service.
+	var broken := false
+	## Calendar minutes worked since its last service.
+	var worked := 0.0
 
 	func _init(on: int, at: int, of_kind: String) -> void:
 		apron = on
@@ -381,12 +427,14 @@ class Crane:
 		kind = of_kind
 
 	func to_dict() -> Dictionary:
-		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind}
+		return {"timer": timer, "tractor": tractor, "apron": apron, "along": along, "kind": kind, "broken": broken, "worked": worked}
 
 	static func from_dict(d: Dictionary) -> Crane:
 		var crane := Crane.new(d.apron, d.along, d.kind)
 		crane.timer = d.timer
 		crane.tractor = d.tractor
+		crane.broken = d.broken
+		crane.worked = d.worked
 		return crane
 
 
@@ -397,6 +445,7 @@ func to_dict() -> Dictionary:
 		"rails": rails.to_dict(),
 		"areas": areas.to_dict(),
 		"map": map,
+		"site": rules.site.duplicate(),
 		"ticks": clock.ticks,
 		"rng_seed": rng.seed,
 		"rng_state": rng.state,
@@ -411,7 +460,19 @@ func to_dict() -> Dictionary:
 		"anchorages": anchorages.duplicate(true),
 		"pilot_stations": pilot_stations.duplicate(true),
 		"tug_depots": tug_depots.duplicate(true),
+		"service_jetties": service_jetties.duplicate(true),
 		"next_station": _next_station,
+		"boats": boats.to_dict(),
+		"event_plan": event_plan.to_dict(),
+		"workshops": workshops.to_dict(),
+		"serviced": serviced.duplicate(),
+		"agv_home": agv_home.duplicate(true),
+		"racks": racks.duplicate(true),
+		"town": town.duplicate(),
+		"scenario": scenario.duplicate(),
+		"reports": reports.duplicate(true),
+		"today_calls": today_calls.duplicate(),
+		"fires": fires.to_dict(),
 		"passages": passages.duplicate(true),
 		"next_ship": _next_ship,
 		"next_anchorage": _next_anchorage,
@@ -437,7 +498,6 @@ func to_dict() -> Dictionary:
 		"vehicles": vehicles.map(func(vehicle: Vehicle) -> Dictionary: return vehicle.to_dict()),
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
-		"agvs": agvs,
 		"automated_since": automated_since.duplicate(),
 		"gave_up": gave_up,
 		"moved_on": moved_on,
@@ -477,7 +537,10 @@ func _area_stacks_dict() -> Dictionary:
 
 
 static func from_dict(d: Dictionary) -> PortSim:
-	var sim := PortSim.new()
+	# A scenario plays by its own rules, on a fresh coast its map names the seed of.
+	var rules := Scenario.rules_for(d.scenario.key, int(d.map.trim_prefix(MapGen.PREFIX)) if d.scenario.fresh else -1)
+	# On the site it was made on, which may be smaller than the game's now.
+	var sim := PortSim.new(0, rules if d.site == rules.site else Content.on_site(rules, d.site))
 	sim.roads = RoadNet.from_dict(d.roads, sim.rules.road_types, sim.rules.junctions)
 	sim.roads.anchors = [Vector2(sim.site_entry_point())]
 	sim.rails = RoadNet.from_dict(d.rails, sim.rail_types(), sim.rules.junctions)
@@ -498,7 +561,22 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.anchorages = d.anchorages.duplicate(true)
 	sim.pilot_stations = d.pilot_stations.duplicate(true)
 	sim.tug_depots = d.tug_depots.duplicate(true)
+	sim.service_jetties = d.service_jetties.duplicate(true)
 	sim._next_station = d.next_station
+	sim.boats = Boats.from_dict(d.boats)
+	sim.event_plan = Events.from_dict(d.event_plan)
+	sim.workshops = Workshops.from_dict(d.workshops)
+	sim.serviced = d.serviced.duplicate()
+	sim.racks = d.racks.duplicate(true)
+	sim.town = d.town.duplicate()
+	sim.scenario = d.scenario.duplicate()
+	sim.reports.assign(d.reports.duplicate(true))
+	sim.today_calls = d.today_calls.duplicate()
+	for depot: int in d.agv_home:
+		var home: Array[float] = []
+		home.assign(d.agv_home[depot])
+		sim.agv_home[depot] = home
+	sim.fires = Fires.from_dict(d.fires)
 	sim.passages.assign(d.passages.duplicate(true))
 	sim._next_ship = d.next_ship
 	sim._next_anchorage = d.next_anchorage
@@ -527,7 +605,6 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.boxes = d.boxes.duplicate(true)
 	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
-	sim.agvs = d.agvs
 	sim.automated_since = d.automated_since.duplicate()
 	sim.gave_up = d.gave_up
 	sim.moved_on = d.moved_on
@@ -536,6 +613,9 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.dwell_times.assign(d.dwell_times)
 	sim.storage = d.storage.duplicate()
 	sim._claimed = d.claimed.duplicate()
+	for id: int in sim.boxes:
+		if sim.boxes[id].customs != "":
+			sim._flagged[id] = true
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
 	sim._until_empty = d.until_empty
@@ -564,7 +644,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	# and for one migrated to v41 (whose slots came from grid cells) the fix.
 	for vehicle: Vehicle in sim.vehicles:
 		if vehicle.state.trim_prefix("no_route:") == "to_slot" and vehicle.slot >= 0:
-			vehicle.target = AreaFlow._stand(sim, vehicle.area, vehicle.slot)
+			vehicle.target = AreaFlow._stand(sim, AreaFlow._door(sim, vehicle), vehicle.slot)
 		if vehicle.home != Areas.NO_SPOT and vehicle.home.x in sim.areas.list:
 			var slots: Array = sim.areas.layout(vehicle.home.x).get("slots", [])
 			var s := slots.find_custom(func(cells: Array) -> bool: return vehicle.home in cells)
@@ -596,12 +676,18 @@ func apply(command: Dictionary) -> String:
 			return place_sts(command.apron, command.along, command.kind)
 		"buy_tractors":
 			return buy_tractors(command.count)
-		"buy_agvs":
-			return buy_agvs(command.count)
 		"accept_offer":
 			return accept_offer(command.id, command.apron)
 		"move_service":
 			return move_service(command.id, command.apron)
+		"move_call":
+			return contracts.move_call(command.id, command.start, clock.calendar_minutes())
+		"send_ship":
+			return send_ship(command.ship, command.apron)
+		"keep_ship":
+			return keep_ship(command.ship, command.on)
+		"ship_ahead":
+			return ship_ahead(command.ship, command.of)
 		"set_any_berth":
 			return contracts.set_any_berth(command.id, command.any_berth)
 		"decline_offer":
@@ -647,6 +733,39 @@ func apply(command: Dictionary) -> String:
 			return build_marine_base("pilot_station", command.cell)
 		"build_tug_depot":
 			return build_marine_base("tug_depot", command.cell)
+		"build_services_jetty":
+			return build_marine_base("services_jetty", command.cell)
+		"set_serviced":
+			if command.kind not in rules.sts_cranes and command.kind not in rules.yard_gear:
+				return "No such equipment"
+			serviced[command.kind] = command.on
+			return ""
+		"set_town_fund":
+			return Town.set_fund(self, command.per_day)
+		"buy_bypass":
+			return Town.buy_bypass(self)
+		"buy_shore_power":
+			return Town.buy_shore_power(self, command.area)
+		"buy_scanner":
+			return Customs.buy_scanner(self, command.gate)
+		"hire_inspectors":
+			return Customs.hire(self, command.area, command.count)
+		"buy_racks":
+			return Racks.buy(self, command.area)
+		"buy_chargers":
+			return AreaFlow.buy_chargers(self, command.area, command.count)
+		"buy_agvs":
+			return AreaFlow.buy_agvs(self, command.area, command.count)
+		"buy_engines":
+			return fires.buy_engines(self, command.area, command.count)
+		"buy_fireboats":
+			return add_fireboats(command.depot, command.count)
+		"hire_mechanics":
+			return workshops.hire(self, command.area, command.count)
+		"set_event_kind":
+			return event_plan.set_kind(command.kind, command.on)
+		"buy_service_boats":
+			return add_service_boats(command.jetty, command.service, command.count)
 		"hire_pilots":
 			return add_marine_craft(command.station, command.count)
 		"buy_tugs":
@@ -691,6 +810,8 @@ func apply(command: Dictionary) -> String:
 			return set_area(command.id, command.settings)
 		"paint_terminal":
 			return areas.paint_cells(command.cells, command.terminal)
+		"paint_agv_zone":
+			return areas.paint_agv(command.cells, command.on)
 		"fill_terminal":
 			var cells := areas.fill_cells(command.cell)
 			return areas.paint_cells(cells, command.terminal) if not cells.is_empty() else "No road closes in this ground"
@@ -1003,8 +1124,11 @@ func remove_road(segment: int) -> String:
 
 
 func build_area_error(type: String, segment: int, side: int, from: int, to: int) -> String:
-	var err := areas.add_error(type, segment, side, from, to)
-	if err == "" and rules.area_types[type].kind == "yard_block" and AreaFlow.near_yard(self, areas.cells_of(type, segment, side, from, to), 0, "dangerous") != 0:
+	# A transfer block is worked by ASCs and an AGV depot sends AGVs: both come with the hub.
+	var err: String = lock_error({"transfer_block": "asc", "agv_depot": "agv"}.get(rules.area_types[type].kind, ""))
+	if err == "":
+		err = areas.add_error(type, segment, side, from, to)
+	if err == "" and rules.area_types[type].kind in ["yard_block", "transfer_block", "quay_apron", "gate"] and AreaFlow.near(self, areas.cells_of(type, segment, side, from, to), 0, AreaFlow.is_dangerous) != 0:
 		err = _dg_refusal()
 	if err == "" and not areas.cells_of(type, segment, side, from, to).all(owns):
 		err = "Buy this land first"
@@ -1025,7 +1149,11 @@ func build_area(type: String, segment: int, side: int, from: int, to: int) -> St
 	if err == "":
 		var price := area_price(type, segment, side, from, to)
 		areas.add(type, segment, side, from, to, AREA_SETTINGS.get(rules.area_types[type].kind, {}).duplicate(true))
-		ledger.post("construction", -price, areas.list[areas.list.keys().max()].terminal)
+		var id: int = areas.list.keys().max()
+		ledger.post("construction", -price, areas.list[id].terminal)
+		var gear: String = areas.list[id].settings.get("gear", "")
+		if gear != "" and rules.yard_gear[gear].automated:
+			automated_since[id] = clock.calendar_minutes()
 	return err
 
 
@@ -1197,10 +1325,15 @@ func build_two_way_gate(type: String, segment: int, from: int, to: int) -> Strin
 	return err
 
 
-## An area's cells at its type's price, plus the water a quay apron fills.
+## An area's cells at its type's price, plus the water a quay apron fills and
+## the machines of automated gear (a transfer block's ASCs) it starts with.
 func area_price(type: String, segment: int, side: int, from: int, to: int) -> int:
 	var cells := areas.cells_of(type, segment, side, from, to)
-	return cells.size() * rules.area_types[type].cost_per_cell + cells.filter(areas.is_water).size() * rules.reclaim.cost_per_cell
+	var gear: String = AREA_SETTINGS.get(rules.area_types[type].kind, {}).get("gear", "")
+	var machines_price := 0
+	if gear != "" and rules.yard_gear[gear].automated:
+		machines_price = machines.count_for(gear, (to - from + 1) / AreaLayout.BAY) * rules.yard_gear[gear].cost_per_machine
+	return cells.size() * rules.area_types[type].cost_per_cell + cells.filter(areas.is_water).size() * rules.reclaim.cost_per_cell + machines_price
 
 
 ## shortcut: changing gear is free; machines are bought per area in M5 step 17.
@@ -1211,6 +1344,13 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 	for key: String in settings:
 		if key not in AREA_SETTINGS.get(areas.kind_of(areas.list[id]), {}):
 			return "A %s has no %s setting" % [rules.area_types[type].name.to_lower(), key]
+		# Bought, not set: by inspecting the area.
+		if key in ["mechanics", "engines", "inspectors", "scanner", "agvs", "chargers", "racks", "shore_power"]:
+			return "Buy %s by inspecting it" % {"scanner": "a scanner", "shore_power": "shore power"}.get(key, key)
+		if key == "gear" and areas.kind_of(areas.list[id]) == "transfer_block":
+			return "A transfer block is worked by its two ASCs"
+	if settings.get("gear") == "asc":
+		return "ASCs work transfer blocks only"
 	if settings.has("slots_per_hour") and (not settings.slots_per_hour is int or settings.slots_per_hour < 0 or settings.slots_per_hour > MAX_SLOTS_PER_HOUR):
 		return "Bookings run from 0 (none) to %d an hour" % MAX_SLOTS_PER_HOUR
 	if settings.has("level"):
@@ -1225,7 +1365,7 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		return lock_error("reefers")
 	if settings.get("role") == "tranship" and lock_error("transhipment"):
 		return lock_error("transhipment")
-	if settings.get("role") == "dangerous" and AreaFlow.near_yard(self, areas.cells(id), id, "") != 0:
+	if settings.get("role") == "dangerous" and AreaFlow.near(self, areas.cells(id), id, func(area: Dictionary) -> bool: return AreaFlow.keeps_from_dangerous(self, area)) != 0:
 		return _dg_refusal()
 	if settings.has("gear"):
 		if not rules.yard_gear.has(settings.gear):
@@ -1564,7 +1704,7 @@ func build_marine_base_error(kind: String, cell: Vector2i) -> String:
 		return "Place it near the shore, within %d m of land" % Grid.metres(MARINE_BASE_SHORE)
 	if marine_base_at(cell, MARINE_BASE_GAP):
 		return "Too close to another pilot station or tug depot"
-	var cost: int = rules.water.pilots.station_cost if kind == "pilot_station" else rules.water.tugs.depot_cost
+	var cost: int = {"pilot_station": rules.water.pilots.station_cost, "tug_depot": rules.water.tugs.depot_cost, "services_jetty": rules.water.services.jetty_cost}[kind]
 	if not _afford(cost):
 		return "Not enough money"
 	return ""
@@ -1573,14 +1713,52 @@ func build_marine_base_error(kind: String, cell: Vector2i) -> String:
 func build_marine_base(kind: String, cell: Vector2i) -> String:
 	var err := build_marine_base_error(kind, cell)
 	if err == "":
-		var pilots := kind == "pilot_station"
-		ledger.post("construction", -(rules.water.pilots.station_cost if pilots else rules.water.tugs.depot_cost))
-		if pilots:
-			pilot_stations[_next_station] = {"cell": cell, "pilots": 0}
-		else:
-			tug_depots[_next_station] = {"cell": cell, "tugs": 0}
+		var bases: Dictionary = {"pilot_station": pilot_stations, "tug_depot": tug_depots, "services_jetty": service_jetties}[kind]
+		ledger.post("construction", -{"pilot_station": rules.water.pilots.station_cost, "tug_depot": rules.water.tugs.depot_cost, "services_jetty": rules.water.services.jetty_cost}[kind])
+		bases[_next_station] = {"cell": cell, "pilots": 0} if kind == "pilot_station" else ({"cell": cell, "tugs": 0} if kind == "tug_depot" else {"cell": cell})
 		_next_station += 1
 	return err
+
+
+## Where pilot station, tug depot or services jetty `id` stands.
+func marine_base_cell(id: int) -> Vector2i:
+	for bases: Dictionary in [pilot_stations, tug_depots, service_jetties]:
+		if id in bases:
+			return bases[id].cell
+	assert(false, "no pilot station, tug depot or services jetty %d" % id)
+	return Grid.NONE
+
+
+## Buys `count` fireboats at tug depot `id`.
+func add_fireboats(id: int, count: int) -> String:
+	if count < 1:
+		return "Add at least one"
+	if id not in tug_depots:
+		return "No tug depot there"
+	var cost: int = count * rules.water.fireboats.cost
+	if not _afford(cost):
+		return "Not enough money"
+	ledger.post("equipment", -cost)
+	for i in count:
+		boats.add("fireboat", id, tug_depots[id].cell)
+	return ""
+
+
+## Buys `count` boats for `service` (bunkers, provisions or waste) at services jetty `id`.
+func add_service_boats(id: int, service: String, count: int) -> String:
+	if count < 1:
+		return "Add at least one"
+	if id not in service_jetties:
+		return "No services jetty there"
+	if service not in rules.water.services.boats:
+		return "No such service boat"
+	var cost: int = count * rules.water.services.boats[service].cost
+	if not _afford(cost):
+		return "Not enough money"
+	ledger.post("equipment", -cost)
+	for i in count:
+		boats.add(service, id, service_jetties[id].cell)
+	return ""
 
 
 ## Hires `count` pilots at station `id`, or buys `count` tugs at depot `id`.
@@ -1598,19 +1776,22 @@ func add_marine_craft(id: int, count: int) -> String:
 		pilot_stations[id].pilots += count
 	else:
 		tug_depots[id].tugs += count
+	var base: Dictionary = pilot_stations[id] if pilots else tug_depots[id]
+	for i in count:
+		boats.add("pilot" if pilots else "tug", id, base.cell)
 	return ""
 
 
 ## Takes out pilot station or tug depot `id`, once none of its pilots or tugs is out with a ship.
 func remove_marine_base(id: int) -> String:
-	if id not in pilot_stations and id not in tug_depots:
-		return "No pilot station or tug depot there"
-	if id in tug_depots and ships.any(func(s: Ship) -> bool: return s.tugs > 0 and s.tug_depot == id):
-		return "Wait for its tugs to come back"
-	if id in pilot_stations and Marine.free_pilots(self) < pilot_stations[id].pilots:
-		return "Wait for its pilots to come back"
+	if id not in pilot_stations and id not in tug_depots and id not in service_jetties:
+		return "No pilot station, tug depot or services jetty there"
+	if boats.ready_at(id).size() < boats.of(id).size():
+		return "Wait for its %s to come back" % ("pilots" if id in pilot_stations else ("tugs" if id in tug_depots else "boats"))
+	boats.remove_base(id)
 	pilot_stations.erase(id)
 	tug_depots.erase(id)
+	service_jetties.erase(id)
 	return ""
 
 
@@ -1626,7 +1807,7 @@ func _near_land(cell: Vector2i, reach: int) -> bool:
 
 ## The pilot station or tug depot within `reach` cells of `cell`, or 0.
 func marine_base_at(cell: Vector2i, reach := 2) -> int:
-	for bases: Dictionary in [pilot_stations, tug_depots]:
+	for bases: Dictionary in [pilot_stations, tug_depots, service_jetties]:
 		for id: int in bases:
 			var d: Vector2i = (bases[id].cell - cell).abs()
 			if d.x <= reach and d.y <= reach:
@@ -1793,19 +1974,6 @@ func dredged_cell_metres() -> float:
 	return total
 
 
-func buy_agvs(count: int) -> String:
-	var locked := lock_error("agv")
-	if locked:
-		return locked
-	if count < 1:
-		return "Buy at least one AGV"
-	if not _afford(rules.agv.cost * count):
-		return "Not enough money"
-	ledger.post("equipment", -rules.agv.cost * count)
-	agvs += count
-	return ""
-
-
 func buy_tractors(count: int) -> String:
 	if count < 1:
 		return "Buy at least one tractor"
@@ -1887,10 +2055,15 @@ func tick() -> void:
 	clock.tick()
 	if clock.ticks % SimClock.TICKS_PER_DAY == 0:
 		_end_of_day()
+	if clock.ticks % SimClock.TICKS_PER_DAY == roundi(rules.lighting.night_ends_hour * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		_pay_lighting()
+	if clock.ticks % (SimClock.TICKS_PER_DAY / 24) == 0:
+		Town.tick_hour(self)
 	if not crane_orders.is_empty():
 		_deliver_cranes()
 	for service in contracts.due(clock.ticks % (SimClock.TICKS_PER_DAY * 7)):
 		_call(service)
+		service.next_start = -1.0  # a call moved once comes back to its week
 	if clock.ticks % roundi(rules.contracts.offer_check_minutes / SimClock.CALENDAR_MINUTES_PER_TICK) == 0:
 		_offer_service()
 		AreaFlow.fine_unplugged(self, clock.calendar_minutes())
@@ -1905,6 +2078,12 @@ func tick() -> void:
 			continue
 		_work(ship)
 	_berths_seen = berths_now
+	boats.tick(self)
+	Services.tick(self)
+	event_plan.tick(self)
+	workshops.tick(self)
+	fires.tick(self)
+	Customs.tick(self)
 	var open := gates_open()
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
@@ -1915,6 +2094,7 @@ func tick() -> void:
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
+	AreaFlow.safety_stops(self)
 	Drive.signals(self)
 	AreaFlow.tick(self)
 	RailFlow.tick(self)
@@ -1942,7 +2122,7 @@ func upkeep_parts() -> Dictionary:
 	for segment: int in rails.segments:
 		parts[0] += RoadNet.cells_long(rails.curve(segment).length) * rules.rail.upkeep_per_cell
 	var labour := policy_value("labour_upkeep_factor", 1.0)
-	parts[0] += rules.upkeep.tractor * tractors * labour + rules.agv.upkeep * agvs + rules.land.upkeep * land.size()
+	parts[0] += rules.upkeep.tractor * tractors * labour + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
 		parts[0] += ship_lanes.area(segment).size() * rules.water.lanes[lane.type].upkeep_per_cell
@@ -1952,6 +2132,17 @@ func upkeep_parts() -> Dictionary:
 		parts[0] += Areas.breakwater_cells(wall.from, wall.to).size() * rules.water.breakwater.upkeep_per_cell
 	for depot: Dictionary in tug_depots.values():
 		parts[0] += depot.tugs * rules.water.tugs.upkeep_per_tug
+	for id: int in areas.list:
+		parts[0] += areas.list[id].settings.get("mechanics", 0) * rules.events.breakdowns.upkeep_per_mechanic
+		parts[0] += areas.list[id].settings.get("engines", 0) * rules.events.fires.upkeep_per_engine
+		parts[0] += areas.list[id].settings.get("agvs", 0) * rules.upkeep.agv
+		parts[0] += areas.list[id].settings.get("inspectors", 0) * rules.customs.upkeep_per_inspector
+	for boat: Dictionary in boats.list.values():
+		if boat.kind == "fireboat":
+			parts[0] += rules.water.fireboats.upkeep
+	for jetty: int in service_jetties:
+		for boat: int in boats.of(jetty):
+			parts[0] += rules.water.services.boats[boats.list[boat].kind].upkeep
 	var add := func(terminal: int, amount: float) -> void: parts[terminal] = parts.get(terminal, 0.0) + amount
 	for id: int in areas.list:
 		var area: Dictionary = areas.list[id]
@@ -2035,6 +2226,17 @@ func last_event() -> String:
 
 
 ## Logs `text`; `at` is the grid cell it happened at, which the HUD links to.
+## Files the morning paper for the day `closed` (a ledger day just closed):
+## its numbers, and the news it brought, routine lines left out.
+func _report(closed: Dictionary) -> void:
+	var from := float(closed.day) * SimClock.MINUTES_PER_DAY
+	var headlines: Array = events.filter(func(e: Dictionary) -> bool: return e.minute >= from and e.minute < from + SimClock.MINUTES_PER_DAY and not e.text.begins_with("Upkeep") and not e.text.begins_with("Place a berth")).map(func(e: Dictionary) -> String: return e.text)
+	reports.append({"day": closed.day, "moves": closed.moves.total, "net": closed.closed - closed.opened, "calls": today_calls.calls, "on_time": today_calls.on_time, "headlines": headlines.slice(-5)})
+	if reports.size() > REPORT_DAYS:
+		reports.pop_front()
+	today_calls = {"calls": 0, "on_time": 0}
+
+
 func _event(text: String, at := Grid.NONE) -> void:
 	if last_event() == text:
 		return
@@ -2059,6 +2261,7 @@ func _end_of_day() -> void:
 		ledger.post("policies", -policies_cost())
 	if it_upkeep() != 0:
 		ledger.post("it_systems", -it_upkeep())
+	Town.pay_fund(self)
 	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
 	if bill > 0:
 		ledger.post("power", -bill)
@@ -2075,6 +2278,8 @@ func _end_of_day() -> void:
 	_check_milestones()
 	_check_objectives()
 	ledger.close_day(clock.game_day() - 1)
+	Scenario.close_day(self, clock.game_day() - 1, ledger.days[-1].moves.total)
+	_report(ledger.days[-1])
 	if clock.game_day() % rules.year_days == 0:
 		_end_of_year()
 	delivered_yesterday = delivered - _delivered_at_midnight
@@ -2144,6 +2349,7 @@ func _call(service: Dictionary) -> void:
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
 	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
+	ship.needs = Services.wants(self, service.kind)
 	ships.append(ship)
 	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
 	_event("%s's %s has arrived" % [who, service.kind])
@@ -2205,6 +2411,74 @@ func move_service(id: int, apron: int) -> String:
 	return err if err else contracts.move(id, apron)
 
 
+## The night's floodlights, as night ends: a flat cost for each terminal
+## with something built in it.
+func _pay_lighting() -> void:
+	var lit := {}
+	for area: Dictionary in areas.list.values():
+		if area.terminal:
+			lit[area.terminal] = true
+	for terminal: int in lit:
+		ledger.post("lighting", -rules.lighting.per_terminal_night, terminal)
+
+
+## The ship with id `id`, or null.
+func ship_of(id: int) -> Ship:
+	for ship: Ship in ships:
+		if ship.id == id:
+			return ship
+	return null
+
+
+## The harbour master sends ship `id`, waiting at anchor, to berth `apron`
+## now, if there is room for it there (M11); its own terminal's berths only
+## when a service there is its own.
+func send_ship(id: int, apron: int) -> String:
+	var ship := ship_of(id)
+	if ship == null:
+		return "No such ship"
+	if ship.state != Ship.State.ANCHORED:
+		return "Only a ship waiting at anchor can be sent in"
+	if apron not in AreaFlow.ready_aprons(self):
+		return "That berth can't take ships"
+	if ship.berth in areas.list and areas.list[apron].terminal != areas.list[ship.berth].terminal:
+		return "Its line calls at the other terminal"
+	if not Marine.reaches(self, ship.kind, apron, ship.anchorage, ship.light):
+		return "It has no way in to that berth"
+	if not AreaFlow.berth(self, ship, apron):
+		return "No room for it at that berth now"
+	ship.kept = false
+	return ""
+
+
+## Keeps ship `id` waiting at anchor (`on`), or lets it take a berth again.
+func keep_ship(id: int, on: bool) -> String:
+	var ship := ship_of(id)
+	if ship == null:
+		return "No such ship"
+	if ship.state not in [Ship.State.ANCHORED, Ship.State.ANCHORING]:
+		return "Only a ship waiting at anchor can be kept there"
+	ship.kept = on
+	_berths_seen = Vector2i(-1, -1)  # let go, it tries for a berth this tick
+	return ""
+
+
+## Puts ship `id`, waiting at anchor, ahead of waiting ship `of`: the one
+## first in line takes the next free berth.
+func ship_ahead(id: int, of: int) -> String:
+	var ship := ship_of(id)
+	var other := ship_of(of)
+	if ship == null or other == null or ship == other:
+		return "No such ships"
+	for s: Ship in [ship, other]:
+		if s.state not in [Ship.State.ANCHORED, Ship.State.ANCHORING]:
+			return "Only ships waiting at anchor change places in line"
+	ships.erase(ship)
+	ships.insert(ships.find(other), ship)
+	_berths_seen = Vector2i(-1, -1)
+	return ""
+
+
 ## Ends agreed service `id`; a ship already called for it still works.
 func cancel_service(id: int) -> String:
 	var done := contracts.cancel(id)
@@ -2230,19 +2504,19 @@ func _work(ship: Ship) -> void:
 	ship.prev_sail = ship.sail
 	match ship.state:
 		Ship.State.ANCHORED:
-			if not AreaFlow.berth(self, ship):
+			if ship.kept or not AreaFlow.berth(self, ship):
 				Marine.wait(self, ship)
 		Ship.State.ANCHORING:
 			if not Marine.under_way(self, ship, 1):
 				return
 			if Marine.sail(self, ship, 1):
-				Marine.release(ship)
+				Marine.release(self, ship)
 				ship.state = Ship.State.ANCHORED
 		Ship.State.ARRIVING:
 			if not Marine.under_way(self, ship, 1):
 				return
 			if Marine.sail(self, ship, 1, Marine.berthing_limit(self, ship)):
-				Marine.release(ship)
+				Marine.release(self, ship)
 				ship.state = Ship.State.WORKING
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind, areas.cell_at(ship.apron, 0, 0))
@@ -2252,21 +2526,30 @@ func _work(ship: Ship) -> void:
 		Ship.State.LEAVING:
 			if not Marine.under_way(self, ship, -1):
 				return
-			ship.tugs = 0  # they have pushed it off the quay
+			if ship.tugs > 0 and Marine.clear_of_berth(self, ship):
+				# They have pulled it off the quay to where it turns.
+				boats.release_tugs(self, ship.id)
+				ship.tugs = 0
 			if Marine.sail(self, ship, -1):
+				# Its pilot is taken off where it sails out to sea.
+				Marine.release(self, ship)
 				ships.erase(ship)
 				_departures += 1
 
 
 func _sail(ship: Ship, crane_count: int) -> void:
+	Services.sailed(self, ship)
 	ship.state = Ship.State.LEAVING
 	var now := clock.calendar_minutes()
 	var hours := (now - ship.berthed) / 60.0
 	var late := maxf(now - ship.due, 0.0) / 60.0
 	var terminal: int = areas.list[ship.apron].terminal
 	ship_log.append({"kind": ship.kind, "line": ship.line, "terminal": terminal, "moves": ship.moves, "hours": hours, "cranes": crane_count, "late": late})
+	today_calls.calls += 1
+	today_calls.on_time += 1 if late == 0.0 else 0
 	if late == 0.0:
 		on_time_calls[ship.kind] = on_time_calls.get(ship.kind, 0) + 1
+		Scenario.sailed_on_time(self)
 	if ship_log.size() > SHIP_LOG_CALLS:
 		ship_log.pop_front()
 	year.calls += 1
@@ -2288,7 +2571,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": ""}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
 	exports += 1 if kind == "export" else 0
 	return id
 
@@ -2363,7 +2646,7 @@ func _empty_collected(id: int) -> void:
 func _new_empty(line: String, teu: int) -> int:
 	var id := _next_box
 	_next_box += 1
-	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place()}
+	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
 	return id
 
 
@@ -2394,18 +2677,15 @@ func _tractors_out() -> int:
 	return _tractors_on_road
 
 
-func _agvs_out() -> int:
-	return _agvs_on_road
-
-
 ## Puts `vehicle` in the port's list and indexes.
 func _add_vehicle(vehicle: Vehicle) -> void:
 	vehicles.append(vehicle)
 	_by_id[vehicle.id] = vehicle
-	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle and not vehicle.agv else 0
-	_agvs_on_road += 1 if vehicle.agv else 0
+	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
+	if vehicle.depot:
+		_agvs_out[vehicle.depot] = _agvs_out.get(vehicle.depot, 0) + 1
 	_count_bound(vehicle, 1)
 	if vehicle.home != Areas.NO_SPOT:
 		if vehicle.home not in _fetching:
@@ -2418,10 +2698,11 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	Drive.leave(self, vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
-	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle and not vehicle.agv else 0
-	_agvs_on_road -= 1 if vehicle.agv else 0
+	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] -= 1
+	if vehicle.depot:
+		_agvs_out[vehicle.depot] -= 1
 	_count_bound(vehicle, -1)
 	if vehicle.home != Areas.NO_SPOT:
 		_fetching[vehicle.home].erase(vehicle)

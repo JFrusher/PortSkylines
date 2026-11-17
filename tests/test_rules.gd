@@ -228,7 +228,7 @@ func _test_a_full_block_takes_no_more() -> void:
 	var stacks := AreaFlow._stacks(sim, 3)
 	var id := 900000
 	while stacks.room() > 1:
-		sim.boxes[id] = {"kind": "import", "due": 1e9, "teu": 1, "reefer": false, "dg": false, "rush": false, "in": 0.0, "line": sim.rules.lines.keys()[0], "rail": false, "barge": false, "place": sim.rules.hinterland.places.keys()[0]}
+		sim.boxes[id] = {"kind": "import", "due": 1e9, "teu": 1, "reefer": false, "dg": false, "rush": false, "in": 0.0, "line": sim.rules.lines.keys()[0], "rail": false, "barge": false, "place": sim.rules.hinterland.places.keys()[0], "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
 		stacks.place(id, 1)
 		id += 1
 	var most := -INF
@@ -399,7 +399,7 @@ func _test_reputation_cancels_and_recovers() -> void:
 	rules.contracts.offer_chance = 1.0
 	var contracts := Contracts.new(rules)
 	for id: int in [1, 2]:
-		contracts.services.append({"id": id, "line": "kestrel", "kind": "feeder", "start": 0, "window_hours": 12.0, "moves": 40, "apron": 1, "asked": 0, "any_berth": false})
+		contracts.services.append({"id": id, "line": "kestrel", "kind": "feeder", "start": 0, "window_hours": 12.0, "moves": 40, "apron": 1, "asked": 0, "any_berth": false, "next_start": -1.0})
 	var said := ""
 	var calls := 0
 	while said == "" and calls < 20:
