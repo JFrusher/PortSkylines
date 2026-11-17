@@ -245,6 +245,8 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		lines.append("Takes only " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
 	if not settings.get("sizes", []).is_empty():
 		lines.append("Takes only " + " and ".join(settings.sizes.map(func(teu: int) -> String: return "%d ft boxes" % (teu * 20))))
+	if settings.has("stacking"):
+		lines.append("Stacks %s; %d re-handles so far" % ["by departure" if settings.stacking == "by_departure" else "low first", sim.area_stacks[id].rehandles if id in sim.area_stacks else 0])
 	if not settings.get("reefers", true):
 		lines.append("Takes no reefers")
 	if settings.get("max_tiers", 0) > 0:

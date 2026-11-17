@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_a_box_breaking_a_rule_is_never_placed()
 	_test_a_box_no_block_takes_stays_aboard()
 	_test_export_lorries_respect_rules()
+	_test_by_departure_needs_fewer_rehandles()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -73,7 +74,7 @@ func _test_a_box_breaking_a_rule_is_never_placed() -> void:
 	var second := _stacked(sim, port[2])
 	_expect(first.size() > 10, true, "the ruled block took boxes (%d)" % first.size())
 	_expect(first.all(func(box: Dictionary) -> bool: return box.teu == 1 and not box.reefer), true, "every one a dry 20 ft box")
-	_expect(highest, 2, "stacked no higher than its two tiers")
+	_expect(highest in [1, 2], true, "stacked no higher than its two tiers (%d)" % highest)
 	_expect(second.any(func(box: Dictionary) -> bool: return box.teu == 2), true, "the 40 ft boxes went to the other block")
 	# A line rule: the port's ships are all the first line's, so a block for another line takes none.
 	var lines := _two_blocks(RandomPort.quick())
@@ -103,3 +104,32 @@ func _test_export_lorries_respect_rules() -> void:
 	_run(sim, 180.0)
 	var held := _stacked(sim, block)
 	_expect(held.size() > 5 and held.all(func(box: Dictionary) -> bool: return box.teu == 2), true, "it holds only 40 ft exports (%d)" % held.size())
+
+
+## The scripted scenario: boxes come in with departures in no order and
+## leave soonest first. Stacked by departure, digging them out takes fewer
+## re-handles than filling the lowest stack; both are counted.
+func _test_by_departure_needs_fewer_rehandles() -> void:
+	var counts := {}
+	for strategy: String in ["fill_low", "by_departure"]:
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 12
+		var stacks := AreaStacks.new(12, 4)
+		var boxes := {}
+		for id in range(1, 37):
+			boxes[id] = {"due": float(rng.randi_range(0, 1000))}
+			stacks.place_at(stacks.place_spot(2, strategy, boxes[id].due, boxes), id, 2)
+		var leaving := boxes.keys()
+		leaving.sort_custom(func(a: int, b: int) -> bool: return boxes[a].due < boxes[b].due)
+		for id: int in leaving:
+			_expect(stacks.take(id) >= 0, true, "box %d is dug out" % id)
+		counts[strategy] = stacks.rehandles
+	_expect(counts.fill_low > 0, true, "filling low buries boxes (%d re-handles)" % counts.fill_low)
+	_expect(counts.by_departure < counts.fill_low, true, "stacking by departure needs fewer re-handles (%d against %d)" % [counts.by_departure, counts.fill_low])
+	var sim := AreaPort.base()
+	_expect(sim.areas.list[3].settings.stacking, "fill_low", "a new block fills low")
+	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"stacking": "sideways"}}) != "", true, "an unknown strategy is refused")
+	_expect(sim.apply({"op": "set_area", "id": 3, "settings": {"stacking": "by_departure"}}), "", "a block is set to stack by departure")
+	_run(sim, 300.0)
+	_expect(sim.area_stacks[3].count() > 0 or sim.delivered > 0, true, "and works ships that way")
+	_expect(PortSim.from_dict(sim.to_dict()).area_stacks[3].rehandles, sim.area_stacks[3].rehandles, "re-handles are counted in the save (%d)" % sim.area_stacks[3].rehandles)

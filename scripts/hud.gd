@@ -948,6 +948,10 @@ func _draw_block_rules(id: int, settings: Dictionary) -> void:
 		if sizes != settings.sizes:
 			set_rule.call("Take %s" % ("every size" if sizes.is_empty() else "%d ft only" % (sizes[0] * 20)), {"sizes": sizes}, "Boxes of another size go to a block that takes them, or stay aboard their ship when none does.")
 	set_rule.call("Refuse reefers" if settings.reefers else "Take reefers", {"reefers": not settings.reefers}, "Whether reefers may be stacked here.")
+	if settings.stacking == "fill_low":
+		set_rule.call("Stack by departure", {"stacking": "by_departure"}, "Each box goes on a stack where it buries nothing leaving sooner, for the fewest re-handles.")
+	else:
+		set_rule.call("Stack low first", {"stacking": "fill_low"}, "Each box goes on the lowest stack, so stacks stay level.")
 	var high: int = AreaFlow.tiers(sim, id)
 	if high > 1:
 		set_rule.call("Stack to %d" % (high - 1), {"max_tiers": high - 1}, "Lower stacks hold less and need fewer re-handles.")

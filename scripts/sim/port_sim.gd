@@ -156,8 +156,8 @@ const MARINE_BASE_GAP := 8
 const AREA_SETTINGS := {
 	# A block takes only boxes of its `sizes` (TEU, [] for any) and `lines`
 	# ([] for any), reefers only if `reefers`, and stacks `max_tiers` high (0:
-	# as high as its gear).
-	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0},
+	# as high as its gear), placing each by `stacking` (AreaStacks.place_spot).
+	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"},
 	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 }
@@ -1223,6 +1223,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		return "Reefers are taken or not"
 	if settings.has("max_tiers") and not (settings.max_tiers is int and settings.max_tiers >= 0):
 		return "The stack height is a whole number of tiers, 0 for as high as the gear goes"
+	if settings.has("stacking") and settings.stacking not in ["fill_low", "by_departure"]:
+		return "Stacking is fill_low or by_departure"
 	if settings.has("lines"):
 		if not settings.lines is Array or not settings.lines.all(func(line: Variant) -> bool: return line is String and rules.lines.has(line)):
 			return "Line priority lists known shipping lines"

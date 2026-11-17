@@ -136,7 +136,7 @@ static func _give(sim: PortSim, train: Train, machine: int) -> bool:
 	var layout := sim.areas.layout(train.block)
 	for i in train.wagons.size():
 		if _to_unload(sim, train, i):
-			var position := stacks.place_spot(sim.boxes[train.wagons[i]].teu)
+			var position := AreaFlow._place_spot(sim, train.block, train.wagons[i])
 			if position < 0:
 				continue
 			sim.machines.give(machine, _wagon_bay(sim, train, i), layout.stacks[position].bay)
@@ -163,7 +163,7 @@ static func _give(sim: PortSim, train: Train, machine: int) -> bool:
 static func _has_work(sim: PortSim, train: Train) -> bool:
 	var stacks := AreaFlow._stacks(sim, train.block)
 	for i in train.wagons.size():
-		if _to_unload(sim, train, i) and stacks.place_spot(sim.boxes[train.wagons[i]].teu) >= 0:
+		if _to_unload(sim, train, i) and AreaFlow._place_spot(sim, train.block, train.wagons[i]) >= 0:
 			return true
 	return _empty_wagon(train) >= 0 and _due_import(sim, train) != 0
 
@@ -209,7 +209,7 @@ static func job_done(sim: PortSim, machine: int) -> void:
 	if job.position >= 0:
 		var box: int = train.wagons[job.wagon]
 		var teu: int = sim.boxes[box].teu
-		stacks.place_at(job.position if stacks.fits(job.position, teu) else stacks.place_spot(teu), box, teu)
+		stacks.place_at(job.position if stacks.fits(job.position, teu) else AreaFlow._place_spot(sim, train.block, box), box, teu)
 		sim.boxes[box].in = sim.clock.calendar_minutes()
 		train.wagons[job.wagon] = 0
 	else:

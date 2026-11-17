@@ -386,10 +386,10 @@ func _test_area_settings() -> void:
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "gate", "segment": 1, "side": -1, "from": 35, "to": 50})
-	_expect(sim.areas.list[2].settings, {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0}, "a new yard block starts as an import block with reach stackers")
+	_expect(sim.areas.list[2].settings, {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"}, "a new yard block starts as an import block with reach stackers")
 	var line: String = sim.rules.lines.keys()[0]
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "export", "lines": [line]}}), "", "a yard block's role and lines are set")
-	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line], "sizes": [], "reefers": true, "max_tiers": 0}, "unset rules stay as they were")
+	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"}, "unset rules stay as they were")
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "reefer"}}), "Unlocked at milestone 2: %d TEU across the quay" % sim.rules.milestones.terminal.teu, "reefer blocks wait for the terminal milestone")
 	sim.teu_handled = int(sim.rules.milestones.terminal.teu)
 	sim._check_milestones()
@@ -431,7 +431,7 @@ func _test_unconnected_areas() -> void:
 	_expect(sim.areas.idle_reason(1), "", "a yard block along its road works")
 	var lines := Inspect.describe(sim, Inspect.pick(sim, sim.areas.cells(1)[5]))
 	# 10 bays by 6 rows of stacks, 4 high with reach stackers; no machines before the first tick.
-	_expect(lines, ["Yard block", "Terminal 1", "Terminal 1 needs a quay apron", "Import block, worked by reach stackers", "0 of 480 TEU (0%), 0 machines", "Working"] as Array[String], "inspecting an area shows its type, its terminal and what that lacks, its rules, its fill and state")
+	_expect(lines, ["Yard block", "Terminal 1", "Terminal 1 needs a quay apron", "Import block, worked by reach stackers", "0 of 480 TEU (0%), 0 machines", "Stacks low first; 0 re-handles so far", "Working"] as Array[String], "inspecting an area shows its type, its terminal and what that lacks, its rules, its fill and state")
 	_expect(sim.areas.along(1, sim.areas.cell_at(1, 7, 3)), 7, "a cell's place along an area, from any row")
 	_expect(sim.areas.along(1, Vector2i(5, 5)), -1, "and none off it")
 	sim.apply({"op": "remove_road", "segment": 1})
@@ -658,7 +658,7 @@ func _test_discharge() -> void:
 
 func _test_delivery() -> void:
 	var sim := AreaPort.working_terminal(2)
-	# 40 ft boxes only, so the second is stacked on the first, not beside it.
+	# 40 ft boxes only, so one can be stacked on the other, not beside it.
 	sim.rules = sim.rules.duplicate(true)
 	sim.rules.box_mix.forty_share = 1.0
 	for i in 6000:
@@ -666,7 +666,13 @@ func _test_delivery() -> void:
 		if sim.area_stacks[3].boxes().size() == 2:
 			break
 	var stacks: AreaStacks = sim.area_stacks[3]
-	_expect(stacks.position_of(stacks.boxes()[0]) == stacks.position_of(stacks.boxes()[1]), true, "both boxes went on the first stack, one on the other")
+	# The block fills its lowest stacks first, so the boxes stand side by side: bury one under the other.
+	var below: int = stacks.boxes()[0]
+	var above: int = stacks.boxes()[1]
+	if stacks.position_of(below) != stacks.position_of(above):
+		stacks.take(above)
+		stacks.place_at(stacks.position_of(below), above, 2)
+	_expect(stacks.position_of(below) == stacks.position_of(above), true, "both boxes are on one stack, one on the other")
 	for box: int in stacks.boxes():
 		sim.boxes[box].due = 0.0
 	var delivered := sim.delivered

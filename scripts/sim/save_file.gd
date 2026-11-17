@@ -122,12 +122,15 @@ static func _migrate(data: Dictionary) -> Dictionary:
 
 
 ## v49 adds M12's policies, none on, and each yard block's rules for the
-## boxes it takes: any size, reefers too, as high as its gear stacks.
+## boxes it takes: any size, reefers too, as high as its gear stacks, the
+## lowest stack first; and counts each block's re-handles, from none.
 static func _migrate_v49(data: Dictionary) -> Dictionary:
 	data.sim.policies = {}
 	for area: Dictionary in data.sim.areas.list.values():
 		if Content.base().area_types[area.type].kind == "yard_block":
-			area.settings.merge({"sizes": [], "reefers": true, "max_tiers": 0})
+			area.settings.merge({"sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"})
+	for stacks: Dictionary in data.sim.area_stacks.values():
+		stacks.rehandles = 0
 	data.version = 49
 	return data
 
@@ -578,7 +581,7 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 	for area: Variant in data.area_stacks:
 		var stacks: Variant = data.area_stacks[area]
-		if not (area in data.areas.list and stacks is Dictionary and _has_fields(stacks, {"stacks": TYPE_ARRAY, "tiers": TYPE_INT, "teu": TYPE_DICTIONARY, "where": TYPE_DICTIONARY})):
+		if not (area in data.areas.list and stacks is Dictionary and _has_fields(stacks, {"stacks": TYPE_ARRAY, "tiers": TYPE_INT, "teu": TYPE_DICTIONARY, "where": TYPE_DICTIONARY, "rehandles": TYPE_INT})):
 			return false
 		if not stacks.where.keys().all(func(box: Variant) -> bool: return box in data.boxes):
 			return false

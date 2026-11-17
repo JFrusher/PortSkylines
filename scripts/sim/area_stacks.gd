@@ -15,6 +15,8 @@ var _where := {}  # box id -> stack position
 ## Bumped by every change to the stacks, so of_kind and the view know when to look again.
 var version := 0
 var _sorted_for := -1
+## Boxes moved off others to dig one out, so far.
+var rehandles := 0
 var _by_kind := {}  # box kind -> box ids, soonest due first
 
 
@@ -51,12 +53,27 @@ func fits(position: int, teu: int) -> bool:
 	return teu == 1 or tiers.is_empty() or _teu[tiers[-1][0]] == 2
 
 
-## The first stack position a box of `teu` fits on, in layout order, or -1.
-func place_spot(teu: int) -> int:
+## Where a box of `teu` goes, or -1 when nothing takes it. "fill_low": the
+## lowest stack, so stacks stay level; "by_departure": for a box leaving at
+## `due`, a stack where every box leaves no sooner (`boxes` is the sim's box
+## table), the one whose first leaver goes soonest so open ground is kept for
+## last, else the stack whose first leaver goes latest. Ties in layout order.
+func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}) -> int:
+	var best := -1
+	var best_key := []
 	for position in stacks.size():
-		if fits(position, teu):
-			return position
-	return -1
+		if not fits(position, teu):
+			continue
+		var key := [stacks[position].size()]
+		if strategy == "by_departure":
+			var soonest := INF
+			for id: int in _boxes(position):
+				soonest = minf(soonest, boxes[id].due)
+			key = [0, soonest] if soonest >= due else [1, -soonest]
+		if best < 0 or key < best_key:
+			best = position
+			best_key = key
+	return best
 
 
 func place_at(position: int, id: int, teu: int) -> void:
@@ -108,6 +125,7 @@ func take(id: int) -> int:
 	_teu.erase(id)
 	_where.erase(id)
 	version += 1
+	rehandles += moved
 	return moved
 
 
@@ -133,7 +151,7 @@ func housekeep(due: Dictionary) -> bool:
 
 
 func to_dict() -> Dictionary:
-	return {"stacks": stacks.duplicate(true), "tiers": _tiers, "teu": _teu.duplicate(), "where": _where.duplicate()}
+	return {"stacks": stacks.duplicate(true), "tiers": _tiers, "teu": _teu.duplicate(), "where": _where.duplicate(), "rehandles": rehandles}
 
 
 static func from_dict(d: Dictionary) -> AreaStacks:
@@ -141,6 +159,7 @@ static func from_dict(d: Dictionary) -> AreaStacks:
 	area.stacks = d.stacks.duplicate(true)
 	area._teu = d.teu.duplicate()
 	area._where = d.where.duplicate()
+	area.rehandles = d.rehandles
 	return area
 
 
