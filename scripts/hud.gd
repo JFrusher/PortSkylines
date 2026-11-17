@@ -98,6 +98,8 @@ var _event_list := VBoxContainer.new()
 var _events_drawn := []
 var _ledger := Label.new()
 var _borrow := HBoxContainer.new()
+## A switch per policy, in rules.policies' order.
+var _policies := VBoxContainer.new()
 ## Controls shown only once a milestone unlocks them: name -> controls.
 var _gated := {}
 ## The berth board, opened by the Contracts button.
@@ -397,6 +399,7 @@ func _ready() -> void:
 			tool = CRANE
 			crane_kind = key))).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
+	_gate("agv", _item(_action_button(rows.Cranes, "2 AGVs\n$%d" % (sim.rules.agv.cost * 2), {"op": "buy_agvs", "count": 2}))).tooltip_text = "Automated guided vehicles carry boxes between cranes and automated (ASC) blocks, which tractors don't serve.\n$%d each, upkeep $%d a day each, no driver." % [sim.rules.agv.cost, sim.rules.agv.upkeep]
 	for key: String in sim.rules.water.lanes:
 		var lane: Dictionary = sim.rules.water.lanes[key]
 		_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
@@ -499,6 +502,15 @@ func _build_drawer(left: Control) -> void:
 	for kind: String in sim.rules.loans:
 		var terms: Dictionary = sim.rules.loans[kind]
 		_gate("loans", _action_button(_borrow, "Borrow %s\n%d days, %d%% a year" % [HudDetails.dollars(terms.amount), terms.days, roundi(terms.yearly_rate * 100)], {"op": "take_loan", "kind": kind}))
+	_drawer_extra_container.add_child(_label("Policies"))
+	_drawer_extra_container.add_child(_policies)
+	for key: String in sim.rules.policies:
+		var policy: Dictionary = sim.rules.policies[key]
+		var switch := CheckButton.new()
+		switch.text = policy.name if policy.cost_per_day == 0 else "%s, %s a day" % [policy.name, HudDetails.dollars(policy.cost_per_day)]
+		switch.tooltip_text = policy.text
+		switch.toggled.connect(func(on: bool) -> void: command_issued.emit({"op": "set_policy", "policy": key, "on": on}))
+		_policies.add_child(_gate("policies", switch))
 
 
 func _toggle_drawer(group_name: String) -> void:
@@ -745,6 +757,8 @@ func _refresh_drawer() -> void:
 
 	if _active_drawer_group == HudDetails.GROUP_FINANCE:
 		_ledger.text = HudDetails.ledger_text(sim)
+		for i in _policies.get_child_count():
+			(_policies.get_child(i) as CheckButton).set_pressed_no_signal(sim.rules.policies.keys()[i] in sim.policies)
 
 
 ## Opens the pause menu, pausing the game, or closes it and resumes.
@@ -913,6 +927,10 @@ func _draw_inspect_actions() -> void:
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
 				button.disabled = sim.lock_error(gear) != ""
 				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]
+				if not button.disabled and sim.gear_price(id, gear) > 0:
+					button.text += ", %s" % HudDetails.dollars(sim.gear_price(id, gear))
+					button.tooltip_text += ". Automated: AGVs serve it, it starts slower than manual gear and ramps up past it over %d days, and its IT systems cost %s a day" % [sim.rules.automation.ramp_up[-1][0], HudDetails.dollars(sim.rules.automation.it_upkeep_per_block)]
+		_draw_block_rules(id, settings)
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
@@ -923,6 +941,38 @@ func _draw_inspect_actions() -> void:
 			if to != slots:
 				var button := _action_button(_inspect_actions, "%+d bookings" % change, {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}})
 				button.tooltip_text = "Lorries book an hour and are let in no sooner, %d an hour (0: no bookings, lorries come in as they arrive). Early lorries wait in a truck park, else in a booth." % to
+
+
+## Yard block `id`'s rule buttons: the sizes and lines it takes, reefers,
+## and its stack height.
+func _draw_block_rules(id: int, settings: Dictionary) -> void:
+	var set_rule := func(text: String, rule: Dictionary, tip: String) -> void:
+		_action_button(_inspect_actions, text, {"op": "set_area", "id": id, "settings": rule}).tooltip_text = tip
+	for sizes: Array in [[], [1], [2]]:
+		if sizes != settings.sizes:
+			set_rule.call("Take %s" % ("every size" if sizes.is_empty() else "%d ft only" % (sizes[0] * 20)), {"sizes": sizes}, "Boxes of another size go to a block that takes them, or stay aboard their ship when none does.")
+	set_rule.call("Refuse reefers" if settings.reefers else "Take reefers", {"reefers": not settings.reefers}, "Whether reefers may be stacked here.")
+	if settings.stacking == "fill_low":
+		set_rule.call("Stack by departure", {"stacking": "by_departure"}, "Each box goes on a stack where it buries nothing leaving sooner, for the fewest re-handles.")
+	else:
+		set_rule.call("Stack low first", {"stacking": "fill_low"}, "Each box goes on the lowest stack, so stacks stay level.")
+	var high: int = AreaFlow.tiers(sim, id)
+	if high > 1:
+		set_rule.call("Stack to %d" % (high - 1), {"max_tiers": high - 1}, "Lower stacks hold less and need fewer re-handles.")
+	if settings.max_tiers > 0:
+		set_rule.call("Stack as high as the gear", {"max_tiers": 0}, "")
+	for line: String in sim.rules.lines:
+		var taken: Array = settings.lines.duplicate()
+		if line in taken:
+			taken.erase(line)
+		else:
+			taken.append(line)
+		set_rule.call("%s %s" % ["Not only" if line in settings.lines else "Only", sim.contracts.name_of(line)], {"lines": taken}, "A block that names lines takes only their boxes; one that names none takes every line's.")
+	var name := "Rules of block %d" % id
+	_action_button(_inspect_actions, "Save rules as template", {"op": "save_template", "name": name, "id": id}).tooltip_text = "Saves this block's rules as \"%s\", to give other blocks." % name
+	for template: String in sim.templates:
+		if template != name:
+			_action_button(_inspect_actions, "Apply %s" % template, {"op": "apply_template", "name": template, "id": id}).tooltip_text = "Gives this block the boxes it takes and its stacking from the template, keeping its role and gear."
 
 
 ## A Dredge 1 m button for `cells` cells of water, locked until dredging is.
@@ -1046,7 +1096,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
-	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
+	return [sim, sim.areas.version, sim.templates.keys(), sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,

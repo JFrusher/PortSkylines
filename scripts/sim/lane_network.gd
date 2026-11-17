@@ -240,9 +240,18 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 	for cell: Dictionary in areas.shape(id).cells:
 		centre[Vector2i(cell.k, cell.r)] = cell.centre
 	var out := func(k: int) -> Vector2: return curve.right_at(area.from + k + 0.5) * area.side
-	# The road lane beside the buffer's middle sets the way traffic runs.
-	var middle: Vector2i = layout.buffer[layout.buffer.size() / 2]
-	var beside := nearest(centre[middle] - out.call(middle.x), false)
+	# The road lane beside the buffer cell nearest its middle that has one sets
+	# the way traffic runs: a road meeting the area's road at the middle puts
+	# a junction's connection there, not a lane.
+	var cells: Array = layout.buffer.duplicate()
+	var middle: Vector2i = cells[cells.size() / 2]
+	cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return absi(a.x - middle.x) < absi(b.x - middle.x))
+	var beside := [0, 0.0]
+	for cell: Vector2i in cells:
+		beside = nearest(centre[cell] - out.call(cell.x), false)
+		if beside[0] != 0 and pieces[beside[0]].segment != 0:
+			middle = cell
+			break
 	if beside[0] == 0 or pieces[beside[0]].segment == 0:
 		return
 	var flow := 1 if point_along(beside[0], beside[1])[1].dot(curve.direction_at(area.from + middle.x + 0.5)) > 0.0 else -1

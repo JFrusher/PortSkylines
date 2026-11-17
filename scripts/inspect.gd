@@ -234,6 +234,8 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 			var wagons := AreaFlow.siding(sim, id).size() / AreaLayout.BAY
 			lines.append("Siding for %d wagons" % wagons if wagons else "No siding: draw track along its back edge")
 		lines.append(_yard_fill(sim, id))
+		if id in sim.automated_since:
+			lines.append("Automated, served by AGVs: working at %d%% of its gear's pace as it ramps up" % roundi(AreaFlow.pace(sim, id) * 100))
 	if area.type == "quay_apron":
 		lines.append_array(_apron(sim, id))
 	if settings.has("level"):
@@ -242,7 +244,15 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		lines.append("%d lorries queuing" % (waiting.buffer.size() + waiting.road.size()))
 		lines.append("Bookings: %d an hour" % settings.slots_per_hour if settings.slots_per_hour > 0 else "No bookings: lorries come in as they arrive")
 	if settings.has("lines") and not settings.lines.is_empty():
-		lines.append("Favours " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
+		lines.append("Takes only " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
+	if not settings.get("sizes", []).is_empty():
+		lines.append("Takes only " + " and ".join(settings.sizes.map(func(teu: int) -> String: return "%d ft boxes" % (teu * 20))))
+	if settings.has("stacking"):
+		lines.append("Stacks %s; %d re-handles so far" % ["by departure" if settings.stacking == "by_departure" else "low first", sim.area_stacks[id].rehandles if id in sim.area_stacks else 0])
+	if not settings.get("reefers", true):
+		lines.append("Takes no reefers")
+	if settings.get("max_tiers", 0) > 0:
+		lines.append("Stacks no higher than %d" % settings.max_tiers)
 	var idle := sim.areas.idle_reason(id)
 	lines.append(idle if idle else "Working")
 	return lines

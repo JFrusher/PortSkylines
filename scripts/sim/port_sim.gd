@@ -92,6 +92,7 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
+var _agvs_on_road := 0
 var _fetching := {}  # apron slot spot -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
 var _straddles_out := {}  # straddle block id -> its carriers on the road
@@ -154,10 +155,15 @@ const MARINE_BASE_SHORE := 10
 const MARINE_BASE_GAP := 8
 ## The rules each kind of area takes, and what a new one starts with.
 const AREA_SETTINGS := {
-	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": []},
+	# A block takes only boxes of its `sizes` (TEU, [] for any) and `lines`
+	# ([] for any), reefers only if `reefers`, and stacks `max_tiers` high (0:
+	# as high as its gear), placing each by `stacking` (AreaStacks.place_spot).
+	"yard_block": {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"},
 	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 }
+## The yard block rules a template keeps: what a block takes and how it stacks, not its role or gear.
+const TEMPLATE_RULES: Array[String] = ["lines", "sizes", "reefers", "max_tiers", "stacking"]
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
@@ -180,6 +186,10 @@ var boxes := {}
 var exports := 0
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
+## AGVs owned, which serve automated blocks; those not on the road wait beside the quay.
+var agvs := 0
+## The calendar minute each automated yard block was automated: block id -> minute.
+var automated_since := {}
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
 var gave_up := 0
 ## Tractors moved on to where they were heading after being stuck in traffic.
@@ -210,6 +220,10 @@ var on_time_calls := {}
 ## Lorries booked in at gates taking bookings: gate id -> {hour of the
 ## calendar: lorries booked}, for this hour and those ahead.
 var bookings := {}
+## Policies switched on: key of rules.policies -> true.
+var policies := {}
+## Yard block rules saved by name: name -> the rules (TEMPLATE_RULES).
+var templates := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
@@ -423,6 +437,8 @@ func to_dict() -> Dictionary:
 		"vehicles": vehicles.map(func(vehicle: Vehicle) -> Dictionary: return vehicle.to_dict()),
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
+		"agvs": agvs,
+		"automated_since": automated_since.duplicate(),
 		"gave_up": gave_up,
 		"moved_on": moved_on,
 		"turn_times": turn_times.duplicate(),
@@ -440,6 +456,8 @@ func to_dict() -> Dictionary:
 		"objectives_done": objectives_done.duplicate(),
 		"on_time_calls": on_time_calls.duplicate(),
 		"bookings": bookings.duplicate(true),
+		"policies": policies.duplicate(),
+		"templates": templates.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"junctions": junctions.to_dict(),
@@ -509,6 +527,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.boxes = d.boxes.duplicate(true)
 	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
+	sim.agvs = d.agvs
+	sim.automated_since = d.automated_since.duplicate()
 	sim.gave_up = d.gave_up
 	sim.moved_on = d.moved_on
 	sim.turn_times.assign(d.turn_times)
@@ -526,6 +546,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.objectives_done = d.objectives_done.duplicate()
 	sim.on_time_calls = d.on_time_calls.duplicate()
 	sim.bookings = d.bookings.duplicate(true)
+	sim.policies = d.policies.duplicate()
+	sim.templates = d.templates.duplicate(true)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
@@ -574,6 +596,8 @@ func apply(command: Dictionary) -> String:
 			return place_sts(command.apron, command.along, command.kind)
 		"buy_tractors":
 			return buy_tractors(command.count)
+		"buy_agvs":
+			return buy_agvs(command.count)
 		"accept_offer":
 			return accept_offer(command.id, command.apron)
 		"move_service":
@@ -586,6 +610,12 @@ func apply(command: Dictionary) -> String:
 			return cancel_service(command.id)
 		"set_storage":
 			return set_storage(command.free_days, command.fee)
+		"set_policy":
+			return set_policy(command.policy, command.on)
+		"save_template":
+			return save_template(command.name, command.id)
+		"apply_template":
+			return apply_template(command.name, command.id)
 		"set_rail_discount":
 			return set_rail_discount(command.dollars)
 		"set_barge_discount":
@@ -1203,30 +1233,81 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		var locked := lock_error(settings.gear)
 		if locked:
 			return locked
+		if not _afford(gear_price(id, settings.gear)):
+			return "Not enough money"
 	var role: String = settings.get("role", areas.list[id].settings.get("role", ""))
 	var gear: String = settings.get("gear", areas.list[id].settings.get("gear", ""))
 	if gear != "" and rules.yard_gear[gear].empties_only and role != "empty":
 		var name: String = rules.yard_gear[gear].name
 		return "%s only work empty blocks" % (name[0].to_upper() + name.substr(1))
+	if settings.has("sizes") and not (settings.sizes is Array and settings.sizes.all(func(teu: Variant) -> bool: return teu is int and teu in [1, 2])):
+		return "Sizes are 1 (20 ft) and 2 (40 ft) TEU"
+	if settings.has("reefers") and not settings.reefers is bool:
+		return "Reefers are taken or not"
+	if settings.has("max_tiers") and not (settings.max_tiers is int and settings.max_tiers >= 0):
+		return "The stack height is a whole number of tiers, 0 for as high as the gear goes"
+	if settings.has("stacking") and settings.stacking not in ["fill_low", "by_departure"]:
+		return "Stacking is fill_low or by_departure"
 	if settings.has("lines"):
 		if not settings.lines is Array or not settings.lines.all(func(line: Variant) -> bool: return line is String and rules.lines.has(line)):
 			return "Line priority lists known shipping lines"
 	return ""
 
 
-## Sets some of area `id`'s rules: a yard block's role, gear and the lines it
-## favours; a quay apron's lines.
+## Sets some of area `id`'s rules: a yard block's role, gear and the boxes
+## it takes (see AREA_SETTINGS); a quay apron's lines.
 func set_area(id: int, settings: Dictionary) -> String:
 	var err := set_area_error(id, settings)
+	if err == "" and settings.has("gear") and settings.gear != areas.list[id].settings.gear:
+		var price := gear_price(id, settings.gear)
+		if price > 0:
+			ledger.post("equipment", -price, areas.list[id].terminal)
+		if rules.yard_gear[settings.gear].automated:
+			automated_since[id] = clock.calendar_minutes()
+		else:
+			automated_since.erase(id)
 	if err == "":
 		areas.list[id].settings.merge(settings.duplicate(true), true)
 		areas.version += 1
 	return err
 
 
+## Saves yard block `id`'s rules as template `name`, replacing one of that name.
+func save_template(name: String, id: int) -> String:
+	if id not in areas.list or areas.kind_of(areas.list[id]) != "yard_block":
+		return "Templates are saved from a yard block"
+	if name.strip_edges() == "":
+		return "Name the template"
+	var kept := {}
+	for key: String in TEMPLATE_RULES:
+		kept[key] = areas.list[id].settings[key]
+	templates[name] = kept.duplicate(true)
+	return ""
+
+
+## Gives yard block `id` template `name`'s rules.
+func apply_template(name: String, id: int) -> String:
+	if name not in templates:
+		return "No template called %s" % name
+	if id not in areas.list or areas.kind_of(areas.list[id]) != "yard_block":
+		return "Templates are applied to a yard block"
+	return set_area(id, templates[name])
+
+
+## What yard block `id` pays to take `gear`: its machines at the gear's price each.
+func gear_price(id: int, gear: String) -> int:
+	return machines.count_for(gear, areas.list[id].columns / AreaLayout.BAY) * rules.yard_gear[gear].cost_per_machine
+
+
+## What the automated blocks' IT systems cost a day.
+func it_upkeep() -> int:
+	return automated_since.size() * rules.automation.it_upkeep_per_block
+
+
 func remove_area(id: int) -> String:
 	if id not in areas.list:
 		return "No area there"
+	automated_since.erase(id)
 	AreaFlow.remove(self, id)
 	return ""
 
@@ -1712,6 +1793,19 @@ func dredged_cell_metres() -> float:
 	return total
 
 
+func buy_agvs(count: int) -> String:
+	var locked := lock_error("agv")
+	if locked:
+		return locked
+	if count < 1:
+		return "Buy at least one AGV"
+	if not _afford(rules.agv.cost * count):
+		return "Not enough money"
+	ledger.post("equipment", -rules.agv.cost * count)
+	agvs += count
+	return ""
+
+
 func buy_tractors(count: int) -> String:
 	if count < 1:
 		return "Buy at least one tractor"
@@ -1734,6 +1828,49 @@ func set_storage(free_days: int, fee: int) -> String:
 		return "The storage fee runs from $0 to $%d a day" % rules.storage.max_fee
 	storage = {"free_days": free_days, "fee": fee}
 	return ""
+
+
+## Switches policy `policy` (a key of rules.policies) on or off.
+func set_policy(policy: String, on: bool) -> String:
+	if policy not in rules.policies:
+		return "Unknown policy: %s" % policy
+	var locked := lock_error("policies")
+	if locked:
+		return locked
+	if on:
+		policies[policy] = true
+	else:
+		policies.erase(policy)
+	return ""
+
+
+## Sim parameter `key` (one of Content.POLICY_EFFECTS): what the policy now
+## on sets it to, else `default`. Content lets only one policy set each.
+func policy_value(key: String, default: float) -> float:
+	for policy: String in policies:
+		if key in rules.policies[policy].effects:
+			return rules.policies[policy].effects[key]
+	return default
+
+
+## What the policies now on cost a day.
+func policies_cost() -> int:
+	var total := 0
+	for policy: String in policies:
+		total += rules.policies[policy].cost_per_day
+	return total
+
+
+## Whether the gates take lorries in at this hour: always, but for a policy.
+func gates_open() -> bool:
+	var hour := clock.game_hour()
+	return hour >= policy_value("gate_open_from", 0.0) and hour < policy_value("gate_open_to", 24.0)
+
+
+## Whether quay cranes work at this hour: always, but for a policy.
+func quay_works() -> bool:
+	var hour := clock.game_hour()
+	return hour >= policy_value("quay_work_from", 0.0) and hour < policy_value("quay_work_to", 24.0)
 
 
 ## What a crane move of `box` earns from the line: by size, plus a reefer premium.
@@ -1768,14 +1905,15 @@ func tick() -> void:
 			continue
 		_work(ship)
 	_berths_seen = berths_now
+	var open := gates_open()
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
+	if open and _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
 		_until_lorry = rules.lorry_interval_minutes
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
+	if open and _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
-	if _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
+	if open and _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
 	Drive.signals(self)
 	AreaFlow.tick(self)
@@ -1803,7 +1941,8 @@ func upkeep_parts() -> Dictionary:
 		parts[0] += RoadNet.cells_long(roads.curve(segment).length) * rules.road_types[road.type].upkeep_per_cell
 	for segment: int in rails.segments:
 		parts[0] += RoadNet.cells_long(rails.curve(segment).length) * rules.rail.upkeep_per_cell
-	parts[0] += rules.upkeep.tractor * tractors + rules.land.upkeep * land.size()
+	var labour := policy_value("labour_upkeep_factor", 1.0)
+	parts[0] += rules.upkeep.tractor * tractors * labour + rules.agv.upkeep * agvs + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
 		parts[0] += ship_lanes.area(segment).size() * rules.water.lanes[lane.type].upkeep_per_cell
@@ -1818,11 +1957,11 @@ func upkeep_parts() -> Dictionary:
 		var area: Dictionary = areas.list[id]
 		add.call(area.terminal, areas.cells(id).size() * rules.area_types[area.type].upkeep_per_cell)
 		if areas.kind_of(area) == "gate":
-			add.call(area.terminal, rules.gate_levels[area.settings.level].upkeep_per_lane * areas.layout(id).lanes.size())
+			add.call(area.terminal, rules.gate_levels[area.settings.level].upkeep_per_lane * areas.layout(id).lanes.size() * policy_value("gate_upkeep_factor", 1.0))
 	for machine: Dictionary in machines.list.values():
 		add.call(areas.list[machine.area].terminal, rules.yard_gear[machine.gear].upkeep_per_machine)
 	for crane in cranes:
-		add.call(areas.list[crane.apron].terminal, rules.upkeep.sts_crane)
+		add.call(areas.list[crane.apron].terminal, rules.upkeep.sts_crane * labour)
 	return parts
 
 
@@ -1830,7 +1969,7 @@ func upkeep_parts() -> Dictionary:
 ## TEU in yard block `id` and the most it holds, as (held, room). A tier
 ## holds one 40 ft box or two 20 ft boxes, so each stack slot is 2 TEU.
 func block_fill(id: int) -> Vector2i:
-	var room: int = areas.layout(id).stacks.size() * rules.yard_gear[areas.list[id].settings.gear].tiers * 2
+	var room: int = areas.layout(id).stacks.size() * AreaFlow.tiers(self, id) * 2
 	var held := 0
 	if id in area_stacks:
 		for box: int in area_stacks[id].boxes():
@@ -1916,6 +2055,10 @@ func _end_of_day() -> void:
 			ledger.post("upkeep", -roundi(parts[terminal]), terminal)
 			upkeep -= roundi(parts[terminal])
 	ledger.post("upkeep", -upkeep)
+	if policies_cost() != 0:
+		ledger.post("policies", -policies_cost())
+	if it_upkeep() != 0:
+		ledger.post("it_systems", -it_upkeep())
 	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
 	if bill > 0:
 		ledger.post("power", -bill)
@@ -2104,7 +2247,8 @@ func _work(ship: Ship) -> void:
 				ship.berthed = clock.calendar_minutes()
 				_event("A %s is unloading" % ship.kind, areas.cell_at(ship.apron, 0, 0))
 		Ship.State.WORKING:
-			AreaFlow.work(self, ship)
+			if quay_works():
+				AreaFlow.work(self, ship)
 		Ship.State.LEAVING:
 			if not Marine.under_way(self, ship, -1):
 				return
@@ -2250,11 +2394,16 @@ func _tractors_out() -> int:
 	return _tractors_on_road
 
 
+func _agvs_out() -> int:
+	return _agvs_on_road
+
+
 ## Puts `vehicle` in the port's list and indexes.
 func _add_vehicle(vehicle: Vehicle) -> void:
 	vehicles.append(vehicle)
 	_by_id[vehicle.id] = vehicle
-	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle and not vehicle.agv else 0
+	_agvs_on_road += 1 if vehicle.agv else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
 	_count_bound(vehicle, 1)
@@ -2269,7 +2418,8 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	Drive.leave(self, vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
-	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle and not vehicle.agv else 0
+	_agvs_on_road -= 1 if vehicle.agv else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] -= 1
 	_count_bound(vehicle, -1)

@@ -106,7 +106,9 @@
 		"port_dues": "Port dues",
 		"pilotage": "Pilotage",
 		"transfers": "Transfers between terminals",
-		"objectives": "Objective rewards"
+		"objectives": "Objective rewards",
+		"it_systems": "IT systems",
+		"policies": "Policies"
 	},
 	"loans": {
 		"small": {
@@ -148,6 +150,7 @@
 			"productivity": 0.0,
 			"unlocks": {
 				"loans": "loans",
+				"policies": "port policies",
 				"rtg": "RTG cranes for yard blocks",
 				"ocr": "OCR gate portals",
 				"reefers": "reefer boxes and reefer blocks", "empties": "empties coming back, and empty blocks",
@@ -179,7 +182,9 @@
 			"productivity": 30.0,
 			"unlocks": {
 				"neopanamax": "Neopanamax services and berths",
-				"wide_sts": "wide STS cranes that reach across a Neopanamax"
+				"wide_sts": "wide STS cranes that reach across a Neopanamax",
+				"asc": "automated stacking cranes (ASCs) for yard blocks",
+				"agv": "automated guided vehicles (AGVs) for automated blocks"
 			}
 		},
 		"mega": {

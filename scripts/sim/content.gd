@@ -180,8 +180,24 @@ const SCHEMA := {
 	"berths": {"*": {"name": TYPE_STRING, "length": TYPE_INT, "crane_spots": TYPE_INT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
-	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL, "carries": TYPE_BOOL}},
+	# Port-wide policies the player switches on: each costs cost_per_day while
+	# on and sets the sim parameters in effects (keys of POLICY_EFFECTS); no
+	# two policies set the same one.
+	"policies": {"*": {"name": TYPE_STRING, "text": TYPE_STRING, "cost_per_day": TYPE_INT, "effects": {"*": TYPE_FLOAT}}},
+	# An automated gear (ASC) is bought at cost_per_machine when a block takes
+	# it, ramps up after (automation), and is served by AGVs, not tractors.
+	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL, "carries": TYPE_BOOL, "automated": TYPE_BOOL, "cost_per_machine": TYPE_INT}},
+	# AGVs carry boxes between cranes and automated blocks, at the tractor's speed, with no driver.
+	"agv": {"cost": TYPE_INT, "upkeep": TYPE_INT},
+	# A newly automated block's machines work at a pace from ramp_up, [days
+	# since it was automated, pace] points in day order (1 is its gear's own
+	# times), between points in a straight line, the last held. Each automated
+	# block's IT systems cost it_upkeep_per_block a day.
+	"automation": {"ramp_up": TYPE_ARRAY, "it_upkeep_per_block": TYPE_INT},
 }
+
+## Every sim parameter a policy may set (see PortSim.policy_value).
+const POLICY_EFFECTS := ["gate_open_from", "gate_open_to", "gate_upkeep_factor", "quay_work_from", "quay_work_to", "labour_upkeep_factor", "appointment_share", "dual_cycling"]
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
 const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
@@ -262,7 +278,29 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		shares += place.share
 	if not is_equal_approx(shares, 1.0):
 		return {"error": "hinterland.places: shares must add up to 1"}
+	var ramp: Array = rules.automation.ramp_up
+	if ramp.is_empty() or not ramp.all(func(p: Variant) -> bool: return p is Array and p.size() == 2 and p.all(func(v: Variant) -> bool: return (v is float or v is int) and v >= 0) and p[1] > 0):
+		return {"error": "automation.ramp_up: [days, pace] points, pace above zero"}
+	for i in range(1, ramp.size()):
+		if ramp[i][0] <= ramp[i - 1][0]:
+			return {"error": "automation.ramp_up: days must rise"}
+	if policies_error(rules.policies):
+		return {"error": policies_error(rules.policies)}
 	return {"rules": rules}
+
+
+## Why `policies` can't all stand, or "": each sets only parameters the sim
+## reads, and none sets one another does, so switching one changes exactly its own.
+static func policies_error(policies: Dictionary) -> String:
+	var set_by := {}
+	for policy: String in policies:
+		for key: String in policies[policy].effects:
+			if key not in POLICY_EFFECTS:
+				return "policies.%s.effects: the sim reads no \"%s\"" % [policy, key]
+			if key in set_by:
+				return "policies.%s.effects: \"%s\" is already set by %s" % [policy, key, set_by[key]]
+			set_by[key] = policy
+	return ""
 
 
 ## Why `map` isn't a coast on `site`, or "": polygons of at least three

@@ -200,6 +200,7 @@ static func traffic_rows(sim: PortSim) -> Array[Dictionary]:
 			waiting += 1
 	return [
 		row("Active tractors", "%d of %d" % [sim._tractors_out(), sim.tractors]),
+		row("Active AGVs", "%d of %d" % [sim._agvs_out(), sim.agvs]),
 		row("External lorries in port", str(lorries)),
 		row("Vehicles waiting in traffic", str(waiting)),
 		row("Road segments", str(sim.roads.segments.size())),
@@ -263,8 +264,7 @@ static func container_rows(sim: PortSim) -> Array[Dictionary]:
 	for area_id: int in sim.area_stacks:
 		if area_id in sim.areas.list:
 			var stacks: AreaStacks = sim.area_stacks[area_id]
-			var gear: String = sim.areas.list[area_id].settings.gear
-			capacity += stacks.stacks.size() * sim.rules.yard_gear[gear].tiers
+			capacity += stacks.stacks.size() * AreaFlow.tiers(sim, area_id)
 			held += stacks.boxes().size()
 			for b: int in stacks.boxes():
 				var t: int = stacks._teu.get(b, 1)

@@ -30,6 +30,8 @@ var slot := -1
 ## The straddle block a straddle carrier belongs to, or 0 for anything
 ## else: a carrier is a tractor that never counts against the pool.
 var straddle := 0
+## Whether it is an AGV, from the AGV pool, which serves automated blocks.
+var agv := false
 
 
 func _init(vehicle_id: int, vehicle_kind: String, route: Array[Vector3i]) -> void:
@@ -42,7 +44,7 @@ func to_dict() -> Dictionary:
 	return {
 		"id": id, "kind": kind, "path": path.duplicate(),
 		"state": state, "box": box, "loaded": loaded, "target": target, "home": home, "timer": timer,
-		"gate_in": gate_in, "booked": booked, "area": area, "slot": slot, "straddle": straddle,
+		"gate_in": gate_in, "booked": booked, "area": area, "slot": slot, "straddle": straddle, "agv": agv,
 	}
 
 
@@ -58,6 +60,7 @@ static func from_dict(d: Dictionary) -> Vehicle:
 	vehicle.timer = d.timer
 	vehicle.gate_in = d.gate_in
 	vehicle.straddle = d.straddle
+	vehicle.agv = d.agv
 	vehicle.booked = d.booked
 	vehicle.area = d.area
 	vehicle.slot = d.slot
