@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_unlock_gating()
 	_test_ramp_up_matches_the_curve()
 	_test_automation_costs()
+	_test_removing_a_block_in_use()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -117,3 +118,18 @@ func _test_automation_costs() -> void:
 	_expect(sim.it_upkeep(), sim.rules.automation.it_upkeep_per_block, "one block's IT systems cost a day")
 	sim.remove_area(sim.areas.list.keys().max())
 	_expect(sim.it_upkeep(), 0, "and stop once the block is gone")
+
+
+## Bulldozing an ASC block in use sends no lorry to a box that is gone: a
+## lorry on its way to collect one from it is taken off the roads with it.
+func _test_removing_a_block_in_use() -> void:
+	var sim := AreaPort.base(RandomPort.quick())
+	var east := _roads(sim)
+	sim.milestones_passed = 4
+	_expect(sim.apply(_block(sim, east)), "", "an ASC block is built")
+	sim.creative = false
+	sim.ledger.cash = 10000000
+	_run(sim, SimClock.MINUTES_PER_DAY)
+	_expect(sim.remove_area(sim.areas.list.keys().max()), "", "and bulldozed in use")
+	_run(sim, SimClock.MINUTES_PER_DAY)
+	_expect(sim.vehicles.all(func(v: Vehicle) -> bool: return v.box == 0 or v.box in sim.boxes), true, "no vehicle is left after a box that is gone")

@@ -1689,14 +1689,17 @@ static func _fit_machines(sim: PortSim) -> void:
 ## turns back to anchorage, and its cranes come down.
 static func remove(sim: PortSim, id: int) -> void:
 	var lost := 0
+	var stacked := {}
 	if id in sim.area_stacks:
 		for box: int in sim.area_stacks[id].boxes():
+			stacked[box] = true
 			sim._drop_box(box)
 			lost += 1
 		sim.area_stacks.erase(id)
 	for vehicle: Vehicle in sim.vehicles.duplicate():
-		# Bound for the area, fetching an export for a crane on it, or driving out through it.
-		if vehicle.area == id or vehicle.home.x == id or vehicle.target.x == id:
+		# Bound for the area, fetching an export for a crane on it, driving out
+		# through it, or on its way to collect a box that was stacked in it.
+		if vehicle.area == id or vehicle.home.x == id or vehicle.target.x == id or vehicle.box in stacked:
 			if vehicle.loaded:
 				sim._drop_box(vehicle.box)
 				lost += 1
