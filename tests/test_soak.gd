@@ -174,7 +174,8 @@ func _check(sim: PortSim) -> void:
 			bound[vehicle.area] = bound.get(vehicle.area, 0) + 1
 	for area: int in sim._lorries_bound:
 		_expect(sim._lorries_bound[area], bound.get(area, 0), "area %d's bound lorries are counted %s" % [area, at])
-	_expect(sim._tractors_out(), sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor" and not v.straddle).size(), "the tractor count matches the pool's vehicles %s" % at)
+	_expect(sim._tractors_out(), sim.vehicles.filter(func(v: Vehicle) -> bool: return v.kind == "tractor" and not v.straddle and not v.agv).size(), "the tractor count matches the pool's vehicles %s" % at)
+	_expect(sim._agvs_out(), sim.vehicles.filter(func(v: Vehicle) -> bool: return v.agv).size(), "the AGV count matches the AGV pool's vehicles %s" % at)
 	for block: int in sim._straddles_out:
 		_expect(sim._straddles_out[block], sim.vehicles.filter(func(v: Vehicle) -> bool: return v.straddle == block).size(), "block %d's straddle carriers out are counted %s" % [block, at])
 	_expect(sim.exports, sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind in ["export", "tranship"]).size(), "the export count matches the boxes %s" % at)
