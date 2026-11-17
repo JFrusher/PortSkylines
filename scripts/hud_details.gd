@@ -133,6 +133,7 @@ static func port_cards(sim: PortSim) -> Array[Dictionary]:
 		card("TERMINALS", "%d of %d working" % [working, sim.areas.terminals.size()], "warn" if working < sim.areas.terminals.size() else ""),
 		card("MOVES YESTERDAY", str(yesterday)),
 		card("UPKEEP", dollars(sim.daily_upkeep()) + "/day"),
+		card(sim.rules.town.name.to_upper(), "Mood %d" % roundi(sim.town.mood), "danger" if sim.town.mood < sim.rules.town.sour_below else "good" if sim.town.mood > sim.rules.town.warm_above else ""),
 	]
 	for terminal: int in sim.areas.terminals:
 		var k := sim.terminal_kpis(terminal)
@@ -151,6 +152,7 @@ static func port_rows(sim: PortSim) -> Array[Dictionary]:
 		row("    Yard use", percent(k.yard_use)),
 		row("    Upkeep", dollars(k.upkeep_per_day) + " / day"),
 	]
+	rows.append_array(town_rows(sim))
 	var milestones := sim.milestones()
 	if sim.milestones_reached() < milestones.size():
 		rows.append(row("Milestone %d needs" % (sim.milestones_reached() + 1), ""))
@@ -192,15 +194,18 @@ static func traffic_cards(sim: PortSim) -> Array[Dictionary]:
 
 static func traffic_rows(sim: PortSim) -> Array[Dictionary]:
 	var lorries := 0
+	var agvs := 0
 	var waiting := 0
 	for v: Vehicle in sim.vehicles:
 		if v.kind == "lorry":
 			lorries += 1
+		if v.kind == "agv":
+			agvs += 1
 		if Drive.waited(sim, v) > 0.0 and not sim.traffic.arrived(v.id):
 			waiting += 1
 	return [
 		row("Active tractors", "%d of %d" % [sim._tractors_out(), sim.tractors]),
-		row("Active AGVs", "%d of %d" % [sim._agvs_out(), sim.agvs]),
+		row("Active AGVs", str(agvs)),
 		row("External lorries in port", str(lorries)),
 		row("Vehicles waiting in traffic", str(waiting)),
 		row("Road segments", str(sim.roads.segments.size())),
@@ -432,3 +437,15 @@ static func ledger_text(sim: PortSim) -> String:
 				parts.append("%s %s" % [ledger.categories[category], signed(day.lines[category])])
 		lines.append("    Day %d  net %s   %s" % [day.day, signed(day.closed - day.opened), "   ".join(parts)])
 	return "\n".join(lines)
+
+
+## The town next door: its mood, what lifts and lowers it, and its fixes.
+static func town_rows(sim: PortSim) -> Array[Dictionary]:
+	var parts := Town.parts(sim)
+	return [
+		row("%s's mood" % sim.rules.town.name, "%d, heading for %d" % [roundi(sim.town.mood), roundi(parts.target)]),
+		row("    Port jobs", "%d (+%.0f)" % [Town.jobs(sim), parts.jobs]),
+		row("    Community fund", "%s / day (+%.0f)" % [dollars(sim.town.fund), parts.fund]),
+		row("    Noise", "-%.0f%s" % [parts.noise, "" if sim.town.bypass else ", highway lorries included"]),
+		row("    Floodlight", "-%.0f" % parts.light),
+	]

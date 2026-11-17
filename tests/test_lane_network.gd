@@ -62,7 +62,7 @@ func _test_a_straight_road() -> void:
 	_joined(network, "a straight road")
 	var east := _piece_at(network, Vector2(120, 250.5))
 	var west := _piece_at(network, Vector2(120, 249.5))
-	_expect(network.route(east, west), [east, network.pieces[east].next[0], west], "from the eastbound lane, the way west turns back at the east end")
+	_expect(network.route(east, west, "tractor"), [east, network.pieces[east].next[0], west], "from the eastbound lane, the way west turns back at the east end")
 
 
 ## A 2+2 road east-west with a 2+2 stem south from its middle: coming in from
@@ -78,9 +78,9 @@ func _test_a_t_junction() -> void:
 	var south := _piece_at(network, Vector2(128.5, 280))  # the stem's outer lane, where a right turn arrives
 	_expect([left != 0, right != 0, south != 0], [true, true, true], "the lanes are found")
 	var kinds := func(route: Array) -> Array: return route.filter(func(piece: int) -> bool: return network.pieces[piece].node != 0).map(func(piece: int) -> String: return "turn" if network.pieces[piece].node > 0 else "change")
-	var turning := network.route(right, south)
+	var turning := network.route(right, south, "tractor")
 	_expect(kinds.call(turning), ["turn"], "the right lane turns south through one connection")
-	var changing := network.route(left, south)
+	var changing := network.route(left, south, "tractor")
 	_expect(kinds.call(changing), ["change", "turn"], "the left lane changes lane, then turns")
 	_expect(network.length(changing) < network.length(turning) + 1.0, true, "no further for it (%.1f cells against %.1f)" % [network.length(changing), network.length(turning)])
 
@@ -116,4 +116,4 @@ func _test_lanes_fan_out_where_a_road_widens() -> void:
 	_expect(lanes.filter(func(id: int) -> bool: return id not in fed), [], "and every lane is fed")
 	var narrow := _piece_at(network, Vector2(120, 250.5))
 	for wide: Vector2 in [Vector2(160, 250.5), Vector2(160, 251.5)]:
-		_expect(network.route(narrow, _piece_at(network, wide)).is_empty(), false, "the single eastbound lane reaches the wide road's lane at %s" % wide)
+		_expect(network.route(narrow, _piece_at(network, wide), "tractor").is_empty(), false, "the single eastbound lane reaches the wide road's lane at %s" % wide)

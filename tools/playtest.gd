@@ -146,11 +146,11 @@ func _area(command: Dictionary) -> int:
 
 ## Route length in cells, from Drive's current lane pieces.
 func _route_length(from: Vector3i, to: Vector3i) -> float:
-	Drive.reaches(_sim, from, to, true)
-	var start: int = _sim.network.nearest(_sim.areas.centre(from), true)[0]
+	Drive.reaches(_sim, from, to, "lorry")
+	var start: int = _sim.network.nearest(_sim.areas.centre(from), "lorry")[0]
 	if start == 0:
 		return 0.0
 	var length := 0.0
-	for piece in Drive._best_route(_sim, start, to, true):
+	for piece in Drive._best_route(_sim, start, to, "lorry"):
 		length += _sim.network.pieces[piece].length
 	return length

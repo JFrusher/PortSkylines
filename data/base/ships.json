@@ -12,7 +12,8 @@
 			"pilot": false,
 			"tugs": 0,
 			"port_dues": 4000,
-			"inland": false
+			"inland": false,
+			"services": {"bunkers": {"chance": 0.3, "fee": 4000, "minutes": 60.0}, "provisions": {"chance": 0.5, "fee": 1500, "minutes": 30.0}, "waste": {"chance": 0.4, "fee": 1000, "minutes": 30.0}}
 		},
 		"panamax": {
 			"length": 300.0,
@@ -26,7 +27,8 @@
 			"pilot": true,
 			"tugs": 2,
 			"port_dues": 12000,
-			"inland": false
+			"inland": false,
+			"services": {"bunkers": {"chance": 0.45, "fee": 9000, "minutes": 75.0}, "provisions": {"chance": 0.5, "fee": 2500, "minutes": 30.0}, "waste": {"chance": 0.4, "fee": 2000, "minutes": 30.0}}
 		},
 		"neopanamax": {
 			"length": 366.0,
@@ -40,7 +42,8 @@
 			"pilot": true,
 			"tugs": 2,
 			"port_dues": 20000,
-			"inland": false
+			"inland": false,
+			"services": {"bunkers": {"chance": 0.6, "fee": 14000, "minutes": 90.0}, "provisions": {"chance": 0.5, "fee": 3500, "minutes": 30.0}, "waste": {"chance": 0.4, "fee": 3000, "minutes": 30.0}}
 		},
 		"ulcv": {
 			"length": 400.0,
@@ -54,7 +57,8 @@
 			"pilot": true,
 			"tugs": 3,
 			"port_dues": 30000,
-			"inland": false
+			"inland": false,
+			"services": {"bunkers": {"chance": 0.7, "fee": 20000, "minutes": 105.0}, "provisions": {"chance": 0.5, "fee": 5000, "minutes": 30.0}, "waste": {"chance": 0.4, "fee": 4000, "minutes": 30.0}}
 		},
 		"barge": {
 			"length": 110.0,
@@ -68,7 +72,8 @@
 			"pilot": false,
 			"tugs": 0,
 			"port_dues": 500,
-			"inland": true
+			"inland": true,
+			"services": {"bunkers": {"chance": 0.2, "fee": 1500, "minutes": 30.0}, "provisions": {"chance": 0.2, "fee": 500, "minutes": 15.0}, "waste": {"chance": 0.2, "fee": 500, "minutes": 15.0}}
 		}
 	},
 	"water": {
@@ -121,6 +126,9 @@
 			"upkeep_per_tug": 400,
 			"speed": 300.0
 		},
+		"fireboats": {"cost": 150000, "upkeep": 400, "speed": 400.0},
+		"tides": {"range": 3.0, "period_hours": 12.42},
+		"services": {"jetty_cost": 60000, "unserved_reputation": 1.0, "boats": {"bunkers": {"name": "Bunker barge", "cost": 120000, "upkeep": 300, "speed": 250.0}, "provisions": {"name": "Supply boat", "cost": 40000, "upkeep": 120, "speed": 450.0}, "waste": {"name": "Waste boat", "cost": 50000, "upkeep": 150, "speed": 350.0}}},
 		"slot_margin_minutes": 2.0,
 		"breakwater": {
 			"cost_per_cell": 400,

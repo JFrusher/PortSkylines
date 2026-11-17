@@ -10,7 +10,7 @@ var reporter := CrashReporter.new()
 
 ## Most ticks one frame may run per speed step; a slower frame drops the rest.
 const MAX_TICKS_PER_FRAME := 8
-## shortcut: one save slot, add named slots and autosave in M13.
+## shortcut: one save slot, add named slots and autosave in M14.
 const SAVE_PATH := "user://save.bin"
 
 ## Play time not yet turned into ticks, in seconds.
@@ -39,6 +39,8 @@ var _wall_from := Grid.NONE
 ## The grid point, in cells, the mouse pressed at to start that drag.
 ## Where an area drag attached to a road edge ({"segment", "side", "index"}), or {}.
 var _area_from := {}
+## The sun and sky through the game's day.
+var sky := DayNight.new()
 ## The box the camera follows, or 0.
 var _following := 0
 var _reported := false
@@ -46,8 +48,8 @@ var _reported := false
 
 func _ready() -> void:
 	OS.add_logger(reporter)
-	add_child(_environment())
-	add_child(_sun())
+	sky.sim = sim
+	add_child(sky)
 	view.sim = sim
 	add_child(view)
 	rig.bounds = Rect2(Vector2.ZERO, WorldView.site_size(sim))
@@ -61,7 +63,9 @@ func _ready() -> void:
 	hud.save_pressed.connect(_save)
 	hud.load_pressed.connect(_load)
 	hud.command_issued.connect(func(command: Dictionary) -> void: _report(sim.apply(command)))
+	hud.to_screen = func(cell: Vector2i) -> Vector2: return rig.camera.unproject_position(_over(cell))
 	hud.new_game_pressed.connect(_new_game)
+	hud.scenario_pressed.connect(func(key: String, fresh: bool) -> void: _use(Scenario.start(key, randi(), fresh)))
 	# Loaded, not preloaded: bench/ is left out of exported builds, which have no such button.
 	hud.mega_port_pressed.connect(func() -> void: _use(load("res://bench/endgame_port.gd").debug_port()))
 	hud.showcase_port_pressed.connect(func() -> void: _use(load("res://bench/showcase_port.gd").debug_port()))
@@ -111,6 +115,7 @@ func _use(new_sim: PortSim) -> void:
 	view.queue_free()
 	view = WorldView.new()
 	view.sim = sim
+	sky.sim = sim
 	add_child(view)
 	hud.sim = sim
 
@@ -129,6 +134,8 @@ func _process(dt: float) -> void:
 	_accumulated = minf(left, SimClock.TICK_SECONDS)
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
 	view.info_view = hud.info_view()
+	view.day_night = hud.day_night
+	sky.cycle = hud.day_night
 	_follow(dt)
 	var cell := _hovered_grid_cell()
 	# Before a road drag, the hover shows where the drag would start, a road's
@@ -707,24 +714,4 @@ func _report_crash() -> void:
 	OS.shell_show_in_file_manager(ProjectSettings.globalize_path(dir))
 
 
-func _sun() -> DirectionalLight3D:
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-50, -30, 0)
-	sun.shadow_enabled = true
-	return sun
 
-
-func _environment() -> WorldEnvironment:
-	var sky := Sky.new()
-	var material := ProceduralSkyMaterial.new()
-	# Below the horizon is land, so the view past the map's edge reads as countryside.
-	material.ground_horizon_color = Color(0.42, 0.5, 0.36)
-	material.ground_bottom_color = Color(0.36, 0.42, 0.3)
-	sky.sky_material = material
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	var world := WorldEnvironment.new()
-	world.environment = env
-	return world
