@@ -1,6 +1,14 @@
 {
 	"sts_cranes": {
-		"barge_crane": {"name": "Barge crane", "cost": 6000.0, "rate": 18.0, "outreach": 6.0, "lead_days": 0.0, "width": 20.0, "max_fetchers": 2.0},
+		"barge_crane": {
+			"name": "Barge crane",
+			"cost": 6000.0,
+			"rate": 18.0,
+			"outreach": 6.0,
+			"lead_days": 0.0,
+			"width": 20.0,
+			"max_fetchers": 2.0
+		},
 		"sts": {
 			"name": "STS crane",
 			"cost": 15000.0,
@@ -44,7 +52,9 @@
 			"bays_per_machine": 4.0,
 			"tiers": 4.0,
 			"empties_only": false,
-			"carries": false
+			"carries": false,
+			"automated": false,
+			"cost_per_machine": 0
 		},
 		"rtg": {
 			"name": "RTGs",
@@ -55,7 +65,9 @@
 			"bays_per_machine": 10.0,
 			"tiers": 5.0,
 			"empties_only": false,
-			"carries": false
+			"carries": false,
+			"automated": false,
+			"cost_per_machine": 0
 		},
 		"rmg": {
 			"name": "RMGs",
@@ -66,7 +78,9 @@
 			"bays_per_machine": 8.0,
 			"tiers": 5.0,
 			"empties_only": false,
-			"carries": false
+			"carries": false,
+			"automated": false,
+			"cost_per_machine": 0
 		},
 		"empty_handler": {
 			"name": "empty handlers",
@@ -77,7 +91,9 @@
 			"bays_per_machine": 4.0,
 			"tiers": 7.0,
 			"empties_only": true,
-			"carries": false
+			"carries": false,
+			"automated": false,
+			"cost_per_machine": 0
 		},
 		"straddle": {
 			"name": "straddle carriers",
@@ -88,7 +104,51 @@
 			"bays_per_machine": 2.0,
 			"tiers": 3.0,
 			"empties_only": false,
-			"carries": true
+			"carries": true,
+			"automated": false,
+			"cost_per_machine": 0
+		},
+		"asc": {
+			"name": "ASCs",
+			"upkeep_per_machine": 450,
+			"speed": 3.0,
+			"lift_seconds": 25.0,
+			"set_down_seconds": 20.0,
+			"bays_per_machine": 8,
+			"tiers": 5,
+			"empties_only": false,
+			"carries": false,
+			"automated": true,
+			"cost_per_machine": 60000
 		}
+	},
+	"agv": {
+		"cost": 12000,
+		"upkeep": 120
+	},
+	"automation": {
+		"ramp_up": [
+			[
+				0,
+				0.6
+			],
+			[
+				15,
+				0.75
+			],
+			[
+				30,
+				0.9
+			],
+			[
+				60,
+				1.05
+			],
+			[
+				90,
+				1.15
+			]
+		],
+		"it_upkeep_per_block": 400
 	}
 }

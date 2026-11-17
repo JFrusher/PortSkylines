@@ -276,6 +276,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		var block := _block_for(sim, "export", here, id)
 		if block:
 			sim._set_area(tractor, block)
+	# shortcut: the vehicle was chosen by the import block it came for, so an AGV may carry a box rerouted here (rail, reefer, export, transhipment) to a manual block; route by box before choosing the vehicle if players want AGVs kept to automated blocks.
 	# The block the tractor came for, or fell back on, may not take this box
 	# by its rules: then an import block that does, or it stays aboard.
 	if not accepts(sim, tractor.area, id):
@@ -340,7 +341,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 	# Dual cycling: with imports still aboard, the tractor stays beneath the
 	# crane for one, bound for an import block, as a tractor sent for it would be.
 	var block := _block_for(sim, "import", sim.areas.list[ship.apron].terminal) if ship.boxes > 0 and tractor.straddle == 0 else 0
-	if block == 0 or carries(sim, block):
+	if block == 0 or carries(sim, block) or automated(sim, block) != tractor.agv:
 		_gone(sim, tractor)
 		return
 	sim._fetching[tractor.home].erase(tractor)
@@ -364,6 +365,7 @@ static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship
 		return
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector3i])
 	tractor.straddle = block if carries(sim, block) else 0
+	tractor.agv = automated(sim, block)
 	if not Drive.place(sim, tractor):
 		return
 	sim._next_vehicle += 1
@@ -380,10 +382,34 @@ static func carries(sim: PortSim, block: int) -> bool:
 	return sim.rules.yard_gear[sim.areas.list[block].settings.gear].carries
 
 
+## Whether yard block `block` is automated (ASCs), served by AGVs.
+static func automated(sim: PortSim, block: int) -> bool:
+	return sim.rules.yard_gear[sim.areas.list[block].settings.gear].automated
+
+
+## How fast yard block `block`'s machines work, against their gear's own
+## times: 1, or for an automated block its ramp-up pace for the days since
+## it was automated (data automation.ramp_up).
+static func pace(sim: PortSim, block: int) -> float:
+	if block not in sim.automated_since:
+		return 1.0
+	return ramp_pace(sim.rules.automation.ramp_up, (sim.clock.calendar_minutes() - sim.automated_since[block]) / SimClock.MINUTES_PER_DAY)
+
+
+## The pace on ramp-up curve `ramp` ([days, pace] points) `days` in.
+static func ramp_pace(ramp: Array, days: float) -> float:
+	if days <= ramp[0][0]:
+		return ramp[0][1]
+	for i in range(1, ramp.size()):
+		if days <= ramp[i][0]:
+			return lerpf(ramp[i - 1][1], ramp[i][1], (days - ramp[i - 1][0]) / (ramp[i][0] - ramp[i - 1][0]))
+	return ramp[-1][1]
+
+
 ## Whether anything could go for a box in `terminal`: a pool tractor, or a
 ## straddle block's own carrier. Checked first, as finding the box is dearer.
 static func _may_send(sim: PortSim, terminal: int) -> bool:
-	if sim._tractors_out() < sim.tractors:
+	if sim._tractors_out() < sim.tractors or sim._agvs_out() < sim.agvs:
 		return true
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
@@ -393,9 +419,12 @@ static func _may_send(sim: PortSim, terminal: int) -> bool:
 
 
 ## Whether a vehicle can go for a box at `block`: one of its own straddle
-## carriers (one a machine) if its gear carries, else a pool tractor.
+## carriers (one a machine) if its gear carries, an AGV if it is automated,
+## else a pool tractor.
 # shortcut: a straddle block's machines also stack for lorries while its carriers drive to the quay; split them if lorry-heavy straddle blocks look too quick.
 static func _carrier_free(sim: PortSim, block: int) -> bool:
+	if automated(sim, block):
+		return sim._agvs_out() < sim.agvs
 	if not carries(sim, block):
 		return sim._tractors_out() < sim.tractors
 	var carriers := sim.machines.count_for(sim.areas.list[block].settings.gear, _bays(sim, block))
@@ -506,14 +535,18 @@ static func _bays(sim: PortSim, area: int) -> int:
 static func _send_tractor(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> bool:
 	if not _may_send(sim, sim.areas.list[ship.apron].terminal):
 		return false
-	var block := _block_for(sim, "import", sim.areas.list[ship.apron].terminal)
-	if block == 0:
+	var blocks := _blocks_with_room(sim, "import", sim.areas.list[ship.apron].terminal)
+	if blocks.is_empty():
 		sim._event("A ship is waiting: no import yard block with room and a road in its terminal")
 		return false
-	if not _carrier_free(sim, block):
+	# The first block something can go for: a manual block takes a tractor, an automated one an AGV.
+	var free := blocks.filter(func(b: int) -> bool: return _carrier_free(sim, b))
+	if free.is_empty():
 		return false
+	var block: int = free[0]
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [_crane_slot(sim, crane, ship)] as Array[Vector3i])
 	tractor.straddle = block if carries(sim, block) else 0
+	tractor.agv = automated(sim, block)
 	if not Drive.place(sim, tractor):
 		return false
 	sim._next_vehicle += 1
@@ -1254,14 +1287,14 @@ static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
 			var position := _place_spot(sim, vehicle.area, vehicle.box)
 			if position < 0:
 				return
-			sim.machines.give(id, _slot_bay(sim, vehicle.area, vehicle.slot), layout.stacks[position].bay)
+			sim.machines.give(id, _slot_bay(sim, vehicle.area, vehicle.slot), layout.stacks[position].bay, 0, pace(sim, vehicle.area))
 			sim.machine_jobs[id] = {"vehicle": vehicle.id, "position": position}
 		else:
 			var bay: int = layout.stacks[stacks.position_of(vehicle.box)].bay
 			var rehandles := stacks.take(vehicle.box)
 			if rehandles < 0:
 				return
-			sim.machines.give(id, bay, _slot_bay(sim, vehicle.area, vehicle.slot), rehandles)
+			sim.machines.give(id, bay, _slot_bay(sim, vehicle.area, vehicle.slot), rehandles, pace(sim, vehicle.area))
 			sim.machine_jobs[id] = {"vehicle": vehicle.id, "position": -1}
 		vehicle.state = "handled"
 		return

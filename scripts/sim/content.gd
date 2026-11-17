@@ -184,7 +184,16 @@ const SCHEMA := {
 	# on and sets the sim parameters in effects (keys of POLICY_EFFECTS); no
 	# two policies set the same one.
 	"policies": {"*": {"name": TYPE_STRING, "text": TYPE_STRING, "cost_per_day": TYPE_INT, "effects": {"*": TYPE_FLOAT}}},
-	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL, "carries": TYPE_BOOL}},
+	# An automated gear (ASC) is bought at cost_per_machine when a block takes
+	# it, ramps up after (automation), and is served by AGVs, not tractors.
+	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL, "carries": TYPE_BOOL, "automated": TYPE_BOOL, "cost_per_machine": TYPE_INT}},
+	# AGVs carry boxes between cranes and automated blocks, at the tractor's speed, with no driver.
+	"agv": {"cost": TYPE_INT, "upkeep": TYPE_INT},
+	# A newly automated block's machines work at a pace from ramp_up, [days
+	# since it was automated, pace] points in day order (1 is its gear's own
+	# times), between points in a straight line, the last held. Each automated
+	# block's IT systems cost it_upkeep_per_block a day.
+	"automation": {"ramp_up": TYPE_ARRAY, "it_upkeep_per_block": TYPE_INT},
 }
 
 ## Every sim parameter a policy may set (see PortSim.policy_value).
@@ -269,6 +278,12 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		shares += place.share
 	if not is_equal_approx(shares, 1.0):
 		return {"error": "hinterland.places: shares must add up to 1"}
+	var ramp: Array = rules.automation.ramp_up
+	if ramp.is_empty() or not ramp.all(func(p: Variant) -> bool: return p is Array and p.size() == 2 and p.all(func(v: Variant) -> bool: return (v is float or v is int) and v >= 0) and p[1] > 0):
+		return {"error": "automation.ramp_up: [days, pace] points, pace above zero"}
+	for i in range(1, ramp.size()):
+		if ramp[i][0] <= ramp[i - 1][0]:
+			return {"error": "automation.ramp_up: days must rise"}
 	if policies_error(rules.policies):
 		return {"error": policies_error(rules.policies)}
 	return {"rules": rules}

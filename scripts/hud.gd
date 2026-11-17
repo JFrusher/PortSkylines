@@ -399,6 +399,7 @@ func _ready() -> void:
 			tool = CRANE
 			crane_kind = key))).tooltip_text = "A ship-to-shore crane on a quay apron. %d moves an hour, reaches %d rows across a ship.\n%s, upkeep $%d a day." % [crane.rate, crane.outreach, HudDetails.dollars(crane.cost), sim.rules.upkeep.sts_crane]
 	_item(_action_button(rows.Cranes, "2 tractors\n$%d" % (sim.rules.tractor.cost * 2), {"op": "buy_tractors", "count": 2})).tooltip_text = "Terminal tractors carry boxes between cranes and yard blocks at %d km/h.\n$%d each, upkeep $%d a day each." % [roundi(sim.rules.tractor.speed * 0.06), sim.rules.tractor.cost, sim.rules.upkeep.tractor]
+	_gate("agv", _item(_action_button(rows.Cranes, "2 AGVs\n$%d" % (sim.rules.agv.cost * 2), {"op": "buy_agvs", "count": 2}))).tooltip_text = "Automated guided vehicles carry boxes between cranes and automated (ASC) blocks, which tractors don't serve.\n$%d each, upkeep $%d a day each, no driver." % [sim.rules.agv.cost, sim.rules.agv.upkeep]
 	for key: String in sim.rules.water.lanes:
 		var lane: Dictionary = sim.rules.water.lanes[key]
 		_item(_button(rows.Water, "%s\n%d m wide, $%d a cell" % [lane.name, Grid.metres(lane.half_width * 2 + 1), lane.cost_per_cell], tools, false, func() -> void:
@@ -926,6 +927,9 @@ func _draw_inspect_actions() -> void:
 				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
 				button.disabled = sim.lock_error(gear) != ""
 				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]
+				if not button.disabled and sim.gear_price(id, gear) > 0:
+					button.text += ", %s" % HudDetails.dollars(sim.gear_price(id, gear))
+					button.tooltip_text += ". Automated: AGVs serve it, it starts slower than manual gear and ramps up past it over %d days, and its IT systems cost %s a day" % [sim.rules.automation.ramp_up[-1][0], HudDetails.dollars(sim.rules.automation.it_upkeep_per_block)]
 		_draw_block_rules(id, settings)
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
 		for level: String in sim.rules.gate_levels:

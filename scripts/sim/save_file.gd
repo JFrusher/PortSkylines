@@ -16,7 +16,7 @@ const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "state": TYPE_STRING,
 	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR3I,
 	"home": TYPE_VECTOR3I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
-	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT,
+	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT, "agv": TYPE_BOOL,
 }
 const MAGIC := "PSKY"
 
@@ -121,12 +121,17 @@ static func _migrate(data: Dictionary) -> Dictionary:
 	return data
 
 
-## v49 adds M12's policies, none on, rule templates, none saved, and each yard block's rules for the
+## v49 adds M12's policies, none on, rule templates, none saved, AGVs and
+## automated blocks, none, and each yard block's rules for the
 ## boxes it takes: any size, reefers too, as high as its gear stacks, the
 ## lowest stack first; and counts each block's re-handles, from none.
 static func _migrate_v49(data: Dictionary) -> Dictionary:
 	data.sim.policies = {}
 	data.sim.templates = {}
+	data.sim.agvs = 0
+	data.sim.automated_since = {}
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.agv = false
 	for area: Dictionary in data.sim.areas.list.values():
 		if Content.base().area_types[area.type].kind == "yard_block":
 			area.settings.merge({"sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"})
@@ -439,7 +444,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY, "policies": TYPE_DICTIONARY, "templates": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY, "policies": TYPE_DICTIONARY, "templates": TYPE_DICTIONARY, "agvs": TYPE_INT, "automated_since": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,

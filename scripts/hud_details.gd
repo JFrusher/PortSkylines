@@ -200,6 +200,7 @@ static func traffic_rows(sim: PortSim) -> Array[Dictionary]:
 			waiting += 1
 	return [
 		row("Active tractors", "%d of %d" % [sim._tractors_out(), sim.tractors]),
+		row("Active AGVs", "%d of %d" % [sim._agvs_out(), sim.agvs]),
 		row("External lorries in port", str(lorries)),
 		row("Vehicles waiting in traffic", str(waiting)),
 		row("Road segments", str(sim.roads.segments.size())),

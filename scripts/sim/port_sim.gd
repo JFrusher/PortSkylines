@@ -92,6 +92,7 @@ var cranes: Array[Crane] = []
 var vehicles: Array[Vehicle] = []
 var _by_id := {}  # vehicle id -> Vehicle
 var _tractors_on_road := 0
+var _agvs_on_road := 0
 var _fetching := {}  # apron slot spot -> tractors fetching exports to it, oldest first
 var _lorries_bound := {}  # area id -> lorries whose area it is
 var _straddles_out := {}  # straddle block id -> its carriers on the road
@@ -185,6 +186,10 @@ var boxes := {}
 var exports := 0
 ## Terminal tractors owned. Those not on the road are parked beside the quay.
 var tractors := 0
+## AGVs owned, which serve automated blocks; those not on the road wait beside the quay.
+var agvs := 0
+## The calendar minute each automated yard block was automated: block id -> minute.
+var automated_since := {}
 ## Lorries that gave up on a traffic jam and left; see AreaFlow.
 var gave_up := 0
 ## Tractors moved on to where they were heading after being stuck in traffic.
@@ -432,6 +437,8 @@ func to_dict() -> Dictionary:
 		"vehicles": vehicles.map(func(vehicle: Vehicle) -> Dictionary: return vehicle.to_dict()),
 		"boxes": boxes.duplicate(true),
 		"tractors": tractors,
+		"agvs": agvs,
+		"automated_since": automated_since.duplicate(),
 		"gave_up": gave_up,
 		"moved_on": moved_on,
 		"turn_times": turn_times.duplicate(),
@@ -520,6 +527,8 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.boxes = d.boxes.duplicate(true)
 	sim.exports = sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind == "export").size()
 	sim.tractors = d.tractors
+	sim.agvs = d.agvs
+	sim.automated_since = d.automated_since.duplicate()
 	sim.gave_up = d.gave_up
 	sim.moved_on = d.moved_on
 	sim.turn_times.assign(d.turn_times)
@@ -587,6 +596,8 @@ func apply(command: Dictionary) -> String:
 			return place_sts(command.apron, command.along, command.kind)
 		"buy_tractors":
 			return buy_tractors(command.count)
+		"buy_agvs":
+			return buy_agvs(command.count)
 		"accept_offer":
 			return accept_offer(command.id, command.apron)
 		"move_service":
@@ -1222,6 +1233,8 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 		var locked := lock_error(settings.gear)
 		if locked:
 			return locked
+		if not _afford(gear_price(id, settings.gear)):
+			return "Not enough money"
 	var role: String = settings.get("role", areas.list[id].settings.get("role", ""))
 	var gear: String = settings.get("gear", areas.list[id].settings.get("gear", ""))
 	if gear != "" and rules.yard_gear[gear].empties_only and role != "empty":
@@ -1245,6 +1258,14 @@ func set_area_error(id: int, settings: Dictionary) -> String:
 ## it takes (see AREA_SETTINGS); a quay apron's lines.
 func set_area(id: int, settings: Dictionary) -> String:
 	var err := set_area_error(id, settings)
+	if err == "" and settings.has("gear") and settings.gear != areas.list[id].settings.gear:
+		var price := gear_price(id, settings.gear)
+		if price > 0:
+			ledger.post("equipment", -price, areas.list[id].terminal)
+		if rules.yard_gear[settings.gear].automated:
+			automated_since[id] = clock.calendar_minutes()
+		else:
+			automated_since.erase(id)
 	if err == "":
 		areas.list[id].settings.merge(settings.duplicate(true), true)
 		areas.version += 1
@@ -1273,9 +1294,20 @@ func apply_template(name: String, id: int) -> String:
 	return set_area(id, templates[name])
 
 
+## What yard block `id` pays to take `gear`: its machines at the gear's price each.
+func gear_price(id: int, gear: String) -> int:
+	return machines.count_for(gear, areas.list[id].columns / AreaLayout.BAY) * rules.yard_gear[gear].cost_per_machine
+
+
+## What the automated blocks' IT systems cost a day.
+func it_upkeep() -> int:
+	return automated_since.size() * rules.automation.it_upkeep_per_block
+
+
 func remove_area(id: int) -> String:
 	if id not in areas.list:
 		return "No area there"
+	automated_since.erase(id)
 	AreaFlow.remove(self, id)
 	return ""
 
@@ -1761,6 +1793,19 @@ func dredged_cell_metres() -> float:
 	return total
 
 
+func buy_agvs(count: int) -> String:
+	var locked := lock_error("agv")
+	if locked:
+		return locked
+	if count < 1:
+		return "Buy at least one AGV"
+	if not _afford(rules.agv.cost * count):
+		return "Not enough money"
+	ledger.post("equipment", -rules.agv.cost * count)
+	agvs += count
+	return ""
+
+
 func buy_tractors(count: int) -> String:
 	if count < 1:
 		return "Buy at least one tractor"
@@ -1897,7 +1942,7 @@ func upkeep_parts() -> Dictionary:
 	for segment: int in rails.segments:
 		parts[0] += RoadNet.cells_long(rails.curve(segment).length) * rules.rail.upkeep_per_cell
 	var labour := policy_value("labour_upkeep_factor", 1.0)
-	parts[0] += rules.upkeep.tractor * tractors * labour + rules.land.upkeep * land.size()
+	parts[0] += rules.upkeep.tractor * tractors * labour + rules.agv.upkeep * agvs + rules.land.upkeep * land.size()
 	for segment: int in ship_lanes.segments:
 		var lane: Dictionary = ship_lanes.segments[segment]
 		parts[0] += ship_lanes.area(segment).size() * rules.water.lanes[lane.type].upkeep_per_cell
@@ -2012,6 +2057,8 @@ func _end_of_day() -> void:
 	ledger.post("upkeep", -upkeep)
 	if policies_cost() != 0:
 		ledger.post("policies", -policies_cost())
+	if it_upkeep() != 0:
+		ledger.post("it_systems", -it_upkeep())
 	var bill := roundi(power.kwh * rules.reefers.price_per_kwh + power.peak_kw * rules.reefers.peak_charge_per_kw)
 	if bill > 0:
 		ledger.post("power", -bill)
@@ -2347,11 +2394,16 @@ func _tractors_out() -> int:
 	return _tractors_on_road
 
 
+func _agvs_out() -> int:
+	return _agvs_on_road
+
+
 ## Puts `vehicle` in the port's list and indexes.
 func _add_vehicle(vehicle: Vehicle) -> void:
 	vehicles.append(vehicle)
 	_by_id[vehicle.id] = vehicle
-	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	_tractors_on_road += 1 if vehicle.kind == "tractor" and not vehicle.straddle and not vehicle.agv else 0
+	_agvs_on_road += 1 if vehicle.agv else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] = _straddles_out.get(vehicle.straddle, 0) + 1
 	_count_bound(vehicle, 1)
@@ -2366,7 +2418,8 @@ func _drop_vehicle(vehicle: Vehicle) -> void:
 	Drive.leave(self, vehicle)
 	vehicles.erase(vehicle)
 	_by_id.erase(vehicle.id)
-	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle else 0
+	_tractors_on_road -= 1 if vehicle.kind == "tractor" and not vehicle.straddle and not vehicle.agv else 0
+	_agvs_on_road -= 1 if vehicle.agv else 0
 	if vehicle.straddle:
 		_straddles_out[vehicle.straddle] -= 1
 	_count_bound(vehicle, -1)

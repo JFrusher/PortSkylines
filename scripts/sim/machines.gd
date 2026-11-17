@@ -35,8 +35,9 @@ func add(area: int, gear: String, bay: int) -> int:
 
 
 ## Gives idle machine `id` a job: fetch a box from bay `from`, put it at bay
-## `to`, first moving `rehandles` boxes off it, each a lift and a set-down.
-func give(id: int, from: int, to: int, rehandles := 0) -> void:
+## `to`, first moving `rehandles` boxes off it, each a lift and a set-down;
+## every phase takes its gear's time over `pace` (see AreaFlow.pace).
+func give(id: int, from: int, to: int, rehandles := 0, pace := 1.0) -> void:
 	var machine: Dictionary = list[id]
 	assert(machine.job.is_empty(), "machine %d is already working" % id)
 	var gear: Dictionary = _gear[machine.gear]
@@ -49,6 +50,8 @@ func give(id: int, from: int, to: int, rehandles := 0) -> void:
 		{"kind": "travel", "seconds": _travel(gear, from, to), "bay": to},
 		{"kind": "set_down", "seconds": gear.set_down_seconds, "bay": to},
 	])
+	for phase: Dictionary in phases:
+		phase.seconds /= pace
 	machine.job = {"phases": phases, "left": phases[0].seconds, "carrying": false}
 
 

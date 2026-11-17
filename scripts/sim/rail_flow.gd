@@ -139,7 +139,7 @@ static func _give(sim: PortSim, train: Train, machine: int) -> bool:
 			var position := AreaFlow._place_spot(sim, train.block, train.wagons[i])
 			if position < 0:
 				continue
-			sim.machines.give(machine, _wagon_bay(sim, train, i), layout.stacks[position].bay)
+			sim.machines.give(machine, _wagon_bay(sim, train, i), layout.stacks[position].bay, 0, AreaFlow.pace(sim, train.block))
 			sim.machine_jobs[machine] = {"train": train.id, "wagon": i, "position": position}
 			train.busy.append(i)
 			return true
@@ -152,7 +152,7 @@ static func _give(sim: PortSim, train: Train, machine: int) -> bool:
 	if rehandles < 0:
 		return false
 	sim._claimed[box] = true
-	sim.machines.give(machine, bay, _wagon_bay(sim, train, wagon), rehandles)
+	sim.machines.give(machine, bay, _wagon_bay(sim, train, wagon), rehandles, AreaFlow.pace(sim, train.block))
 	sim.machine_jobs[machine] = {"train": train.id, "wagon": wagon, "position": -1, "box": box}
 	train.busy.append(wagon)
 	return true

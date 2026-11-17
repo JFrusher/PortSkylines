@@ -16,6 +16,8 @@ const PLAIN_BOX := Color(0.72, 0.72, 0.68)
 const METRES_PER_UNIT := 25.0
 ## Straddle carriers, on the road and in their blocks.
 const STRADDLE_RED := Color(0.85, 0.22, 0.15)
+## AGVs have no cab crew; drawn in their own colour.
+const AGV_TEAL := Color(0.2, 0.7, 0.7)
 ## Roads on the 4 m grid, in metres: how high the surface and markings sit
 ## (lorry roads above tractor lanes, so junctions read as asphalt), the
 ## markings' width, and dashes as long as their gaps are short.
@@ -1013,7 +1015,7 @@ func _draw_vehicles() -> void:
 			_put(buffers.straddle, placed, STRADDLE_RED)
 			carried = placed * Transform3D(Basis(), Vector3(0, 0.12, 0)) * _vehicle_box
 		else:
-			_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86))
+			_put(buffers.cab, placed * Transform3D(Basis(), Vector3(0, 0.14, 0.24)), AGV_TEAL if vehicle.agv else (Color(0.95, 0.75, 0.1) if vehicle.kind == "tractor" else Color(0.9, 0.9, 0.86)))
 			_put(buffers.chassis, placed * Transform3D(Basis(), Vector3(0, 0.06, -0.06)), Color.WHITE)
 		if vehicle.loaded:
 			var box: Dictionary = sim.boxes[vehicle.box]

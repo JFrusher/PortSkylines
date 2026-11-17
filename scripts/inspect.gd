@@ -234,6 +234,8 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 			var wagons := AreaFlow.siding(sim, id).size() / AreaLayout.BAY
 			lines.append("Siding for %d wagons" % wagons if wagons else "No siding: draw track along its back edge")
 		lines.append(_yard_fill(sim, id))
+		if id in sim.automated_since:
+			lines.append("Automated, served by AGVs: working at %d%% of its gear's pace as it ramps up" % roundi(AreaFlow.pace(sim, id) * 100))
 	if area.type == "quay_apron":
 		lines.append_array(_apron(sim, id))
 	if settings.has("level"):

@@ -107,6 +107,7 @@
 		"pilotage": "Pilotage",
 		"transfers": "Transfers between terminals",
 		"objectives": "Objective rewards",
+		"it_systems": "IT systems",
 		"policies": "Policies"
 	},
 	"loans": {
@@ -181,7 +182,9 @@
 			"productivity": 30.0,
 			"unlocks": {
 				"neopanamax": "Neopanamax services and berths",
-				"wide_sts": "wide STS cranes that reach across a Neopanamax"
+				"wide_sts": "wide STS cranes that reach across a Neopanamax",
+				"asc": "automated stacking cranes (ASCs) for yard blocks",
+				"agv": "automated guided vehicles (AGVs) for automated blocks"
 			}
 		},
 		"mega": {
