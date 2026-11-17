@@ -16,6 +16,7 @@ func _initialize() -> void:
 	_test_export_lorries_respect_rules()
 	_test_by_departure_needs_fewer_rehandles()
 	_test_templates_copy_rules()
+	_test_discharge_spreads_over_blocks()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -153,3 +154,20 @@ func _test_templates_copy_rules() -> void:
 		_expect(sim.areas.list[port[2]].settings[key], ruled[key], "it copies %s" % key)
 	_expect(sim.areas.list[port[2]].settings.role, "export", "but keeps the block's own role")
 	_expect(PortSim.from_dict(sim.to_dict()).templates, sim.templates, "templates are saved")
+
+
+## A ship's imports go to the block a tractor gets them handled at soonest,
+## not the first with room: with two import blocks of one machine each, both
+## take boxes while the first still has room, and neither holds most of them.
+func _test_discharge_spreads_over_blocks() -> void:
+	var port := _two_blocks(RandomPort.quick())
+	var sim: PortSim = port[0]
+	var most_bound := 0
+	for tick in roundi(90.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		most_bound = maxi(most_bound, sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == port[1]).size())
+	var first := _stacked(sim, port[1]).size()
+	var second := _stacked(sim, port[2]).size()
+	_expect(AreaFlow._stacks(sim, port[1]).room() > 0, true, "the first block still has room")
+	_expect(second > 0, true, "yet the second takes boxes too (%d and %d)" % [first, second])
+	_expect(absi(first - second) <= maxi(first, second) / 2, true, "about evenly (%d and %d)" % [first, second])
