@@ -161,6 +161,8 @@ const AREA_SETTINGS := {
 	"quay_apron": {"lines": [], "barge": false},
 	"gate": {"level": "manual", "slots_per_hour": 0},
 }
+## The yard block rules a template keeps: what a block takes and how it stacks, not its role or gear.
+const TEMPLATE_RULES: Array[String] = ["lines", "sizes", "reefers", "max_tiers", "stacking"]
 const AREA_ROLES: Array[String] = ["import", "export", "empty", "reefer", "dangerous", "tranship"]
 ## The most lorries a gate can book in an hour.
 const MAX_SLOTS_PER_HOUR := 120
@@ -215,6 +217,8 @@ var on_time_calls := {}
 var bookings := {}
 ## Policies switched on: key of rules.policies -> true.
 var policies := {}
+## Yard block rules saved by name: name -> the rules (TEMPLATE_RULES).
+var templates := {}
 
 ## Boxes a vehicle is already coming for.
 var _claimed := {}
@@ -446,6 +450,7 @@ func to_dict() -> Dictionary:
 		"on_time_calls": on_time_calls.duplicate(),
 		"bookings": bookings.duplicate(true),
 		"policies": policies.duplicate(),
+		"templates": templates.duplicate(true),
 		"next_vehicle": _next_vehicle,
 		"next_box": _next_box,
 		"junctions": junctions.to_dict(),
@@ -533,6 +538,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 	sim.on_time_calls = d.on_time_calls.duplicate()
 	sim.bookings = d.bookings.duplicate(true)
 	sim.policies = d.policies.duplicate()
+	sim.templates = d.templates.duplicate(true)
 	sim._next_vehicle = d.next_vehicle
 	sim._next_box = d.next_box
 	for data: Dictionary in d.vehicles:
@@ -595,6 +601,10 @@ func apply(command: Dictionary) -> String:
 			return set_storage(command.free_days, command.fee)
 		"set_policy":
 			return set_policy(command.policy, command.on)
+		"save_template":
+			return save_template(command.name, command.id)
+		"apply_template":
+			return apply_template(command.name, command.id)
 		"set_rail_discount":
 			return set_rail_discount(command.dollars)
 		"set_barge_discount":
@@ -1239,6 +1249,28 @@ func set_area(id: int, settings: Dictionary) -> String:
 		areas.list[id].settings.merge(settings.duplicate(true), true)
 		areas.version += 1
 	return err
+
+
+## Saves yard block `id`'s rules as template `name`, replacing one of that name.
+func save_template(name: String, id: int) -> String:
+	if id not in areas.list or areas.kind_of(areas.list[id]) != "yard_block":
+		return "Templates are saved from a yard block"
+	if name.strip_edges() == "":
+		return "Name the template"
+	var kept := {}
+	for key: String in TEMPLATE_RULES:
+		kept[key] = areas.list[id].settings[key]
+	templates[name] = kept.duplicate(true)
+	return ""
+
+
+## Gives yard block `id` template `name`'s rules.
+func apply_template(name: String, id: int) -> String:
+	if name not in templates:
+		return "No template called %s" % name
+	if id not in areas.list or areas.kind_of(areas.list[id]) != "yard_block":
+		return "Templates are applied to a yard block"
+	return set_area(id, templates[name])
 
 
 func remove_area(id: int) -> String:

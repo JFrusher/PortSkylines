@@ -964,6 +964,11 @@ func _draw_block_rules(id: int, settings: Dictionary) -> void:
 		else:
 			taken.append(line)
 		set_rule.call("%s %s" % ["Not only" if line in settings.lines else "Only", sim.contracts.name_of(line)], {"lines": taken}, "A block that names lines takes only their boxes; one that names none takes every line's.")
+	var name := "Rules of block %d" % id
+	_action_button(_inspect_actions, "Save rules as template", {"op": "save_template", "name": name, "id": id}).tooltip_text = "Saves this block's rules as \"%s\", to give other blocks." % name
+	for template: String in sim.templates:
+		if template != name:
+			_action_button(_inspect_actions, "Apply %s" % template, {"op": "apply_template", "name": template, "id": id}).tooltip_text = "Gives this block the boxes it takes and its stacking from the template, keeping its role and gear."
 
 
 ## A Dredge 1 m button for `cells` cells of water, locked until dredging is.
@@ -1087,7 +1092,7 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
-	return [sim, sim.areas.version, sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
+	return [sim, sim.areas.version, sim.templates.keys(), sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, _inspected, settings]
 
 
 ## Junction `point`'s buttons: signals on or off, each phase's green time,

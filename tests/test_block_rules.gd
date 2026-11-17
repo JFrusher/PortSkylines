@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_a_box_no_block_takes_stays_aboard()
 	_test_export_lorries_respect_rules()
 	_test_by_departure_needs_fewer_rehandles()
+	_test_templates_copy_rules()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -133,3 +134,22 @@ func _test_by_departure_needs_fewer_rehandles() -> void:
 	_run(sim, 300.0)
 	_expect(sim.area_stacks[3].count() > 0 or sim.delivered > 0, true, "and works ships that way")
 	_expect(PortSim.from_dict(sim.to_dict()).area_stacks[3].rehandles, sim.area_stacks[3].rehandles, "re-handles are counted in the save (%d)" % sim.area_stacks[3].rehandles)
+
+
+## A template saved from one block, applied to another, copies its rules
+## (not its role or gear), and is saved with the port.
+func _test_templates_copy_rules() -> void:
+	var port := _two_blocks(RandomPort.quick())
+	var sim: PortSim = port[0]
+	var ruled := {"sizes": [2], "reefers": false, "max_tiers": 3, "stacking": "by_departure", "lines": [sim.rules.lines.keys()[1]]}
+	sim.apply({"op": "set_area", "id": port[1], "settings": ruled})
+	_expect(sim.apply({"op": "save_template", "name": "", "id": port[1]}), "Name the template", "a template needs a name")
+	_expect(sim.apply({"op": "save_template", "name": "forties", "id": 1}), "Templates are saved from a yard block", "and comes from a yard block")
+	_expect(sim.apply({"op": "save_template", "name": "forties", "id": port[1]}), "", "a block's rules are saved as a template")
+	_expect(sim.apply({"op": "apply_template", "name": "nothing", "id": port[2]}), "No template called nothing", "an unknown template is refused")
+	sim.apply({"op": "set_area", "id": port[2], "settings": {"role": "export"}})
+	_expect(sim.apply({"op": "apply_template", "name": "forties", "id": port[2]}), "", "the template is applied to the other block")
+	for key: String in ruled:
+		_expect(sim.areas.list[port[2]].settings[key], ruled[key], "it copies %s" % key)
+	_expect(sim.areas.list[port[2]].settings.role, "export", "but keeps the block's own role")
+	_expect(PortSim.from_dict(sim.to_dict()).templates, sim.templates, "templates are saved")
