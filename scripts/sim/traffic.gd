@@ -101,7 +101,7 @@ func fits(piece: int, s: float, length: float) -> bool:
 ## Puts car `id` on `route` (piece ids) with its front `s` cells along the
 ## first piece, `top` cells a second at most and `length` cells long.
 func place_at(id: int, route: Array[int], s: float, top: float, length: float) -> void:
-	cars[id] = {"route": route, "i": 0, "s": s, "v": 0.0, "top": top, "length": length, "booked": [], "waited": 0.0}
+	cars[id] = {"route": route, "i": 0, "s": s, "v": 0.0, "top": top, "length": length, "booked": [], "waited": 0.0, "moved": 0.0}
 	due[id] = true
 	_put(route[0], id)
 	_entered[route[0]] = _entered.get(route[0], 0) + 1
@@ -143,16 +143,24 @@ func arrived(id: int) -> bool:
 ## body runs from its rear, its length back along the way it came, to its
 ## front, so through a sharp corner it swings round as a lorry does instead
 ## of snapping to the next piece's direction.
-func pose(id: int) -> Array[Vector2]:
+func pose(id: int, alpha := 1.0) -> Array[Vector2]:
 	var car: Dictionary = cars[id]
-	var front := network.point_along(car.route[car.i], car.s)
-	var i: int = car.i
-	var back: float = car.s - car.length
+	# Between ticks it is drawn part way along what it drove in the last one.
+	var at := _back_along(car, car.i, car.s, (1.0 - alpha) * car.moved)
+	var front := network.point_along(car.route[at[0]], at[1])
+	var tail := _back_along(car, at[0], at[1], car.length)
+	var rear: Vector2 = network.point_along(car.route[tail[0]], tail[1])[0]
+	return [front[0], front[0] - rear if not front[0].is_equal_approx(rear) else front[1]]
+
+
+## [route index, distance along that piece] `distance` back along `car`'s
+## route from piece index `i`, `s` along it; no further back than its start.
+func _back_along(car: Dictionary, i: int, s: float, distance: float) -> Array:
+	var back := s - distance
 	while back < 0.0 and i > 0:
 		i -= 1
 		back += network.pieces[car.route[i]].length
-	var rear: Vector2 = network.point_along(car.route[i], maxf(back, 0.0))[0]
-	return [front[0], front[0] - rear if not front[0].is_equal_approx(rear) else front[1]]
+	return [i, maxf(back, 0.0)]
 
 
 ## Everything the traffic holds, for a save: the cars, who is on and has
@@ -184,6 +192,12 @@ func remove(id: int) -> void:
 	cars.erase(id)
 
 
+## Cars made to stand where they are this tick, whatever is ahead: AGVs on a
+## safety stop near a service vehicle in the AGV zone (see AreaFlow). Not
+## saved: set again each tick.
+var held := {}
+
+
 ## Moves every car on for `seconds`, in order of id.
 func tick(seconds: float) -> void:
 	due.clear()
@@ -195,6 +209,7 @@ func tick(seconds: float) -> void:
 
 func _move(id: int, seconds: float) -> void:
 	var car: Dictionary = cars[id]
+	car.moved = 0.0
 	var piece: int = car.route[car.i]
 	# At its route's end it stands, as the look ahead would find: nothing is in front of it.
 	if car.i == car.route.size() - 1 and car.s >= network.pieces[piece].length:
@@ -202,6 +217,10 @@ func _move(id: int, seconds: float) -> void:
 		car.waited += seconds
 		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
 		due[id] = true
+		return
+	# On a safety stop it stands, without counting as stuck.
+	if id in held:
+		car.v = 0.0
 		return
 	# Stopped behind a car that hasn't moved since, it stays stopped: the look
 	# ahead would find that car just as near again.
@@ -348,6 +367,7 @@ func _put(piece: int, id: int) -> void:
 ## whole length is clear of it.
 func _advance(id: int, distance: float) -> void:
 	var car: Dictionary = cars[id]
+	car.moved = distance
 	car.s += distance
 	while car.s > network.pieces[car.route[car.i]].length and car.i + 1 < car.route.size():
 		_on[car.route[car.i]].erase(id)

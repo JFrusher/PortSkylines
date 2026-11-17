@@ -106,7 +106,7 @@ func _tick(sim: PortSim) -> void:
 	AreaFlow._fit_machines(sim)
 	add("_fit_machines", start)
 	start = Time.get_ticks_usec()
-	for machine: int in sim.machines.tick():
+	for machine: int in sim.machines.tick([] as Array[String]):
 		AreaFlow._machine_done(sim, machine)
 	add("machines (tick, _machine_done)", start)
 	start = Time.get_ticks_usec()

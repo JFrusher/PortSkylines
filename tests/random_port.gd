@@ -9,8 +9,17 @@ extends RefCounted
 ## west edge, the sea 300 m wide and 16 m deep from the shore out, which the
 ## tests' ports are drawn against.
 static func strait(game_rules := Content.base()) -> Dictionary:
-	var copy := game_rules.duplicate(true)
+	var copy := small_site(game_rules)
 	copy.map = "strait"
+	return copy
+
+
+## A copy of `game_rules` on a 2.4 km site, half the game's, its maps drawn
+## at half size: the site the tests' ports and the showcase are laid out on
+## cell by cell, small enough to build and run fast.
+static func small_site(game_rules: Dictionary) -> Dictionary:
+	var copy := Content.on_site(game_rules, {"width": game_rules.site.width / 2.0, "height": game_rules.site.height / 2.0})
+	copy.land.start = {"x": 0.0, "y": 1.0, "width": 3.0, "height": 1.0}
 	return copy
 
 
@@ -52,7 +61,7 @@ static func calls(sim: PortSim, kind := "feeder", first := 10, every := 45, coun
 	var line: String = sim.rules.lines.keys()[0]
 	var spec: Dictionary = sim.rules.ship_classes[kind]
 	for i in count:
-		sim.contracts.services.append({"id": 1000 + i, "line": line, "kind": kind, "start": first + every * i, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": 0, "asked": first + every * i, "any_berth": true})
+		sim.contracts.services.append({"id": 1000 + i, "line": line, "kind": kind, "start": first + every * i, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": 0, "asked": first + every * i, "any_berth": true, "next_start": -1.0})
 
 
 ## A tick-tagged log: AreaPort.chain's port built by commands at tick 0 (a

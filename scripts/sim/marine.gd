@@ -87,8 +87,9 @@ static func route(sim: PortSim, kind: String, apron: int, anchorage := 0, light 
 	if key not in _routes(sim):
 		var none: Array[Vector2] = []
 		# A barge berth takes only barges, and a barge only a barge berth.
-		var fits: bool = apron in sim.areas.list and sim.areas.list[apron].settings.barge == sim.rules.ship_classes[kind].inland and pocket_depth(sim, apron) >= draft(sim, kind, light)
-		var lanes := _find(sim, kind, draft(sim, kind, light), _starts(sim, kind, anchorage), berth_nodes(sim, apron)) if fits else none
+		var deep := draft(sim, kind, light) - _tide_allowance(sim)
+		var fits: bool = apron in sim.areas.list and sim.areas.list[apron].settings.barge == sim.rules.ship_classes[kind].inland and pocket_depth(sim, apron) >= deep
+		var lanes := _find(sim, kind, deep, _starts(sim, kind, anchorage), berth_nodes(sim, apron)) if fits else none
 		sim._ship_routes[key] = lanes if lanes.is_empty() or room_at(sim, kind, apron, lanes) else none
 	return sim._ship_routes[key]
 
@@ -103,13 +104,14 @@ static func draft(sim: PortSim, kind: String, light := false) -> float:
 static func route_to_anchorage(sim: PortSim, kind: String, id: int, light := false) -> Array[Vector2]:
 	var key := [kind, "anchorage", id, light]
 	if key not in _routes(sim):
-		sim._ship_routes[key] = _find(sim, kind, draft(sim, kind, light), ways_in(sim, kind), anchorage_nodes(sim, id))
+		sim._ship_routes[key] = _find(sim, kind, draft(sim, kind, light) - _tide_allowance(sim), ways_in(sim, kind), anchorage_nodes(sim, id))
 	return sim._ship_routes[key]
 
 
-## The route cache, emptied once lanes, areas, anchorages or dredging change.
+## The route cache, emptied once lanes, areas, anchorages, dredging or the
+## tides' switch change.
 static func _routes(sim: PortSim) -> Dictionary:
-	var stamp := [sim.ship_lanes.version, sim.areas.version, sim.dredge_version, sim.anchorages.keys()]
+	var stamp := [sim.ship_lanes.version, sim.areas.version, sim.dredge_version, sim.anchorages.keys(), sim.event_plan.on.tides]
 	if sim._ship_routes_for != stamp:
 		sim._ship_routes.clear()
 		sim._ship_routes_for = stamp
@@ -445,6 +447,14 @@ static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
 		tugs_at = now + Boats.length(from, tug_way) * Grid.CELL / sim.rules.water.tugs.speed
 		if way == -1:
 			sets_off = maxf(sets_off, tugs_at)
+	# A ship whose draft needs the tide sets off only when the water stays high
+	# enough all its passage.
+	var short := draft(sim, ship.kind, ship.light) - shallowest(sim, ship)
+	if short > 0.0:
+		var passage: float = _length(ship.path) * Grid.CELL / sim.rules.water.ship_speed
+		for k in 11:
+			if tide(sim, sets_off + passage * k / 10.0) < short:
+				return "it waits for high water: it needs %.1f m more than the channel has" % short
 	sim.passages = sim.passages.filter(func(p: Dictionary) -> bool: return p.to >= now)
 	var windows := _windows(sim, ship, way, sets_off)
 	var margin: float = sim.rules.water.slot_margin_minutes
@@ -469,6 +479,51 @@ static func clear(sim: PortSim, ship: PortSim.Ship, way: int) -> String:
 		sim.passages.append(w)
 	ship.cleared = true
 	return ""
+
+
+## The tide's height above chart depth at calendar minute `minute`, in
+## metres: rising and falling twice a day through water.tides.range; 0 with
+## tides switched off.
+static func tide(sim: PortSim, minute: float) -> float:
+	if not sim.event_plan.on.tides:
+		return 0.0
+	var tides: Dictionary = sim.rules.water.tides
+	return tides.range / 2.0 * cos(TAU * minute / (tides.period_hours * 60.0))
+
+
+## How much shallower than its draft a ship's way may be, waiting for high
+## water: half the tide's range, or nothing with tides off.
+static func _tide_allowance(sim: PortSim) -> float:
+	return sim.rules.water.tides.range / 2.0 if sim.event_plan.on.tides else 0.0
+
+
+## The shallowest water on `ship`'s course in metres at chart depth: the
+## lanes it sails (between the lane ends it passes, each at its middle, and
+## on into its berth's pocket where it turns off short of that lane's end)
+## and, bound for a berth, the pocket. Kept with the routes.
+static func shallowest(sim: PortSim, ship: PortSim.Ship) -> float:
+	var key := ["shallowest", ship.path.duplicate(), ship.apron]
+	if key not in _routes(sim):
+		var node_at := {}  # a lane end's middle -> the lane end
+		for node: int in sim.ship_lanes.nodes:
+			node_at[Vector2(sim.ship_lanes.nodes[node]) + Vector2(0.5, 0.5)] = node
+		var least := INF
+		var last := 0
+		for point: Vector2 in ship.path:
+			var node: int = node_at.get(point, 0)
+			if node == 0:
+				continue
+			if last:
+				least = minf(least, sim.ship_lanes.depth(sim.ship_lanes.between(last, node), sim.areas.coast))
+			last = node
+		if ship.apron != 0:
+			least = minf(least, pocket_depth(sim, ship.apron))
+			for end: int in berth_nodes(sim, ship.apron):
+				var segment := sim.ship_lanes.between(last, end) if last else 0
+				if segment:
+					least = minf(least, sim.ship_lanes.depth(segment, sim.areas.coast))
+		sim._ship_routes[key] = least
+	return sim._ship_routes[key]
 
 
 ## Cells from `point` to the nearest of `bases` (id -> {"cell"}).

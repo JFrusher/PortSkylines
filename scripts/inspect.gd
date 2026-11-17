@@ -78,6 +78,12 @@ static func describe(sim: PortSim, thing: Variant) -> Array[String]:
 		if thing.base in sim.tug_depots:
 			var depot: Dictionary = sim.tug_depots[thing.base]
 			return ["Tug depot", "%d tugs, %d out with ships" % [depot.tugs, depot.tugs - Marine.free_tugs(sim, thing.base)], "Panamaxes and bigger need tugs to berth and unberth"] as Array[String]
+		if thing.base in sim.service_jetties:
+			var counts: Array[String] = []
+			for service: String in sim.rules.water.services.boats:
+				var mine := sim.boats.of(thing.base).filter(func(b: int) -> bool: return sim.boats.list[b].kind == service)
+				counts.append("%d %s (%d out)" % [mine.size(), sim.rules.water.services.boats[service].name.to_lower() + ("s" if mine.size() != 1 else ""), mine.filter(func(b: int) -> bool: return sim.boats.list[b].job != "home").size()])
+			return ["Services jetty", ", ".join(counts), "Its boats bunker, provision and take waste off ships at berth or at anchor, for a fee; a ship never waits for them"] as Array[String]
 		return nothing
 	if thing is Dictionary and thing.has("anchorage"):
 		return _anchorage(sim, thing.anchorage) if thing.anchorage in sim.anchorages else nothing
@@ -234,6 +240,13 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 			var wagons := AreaFlow.siding(sim, id).size() / AreaLayout.BAY
 			lines.append("Siding for %d wagons" % wagons if wagons else "No siding: draw track along its back edge")
 		lines.append(_yard_fill(sim, id))
+		if area.type == "transfer_block":
+			var racked: Dictionary = sim.racks.get(id, {})
+			lines.append("Racks at its AGV slots: %d holding a box" % racked.values().filter(func(r: Dictionary) -> bool: return r.state in ["in", "ready"]).size() if settings.racks else "No racks: AGVs wait for an ASC at its front")
+		if area.type == "transfer_block" and not sim.areas.road_behind(id):
+			lines.append("No road behind it: lorries can't collect from its back")
+		if AreaFlow.agv_unreachable(sim, id):
+			lines.append("AGVs can't reach it from the quay: give them a loop or a dead end inside the AGV zone to turn in")
 	if area.type == "quay_apron":
 		lines.append_array(_apron(sim, id))
 	if settings.has("level"):
@@ -241,6 +254,24 @@ static func _area(sim: PortSim, id: int) -> Array[String]:
 		var waiting := sim.handovers.waiting(id)
 		lines.append("%d lorries queuing" % (waiting.buffer.size() + waiting.road.size()))
 		lines.append("Bookings: %d an hour" % settings.slots_per_hour if settings.slots_per_hour > 0 else "No bookings: lorries come in as they arrive")
+	if settings.get("role") == "customs":
+		var waiting: int = sim.area_stacks[id].boxes().filter(func(b: int) -> bool: return sim.boxes[b].customs == "inspect").size() if id in sim.area_stacks else 0
+		lines.append("%d inspectors, %d boxes to inspect" % [settings.inspectors, waiting])
+	if settings.get("scanner", false):
+		lines.append("Scanner: clears most flagged boxes at once")
+	if settings.has("agvs"):
+		var home: Array = sim.agv_home.get(id, [])
+		var low := home.filter(func(c: float) -> bool: return c < sim.rules.agv.low_share).size()
+		lines.append("%d AGVs: %d out, %d home (%d too low to go), %d chargers" % [settings.agvs, sim._agvs_out.get(id, 0), home.size(), low, settings.chargers])
+		if settings.chargers == 0 and settings.agvs > 0:
+			lines.append("No chargers: AGVs that run down can't charge. Buy chargers by inspecting it")
+		if AreaFlow.agv_unreachable(sim, id):
+			lines.append("AGVs can't get home to it from every yard block: give them a loop or a dead end inside the AGV zone to turn in")
+	if settings.has("engines"):
+		lines.append("%d fire engines, %d out" % [settings.engines, sim.fires.engines.values().filter(func(e: Dictionary) -> bool: return e.station == id and e.job != "home").size()])
+	if settings.has("mechanics"):
+		var out := sim.workshops.vans.values().filter(func(v: Dictionary) -> bool: return v.workshop == id and v.job != "home").size()
+		lines.append("%d mechanics, %d out on repairs" % [settings.mechanics, out])
 	if settings.has("lines") and not settings.lines.is_empty():
 		lines.append("Favours " + ", ".join(settings.lines.map(func(line: String) -> String: return sim.contracts.name_of(line))))
 	var idle := sim.areas.idle_reason(id)

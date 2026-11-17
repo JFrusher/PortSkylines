@@ -7,7 +7,7 @@ var _failures := 0
 
 func _initialize() -> void:
 	var site: Dictionary = Content.base().site
-	_expect(Grid.size(site), Vector2i(600, 600), "the base site is 600 cells a side")
+	_expect(Grid.size(site), Vector2i(1200, 1200), "the base site is 1200 cells a side")
 	_expect(Grid.cells(300), 75, "300 m is 75 cells")
 	for metres: int in [0, 4, 300, 2400]:
 		_expect(Grid.metres(Grid.cells(metres)), metres, "%d m round-trips through cells" % metres)

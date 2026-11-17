@@ -20,7 +20,7 @@ const MUTED := Color(0.58, 0.639, 0.722)
 const WARN := Color(1, 0.55, 0.4)
 
 var sim: PortSim
-## "paint" or "land".
+## "paint", "agv" (the AGV zone) or "land".
 var mode := "paint"
 ## "brush", "erase" or "fill".
 var tool := "brush"
@@ -42,8 +42,9 @@ func _ready() -> void:
 	_canvas.map = self
 	add_theme_stylebox_override("panel", _card(Color(0.07, 0.09, 0.12), 16))
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Clear of the status bar along the bottom.
 	for side: String in ["left", "top", "right", "bottom"]:
-		set("offset_" + side, 24.0 if side in ["left", "top"] else -24.0)
+		set("offset_" + side, {"left": 24.0, "top": 16.0, "right": -24.0, "bottom": -Hud.STATUS_BAR_HEIGHT - 12.0}[side])
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 10)
 	add_child(column)
@@ -55,7 +56,7 @@ func _ready() -> void:
 	title.theme_type_variation = "ClockLabel"
 	header.add_child(title)
 	var modes := ButtonGroup.new()
-	for pick: Array in [["paint", "Paint terminals"], ["land", "Buy land"]]:
+	for pick: Array in [["paint", "Paint terminals"], ["agv", "AGV zone"], ["land", "Buy land"]]:
 		var button := _toggle(header, pick[1], modes, func() -> void: mode = pick[0])
 		button.button_pressed = pick[0] == mode
 		if pick[0] == "land":
@@ -133,6 +134,8 @@ func _process(dt: float) -> void:
 func _help_text() -> String:
 	if mode == "land":
 		return "Click a tile to buy it: %s, then %s a day. Owned land is lighter." % [HudDetails.dollars(sim.rules.land.price), HudDetails.dollars(sim.rules.land.upkeep)]
+	if mode == "agv":
+		return "Painting the AGV zone (striped). Drag to paint, right-drag to erase; Fill block paints the ground a road closes in. Lanes in it are for AGVs alone: tractors and lorries keep out, service vans and fire engines may enter."
 	var painting: String = "a new terminal" if selected == -1 else sim.areas.terminals[selected].name
 	return "Painting %s. Drag to paint, right-drag to erase; Fill block paints the ground a road closes in. An area joins the terminal holding most of it; one in no terminal does no work." % painting
 
@@ -142,19 +145,30 @@ func act(cell: Vector2i, erase: bool) -> void:
 	if mode == "land":
 		command_issued.emit({"op": "buy_land", "tile": sim.land_tile(cell)})
 		return
+	if mode == "agv":
+		var zone := sim.areas.fill_cells(cell) if tool == "fill" and not erase else _brush(cell)
+		command_issued.emit({"op": "paint_agv_zone", "cells": zone, "on": not erase and tool != "erase"})
+		_canvas.repaint(zone)
+		return
 	if tool == "fill" and not erase:
 		command_issued.emit({"op": "fill_terminal", "cell": cell, "terminal": selected})
 	else:
-		var cells: Array[Vector2i] = []
-		for dx in range(-brush, brush + 1):
-			for dy in range(-brush, brush + 1):
-				if dx * dx + dy * dy <= brush * brush:
-					cells.append(cell + Vector2i(dx, dy))
+		var cells := _brush(cell)
 		command_issued.emit({"op": "paint_terminal", "cells": cells, "terminal": 0 if erase or tool == "erase" else selected})
 		_canvas.repaint(cells)
 	# A new terminal is made by its first stroke; paint on with it.
 	if selected == -1 and not sim.areas.terminals.is_empty():
 		selected = sim.areas.terminals.keys().max()
+
+
+## The cells the round brush covers at `cell`.
+func _brush(cell: Vector2i) -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for dx in range(-brush, brush + 1):
+		for dy in range(-brush, brush + 1):
+			if dx * dx + dy * dy <= brush * brush:
+				cells.append(cell + Vector2i(dx, dy))
+	return cells
 
 
 func _build_cards() -> void:
@@ -219,7 +233,7 @@ func _stats(terminal: int) -> String:
 	var berths := mine.filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "quay_apron").size()
 	var fill := Vector2i.ZERO
 	for id: int in mine:
-		if sim.areas.kind_of(sim.areas.list[id]) == "yard_block":
+		if sim.areas.list[id].type in Areas.BLOCK_TYPES:
 			fill += sim.block_fill(id)
 	var yard := "yard %d%% full" % roundi(100.0 * fill.x / fill.y) if fill.y > 0 else "no yard"
 	var turn := sim.terminal_turn_minutes(terminal)
@@ -233,7 +247,7 @@ func _lacks(terminal: int) -> String:
 	var err := sim.areas.terminal_error(terminal)
 	if err != "":
 		return err
-	if not sim.areas.list.values().any(func(a: Dictionary) -> bool: return a.terminal == terminal and sim.areas.kind_of(a) == "yard_block"):
+	if not sim.areas.list.values().any(func(a: Dictionary) -> bool: return a.terminal == terminal and a.type in Areas.BLOCK_TYPES):
 		return "%s needs a yard block" % sim.areas.terminals[terminal].name
 	return ""
 
@@ -292,7 +306,7 @@ class MapCanvas extends Control:
 				map.act(_cell_at(click.position), click.button_index == MOUSE_BUTTON_RIGHT)
 			accept_event()
 		var move := event as InputEventMouseMotion
-		if move and _stroke != -1 and map.mode == "paint" and map.tool != "fill":
+		if move and _stroke != -1 and map.mode in ["paint", "agv"] and map.tool != "fill":
 			map.act(_cell_at(move.position), _stroke == MOUSE_BUTTON_RIGHT)
 			accept_event()
 
@@ -330,8 +344,7 @@ class MapCanvas extends Control:
 		var site := Rect2i(Vector2i.ZERO, Grid.size(sim.rules.site))
 		for cell in cells:
 			if site.has_point(cell):
-				var terminal: int = sim.areas.paint.get(cell, 0)
-				_paint_pixels.set_pixelv(cell, Color(COLOURS[sim.areas.terminals[terminal].colour], 0.45) if terminal else Color.TRANSPARENT)
+				_paint_pixels.set_pixelv(cell, _pixel(cell))
 		_paint.update(_paint_pixels)
 		_paint_for = [sim, sim.areas.version]
 
@@ -356,7 +369,7 @@ class MapCanvas extends Control:
 				pixels[i * 4 + 1] = water.g8
 				pixels[i * 4 + 2] = water.b8
 		image.set_data(site.x, site.y, false, Image.FORMAT_RGBA8, pixels)
-		var kinds := {"yard_block": Color(0.62, 0.62, 0.58), "quay_apron": Color(0.75, 0.74, 0.68), "gate": Color(0.48, 0.56, 0.64), "parking": Color(0.42, 0.44, 0.47), "depot": Color(0.6, 0.55, 0.45)}
+		var kinds := {"yard_block": Color(0.62, 0.62, 0.58), "quay_apron": Color(0.75, 0.74, 0.68), "gate": Color(0.48, 0.56, 0.64), "parking": Color(0.42, 0.44, 0.47), "depot": Color(0.6, 0.55, 0.45), "workshop": Color(0.5, 0.47, 0.42), "fire_station": Color(0.62, 0.3, 0.27), "agv_depot": Color(0.45, 0.5, 0.52), "transfer_block": Color(0.62, 0.62, 0.58), "tree_belt": Color(0.3, 0.45, 0.25)}
 		for id: int in sim.areas.list:
 			var colour: Color = kinds[sim.areas.kind_of(sim.areas.list[id])]
 			for cell in sim.areas.cells(id):
@@ -367,11 +380,20 @@ class MapCanvas extends Control:
 					image.set_pixelv(cell, Color(0.12, 0.12, 0.14))
 		return image
 
-	## Each painted cell in its terminal's colour, see-through.
+	## Each painted cell in its terminal's colour, see-through, the AGV zone striped over it.
 	func _paint_image() -> Image:
 		var sim := map.sim
 		var site := Grid.size(sim.rules.site)
 		var image := Image.create(site.x, site.y, false, Image.FORMAT_RGBA8)
 		for cell: Vector2i in sim.areas.paint:
-			image.set_pixelv(cell, Color(COLOURS[sim.areas.terminals[sim.areas.paint[cell]].colour], 0.45))
+			image.set_pixelv(cell, _pixel(cell))
+		for cell: Vector2i in sim.areas.agv_zone:
+			image.set_pixelv(cell, _pixel(cell))
 		return image
+
+	func _pixel(cell: Vector2i) -> Color:
+		var sim := map.sim
+		if cell in sim.areas.agv_zone and posmod(cell.x + cell.y, 4) < 2:
+			return Color(1.0, 0.72, 0.1, 0.7)
+		var terminal: int = sim.areas.paint.get(cell, 0)
+		return Color(COLOURS[sim.areas.terminals[terminal].colour], 0.45) if terminal else Color.TRANSPARENT

@@ -49,7 +49,7 @@ func _test_berth_plan() -> void:
 	var aprons := AreaFlow.ready_aprons(sim)
 	var line: String = sim.rules.lines.keys()[0]
 	var offer := func(id: int, hour: int) -> int:
-		sim.contracts.offers.append({"id": id, "line": line, "kind": "feeder", "start": hour * 60, "asked": hour * 60, "window_hours": 12.0, "moves": 40, "apron": aprons[0], "any_berth": false, "expires": 1e9})
+		sim.contracts.offers.append({"id": id, "line": line, "kind": "feeder", "start": hour * 60, "asked": hour * 60, "window_hours": 12.0, "moves": 40, "apron": aprons[0], "any_berth": false, "expires": 1e9, "next_start": -1.0})
 		return id
 	_expect(sim.apply({"op": "accept_offer", "id": offer.call(1, 0), "apron": aprons[0]}), "", "an offer is agreed on a berth")
 	_expect(sim.apply({"op": "accept_offer", "id": offer.call(2, 6), "apron": aprons[0]}), "", "an overlapping one too")
@@ -113,7 +113,7 @@ func _test_berth_board() -> void:
 	var line: String = sim.rules.lines.keys()[0]
 	for id: int in [1, 2]:
 		var asked := (id - 1) * 6 * 60
-		sim.contracts.offers.append({"id": id, "line": line, "kind": "feeder", "start": asked, "asked": asked, "window_hours": 12.0, "moves": 40, "apron": aprons[0], "any_berth": false, "expires": 1e9})
+		sim.contracts.offers.append({"id": id, "line": line, "kind": "feeder", "start": asked, "asked": asked, "window_hours": 12.0, "moves": 40, "apron": aprons[0], "any_berth": false, "expires": 1e9, "next_start": -1.0})
 	var board := BerthBoard.new()
 	board.sim = sim
 	var sent: Array[Dictionary] = []

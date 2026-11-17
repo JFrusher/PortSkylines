@@ -1,7 +1,7 @@
 {
 	"site": {
-		"width": 2400.0,
-		"height": 2400.0
+		"width": 4800.0,
+		"height": 4800.0
 	},
 	"land": {
 		"metres": 800.0,
@@ -9,9 +9,9 @@
 		"upkeep": 1000.0,
 		"start": {
 			"x": 0.0,
-			"y": 1.0,
-			"width": 3.0,
-			"height": 1.0
+			"y": 2.0,
+			"width": 6.0,
+			"height": 2.0
 		}
 	},
 	"objectives": {
@@ -78,7 +78,8 @@
 	},
 	"upkeep": {
 		"sts_crane": 1500.0,
-		"tractor": 300.0
+		"tractor": 300.0,
+		"agv": 40.0
 	},
 	"lorry_interval_minutes": 1.0,
 	"export_lorry_interval_minutes": 2.0,
@@ -103,8 +104,12 @@
 		"reefer_fines": "Reefer fines",
 		"rush_fines": "Rush fines",
 		"connection_fines": "Missed connections",
+		"fire_losses": "Fire losses",
+		"lighting": "Lighting",
+		"town": "Community fund",
 		"port_dues": "Port dues",
 		"pilotage": "Pilotage",
+		"services": "Ship services",
 		"transfers": "Transfers between terminals",
 		"objectives": "Objective rewards"
 	},
@@ -126,6 +131,15 @@
 		}
 	},
 	"max_loans": 3.0,
+	"customs": {"inspect_share_after_scan": 0.25, "inspect_hours_min": 2.0, "inspect_hours_max": 4.0, "no_shed_hours": 24.0, "scanner_cost": 250000, "inspector_cost": 15000, "upkeep_per_inspector": 150},
+	"events": {
+		"season_days": 7.0,
+		"defaults": {"tides": false, "storms": true, "breakdowns": false, "fires": false},
+		"fires": {"per_week": 0.5, "dg_factor": 3.0, "ship_share": 0.25, "grace_minutes": 20.0, "boxes_per_hour": 6.0, "box_value": 20000, "reputation_per_box": 0.5, "ship_reputation_per_hour": 2.0, "fight_hours": 1.0, "engine_cost": 90000, "upkeep_per_engine": 300, "engine_speed": 800.0},
+		"breakdowns": {"repair_hours_min": 1.0, "repair_hours_max": 3.0, "mechanic_cost": 20000, "upkeep_per_mechanic": 200, "van_speed": 600.0, "service_every_hours": 80.0, "service_hours": 0.5, "serviced_mtbf_factor": 2.0},
+		"wind": {"mean_kmh": 18.0, "daily_swing_kmh": 8.0},
+		"storms": {"per_season": 1.0, "hours_min": 6.0, "hours_max": 18.0, "lead_hours": 24.0, "peak_min_kmh": 70.0, "peak_max_kmh": 110.0}
+	},
 	"milestones": {
 		"harbour": {
 			"teu": 0.0,
@@ -199,5 +213,14 @@
 		"days": 3.0,
 		"reputation": -20.0,
 		"no_loans_days": 14.0
-	}
+	},
+	"lighting": {"per_terminal_night": 400, "night_ends_hour": 6.0},
+	"town": {"name": "Saltmarsh", "offset_cells": [55, 0], "reach_m": 2600.0, "base_mood": 55.0, "ease_per_hour": 0.1, "sour_below": 30.0, "warm_above": 70.0, "night_starts_hour": 18.0,
+		"noise": {"quay_apron": 2.4, "yard_block": 1.6, "transfer_block": 1.6, "gate": 1.2, "parking": 0.8, "depot": 0.8, "workshop": 0.8, "agv_depot": 0.4},
+		"light": {"quay_apron": 1.3, "yard_block": 1.0, "transfer_block": 1.0, "gate": 1.0, "parking": 0.7, "agv_depot": 0.7},
+		"ship_noise": 4.0, "lorry_noise": 0.3, "belt_factor": 0.5,
+		"jobs": {"crane": 6.0, "machine": 3.0, "tractor": 2.0, "person": 1.0}, "points_per_job": 0.25, "max_job_points": 30.0,
+		"fund_per_point": 100.0, "max_fund_points": 20.0, "max_fund": 5000,
+		"bypass_cost": 3000000, "shore_power_cost": 1500000, "houses": 40, "houses_per_job": 0.5},
+	"box_look": {"own_share": 0.5, "stripe_share": 0.4, "weathering": 0.3, "rust_share": 0.25, "reefer": "#e8ebe8", "rust": "#7a3b22", "placard": "#ff6a13", "lessors": ["#7b2d26", "#3e5f7d", "#c8b48a", "#8a8d8f", "#4f6b3a", "#6b4a32", "#a2412b", "#24375a"]}
 }

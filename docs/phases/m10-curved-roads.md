@@ -6,7 +6,7 @@ This phase makes roads, rail and ship lanes curves at any angle, drawn and
 snapped the way Cities: Skylines does it. Areas are laid along those curves,
 and vehicles drive them continuously.
 
-Placed after M9 and before events (now M11), as the developer chose on
+Placed after M9 and before events (now M12, after M11 harbour life), as the developer chose on
 1 Nov 2026.
 
 ## The developer's answers (1 Nov 2026)

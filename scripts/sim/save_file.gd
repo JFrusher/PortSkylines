@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 49
+const VERSION := 66
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -16,7 +16,7 @@ const VEHICLE_FIELDS := {
 	"id": TYPE_INT, "kind": TYPE_STRING, "path": TYPE_ARRAY, "state": TYPE_STRING,
 	"box": TYPE_INT, "loaded": TYPE_BOOL, "target": TYPE_VECTOR3I,
 	"home": TYPE_VECTOR3I, "timer": TYPE_FLOAT, "gate_in": TYPE_FLOAT, "booked": TYPE_FLOAT,
-	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT,
+	"area": TYPE_INT, "slot": TYPE_INT, "straddle": TYPE_INT, "depot": TYPE_INT, "charge": TYPE_FLOAT,
 }
 const MAGIC := "PSKY"
 
@@ -118,6 +118,229 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v48(data)
 	if data.version < 49:
 		data = _migrate_v49(data)
+	if data.version < 50:
+		data = _migrate_v50(data)
+	if data.version < 51:
+		data = _migrate_v51(data)
+	if data.version < 52:
+		data = _migrate_v52(data)
+	if data.version < 53:
+		data = _migrate_v53(data)
+	if data.version < 54:
+		data = _migrate_v54(data)
+	if data.version < 55:
+		data = _migrate_v55(data)
+	if data.version < 56:
+		data = _migrate_v56(data)
+	if data.version < 57:
+		data = _migrate_v57(data)
+	if data.version < 58:
+		data = _migrate_v58(data)
+	if data.version < 59:
+		data = _migrate_v59(data)
+	if data.version < 60:
+		data = _migrate_v60(data)
+	if data.version < 61:
+		data = _migrate_v61(data)
+	if data.version < 62:
+		data = _migrate_v62(data)
+	if data.version < 63:
+		data = _migrate_v63(data)
+	if data.version < 64:
+		data = _migrate_v64(data)
+	if data.version < 65:
+		data = _migrate_v65(data)
+	if data.version < 66:
+		data = _migrate_v66(data)
+	return data
+
+
+## v66 adds scenarios and the morning paper, and keeps each game's site
+## as the game's grew (M11): older games are sandbox games on the 2.4 km
+## site they were made on, with no papers filed yet.
+static func _migrate_v66(data: Dictionary) -> Dictionary:
+	data.sim.scenario = Scenario.none()
+	data.sim.site = {"width": 2400.0, "height": 2400.0}
+	data.sim.reports = []
+	data.sim.today_calls = {"calls": 0, "on_time": 0}
+	data.version = 66
+	return data
+
+
+## v65 adds the town next door (M11): content, no fund, no bypass, no
+## quay with shore power.
+static func _migrate_v65(data: Dictionary) -> Dictionary:
+	data.sim.town = {"mood": 60.0, "fund": 0, "bypass": false, "said": ""}
+	for area: Dictionary in data.sim.areas.list.values():
+		if area.type == "quay_apron":
+			area.settings.shore_power = false
+	data.version = 65
+	return data
+
+
+## v64 adds the harbour master (M11): no ship kept at anchor, no call moved.
+static func _migrate_v64(data: Dictionary) -> Dictionary:
+	for ship: Dictionary in data.sim.ships:
+		ship.kept = false
+	for service: Dictionary in data.sim.contracts.services + data.sim.contracts.offers:
+		service.next_start = -1.0
+	data.version = 64
+	return data
+
+
+## v63 keeps how far each car drove in its last tick, so the view draws it
+## between ticks (M11): none yet.
+static func _migrate_v63(data: Dictionary) -> Dictionary:
+	if not data.sim.traffic.is_empty():
+		for car: Dictionary in data.sim.traffic.traffic.cars.values():
+			car.moved = 0.0
+	data.version = 63
+	return data
+
+
+## v62 adds racks at transfer blocks (M11): none bought.
+static func _migrate_v62(data: Dictionary) -> Dictionary:
+	data.sim.racks = {}
+	for area: Dictionary in data.sim.areas.list.values():
+		if area.type == "transfer_block":
+			area.settings.racks = false
+	data.version = 62
+	return data
+
+
+## v61 adds AGV batteries (M11): every AGV full, at home or out, and no
+## depot with a charger.
+static func _migrate_v61(data: Dictionary) -> Dictionary:
+	data.sim.agv_home = {}
+	for id: int in data.sim.areas.list:
+		var area: Dictionary = data.sim.areas.list[id]
+		if area.type == "agv_depot":
+			area.settings.chargers = 0
+			var out: int = data.sim.vehicles.filter(func(v: Dictionary) -> bool: return v.depot == id).size()
+			var home: Array[float] = []
+			for i: int in area.settings.agvs - out:
+				home.append(1.0)
+			data.sim.agv_home[id] = home
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.charge = 1.0 if vehicle.kind == "agv" else 0.0
+	data.version = 61
+	return data
+
+
+## v60 adds AGVs (M11): no vehicle is one, no depot has any.
+static func _migrate_v60(data: Dictionary) -> Dictionary:
+	for vehicle: Dictionary in data.sim.vehicles:
+		vehicle.depot = 0
+	data.version = 60
+	return data
+
+
+## v59 adds the AGV zone (M11): none painted. v58 made empties without
+## customs fields; empties are never flagged, so each is clear.
+static func _migrate_v59(data: Dictionary) -> Dictionary:
+	data.sim.areas.agv_zone = {}
+	for box: Dictionary in data.sim.boxes.values():
+		if box.kind == "empty":
+			box.customs = ""
+			box.customs_until = 0.0
+	data.version = 59
+	return data
+
+
+## v58 adds customs (M11): every box already in port cleared, no yard block
+## with inspectors, no gate with a scanner.
+static func _migrate_v58(data: Dictionary) -> Dictionary:
+	for box: Dictionary in data.sim.boxes.values():
+		box.customs = ""
+		box.customs_until = 0.0
+	for area: Dictionary in data.sim.areas.list.values():
+		if area.type == "yard_block":
+			area.settings.inspectors = 0
+		elif Content.base().area_types.get(area.type, {}).get("kind") == "gate":
+			area.settings.scanner = false
+	data.version = 58
+	return data
+
+
+## v57 adds fires (M11): none burning, no engines, fires off for older
+## games, with their own seeded chances.
+static func _migrate_v57(data: Dictionary) -> Dictionary:
+	data.sim.fires = {"list": {}, "engines": {}, "next": 1}
+	var fresh := Events.create(Content.base(), data.sim.rng_seed).to_dict()
+	data.sim.event_plan.on.fires = false
+	data.sim.event_plan.fire_seed = fresh.fire_seed
+	data.sim.event_plan.fire_state = fresh.fire_state
+	data.version = 57
+	return data
+
+
+## v56 adds preventive maintenance (M11): no kind serviced yet, each crane
+## and machine's hours since service starting at nought, and a van's job
+## tagged a repair.
+static func _migrate_v56(data: Dictionary) -> Dictionary:
+	data.sim.serviced = {}
+	for crane: Dictionary in data.sim.cranes:
+		crane.worked = 0.0
+	for machine: Dictionary in data.sim.machines.list.values():
+		machine.worked = 0.0
+	for van: Dictionary in data.sim.workshops.vans.values():
+		if not van.fix.is_empty():
+			van.fix.append("repair")
+	data.version = 56
+	return data
+
+
+## v55 adds workshops' mechanics and their vans (M11); older ports have none.
+static func _migrate_v55(data: Dictionary) -> Dictionary:
+	data.sim.workshops = {"vans": {}, "next": 1}
+	data.version = 55
+	return data
+
+
+## v54 lets cranes and yard machines break down (M11): none is broken, and
+## breakdowns, off for older games, draw on their own seeded chances.
+static func _migrate_v54(data: Dictionary) -> Dictionary:
+	for crane: Dictionary in data.sim.cranes:
+		crane.broken = false
+	for machine: Dictionary in data.sim.machines.list.values():
+		machine.broken = false
+	var fresh := Events.create(Content.base(), data.sim.rng_seed).to_dict()
+	data.sim.event_plan.on.breakdowns = false
+	data.sim.event_plan.breakdown_seed = fresh.breakdown_seed
+	data.sim.event_plan.breakdown_state = fresh.breakdown_state
+	data.version = 54
+	return data
+
+
+## v53 adds the event plan (M11): each kind on as a new game has it,
+## nothing planned yet, its random numbers seeded from the game's.
+static func _migrate_v53(data: Dictionary) -> Dictionary:
+	data.sim.event_plan = Events.create(Content.base(), data.sim.rng_seed).to_dict()
+	data.version = 53
+	return data
+
+
+## v52 times a service boat's work alongside a ship: each boat gets "until".
+static func _migrate_v52(data: Dictionary) -> Dictionary:
+	for boat: Dictionary in data.sim.boats.list.values():
+		boat.until = 0.0
+	data.version = 52
+	return data
+
+
+## v51 adds services jetties (M11 ship services); older ports have none.
+static func _migrate_v51(data: Dictionary) -> Dictionary:
+	data.sim.service_jetties = {}
+	data.version = 51
+	return data
+
+
+## v50 gives each ship the services it still wants (M11 ship services);
+## ships already in port want none.
+static func _migrate_v50(data: Dictionary) -> Dictionary:
+	for ship: Dictionary in data.sim.ships:
+		ship.needs = []
+	data.version = 50
 	return data
 
 
@@ -452,10 +675,10 @@ static func _valid_boats(data: Dictionary) -> bool:
 	var ship_ids: Array = data.ships.map(func(s: Variant) -> Variant: return s.get("id") if s is Dictionary else null)
 	for id: Variant in data.boats.list:
 		var boat: Variant = data.boats.list[id]
-		if not (id is int and boat is Dictionary and _has_fields(boat, {"kind": TYPE_STRING, "base": TYPE_INT, "at": TYPE_VECTOR2, "path": TYPE_ARRAY, "ship": TYPE_INT, "job": TYPE_STRING})):
+		if not (id is int and boat is Dictionary and _has_fields(boat, {"kind": TYPE_STRING, "base": TYPE_INT, "at": TYPE_VECTOR2, "path": TYPE_ARRAY, "ship": TYPE_INT, "job": TYPE_STRING, "until": TYPE_FLOAT})):
 			return false
-		var bases: Dictionary = data.pilot_stations if boat.kind == "pilot" else data.tug_depots
-		if boat.kind not in ["pilot", "tug"] or boat.base not in bases or boat.job not in ["home", "out", "with", "back", "ashore", "fetch"] or not boat.path.all(func(p: Variant) -> bool: return p is Vector2):
+		var bases: Dictionary = data.pilot_stations if boat.kind == "pilot" else (data.tug_depots if boat.kind in ["tug", "fireboat"] else data.service_jetties)
+		if (boat.kind not in ["pilot", "tug", "fireboat"] and boat.kind not in Content.base().water.services.boats) or boat.base not in bases or boat.job not in ["home", "out", "with", "back", "ashore", "fetch", "serve", "fight"] or not boat.path.all(func(p: Variant) -> bool: return p is Vector2):
 			return false
 		if boat.job == "with" and (boat.kind != "tug" or boat.ship not in ship_ids):
 			return false
@@ -474,15 +697,27 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "serviced": TYPE_DICTIONARY, "agv_home": TYPE_DICTIONARY, "racks": TYPE_DICTIONARY, "town": TYPE_DICTIONARY, "scenario": TYPE_DICTIONARY, "reports": TYPE_ARRAY, "today_calls": TYPE_DICTIONARY, "fires": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
-		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING,
+		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING, "site": TYPE_DICTIONARY,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,
 	}):
 		return false
 	if not _has_fields(data.ledger, {
 		"cash": TYPE_INT, "opened": TYPE_INT, "today": TYPE_DICTIONARY, "terminals": TYPE_DICTIONARY, "moves": TYPE_DICTIONARY, "days": TYPE_ARRAY,
 	}):
+		return false
+	if not _has_fields(data.scenario, {"key": TYPE_STRING, "fresh": TYPE_BOOL, "status": TYPE_STRING, "medal": TYPE_STRING, "moves": TYPE_INT, "on_time_calls": TYPE_INT}):
+		return false
+	if data.scenario.key != "" and data.scenario.key not in Content.base().scenarios:
+		return false
+	if data.scenario.fresh and not data.map.begins_with(MapGen.PREFIX):
+		return false
+	if not _has_fields(data.site, {"width": TYPE_FLOAT, "height": TYPE_FLOAT}) or data.site.width <= 0.0 or data.site.width != data.site.height or fmod(data.site.width, Content.base().land.metres) != 0.0:
+		return false
+	if not _has_fields(data.today_calls, {"calls": TYPE_INT, "on_time": TYPE_INT}):
+		return false
+	if not _has_fields(data.town, {"mood": TYPE_FLOAT, "fund": TYPE_INT, "bypass": TYPE_BOOL, "said": TYPE_STRING}):
 		return false
 	if not _has_fields(data.storage, {"free_days": TYPE_INT, "fee": TYPE_INT}):
 		return false
@@ -506,7 +741,15 @@ static func _valid_sim(data: Variant) -> bool:
 	for bases: Array in [[data.pilot_stations, "pilots"], [data.tug_depots, "tugs"]]:
 		if not bases[0].keys().all(func(id: Variant) -> bool: return id is int and bases[0][id] is Dictionary and _has_fields(bases[0][id], {"cell": TYPE_VECTOR2I, bases[1]: TYPE_INT})):
 			return false
+	if not data.service_jetties.keys().all(func(id: Variant) -> bool: return id is int and data.service_jetties[id] is Dictionary and _has_fields(data.service_jetties[id], {"cell": TYPE_VECTOR2I})):
+		return false
 	if not _valid_boats(data):
+		return false
+	if not _has_fields(data.fires, {"list": TYPE_DICTIONARY, "engines": TYPE_DICTIONARY, "next": TYPE_INT}) or not data.fires.list.values().all(func(f: Variant) -> bool: return f is Dictionary and _has_fields(f, {"target": TYPE_ARRAY, "at": TYPE_VECTOR2, "started": TYPE_FLOAT, "out_at": TYPE_FLOAT, "crew": TYPE_ARRAY})) or not data.fires.engines.values().all(func(e: Variant) -> bool: return e is Dictionary and _has_fields(e, {"station": TYPE_INT, "job": TYPE_STRING, "fire": TYPE_INT, "at": TYPE_VECTOR2, "path": TYPE_ARRAY}) and e.job in ["home", "out", "fighting", "back"]):
+		return false
+	if not _has_fields(data.workshops, {"vans": TYPE_DICTIONARY, "next": TYPE_INT}) or not data.workshops.vans.values().all(func(v: Variant) -> bool: return v is Dictionary and _has_fields(v, {"workshop": TYPE_INT, "job": TYPE_STRING, "fix": TYPE_ARRAY, "at": TYPE_VECTOR2, "path": TYPE_ARRAY, "until": TYPE_FLOAT}) and v.job in ["home", "out", "fixing", "back"] and v.path.all(func(p: Variant) -> bool: return p is Vector2)):
+		return false
+	if not _has_fields(data.event_plan, {"on": TYPE_DICTIONARY, "list": TYPE_ARRAY, "planned_to": TYPE_FLOAT, "rng_seed": TYPE_INT, "rng_state": TYPE_INT, "breakdown_seed": TYPE_INT, "breakdown_state": TYPE_INT, "fire_seed": TYPE_INT, "fire_state": TYPE_INT}) or not data.event_plan.on.keys().all(func(k: Variant) -> bool: return k in Content.base().events.defaults and data.event_plan.on[k] is bool) or not data.event_plan.list.all(func(e: Variant) -> bool: return e is Dictionary and _has_fields(e, {"kind": TYPE_STRING, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "peak": TYPE_FLOAT, "forecast": TYPE_BOOL})):
 		return false
 	if not data.passages.all(func(p: Variant) -> bool: return p is Dictionary and _has_fields(p, {"segment": TYPE_INT, "from": TYPE_FLOAT, "to": TYPE_FLOAT, "ship": TYPE_INT})):
 		return false
@@ -528,10 +771,10 @@ static func _valid_sim(data: Variant) -> bool:
 			"boxes": TYPE_INT, "exports": TYPE_INT, "empties": TYPE_INT, "state": TYPE_INT,
 			"id": TYPE_INT, "light": TYPE_BOOL, "cleared": TYPE_BOOL, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "tug_depot": TYPE_INT, "tugs_at": TYPE_FLOAT, "hold_until": TYPE_FLOAT,
 			"anchorage": TYPE_INT, "spot": TYPE_INT, "arrived": TYPE_FLOAT, "path": TYPE_ARRAY, "sail": TYPE_FLOAT, "prev_sail": TYPE_FLOAT, "moves": TYPE_INT, "berthed": TYPE_FLOAT,
-			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL,
+			"apron": TYPE_INT, "from": TYPE_INT, "berth": TYPE_INT, "any_berth": TYPE_BOOL, "needs": TYPE_ARRAY, "kept": TYPE_BOOL,
 		}):
 			return false
-		if (ship.apron == 0) != (ship.state in [PortSim.Ship.State.ANCHORED, PortSim.Ship.State.ANCHORING]) or (ship.anchorage != 0 and ship.anchorage not in data.anchorages) or not ship.path.all(func(p: Variant) -> bool: return p is Vector2):
+		if (ship.apron == 0) != (ship.state in [PortSim.Ship.State.ANCHORED, PortSim.Ship.State.ANCHORING]) or (ship.anchorage != 0 and ship.anchorage not in data.anchorages) or not ship.path.all(func(p: Variant) -> bool: return p is Vector2) or not ship.needs.all(func(n: Variant) -> bool: return n is String and n in Content.base().ship_classes.get(ship.kind, {}).get("services", {})):
 			return false
 		if ship.apron != 0 and not (ship.apron in data.areas.list and data.areas.list[ship.apron].type == "quay_apron"):
 			return false
@@ -543,7 +786,7 @@ static func _valid_sim(data: Variant) -> bool:
 			return false
 	for crane: Variant in data.cranes:
 		if not crane is Dictionary or not _has_fields(crane, {
-			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING,
+			"timer": TYPE_FLOAT, "tractor": TYPE_INT, "apron": TYPE_INT, "along": TYPE_INT, "kind": TYPE_STRING, "broken": TYPE_BOOL, "worked": TYPE_FLOAT,
 		}) or crane.kind not in Content.base().sts_cranes or not (crane.apron in data.areas.list and data.areas.list[crane.apron].type == "quay_apron"):
 			return false
 	if not _valid_area_flow(data):
@@ -578,7 +821,7 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			vehicles[vehicle.id] = true
 		for id: Variant in data.traffic.traffic.cars:
 			var car: Variant = data.traffic.traffic.cars[id]
-			if not (id is int and id in vehicles and car is Dictionary and _has_fields(car, {"route": TYPE_ARRAY, "i": TYPE_INT, "s": TYPE_FLOAT, "v": TYPE_FLOAT, "top": TYPE_FLOAT, "length": TYPE_FLOAT, "booked": TYPE_ARRAY, "waited": TYPE_FLOAT})):
+			if not (id is int and id in vehicles and car is Dictionary and _has_fields(car, {"route": TYPE_ARRAY, "i": TYPE_INT, "s": TYPE_FLOAT, "v": TYPE_FLOAT, "top": TYPE_FLOAT, "length": TYPE_FLOAT, "booked": TYPE_ARRAY, "waited": TYPE_FLOAT, "moved": TYPE_FLOAT})):
 				return false
 			if car.route.is_empty() or car.i < 0 or car.i >= car.route.size() or not car.route.all(known_piece):
 				return false
@@ -604,18 +847,18 @@ static func _valid_area_flow(data: Dictionary) -> bool:
 			return false
 	for area: Variant in data.handovers:
 		var at: Variant = data.handovers[area]
-		if not (area in data.areas.list and at is Dictionary and _has_fields(at, {"slots": TYPE_ARRAY, "buffer": TYPE_ARRAY, "road": TYPE_ARRAY})):
+		if not (area is int and absi(area) in data.areas.list and at is Dictionary and _has_fields(at, {"slots": TYPE_ARRAY, "buffer": TYPE_ARRAY, "road": TYPE_ARRAY})):
 			return false
 	if not _has_fields(data.machines, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT}):
 		return false
 	for machine: Variant in data.machines.list.values():
-		if not (machine is Dictionary and _has_fields(machine, {"area": TYPE_INT, "gear": TYPE_STRING, "bay": TYPE_INT, "job": TYPE_DICTIONARY}) and machine.gear in Content.base().yard_gear):
+		if not (machine is Dictionary and _has_fields(machine, {"area": TYPE_INT, "gear": TYPE_STRING, "bay": TYPE_INT, "job": TYPE_DICTIONARY, "broken": TYPE_BOOL, "worked": TYPE_FLOAT}) and machine.gear in Content.base().yard_gear):
 			return false
 	for machine: Variant in data.machine_jobs:
 		var job: Variant = data.machine_jobs[machine]
 		if not (machine in data.machines.list and job is Dictionary and _has_fields(job, {"position": TYPE_INT})):
 			return false
-		if not (_has_fields(job, {"vehicle": TYPE_INT}) or _has_fields(job, {"train": TYPE_INT, "wagon": TYPE_INT})):
+		if not (_has_fields(job, {"vehicle": TYPE_INT}) or _has_fields(job, {"train": TYPE_INT, "wagon": TYPE_INT}) or _has_fields(job, {"rack": TYPE_INT, "slot": TYPE_INT, "box": TYPE_INT})):
 			return false
 	for area: Variant in data.area_stacks:
 		var stacks: Variant = data.area_stacks[area]
@@ -653,9 +896,11 @@ static func _valid_roads(roads: Dictionary, types: Dictionary) -> bool:
 
 ## Areas: each of a known type, placed on cells, with rules, in a known terminal.
 static func _valid_areas(areas: Dictionary) -> bool:
-	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY, "breakwaters": TYPE_DICTIONARY, "next_breakwater": TYPE_INT}):
+	if not _has_fields(areas, {"list": TYPE_DICTIONARY, "next_id": TYPE_INT, "terminals": TYPE_DICTIONARY, "next_terminal": TYPE_INT, "paint": TYPE_DICTIONARY, "agv_zone": TYPE_DICTIONARY, "filled": TYPE_DICTIONARY, "breakwaters": TYPE_DICTIONARY, "next_breakwater": TYPE_INT}):
 		return false
 	if not areas.filled.keys().all(func(cell: Variant) -> bool: return cell is Vector2i):
+		return false
+	if not areas.agv_zone.keys().all(func(cell: Variant) -> bool: return cell is Vector2i and areas.agv_zone[cell] is bool):
 		return false
 	if not areas.breakwaters.keys().all(func(id: Variant) -> bool: return id is int and areas.breakwaters[id] is Dictionary and _has_fields(areas.breakwaters[id], {"from": TYPE_VECTOR2I, "to": TYPE_VECTOR2I})):
 		return false

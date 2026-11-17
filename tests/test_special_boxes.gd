@@ -52,17 +52,19 @@ func _test_dangerous_goods_need_their_block() -> void:
 		_expect(sim.area_stacks[dg].count() if has_block else 0, 20 if has_block else 0, "the dangerous-goods block takes them all" if has_block else "they are shut out")
 
 
-## A dangerous-goods block keeps the data's distance from every other yard block.
+## A dangerous-goods block keeps the data's distance from every other yard
+## block, quay and gate.
 func _test_dangerous_blocks_stand_apart() -> void:
 	var sim := AreaPort.working_terminal(0, 0, _rules({}))
 	var near := _block(sim, 61)
 	var gap: int = sim.rules.special_boxes.dg_distance
-	var refusal := "A dangerous-goods block stands %d m from other yard blocks" % Grid.metres(gap)
+	var refusal := "A dangerous-goods block stands %d m from other yard blocks, quays and gates" % Grid.metres(gap)
 	_expect(sim.apply({"op": "set_area", "id": near, "settings": {"role": "dangerous"}}), refusal, "a block beside another can't take dangerous goods")
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	var far := _block(sim, 61 + 30 + gap + 1)
 	_expect(sim.apply({"op": "set_area", "id": far, "settings": {"role": "dangerous"}}), "", "one %d cells clear can" % gap)
 	_expect(sim.build_area_error("yard_block", east, 1, 61 + 30 + gap + 1 + 30, 61 + 30 + gap + 1 + 30 + 9), refusal, "and no yard block is built close to it")
+	_expect(sim.build_area_error("gate_small", east, -1, 61 + 30 + gap + 1, 61 + 30 + gap + 1 + 9), refusal, "nor a gate across the road from it")
 
 
 ## A 30-cell yard block south of the east road from `from`, in terminal 1.

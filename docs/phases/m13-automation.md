@@ -1,8 +1,8 @@
-# M12 — Policies, rules and automation
+# M13 — Policies, rules and automation
 
 **Goal.** Let the player run a big port through rules instead of clicks: global policies, rules per yard block, and an automation technology tier that pays off in the long run but has a sourced ramp-up penalty.
 
-**Depends on.** M11.
+**Depends on.** M12.
 
 **Exit criteria:**
 - Every policy and rule is a command, saved, and covered by the replay hash.
@@ -21,7 +21,7 @@
 5. **Rule templates.** Save a block's rules as a named template and apply it to other blocks. Test: applying a template copies the rules.
 
 ### Automation tier
-6. **Automated equipment types**: ASC (automated stacking crane, density 16 per tile) and AGV for horizontal transport, unlocked by milestone. Test: unlock gating.
+6. **Automated stacking cranes**: ASC (density 16 per tile), unlocked by milestone. AGVs for horizontal transport come in [M11 Harbour life](m11-harbour-life.md). Test: unlock gating.
 7. **Ramp-up penalty.** Newly automated blocks run at a productivity factor that climbs to above-manual over a period, using a curve from the data. Test: the ramp-up exit criterion.
 8. **Automation costs.** Higher capex, lower labour opex, and an IT system upkeep in the ledger. Test: ledger lines.
 9. **Mixed operations.** Automated and manual blocks coexist, and handover between them goes through transfer points. Test: boxes move between block types without loss.
@@ -31,15 +31,15 @@
 11. **Month-long hands-off soak.** A scripted large port runs a game month with no commands and stays solvent and stable. Test: the exit criterion.
 
 ### From the developer's notes (24 Oct 2026)
-- **Buildings inside areas, as Industries.** An area gains buildings that serve it: an AGV depot with charging bays, a yard gatehouse, a maintenance bay. A block's AGVs need a depot in reach. Test: AGVs with no depot in reach stay idle.
-- **AGVs as agents.** AGVs queue at block transfer points and charge at their depot when low. Test: an AGV below its charge limit drives to a charger before its next job.
+- **Buildings inside areas, as Industries.** An area gains buildings that serve it: a yard gatehouse. The AGV depot and the maintenance bay (the workshop) became area types along roads in [M11](m11-harbour-life.md), as the developer chose on 15 Nov 2026.
+- **AGVs as agents.** Moved to [M11](m11-harbour-life.md).
 - **Utilities.** Power (reefers, shore power, chargers) and data (automation needs a link) as networks drawn like roads, with substations. Test: an unpowered charger charges nothing, and an unlinked ASC doesn't work.
 - **Manned or automated, per area.** Each block and the horizontal transport choose manned (cheap, slower, labour cost) or automated (capex, ramp-up, IT upkeep), so the trade-off is the player's. Test: switching a block changes its costs and rates as the data says.
 
 ### From the developer's notes (27 Oct 2026)
-- **AGV depots and fleets, taken further.** AGV depots become placed buildings with bays the player sizes. Each depot owns a fleet that the player can grow or shrink, and shows its AGVs' state (working, queuing, charging, idle). Blocks are assigned to a depot. Test: a block takes its AGVs only from its assigned depot, and growing a fleet adds AGVs up to the depot's bays.
+- **AGV depots and fleets, taken further.** Moved to [M11](m11-harbour-life.md).
 
 ### Close
 12. **Fixture and soak.** New save fixture, and policies and rules in the soak test.
-13. **Public playtest build.** Notes go in `docs/playtests/m11.md`.
-14. **Close the phase.** Tag `m11`.
+13. **Public playtest build.** Notes go in `docs/playtests/m13.md`.
+14. **Close the phase.** Tag `m13`.

@@ -13,7 +13,9 @@ var reputation := {}
 ## Agreed weekly calls: {"id", "line", "kind", "start" (minute of the week),
 ## "window_hours", "moves", "apron" (the berth it calls at, 0 for none yet),
 ## "asked" (the start the line asked for; start stays within flex_hours of
-## it), "any_berth" (whether its ship takes another berth when its own is busy)}.
+## it), "any_berth" (whether its ship takes another berth when its own is busy),
+## "next_start" (its next call's start this week when the harbour master has
+## moved that one call, else -1)}.
 var services: Array[Dictionary] = []
 ## Services on offer: as above, plus "expires" (a calendar minute).
 var offers: Array[Dictionary] = []
@@ -59,7 +61,7 @@ func offer(rng: RandomNumberGenerator, now: float, apron: int, fits: Callable, d
 		"id": _next_id, "line": line, "kind": kind, "start": start,
 		"window_hours": spec.window_hours,
 		"moves": spec.import_moves + spec.export_moves,
-		"apron": apron, "asked": start, "any_berth": false,
+		"apron": apron, "asked": start, "any_berth": false, "next_start": -1.0,
 		"expires": now + terms.offer_days * SimClock.MINUTES_PER_DAY,
 	}
 	_next_id += 1
@@ -204,9 +206,45 @@ func expire(now: float) -> void:
 func due(tick_of_week: int) -> Array[Dictionary]:
 	var found: Array[Dictionary] = []
 	for service in services:
-		if roundi(service.start / SimClock.CALENDAR_MINUTES_PER_TICK) == tick_of_week:
+		if roundi(starts(service) / SimClock.CALENDAR_MINUTES_PER_TICK) == tick_of_week:
 			found.append(service)
 	return found
+
+
+## The minute of the week `service`'s next call starts: moved once, or its own.
+static func starts(service: Dictionary) -> float:
+	return service.next_start if service.next_start >= 0.0 else service.start
+
+
+## The calendar minute of `service`'s next call at or after calendar minute `now`.
+static func next_call(service: Dictionary, now: float) -> float:
+	var week := floorf(now / MINUTES_PER_WEEK) * MINUTES_PER_WEEK
+	var at := week + starts(service)
+	return at if at >= now else at + MINUTES_PER_WEEK
+
+
+## Moves only the next call of agreed service `id` to start at minute of the
+## week `start` (M11): within flex_hours of its weekly start; its window and
+## later weeks stay.
+func move_call(id: int, start: float, _now: float) -> String:
+	var err := move_call_error(id, start)
+	if err:
+		return err
+	var service: Dictionary = services.filter(func(s: Dictionary) -> bool: return s.id == id)[0]
+	service.next_start = fposmod(start, MINUTES_PER_WEEK)
+	version += 1
+	return ""
+
+
+## Why agreed service `id`'s next call can't start at minute of the week `start`, or "".
+func move_call_error(id: int, start: float) -> String:
+	var found := services.filter(func(s: Dictionary) -> bool: return s.id == id)
+	if found.is_empty():
+		return "No such service"
+	var apart := absf(fposmod(start - found[0].start + MINUTES_PER_WEEK / 2.0, MINUTES_PER_WEEK) - MINUTES_PER_WEEK / 2.0)
+	if apart > rules.contracts.flex_hours * 60.0:
+		return "A call moves at most %d h from its weekly time" % rules.contracts.flex_hours
+	return ""
 
 
 ## What one call of `service` earns on average, from move prices and the box mix.

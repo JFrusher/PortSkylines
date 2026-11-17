@@ -42,6 +42,19 @@ static func local(kind: String, columns: int, depth: int, present: Dictionary) -
 					if whole.call(cells):
 						layout.stacks.append({"row": r - 2, "bay": bay, "cells": cells, "slot": _nearest_slot(layout.slots, bay)})
 			return layout
+		"transfer_block":
+			# Laid across its road: AGVs hand over at the front (rows 0-1), lorries
+			# at the back (the last two rows, by the road behind), the stacks between
+			# run away from the road, a bay every BAY rows, one stack per column.
+			var layout := {"buffer": kept.call(row.call(0, 0, columns)), "slots": slots_in.call(1), "stacks": [], "back_slots": slots_in.call(depth - 2), "back_buffer": kept.call(row.call(depth - 1, 0, columns))}
+			for bay in (depth - 4) / BAY:
+				for k in columns:
+					var cells: Array[Vector2i] = []
+					for r in range(2 + bay * BAY, 2 + (bay + 1) * BAY):
+						cells.append(Vector2i(k, r))
+					if whole.call(cells):
+						layout.stacks.append({"row": k, "bay": bay, "cells": cells, "slot": -1})
+			return layout
 		"quay_apron":
 			var hatches: Array[Vector2i] = []
 			for r in range(4, depth - 2):
@@ -56,7 +69,7 @@ static func local(kind: String, columns: int, depth: int, present: Dictionary) -
 				if whole.call(booth):
 					layout.slots.append(booth)
 			return layout
-		"parking":
+		"parking", "agv_depot":
 			return {"buffer": kept.call(row.call(0, 0, columns)), "slots": slots_in.call(1)}
 	return {}
 

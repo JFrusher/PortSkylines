@@ -51,7 +51,7 @@ func _test_a_box_moves_to_the_other_terminal() -> void:
 	_expect([sim.areas.list[second].terminal, sim.areas.list[gate].terminal, sim.areas.list[block].terminal], [two, two, two], "all in Terminal 2")
 	var line: String = sim.rules.lines.keys()[0]
 	for apron: int in [1, second]:
-		sim.contracts.services.append({"id": 900 + apron, "line": line, "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": apron, "any_berth": false, "asked": 9000})
+		sim.contracts.services.append({"id": 900 + apron, "line": line, "kind": "feeder", "start": 9000, "window_hours": 12.0, "moves": 0, "apron": apron, "any_berth": false, "asked": 9000, "next_start": -1.0})
 	sim.creative = false
 	sim.ledger.cash = 10_000_000
 	var ship := PortSim.Ship.new("feeder", line, sim.clock.calendar_minutes() + 600.0, 6, 0)

@@ -40,7 +40,7 @@ const SCHEMA := {
 	"storage": {"free_days": TYPE_INT, "fee": TYPE_INT, "max_fee": TYPE_INT, "dwell_per_dollar": TYPE_FLOAT, "min_dwell_factor": TYPE_FLOAT, "fair_fee": TYPE_INT, "satisfaction_per_dollar": TYPE_FLOAT},
 	"gate_levels": {"*": {"name": TYPE_STRING, "minutes": TYPE_FLOAT, "upkeep_per_lane": TYPE_INT}},
 	"export_lead_hours": TYPE_FLOAT,
-	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT},
+	"upkeep": {"sts_crane": TYPE_INT, "tractor": TYPE_INT, "agv": TYPE_INT},
 	# How long vehicles wait in each lane cell is folded in every epoch_seconds
 	# of vehicle time, mixed in at `smoothing` (0 to 1); routes take up the
 	# delays every route_epoch_seconds, dropping every kept route.
@@ -71,6 +71,32 @@ const SCHEMA := {
 	# Loans the port can take, up to max_loans at once, paid back daily.
 	"loans": {"*": {"amount": TYPE_INT, "yearly_rate": TYPE_FLOAT, "days": TYPE_INT}},
 	"max_loans": TYPE_INT,
+	# Customs (M11): each line's customs_share of its imports is flagged when
+	# landed. With a gate scanner in the terminal only inspect_share_after_scan
+	# of those need inspecting; they go to a customs block, whose inspectors
+	# (inspector_cost, upkeep_per_inspector a day) each inspect one for
+	# inspect_hours_min to inspect_hours_max. With no customs block a flagged
+	# box waits no_shed_hours where it stacks. A flagged box never leaves until
+	# cleared.
+	"customs": {"inspect_share_after_scan": TYPE_FLOAT, "inspect_hours_min": TYPE_FLOAT, "inspect_hours_max": TYPE_FLOAT, "no_shed_hours": TYPE_FLOAT, "scanner_cost": TYPE_INT, "inspector_cost": TYPE_INT, "upkeep_per_inspector": TYPE_INT},
+	# Events (M11): planned a season of season_days ahead from their own seeded
+	# random numbers, each kind on or off per game (`defaults` for a new one).
+	# Wind blows at mean_kmh, daily_swing_kmh stronger mid-afternoon and that
+	# much calmer before dawn. With breakdowns on, working equipment fails on
+	# average every mtbf_hours of work (in its own data), repairs taking
+	# repair_hours_min to repair_hours_max by a mechanic hired at a workshop
+	# for mechanic_cost (upkeep_per_mechanic a day), whose van drives the
+	# roads at van_speed metres a minute. Equipment the player has serviced
+	# (by kind) is taken out for service_hours every service_every_hours of
+	# work, and fails serviced_mtbf_factor times less often. With fires on,
+	# per_week break out (ship_share of them on ships at berth, a yard block
+	# by or with dangerous goods dg_factor times likelier); one no crew has
+	# reached after grace_minutes burns boxes_per_hour (each box_value and
+	# reputation_per_box), a ship ship_reputation_per_hour; a crew puts it out
+	# in fight_hours. Fire engines (engine_cost, upkeep_per_engine) drive from
+	# fire stations at engine_speed metres a minute. Storms: per_season on average, each lasting hours_min to hours_max with
+	# gusts peaking at peak_min_kmh to peak_max_kmh, forecast lead_hours ahead.
+	"events": {"season_days": TYPE_FLOAT, "defaults": {"*": TYPE_BOOL}, "wind": {"mean_kmh": TYPE_FLOAT, "daily_swing_kmh": TYPE_FLOAT}, "fires": {"per_week": TYPE_FLOAT, "dg_factor": TYPE_FLOAT, "ship_share": TYPE_FLOAT, "grace_minutes": TYPE_FLOAT, "boxes_per_hour": TYPE_FLOAT, "box_value": TYPE_INT, "reputation_per_box": TYPE_FLOAT, "ship_reputation_per_hour": TYPE_FLOAT, "fight_hours": TYPE_FLOAT, "engine_cost": TYPE_INT, "upkeep_per_engine": TYPE_INT, "engine_speed": TYPE_FLOAT}, "breakdowns": {"repair_hours_min": TYPE_FLOAT, "repair_hours_max": TYPE_FLOAT, "mechanic_cost": TYPE_INT, "upkeep_per_mechanic": TYPE_INT, "van_speed": TYPE_FLOAT, "service_every_hours": TYPE_FLOAT, "service_hours": TYPE_FLOAT, "serviced_mtbf_factor": TYPE_FLOAT}, "storms": {"per_season": TYPE_FLOAT, "hours_min": TYPE_FLOAT, "hours_max": TYPE_FLOAT, "lead_hours": TYPE_FLOAT, "peak_min_kmh": TYPE_FLOAT, "peak_max_kmh": TYPE_FLOAT}},
 	# Milestones on TEU moved across the quay; each unlocks named content
 	# (a ship class, a yard gear, "loans", "land", "dredging", "ledger" or
 	# "contracts"), shown to the player with the given description.
@@ -91,16 +117,18 @@ const SCHEMA := {
 	# reputation changes by `reputation`, and no loans for `no_loans_days`.
 	"bailout": {"days": TYPE_INT, "reputation": TYPE_FLOAT, "no_loans_days": TYPE_INT},
 	# "*" means any key, each holding the record that follows.
-	# Length in metres, draft in metres, outreach in box rows. An inland ship
+	# Length in metres, draft in metres, outreach in box rows. Each service
+	# (bunkers, provisions, waste) a ship of the class wants with `chance` when
+	# it calls, paying `fee` for `minutes` of a service boat's work. An inland ship
 	# (a barge) comes and goes only by a river's inland end, where it leaves
 	# the site; every other ship only by the open sea.
-	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "light_draft": TYPE_FLOAT, "light_share": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "port_dues": TYPE_INT, "inland": TYPE_BOOL}},
+	"ship_classes": {"*": {"length": TYPE_INT, "draft": TYPE_FLOAT, "light_draft": TYPE_FLOAT, "light_share": TYPE_FLOAT, "outreach": TYPE_INT, "import_moves": TYPE_INT, "export_moves": TYPE_INT, "window_hours": TYPE_FLOAT, "pilot": TYPE_BOOL, "tugs": TYPE_INT, "port_dues": TYPE_INT, "inland": TYPE_BOOL, "services": {"*": {"chance": TYPE_FLOAT, "fee": TYPE_INT, "minutes": TYPE_FLOAT}}}},
 	# Fictional shipping lines: the classes they sail (relative weights) and how
 	# strongly their reputation of the port moves.
 	# rail_share: of a line's imports, the share booked to leave by train when
 	# the terminal has a rail block. barge_share: of its big ships' imports for
 	# a place the river reaches, the share booked to leave by barge.
-	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT, "barge_share": TYPE_FLOAT, "tranship_share": TYPE_FLOAT, "connection_hours": TYPE_FLOAT}},
+	"lines": {"*": {"name": TYPE_STRING, "livery": TYPE_STRING, "stripe": TYPE_STRING, "classes": {"*": TYPE_FLOAT}, "sensitivity": TYPE_FLOAT, "rail_share": TYPE_FLOAT, "barge_share": TYPE_FLOAT, "tranship_share": TYPE_FLOAT, "connection_hours": TYPE_FLOAT, "customs_share": TYPE_FLOAT}},
 	# Transhipment: a line's tranship_share of the boxes its big ships land
 	# leave on its next feeder within connection_hours, and the same share of
 	# its feeders' boxes on its next big ship; each such move pays the move
@@ -135,6 +163,9 @@ const SCHEMA := {
 		"anchorage": {"cost_per_cell": TYPE_INT, "spacing": TYPE_INT}, "max_wait_hours": TYPE_FLOAT,
 		"pilots": {"station_cost": TYPE_INT, "pilot_cost": TYPE_INT, "upkeep_per_pilot": TYPE_INT, "boat_speed": TYPE_FLOAT, "fee": TYPE_INT},
 		"tugs": {"depot_cost": TYPE_INT, "tug_cost": TYPE_INT, "upkeep_per_tug": TYPE_INT, "speed": TYPE_FLOAT}, "slot_margin_minutes": TYPE_FLOAT,
+		"fireboats": {"cost": TYPE_INT, "upkeep": TYPE_INT, "speed": TYPE_FLOAT},
+		"tides": {"range": TYPE_FLOAT, "period_hours": TYPE_FLOAT},
+		"services": {"jetty_cost": TYPE_INT, "unserved_reputation": TYPE_FLOAT, "boats": {"*": {"name": TYPE_STRING, "cost": TYPE_INT, "upkeep": TYPE_INT, "speed": TYPE_FLOAT}}},
 		"breakwater": {"cost_per_cell": TYPE_INT, "upkeep_per_cell": TYPE_FLOAT},
 		"dredge": {"max_depth": TYPE_FLOAT, "cost_per_cell_metre": TYPE_INT, "maintenance_per_cell_metre": TYPE_INT, "maintenance_days": TYPE_INT}},
 	# The site is split into square land tiles `metres` across; the port owns
@@ -142,9 +173,25 @@ const SCHEMA := {
 	"land": {"metres": TYPE_INT, "price": TYPE_INT, "upkeep": TYPE_INT, "start": {"x": TYPE_INT, "y": TYPE_INT, "width": TYPE_INT, "height": TYPE_INT}},
 	# An STS crane: its price, moves an hour, outreach in box rows, days from
 	# order to standing, and width along the quay in metres.
-	"sts_cranes": {"*": {"name": TYPE_STRING, "cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT, "max_fetchers": TYPE_INT}},
+	"sts_cranes": {"*": {"name": TYPE_STRING, "wind_limit_kmh": TYPE_FLOAT, "mtbf_hours": TYPE_FLOAT, "cost": TYPE_INT, "rate": TYPE_FLOAT, "outreach": TYPE_INT, "lead_days": TYPE_FLOAT, "width": TYPE_INT, "max_fetchers": TYPE_INT}},
 	"crane_interference": TYPE_FLOAT,
 	"tractor": {"cost": TYPE_INT, "speed": TYPE_FLOAT},
+	# How boxes look (M11): own_share of a line's boxes in its livery (stripe_share
+	# of those with its stripe), the rest leased in a lessor colour; reefers
+	# white; each faded and darkened up to weathering, rust_share of them rusty.
+	# Floodlights through the night (M11): a flat cost per terminal, paid as night ends.
+	"lighting": {"per_terminal_night": TYPE_INT, "night_ends_hour": TYPE_FLOAT},
+	# The town next door (M11, see Town): where it sits past the entry, how far
+	# the port reaches it, its mood's base and pace, noise and light by area
+	# kind, jobs by kind of worker, and what its fixes cost.
+	"town": {"name": TYPE_STRING, "offset_cells": TYPE_ARRAY, "reach_m": TYPE_FLOAT, "base_mood": TYPE_FLOAT, "ease_per_hour": TYPE_FLOAT, "sour_below": TYPE_FLOAT, "warm_above": TYPE_FLOAT, "night_starts_hour": TYPE_FLOAT, "noise": {"*": TYPE_FLOAT}, "light": {"*": TYPE_FLOAT}, "ship_noise": TYPE_FLOAT, "lorry_noise": TYPE_FLOAT, "belt_factor": TYPE_FLOAT, "jobs": {"crane": TYPE_FLOAT, "machine": TYPE_FLOAT, "tractor": TYPE_FLOAT, "person": TYPE_FLOAT}, "points_per_job": TYPE_FLOAT, "max_job_points": TYPE_FLOAT, "fund_per_point": TYPE_FLOAT, "max_fund_points": TYPE_FLOAT, "max_fund": TYPE_INT, "bypass_cost": TYPE_INT, "shore_power_cost": TYPE_INT, "houses": TYPE_INT, "houses_per_job": TYPE_FLOAT},
+	# Scenarios (M11, see Scenario): a set game's map, days, start money, rule
+	# changes ({"path": "a.b.c", "value"}), goals and kept conditions
+	# ({"kind", "count"}), and the last day each medal is won by.
+	"scenarios": {"*": {"name": TYPE_STRING, "blurb": TYPE_STRING, "map": TYPE_STRING, "days": TYPE_FLOAT, "start_money": TYPE_FLOAT, "patch": TYPE_ARRAY, "goals": TYPE_ARRAY, "keep": TYPE_ARRAY, "medals": {"gold": TYPE_FLOAT, "silver": TYPE_FLOAT}}},
+	"box_look": {"own_share": TYPE_FLOAT, "stripe_share": TYPE_FLOAT, "weathering": TYPE_FLOAT, "rust_share": TYPE_FLOAT, "reefer": TYPE_STRING, "rust": TYPE_STRING, "placard": TYPE_STRING, "lessors": TYPE_ARRAY},
+	# An AGV (M11): bought at an AGV depot, driverless, so dear to buy and cheap to keep.
+	"agv": {"cost": TYPE_INT, "speed": TYPE_FLOAT, "battery_hours": TYPE_FLOAT, "charge_hours": TYPE_FLOAT, "low_share": TYPE_FLOAT, "charger_cost": TYPE_INT, "max_chargers": TYPE_INT, "rack_cost": TYPE_INT, "safety_cells": TYPE_FLOAT},
 	# Roads the player draws: lanes each way along the drawn direction, whether
 	# lorries may use it (tractors and AGVs always may), and cost and daily upkeep per 4 m cell.
 	# Roads meeting at a node must part by at least min_angle degrees; each is
@@ -180,11 +227,11 @@ const SCHEMA := {
 	"berths": {"*": {"name": TYPE_STRING, "length": TYPE_INT, "crane_spots": TYPE_INT}},
 	# Yard machines on areas: travel speed in m/s, seconds to lift and to set
 	# down a box, one machine per so many bays of an area, and how high they stack.
-	"yard_gear": {"*": {"name": TYPE_STRING, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL, "carries": TYPE_BOOL}},
+	"yard_gear": {"*": {"name": TYPE_STRING, "wind_limit_kmh": TYPE_FLOAT, "mtbf_hours": TYPE_FLOAT, "upkeep_per_machine": TYPE_INT, "speed": TYPE_FLOAT, "lift_seconds": TYPE_FLOAT, "set_down_seconds": TYPE_FLOAT, "bays_per_machine": TYPE_INT, "tiers": TYPE_INT, "empties_only": TYPE_BOOL, "carries": TYPE_BOOL}},
 }
 
 ## What an area type does; several types may share a kind, as gates of different sizes do.
-const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking"]
+const AREA_KINDS := ["yard_block", "quay_apron", "gate", "depot", "parking", "workshop", "fire_station", "agv_depot", "transfer_block", "tree_belt"]
 
 # Keys the sim divides by or repeats on; zero or less would hang or spin it.
 const POSITIVE := ["min_radius_cells", "width", "tiers", "lift_seconds", "set_down_seconds", "bays_per_machine", "depth", "min_length", "year_days", "metres", "maintenance_days", "amount", "days", "per_20ft", "forty_factor", "min_dwell_factor", "offer_check_minutes", "window_hours", "sensitivity", "ship_speed", "half_width", "pocket", "spacing", "max_wait_hours", "boat_speed", "lorry_interval_minutes", "export_lorry_interval_minutes", "lorry_speed", "give_up_seconds", "length", "crane_spots", "demand", "wagons", "interval_minutes", "rate", "crane_interference", "speed", "minutes"]
@@ -201,6 +248,21 @@ static func base() -> Dictionary:
 			assert(false, "Bad base game data, see the error above")
 		_base = result.rules
 	return _base
+
+
+## A copy of `rules` on a site of `site`'s size, its maps drawn to scale:
+## a save keeps the site it was made on (the game's grew in M11).
+static func on_site(rules: Dictionary, site: Dictionary) -> Dictionary:
+	var copy := rules.duplicate(true)
+	var scale: float = site.width / rules.site.width
+	var scaled := func(points: Array) -> Array: return points.map(func(p: Array) -> Array: return [p[0] * scale, p[1] * scale])
+	copy.site = site.duplicate()
+	for map: Dictionary in copy.maps.values():
+		map.land = scaled.call(map.land)
+		map.islands = map.islands.map(func(island: Array) -> Array: return scaled.call(island))
+		for river: Dictionary in map.rivers:
+			river.points = scaled.call(river.points)
+	return copy
 
 
 ## {"rules": Dictionary} from every .json file in `dir`, or {"error": String}.
@@ -257,12 +319,42 @@ static func _cross_check(rules: Dictionary) -> Dictionary:
 		for kind: String in rules.lines[line].classes:
 			if not rules.ship_classes.has(kind):
 				return {"error": "lines.%s.classes: unknown ship class \"%s\"" % [line, kind]}
+	for key: String in rules.scenarios:
+		var err := _scenario_error(rules, rules.scenarios[key])
+		if err:
+			return {"error": "scenarios.%s.%s" % [key, err]}
 	var shares := 0.0
 	for place: Dictionary in rules.hinterland.places.values():
 		shares += place.share
 	if not is_equal_approx(shares, 1.0):
 		return {"error": "hinterland.places: shares must add up to 1"}
 	return {"rules": rules}
+
+
+## Why `scenario` won't play under `rules`, or "": its map is known, every
+## patched path is a rule already, every goal and kept condition a known
+## kind, and its medals fall within its days.
+static func _scenario_error(rules: Dictionary, scenario: Dictionary) -> String:
+	if scenario.map not in rules.maps and not (scenario.map.begins_with(MapGen.PREFIX) and scenario.map.trim_prefix(MapGen.PREFIX).is_valid_int()):
+		return "map: unknown map \"%s\"" % scenario.map
+	for change: Variant in scenario.patch:
+		if not (change is Dictionary and change.get("path") is String and change.has("value")):
+			return "patch: each change needs a path and a value"
+		var at: Variant = rules
+		for part: String in change.path.split("."):
+			if not (at is Dictionary and at.has(part)):
+				return "patch: no rule %s" % change.path
+			at = at[part]
+		if typeof(at) != typeof(change.value):
+			return "patch: %s must stay the same type" % change.path
+	for goal: Variant in scenario.goals + scenario.keep:
+		if not (goal is Dictionary and goal.get("kind") in Scenario.GOALS and goal.get("count") is float):
+			return "goals: each needs a kind (one of %s) and a count" % [Scenario.GOALS]
+	if scenario.goals.is_empty():
+		return "goals: needs at least one"
+	if not (scenario.medals.gold <= scenario.medals.silver and scenario.medals.silver <= scenario.days):
+		return "medals: gold by silver by the last day"
+	return ""
 
 
 ## Why `map` isn't a coast on `site`, or "": polygons of at least three
