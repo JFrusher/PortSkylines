@@ -237,8 +237,8 @@ func _test_a_full_block_takes_no_more() -> void:
 	for i in roundi(3 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
 		most = maxf(most, stacks.room())
-		_expect(stacks.room() >= -sim.rules.yard_gear.reach_stacker.tiers, true, "the block never holds more than its stacks (room %d)" % stacks.room())
-		if stacks.room() < -sim.rules.yard_gear.reach_stacker.tiers:
+		_expect(stacks.room() >= 0, true, "the block never holds more than its stacks (room %d)" % stacks.room())
+		if stacks.room() < 0:
 			break
 
 

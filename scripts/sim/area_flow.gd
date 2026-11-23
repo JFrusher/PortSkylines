@@ -1560,6 +1560,13 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 		_go_to(sim, vehicle, _block_of(sim, vehicle.box))
 
 
+## The room in block `block` promised to boxes on their way: a loaded
+## vehicle bound for it, or a tractor under a crane for a box bound for it,
+## as _blocks_with_room counts them.
+static func promised(sim: PortSim, block: int) -> int:
+	return sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == block and (v.loaded or v.state == "under_crane")).size()
+
+
 ## Gives the block's machine `vehicle`'s job: a tractor's box onto a stack,
 ## or a lorry's box off its stack, moving any boxes above it first. With
 ## every machine busy, the vehicle waits in its slot and asks again when one
@@ -1585,7 +1592,7 @@ static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
 			sim.machine_jobs[id] = {"vehicle": vehicle.id, "position": position}
 		else:
 			var bay: int = layout.stacks[stacks.position_of(vehicle.box)].bay
-			var rehandles := stacks.take(vehicle.box)
+			var rehandles := stacks.take(vehicle.box, promised(sim, vehicle.area))
 			sim.machines.give(id, bay, _slot_bay(sim, _door(sim, vehicle), vehicle.slot), rehandles, pace(sim, vehicle.area))
 			sim.machine_jobs[id] = {"vehicle": vehicle.id, "position": -1}
 		vehicle.state = "handled"

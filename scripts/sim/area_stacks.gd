@@ -60,8 +60,8 @@ func fits(position: int, teu: int) -> bool:
 ## table), the one whose first leaver goes soonest so open ground is kept for
 ## last, else the stack whose first leaver goes latest. Ties in layout order.
 ## With `within_room`, only a stack where the box leaves room() at zero or
-## more, so a buried box can always be dug out; a box already in a machine's
-## hand passes false, as it has to go somewhere.
+## more, so the boxes on their way, counted against room(), still fit; a box
+## already in a machine's hand passes false, as it has to go somewhere.
 func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, within_room := true) -> int:
 	var best := -1
 	var best_key := []
@@ -87,7 +87,7 @@ func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, withi
 ## How much of room() a box of `teu` on `position` uses: a 40 one tier, a 20
 ## on a stack open to 40s all its free tiers, as the stack then takes only 20s;
 ## admission counts a box as one, so placing must not overspend what is left
-## for digging a buried box out.
+## for the boxes already on their way.
 func _room_cost(position: int, teu: int) -> int:
 	var tiers: Array = stacks[position]
 	if not tiers.is_empty() and _teu[tiers[-1][0]] == 1:
@@ -123,12 +123,15 @@ func above(id: int) -> int:
 
 
 ## Takes box `id` out. Each box above it is lifted off and set down where
-## it costs room() least, while the block can spare that, as before; else
-## back on its own stack once `id` is gone, as a yard crane shuffles within
-## its bay. So a dig never spends the room that lets the next box out, and
-## always finishes. Returns the rehandles made.
-func take(id: int) -> int:
+## it costs room() least, while the block can spare that beyond `promised`
+## (the room boxes on their way here are counted against); else back on its
+## own stack once `id` is gone, as a yard crane shuffles within its bay. So
+## a dig always finishes, however full the block, and leaves room for what
+## is coming. Returns the rehandles made.
+func take(id: int, promised: int) -> int:
 	var position: int = _where[id]
+	# What the dig may spend elsewhere, taken before lifting: lifting frees the dug stack only for now.
+	var budget := room() - promised
 	var lifted: Array = []  # [box, teu], topmost first
 	while above(id) > 0:
 		var top: int = stacks[position][-1][-1]
@@ -143,18 +146,19 @@ func take(id: int) -> int:
 	_where.erase(id)
 	lifted.reverse()
 	for box: Array in lifted:
-		var to := _spare_stack(position, box[1])
+		var to := _spare_stack(position, box[1], budget)
+		if to >= 0:
+			budget -= _room_cost(to, box[1])
 		place_at(to if to >= 0 else position, box[0], box[1])
 	version += 1
 	rehandles += lifted.size()
 	return lifted.size()
 
 
-## The stack other than `position` where a box of `teu` costs room() least
-## and the block can spare it, or -1.
-func _spare_stack(position: int, teu: int) -> int:
+## The stack other than `position` where a box of `teu` costs room() least,
+## at most `spare`, or -1.
+func _spare_stack(position: int, teu: int, spare: int) -> int:
 	var best := -1
-	var spare := room()
 	for to in stacks.size():
 		if to != position and fits(to, teu) and _room_cost(to, teu) <= spare and (best < 0 or _room_cost(to, teu) < _room_cost(best, teu)):
 			best = to
@@ -195,16 +199,16 @@ static func from_dict(d: Dictionary) -> AreaStacks:
 	return area
 
 
-## How many more 40 ft boxes fit, keeping a stack's height spare so a buried
-## box can always be dug out: stacks topped with 20s take only 20s, so they
-## count none. Any box fits while this is above zero.
+## How many more 40 ft boxes fit: stacks topped with 20s take only 20s, so
+## they count none. Any box fits while this is above zero. No room is kept
+## for digging: a dig sets boxes back on their own stack when it must.
 func room() -> int:
 	var free := 0
 	for position in stacks.size():
 		var tiers: Array = stacks[position]
 		if tiers.is_empty() or _teu[tiers[-1][0]] == 2:
 			free += _tiers - tiers.size()
-	return free - _tiers
+	return free
 
 
 ## How many boxes the area holds.

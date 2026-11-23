@@ -100,7 +100,7 @@ static func tick(sim: PortSim) -> void:
 				rack.state = "in_moving"
 			else:
 				var bay: int = layout.stacks[stacks.position_of(rack.box)].bay
-				var rehandles := stacks.take(rack.box)
+				var rehandles := stacks.take(rack.box, AreaFlow.promised(sim, block))
 				sim.machines.give(machine, bay, 0, rehandles)
 				sim.machine_jobs[machine] = {"rack": block, "slot": slot, "box": rack.box, "position": -1}
 				rack.state = "out_moving"

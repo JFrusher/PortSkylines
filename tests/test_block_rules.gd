@@ -124,7 +124,7 @@ func _test_by_departure_needs_fewer_rehandles() -> void:
 		var leaving := boxes.keys()
 		leaving.sort_custom(func(a: int, b: int) -> bool: return boxes[a].due < boxes[b].due)
 		for id: int in leaving:
-			_expect(stacks.take(id) >= 0, true, "box %d is dug out" % id)
+			_expect(stacks.take(id, 0) >= 0, true, "box %d is dug out" % id)
 		counts[strategy] = stacks.rehandles
 	_expect(counts.fill_low > 0, true, "filling low buries boxes (%d re-handles)" % counts.fill_low)
 	_expect(counts.by_departure < counts.fill_low, true, "stacking by departure needs fewer re-handles (%d against %d)" % [counts.by_departure, counts.fill_low])

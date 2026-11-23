@@ -174,7 +174,7 @@ func _burn(sim: PortSim, fire: Dictionary) -> void:
 	var stacks: AreaStacks = sim.area_stacks[fire.target[1]]
 	for box: int in stacks.boxes():
 		if box not in sim._claimed and stacks.above(box) == 0:
-			stacks.take(box)
+			stacks.take(box, AreaFlow.promised(sim, fire.target[1]))
 			sim.ledger.post("fire_losses", -rules.box_value)
 			if sim.boxes[box].line in sim.rules.lines:
 				sim._event_if(sim.contracts.penalise(sim.boxes[box].line, -rules.reputation_per_box))

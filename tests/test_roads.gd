@@ -540,7 +540,7 @@ func _test_area_stacks() -> void:
 	yard.place_at(0, 2, 2)
 	yard.place_at(0, 3, 2)
 	_expect(yard.above(1), 2, "a box under two others has two above it")
-	_expect(yard.take(1), 2, "taking out a buried box costs a rehandle per box above it")
+	_expect(yard.take(1, 0), 2, "taking out a buried box costs a rehandle per box above it")
 	_expect(yard.boxes().has(1), false, "and it is gone")
 	_expect([yard.stacks[0], yard.boxes().size()], [[], 2], "with room to spare, the boxes lifted off it go to other stacks")
 	var mixed := AreaStacks.new(2, 3)
@@ -551,12 +551,12 @@ func _test_area_stacks() -> void:
 	_expect(mixed.stacks[0], [[10, 11]], "two 20s share a tier")
 	_expect(mixed.place(12, 2), 1, "a 40 goes to the next stack that takes it")
 	_expect(mixed.place(13, 1), 0, "a 20 goes onto the 20s' tier stack")
-	_expect(mixed.take(10), 1, "a 20 under a box costs one rehandle")
-	_expect(mixed.stacks[0], [[11, 13]], "its partner stays put, and with no room to spare elsewhere the 20 lifted off goes back beside it")
+	_expect(mixed.take(10, 0), 1, "a 20 under a box costs one rehandle")
+	_expect(mixed.stacks[0], [[11]], "its partner stays put")
 	var full := AreaStacks.new(1, 4)
 	for id in range(1, 4):
 		full.place_at(0, id, 2)
-	_expect(full.take(1), 2, "with no room on any other stack, a buried box still comes out")
+	_expect(full.take(1, 0), 2, "with no room on any other stack, a buried box still comes out")
 	_expect(full.stacks[0], [[2], [3]], "the boxes above it set back where they were")
 	# The yard deadlock bench/feeds.gd found: digging a 20 out of a stack of 20s
 	# put the 20s above it on stacks open to 40s, closing them, till no 40 could be dug out.
@@ -565,9 +565,16 @@ func _test_area_stacks() -> void:
 		twenties.place_at(0, id, 1)
 	for id in range(9, 15):
 		twenties.place_at(2 if id < 12 else 3, id, 2)
-	_expect(twenties.room(), 2, "a near-full block: an empty stack and a tier spare on two others")
-	_expect(twenties.take(1), 6, "a 20 at the bottom of a stack of 20s is dug out")
-	_expect(twenties.room() >= 0, true, "without spending the room that lets the next box out (%d)" % twenties.room())
+	_expect(twenties.room(), 6, "a near-full block: an empty stack and a tier spare on two others")
+	_expect(twenties.take(1, 0), 6, "a 20 at the bottom of a stack of 20s is dug out")
+	_expect(twenties.boxes().size(), 13, "the 20s above it all set down")
+	_expect(twenties.take(9, 0) >= 0, true, "and one under 40s still comes out, the block being full of 20s")
+	# A dig leaves the room promised to boxes on their way: lifted boxes go back on their own stack.
+	var promised := AreaStacks.new(2, 4)
+	promised.place_at(0, 30, 2)
+	promised.place_at(0, 31, 2)
+	_expect(promised.take(30, promised.room()), 1, "a box under a 40 is dug out")
+	_expect([promised.stacks[0], promised.stacks[1]], [[[31]], []], "and the 40 goes back where it was, not onto room promised")
 	var kept := AreaStacks.new(2, 4)
 	kept.place_at(0, 20, 2)
 	kept.place_at(0, 21, 2)
@@ -580,7 +587,7 @@ func _test_area_stacks() -> void:
 	for id: int in [1, 2, 3, 4, 5]:
 		sorted.place_at(0 if id < 4 else 1, id, 2)
 	_expect([sorted.of_kind("import", table), sorted.of_kind("export", table)], [[3, 1, 4], [2, 5]], "boxes of a kind come soonest due first, ties in stacking order")
-	sorted.take(1)
+	sorted.take(1, 0)
 	_expect(sorted.of_kind("import", table), [3, 4], "and the order follows the stacks as they change")
 	_expect(sorted.of_kind("reefer", table), [], "a kind with no boxes has none")
 
@@ -681,7 +688,7 @@ func _test_delivery() -> void:
 	var below: int = stacks.boxes()[0]
 	var above: int = stacks.boxes()[1]
 	if stacks.position_of(below) != stacks.position_of(above):
-		stacks.take(above)
+		stacks.take(above, 0)
 		stacks.place_at(stacks.position_of(below), above, 2)
 	_expect(stacks.position_of(below) == stacks.position_of(above), true, "both boxes are on one stack, one on the other")
 	for box: int in stacks.boxes():
