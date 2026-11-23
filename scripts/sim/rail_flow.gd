@@ -149,8 +149,6 @@ static func _give(sim: PortSim, train: Train, machine: int) -> bool:
 		return false
 	var bay: int = layout.stacks[stacks.position_of(box)].bay
 	var rehandles := stacks.take(box)
-	if rehandles < 0:
-		return false
 	sim._claimed[box] = true
 	sim.machines.give(machine, bay, _wagon_bay(sim, train, wagon), rehandles, AreaFlow.pace(sim, train.block))
 	sim.machine_jobs[machine] = {"train": train.id, "wagon": wagon, "position": -1, "box": box}

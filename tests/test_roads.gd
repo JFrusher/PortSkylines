@@ -542,7 +542,7 @@ func _test_area_stacks() -> void:
 	_expect(yard.above(1), 2, "a box under two others has two above it")
 	_expect(yard.take(1), 2, "taking out a buried box costs a rehandle per box above it")
 	_expect(yard.boxes().has(1), false, "and it is gone")
-	_expect([yard.stacks[0], yard.boxes().size()], [[], 2], "the boxes moved off it now sit on other stacks")
+	_expect([yard.stacks[0], yard.boxes().size()], [[], 2], "with room to spare, the boxes lifted off it go to other stacks")
 	var mixed := AreaStacks.new(2, 3)
 	mixed.place_at(0, 10, 1)
 	_expect(mixed.fits(0, 2), false, "a 40 ft box never rests on a 20")
@@ -552,11 +552,22 @@ func _test_area_stacks() -> void:
 	_expect(mixed.place(12, 2), 1, "a 40 goes to the next stack that takes it")
 	_expect(mixed.place(13, 1), 0, "a 20 goes onto the 20s' tier stack")
 	_expect(mixed.take(10), 1, "a 20 under a box costs one rehandle")
-	_expect(mixed.stacks[0], [[11]], "its partner stays put")
+	_expect(mixed.stacks[0], [[11, 13]], "its partner stays put, and with no room to spare elsewhere the 20 lifted off goes back beside it")
 	var full := AreaStacks.new(1, 4)
 	for id in range(1, 4):
 		full.place_at(0, id, 2)
-	_expect(full.take(1), -1, "with nowhere to move the boxes above, a buried box can't come out")
+	_expect(full.take(1), 2, "with no room on any other stack, a buried box still comes out")
+	_expect(full.stacks[0], [[2], [3]], "the boxes above it set back where they were")
+	# The yard deadlock bench/feeds.gd found: digging a 20 out of a stack of 20s
+	# put the 20s above it on stacks open to 40s, closing them, till no 40 could be dug out.
+	var twenties := AreaStacks.new(4, 4)
+	for id in range(1, 9):
+		twenties.place_at(0, id, 1)
+	for id in range(9, 15):
+		twenties.place_at(2 if id < 12 else 3, id, 2)
+	_expect(twenties.room(), 2, "a near-full block: an empty stack and a tier spare on two others")
+	_expect(twenties.take(1), 6, "a 20 at the bottom of a stack of 20s is dug out")
+	_expect(twenties.room() >= 0, true, "without spending the room that lets the next box out (%d)" % twenties.room())
 	var kept := AreaStacks.new(2, 4)
 	kept.place_at(0, 20, 2)
 	kept.place_at(0, 21, 2)

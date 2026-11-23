@@ -101,8 +101,6 @@ static func tick(sim: PortSim) -> void:
 			else:
 				var bay: int = layout.stacks[stacks.position_of(rack.box)].bay
 				var rehandles := stacks.take(rack.box)
-				if rehandles < 0:
-					continue
 				sim.machines.give(machine, bay, 0, rehandles)
 				sim.machine_jobs[machine] = {"rack": block, "slot": slot, "box": rack.box, "position": -1}
 				rack.state = "out_moving"

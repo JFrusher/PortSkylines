@@ -122,20 +122,18 @@ func above(id: int) -> int:
 	return count
 
 
-## Takes box `id` out, first moving each box above it to another stack.
-## Returns the rehandles made, or -1 if a box above had nowhere to go.
+## Takes box `id` out. Each box above it is lifted off and set down where
+## it costs room() least, while the block can spare that, as before; else
+## back on its own stack once `id` is gone, as a yard crane shuffles within
+## its bay. So a dig never spends the room that lets the next box out, and
+## always finishes. Returns the rehandles made.
 func take(id: int) -> int:
 	var position: int = _where[id]
-	var moved := 0
+	var lifted: Array = []  # [box, teu], topmost first
 	while above(id) > 0:
 		var top: int = stacks[position][-1][-1]
-		var teu: int = _teu[top]
-		var to := _other_stack(position, teu)
-		if to < 0:
-			return -1
+		lifted.append([top, _teu[top]])
 		_remove_top(position)
-		place_at(to, top, teu)
-		moved += 1
 	# Nothing is above its tier now; a 20 ft box beside it stays.
 	var tiers: Array = stacks[position]
 	tiers[-1].erase(id)
@@ -143,9 +141,24 @@ func take(id: int) -> int:
 		tiers.pop_back()
 	_teu.erase(id)
 	_where.erase(id)
+	lifted.reverse()
+	for box: Array in lifted:
+		var to := _spare_stack(position, box[1])
+		place_at(to if to >= 0 else position, box[0], box[1])
 	version += 1
-	rehandles += moved
-	return moved
+	rehandles += lifted.size()
+	return lifted.size()
+
+
+## The stack other than `position` where a box of `teu` costs room() least
+## and the block can spare it, or -1.
+func _spare_stack(position: int, teu: int) -> int:
+	var best := -1
+	var spare := room()
+	for to in stacks.size():
+		if to != position and fits(to, teu) and _room_cost(to, teu) <= spare and (best < 0 or _room_cost(to, teu) < _room_cost(best, teu)):
+			best = to
+	return best
 
 
 ## One housekeeping move: the top box of the first stack where it buries a
@@ -235,15 +248,6 @@ func _boxes(position: int) -> Array:
 	for tier: Array in stacks[position]:
 		found.append_array(tier)
 	return found
-
-
-func _other_stack(position: int, teu: int) -> int:
-	var best := -1
-	for to in stacks.size():
-		# The stack that costs room() least, so digging a box out doesn't use up what lets the next be dug out.
-		if to != position and fits(to, teu) and (best < 0 or _room_cost(to, teu) < _room_cost(best, teu)):
-			best = to
-	return best
 
 
 func _remove_top(position: int) -> void:

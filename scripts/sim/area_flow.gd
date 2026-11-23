@@ -1586,8 +1586,6 @@ static func _start_handling(sim: PortSim, vehicle: Vehicle) -> void:
 		else:
 			var bay: int = layout.stacks[stacks.position_of(vehicle.box)].bay
 			var rehandles := stacks.take(vehicle.box)
-			if rehandles < 0:
-				return
 			sim.machines.give(id, bay, _slot_bay(sim, _door(sim, vehicle), vehicle.slot), rehandles, pace(sim, vehicle.area))
 			sim.machine_jobs[id] = {"vehicle": vehicle.id, "position": -1}
 		vehicle.state = "handled"
