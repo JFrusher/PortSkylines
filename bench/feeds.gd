@@ -123,7 +123,7 @@ func _time_fetchers(sim: PortSim) -> void:
 					for point: Vector2 in sim.network.pieces[piece].points:
 						if point.distance_to(ends[0]) > far.distance_to(ends[0]):
 							far = point
-				print("  turns round at cell %s, %.0f m from where it set off; site entry %s" % [far, far.distance_to(ends[0]) * Grid.CELL, sim.site_entry()])
+				print("  farthest point %s, %.0f m from where it set off; site entry %s" % [far, far.distance_to(ends[0]) * Grid.CELL, sim.site_entry()])
 		if vehicle.state == "under_crane" and _last_state.get(vehicle.id, "") != "under_crane":
 			_fetches += 1
 		_last_state[vehicle.id] = vehicle.state

@@ -822,7 +822,8 @@ func _test_stuck_tractor_moves_on() -> void:
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [Drive.entry_cell(sim)] as Array[Vector3i])
 	sim._next_vehicle += 1
 	_expect(Drive.place(sim, tractor), true, "a tractor comes in at the site entry")
-	tractor.box = sim._new_box("import", 0.0, "")
+	# Due tomorrow, so no lorry comes for it (and meets the parked tractor) meanwhile.
+	tractor.box = sim._new_box("import", sim.clock.calendar_minutes() + 1440.0, "")
 	tractor.loaded = true
 	sim._add_vehicle(tractor)
 	AreaFlow._go_to(sim, tractor, block)

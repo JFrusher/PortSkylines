@@ -282,6 +282,11 @@ func _obstacle(id: int) -> Dictionary:
 		# until then its stop line is just a far-off end of the room ahead.
 		if k > car.i and network.pieces[piece].node != 0 and piece not in car.booked and (distance > _booking_distance(car) or not _book(id, piece)):
 			return {"distance": distance, "end": false, "crossing": crossing}
+		# A driveway across the road waits at its start for a gap in the lanes it crosses.
+		if k > car.i and network.pieces[piece].has("give_way") and car.get("across", 0) != piece:
+			if distance > _booking_distance(car) or not _gap_across(piece):
+				return {"distance": distance, "end": false, "crossing": crossing}
+			car.across = piece
 		# The nearer of the car ahead and a crossing a train has booked stops it.
 		# Cars keep their order along a piece, so the one ahead is the next.
 		var nearest := INF
@@ -434,6 +439,24 @@ func approach_busy(point: Vector2, arm: Vector2i) -> bool:
 			if network.pieces[piece].length - cars[id].s <= maxf(APPROACH, cars[id].v * _rules.give_way_seconds):
 				return true
 	return false
+
+
+## Whether driveway `piece` may cross now: no car on a lane it crosses or
+## joins will reach that point within give_way_seconds or stands within
+## APPROACH cells short of it, and none is over it.
+func _gap_across(piece: int) -> bool:
+	for point: Vector2 in network.pieces[piece].give_way:
+		for lane: int in network.ending_at(point):
+			if network.pieces[lane].segment == 0:
+				continue
+			for other: int in _on.get(lane, []):
+				if network.pieces[lane].length - cars[other].s <= maxf(APPROACH, cars[other].v * _rules.give_way_seconds):
+					return false
+			for after: int in network.pieces[lane].next:
+				for other: int in _on.get(after, []):
+					if cars[other].s < cars[other].length:
+						return false
+	return true
 
 
 ## The cells where rail track crosses lanes: level crossings, each free.

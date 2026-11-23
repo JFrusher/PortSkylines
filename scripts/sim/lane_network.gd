@@ -13,7 +13,9 @@ extends RefCounted
 ## zone, for AGVs alone (see may_use); "node": the node a connection
 ## crosses (minus its road's segment for a lane change), or 0; "kmh": its speed limit, a connection's the lower of the
 ## two roads it joins; "area": the area it is inside, or 0; "slot":
-## Vector2i(area, slot) of the handover slot it is in, or (-1, -1)}.
+## Vector2i(area, slot) of the handover slot it is in, or (-1, -1);
+## "give_way" (a driveway across the road only): the points on road lanes it
+## crosses or joins, where it gives way to their traffic}.
 var pieces := {}
 ## Connection piece -> the connection pieces at its node that cross it or
 ## come within CLEAR cells of it: a vehicle may take one only while none of
@@ -30,6 +32,8 @@ var _node_at := {}  # junction point -> node
 ## How near, in cells, two connections may pass without conflicting: two
 ## lanes side by side, a cell apart, don't.
 const CLEAR := 0.9
+## How far across a road, in cells, a driveway looks for the lane the other way.
+const FAR_CELLS := 6.0
 var _next_id := 1
 ## Piece ids by where they end (_key), built on first use and dropped when
 ## a piece is added or split.
@@ -338,6 +342,52 @@ func _add_driveway(id: int, areas: Areas, kmh: float, made: Array[int], leaving:
 		var exit := _area_piece([centre[last_cell], way_out] as Array[Vector2], id, LaneNetwork.NO_SLOT, lorries, kmh)
 		made.append(exit)
 		leaving[exit] = true
+	# Out across the road too, as Cities: Skylines: over the near lane onto the
+	# far one, giving way to both (see Traffic), so a vehicle leaving turns
+	# either way. Not out of a gate: there a way out across the road gave the
+	# lorries queueing for it a loop to come round by, which held up those
+	# leaving it, and halved what it put through (bench/feeds.gd, test_rail).
+	var far_out := _far_point(way_out) if kind != "gate" else Vector2.INF
+	if far_out != Vector2.INF:
+		var across := _area_piece([centre[last_cell], far_out] as Array[Vector2], id, LaneNetwork.NO_SLOT, lorries, kmh)
+		pieces[across].give_way = [way_out, far_out]
+		made.append(across)
+		leaving[across] = true
+
+
+## The cells where driveways across the road cross or join road lanes.
+func driveway_crossings() -> Array[Vector2i]:
+	var cells: Array[Vector2i] = []
+	for id: int in pieces:
+		for point: Vector2 in pieces[id].get("give_way", []):
+			if Vector2i(point.floor()) not in cells:
+				cells.append(Vector2i(point.floor()))
+	return cells
+
+
+## The point on the nearest lane running the other way along the same road
+## as the lane `near` is on, its lane split there; INF when `near` is, or
+## its road has no lane the other way within FAR_CELLS.
+func _far_point(near: Vector2) -> Vector2:
+	if near == Vector2.INF:
+		return Vector2.INF
+	var lane := ending_at(near).filter(func(p: int) -> bool: return pieces[p].segment != 0)
+	if lane.is_empty():
+		return Vector2.INF
+	var points: PackedVector2Array = pieces[lane[0]].points
+	var way := points[-1] - points[-2]
+	var best := Vector2.INF
+	for id: int in pieces:
+		if pieces[id].segment != pieces[lane[0]].segment:
+			continue
+		var along: PackedVector2Array = pieces[id].points
+		for i in range(1, along.size()):
+			var at := Geometry2D.get_closest_point_to_segment(near, along[i - 1], along[i])
+			if (along[i] - along[i - 1]).dot(way) < 0.0 and at.distance_to(near) <= FAR_CELLS and at.distance_to(near) < best.distance_to(near):
+				best = at
+	if best != Vector2.INF:
+		split_at(best)
+	return best
 
 
 ## The point on the road lane nearest `position`, its lane split there, or

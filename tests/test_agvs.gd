@@ -28,8 +28,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 
 
 ## The base port with its quay, road and yard painted into the AGV zone (if
-## `zone`), with a dead end in it to turn in, and an AGV depot north of the
-## road; the depot's id.
+## `zone`), and an AGV depot north of the road; the depot's id.
 func _depot(sim: PortSim, zone: bool) -> int:
 	sim.creative = true
 	sim.milestones_passed = 4  # the hub unlocks ASCs and AGVs
@@ -42,11 +41,8 @@ func _depot(sim: PortSim, zone: bool) -> int:
 	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
 	_expect(sim.apply({"op": "build_area", "type": "agv_depot", "segment": east, "side": -1, "from": 30, "to": 40}), "", "an AGV depot")
 	var depot: int = sim.areas.list.keys().max()
-	var unturned := AreaFlow.agv_unreachable(sim, depot)
 	if zone:
-		# A dead end in the zone past the yard's way out, where AGVs turn to reach the depot.
-		sim.apply({"op": "build_road", "type": "terminal_1_1", "from": Vector2i(148, 300), "to": Vector2i(148, 284)})
-		_expect([unturned, AreaFlow.agv_unreachable(sim, depot)], [true, false], "AGVs reach their depot from the yard only with somewhere to turn")
+		_expect(AreaFlow.agv_unreachable(sim, depot), false, "AGVs reach their depot from the yard, turning out across the road")
 	sim.creative = false
 	sim.ledger.cash = 10000000
 	return depot

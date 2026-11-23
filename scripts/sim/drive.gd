@@ -260,7 +260,10 @@ static func _refresh(sim: PortSim) -> void:
 	sim.network.mark_agv(sim.areas.agv_zone)
 	sim.traffic = Traffic.new(sim.network, sim.rules, sim.junctions)
 	sim._crossing_cells = _level_crossings(sim)
-	sim.traffic.set_crossings(sim._crossing_cells)
+	# Cars keep driveways' crossing points clear as they do level crossings: never standing on one.
+	var keep_clear := sim._crossing_cells.duplicate()
+	keep_clear.append_array(sim.network.driveway_crossings())
+	sim.traffic.set_crossings(keep_clear)
 	sim._delays.clear()
 	sim._reach.clear()
 	if not sim._loaded_traffic.is_empty():
