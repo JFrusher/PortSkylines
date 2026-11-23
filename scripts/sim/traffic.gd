@@ -445,14 +445,14 @@ func approach_busy(point: Vector2, arm: Vector2i) -> bool:
 	return false
 
 
-## Whether a car other than `id` stands with its front at the end of a
+## Whether a car other than `id` stands with its front at the very end of a
 ## piece, other than `piece`, ending where `piece` does.
 func _merge_taken(id: int, piece: int) -> bool:
 	for other_piece: int in network.ending_at(network.pieces[piece].points[-1]):
 		if other_piece == piece:
 			continue
 		for other: int in _on.get(other_piece, []):
-			if other != id and cars[other].s >= network.pieces[other_piece].length - 0.5:
+			if other != id and cars[other].s >= network.pieces[other_piece].length - 0.01:
 				return true
 	return false
 
