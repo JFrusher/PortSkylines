@@ -30,6 +30,18 @@ static func check(sim: PortSim, expect: Callable, deep_every: int) -> void:
 		for id: int in stacks.boxes():
 			expect.call(seen.has(id), false, "box %d is in one place only %s" % [id, at])
 			seen[id] = area
+	# M11: a box on a transfer block's rack, an import set down or an export staged.
+	for block: int in sim.racks:
+		for slot: int in sim.racks[block]:
+			var rack: Dictionary = sim.racks[block][slot]
+			if rack.state in ["in", "ready"]:
+				expect.call(seen.has(rack.box), false, "box %d on a rack of block %d is in one place only %s" % [rack.box, block, at])
+				seen[rack.box] = block
+	# Boxes an ASC carries between a rack and its stack, counted below.
+	var moving := {}
+	for job: Dictionary in sim.machine_jobs.values():
+		if job.has("rack"):
+			moving[job.box] = true
 	# A machine fetching a vehicle's box has lifted it off its stack.
 	var lifting := {}
 	for job: Dictionary in sim.machine_jobs.values():
@@ -46,7 +58,7 @@ static func check(sim: PortSim, expect: Callable, deep_every: int) -> void:
 			expect.call(seen.has(vehicle.box), false, "box %d on the machine for %s %d is in one place only %s" % [vehicle.box, vehicle.kind, vehicle.id, at])
 			seen[vehicle.box] = vehicle.id
 		elif vehicle.box != 0:
-			expect.call(seen.has(vehicle.box), true, "%s %d's box %d waits in a stack %s" % [vehicle.kind, vehicle.id, vehicle.box, at])
+			expect.call(seen.has(vehicle.box) or vehicle.box in moving, true, "%s %d's box %d waits in a stack, on a rack or on its way to one %s" % [vehicle.kind, vehicle.id, vehicle.box, at])
 		expect.call(vehicle.id in sim.traffic.cars, true, "%s %d is on the lanes %s" % [vehicle.kind, vehicle.id, at])
 	# M10: no two cars on a piece overlap.
 	var on := {}
@@ -79,7 +91,7 @@ static func check(sim: PortSim, expect: Callable, deep_every: int) -> void:
 				seen[box] = train.id
 	for job: Dictionary in sim.machine_jobs.values():
 		if job.has("box"):
-			seen[job.box] = "an RMG"
+			seen[job.box] = "a machine"
 	# M8: a box moving between terminals waits for its lorry in the transfers.
 	for transfer: Dictionary in sim.transfers:
 		expect.call(seen.has(transfer.box), false, "box %d in transfer is in one place only %s" % [transfer.box, at])
@@ -106,4 +118,5 @@ static func check(sim: PortSim, expect: Callable, deep_every: int) -> void:
 	var trains := sim.trains.map(func(t: Train) -> int: return t.id)
 	for machine: int in sim.machine_jobs:
 		var job: Dictionary = sim.machine_jobs[machine]
-		expect.call(job.train in trains if job.has("train") else job.vehicle in ids, true, "machine %d works for a vehicle or train that is there %s" % [machine, at])
+		var there: bool = job.train in trains if job.has("train") else (job.rack in sim.areas.list if job.has("rack") else job.vehicle in ids)
+		expect.call(there, true, "machine %d works for a vehicle, train or rack that is there %s" % [machine, at])

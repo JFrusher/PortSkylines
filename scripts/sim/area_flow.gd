@@ -1598,8 +1598,8 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 			sim._set_area(vehicle, 0)
 			vehicle.slot = -1
 			_head(sim, vehicle, _buffer_end(sim, door), "returning")
-	elif vehicle.kind == "tractor":
-		# An export fetched for a crane: back to the slot under it.
+	elif vehicle.kind != "lorry":
+		# An export fetched for a crane, by a tractor or an AGV: back to the slot under it.
 		sim._claimed.erase(vehicle.box)
 		vehicle.loaded = true
 		sim._set_area(vehicle, 0)

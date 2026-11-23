@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_agvs_front_lorries_back()
 	_test_racks_take_imports()
 	_test_racks_stage_exports()
+	_test_agvs_fetch_exports_without_racks()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -142,3 +143,25 @@ func _test_racks_stage_exports() -> void:
 			break
 	_expect(staged, true, "an ASC stages an export on a rack")
 	_expect(taken, true, "and an AGV takes it from there to the ship")
+
+
+## With no racks an AGV collects an export from the ASC at the block's front
+## and takes it to the ship, as a tractor would; it is never sent out
+## through a gate like a lorry, which an AGV can't reach.
+func _test_agvs_fetch_exports_without_racks() -> void:
+	var sim := AreaPort.base()
+	var block := _terminal(sim, true)
+	_expect(sim.apply({"op": "set_area", "id": block, "settings": {"role": "export"}}), "", "it takes exports, with no racks")
+	var to_crane := false
+	var to_gate := false
+	for i in roundi(4 * 24 * 60.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		for vehicle: Vehicle in sim.vehicles:
+			if vehicle.kind != "agv" or not vehicle.loaded:
+				continue
+			to_crane = to_crane or (vehicle.state == "to_crane" and sim.boxes[vehicle.box].kind == "export")
+			to_gate = to_gate or (vehicle.area in sim.areas.list and sim.areas.kind_of(sim.areas.list[vehicle.area]) == "gate")
+		if to_crane:
+			break
+	_expect(to_crane, true, "an AGV takes an export from the ASC to the ship")
+	_expect(to_gate, false, "and none is sent to a gate")
