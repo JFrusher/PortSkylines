@@ -2087,17 +2087,15 @@ func tick() -> void:
 	fires.tick(self)
 	Customs.tick(self)
 	var open := gates_open()
-	# Each gate brings its own stream of lorries, so a port with more gates gets more.
-	var gates := maxi(1, areas.list.values().filter(func(a: Dictionary) -> bool: return areas.kind_of(a) == "gate").size())
 	_until_lorry -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_lorry <= 0.0 and AreaFlow.dispatch_import_lorry(self):
-		_until_lorry = rules.lorry_interval_minutes / gates
+		_until_lorry = rules.lorry_interval_minutes
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
-		_until_export = rules.export_lorry_interval_minutes / gates
+		_until_export = rules.export_lorry_interval_minutes
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
-		_until_empty = rules.lorry_interval_minutes / gates
+		_until_empty = rules.lorry_interval_minutes
 	AreaFlow.safety_stops(self)
 	Drive.signals(self)
 	AreaFlow.tick(self)

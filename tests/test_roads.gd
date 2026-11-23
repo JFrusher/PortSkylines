@@ -34,7 +34,6 @@ func _initialize() -> void:
 	_test_crane_keeps_tractors_busy()
 	_test_exports_wait_for_calls()
 	_test_lorries_use_the_gate_on_their_side()
-	_test_each_gate_brings_lorries()
 	_test_two_way_gate()
 	_test_lorry_gives_up()
 	_test_stuck_tractor_moves_on()
@@ -755,29 +754,6 @@ func _test_exports_wait_for_calls() -> void:
 		sim.tick()
 	var exports := sim.boxes.values().filter(func(b: Dictionary) -> bool: return b.kind == "export").size()
 	_expect(exports, 0, "with no call booked, no exports come in two hours")
-
-
-## Each gate brings its own stream of lorries: with exports wanted, a port
-## with two gates sends about twice the export lorries of one with one.
-func _test_each_gate_brings_lorries() -> void:
-	var sent := []
-	for gates: int in [1, 2]:
-		var sim := AreaPort.base(RandomPort.quick(), "feeder")
-		AreaPort.add_export_block(sim)
-		if gates == 2:
-			var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
-			sim.creative = true
-			_expect(sim.apply({"op": "build_area", "type": "gate", "segment": east, "side": 1, "from": 300, "to": 314}), "", "a second gate")
-			sim.creative = false
-		var lorries := {}
-		for i in roundi(30.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
-			sim.tick()
-			for v: Vehicle in sim.vehicles:
-				if v.kind == "lorry" and v.loaded and sim.boxes[v.box].kind == "export":
-					lorries[v.id] = true
-		sent.append(lorries.size())
-	_expect(sent[0] > 0, true, "exports come by lorry (%d)" % sent[0])
-	_expect(sent[1] >= sent[0] * 1.6, true, "and two gates bring about twice as many (%d against %d)" % [sent[1], sent[0]])
 
 
 func _test_lorries_use_the_gate_on_their_side() -> void:

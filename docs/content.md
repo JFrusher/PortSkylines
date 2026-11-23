@@ -87,8 +87,8 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `water.dredge.max_depth` | number | As deep as dredging takes a lane or a pocket, in metres |
 | `water.dredge.cost_per_cell_metre` | int | Dredging one cell of water one metre deeper |
 | `water.dredge.maintenance_per_cell_metre`, `.maintenance_days` | int, int >0 | Every `maintenance_days` days, each dredged cell and metre costs this |
-| `lorry_interval_minutes` | number >0 | Calendar minutes between import lorries (and empties) for each gate: a port with more gates gets more lorries |
-| `export_lorry_interval_minutes` | number >0 | Calendar minutes between export lorries for each gate |
+| `lorry_interval_minutes` | number >0 | Calendar minutes between import lorries |
+| `export_lorry_interval_minutes` | number >0 | Calendar minutes between export lorries |
 | `import_dwell_minutes` | number | Calendar minutes an import box waits in the yard before a lorry may collect it, at a $0 storage fee |
 | `lorry_speed` | number >0 | Metres per vehicle second (one game minute) |
 | `give_up_seconds` | number >0 | Vehicle seconds stuck before a tractor replans; lorries wait twice as long |
