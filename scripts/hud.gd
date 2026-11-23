@@ -1269,45 +1269,6 @@ func _draw_legacy_actions() -> void:
 				var widen := _action_button(_inspect_actions, "Widen, %s" % HudDetails.dollars(sim.ship_lane_price(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], "wide", lane.control)), {"op": "widen_ship_lane", "segment": _inspected.lane})
 				widen.tooltip_text = "Rebuilds it as a wide lane, %d m across, where ships pass both ways instead of booking it one at a time." % Grid.metres(sim.rules.water.lanes.wide.half_width * 2 + 1)
 		return
-	if not (_inspected is Dictionary and _inspected.has("area") and _inspected.area in sim.areas.list):
-		return
-	var id: int = _inspected.area
-	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
-		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
-	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron" and not sim.areas.list[id].settings.shore_power:
-		_action_button(_inspect_actions, "Buy shore power, %s" % HudDetails.dollars(sim.rules.town.shore_power_cost), {"op": "buy_shore_power", "area": id}).tooltip_text = "Ships at this quay plug in and stop their engines, so %s no longer hears them." % sim.rules.town.name
-	if sim.areas.kind_of(sim.areas.list[id]) == "gate" and not sim.areas.list[id].settings.scanner:
-		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
-	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
-		_action_button(_inspect_actions, "Buy an AGV, %s" % HudDetails.dollars(sim.rules.agv.cost), {"op": "buy_agvs", "area": id, "count": 1})
-	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
-		var charger := _action_button(_inspect_actions, "Buy a charger, %s" % HudDetails.dollars(sim.rules.agv.charger_cost), {"op": "buy_chargers", "area": id, "count": 1})
-		charger.disabled = sim.areas.list[id].settings.chargers >= sim.rules.agv.max_chargers
-		charger.tooltip_text = "One AGV at home charges on each, flat to full in %.1f hours; a full battery lasts %d hours of work." % [sim.rules.agv.charge_hours, roundi(sim.rules.agv.battery_hours)]
-	if sim.areas.kind_of(sim.areas.list[id]) == "fire_station":
-		_action_button(_inspect_actions, "Buy a fire engine, %s" % HudDetails.dollars(sim.rules.events.fires.engine_cost), {"op": "buy_engines", "area": id, "count": 1})
-	if sim.areas.kind_of(sim.areas.list[id]) == "workshop":
-		_action_button(_inspect_actions, "Hire a mechanic, %s" % HudDetails.dollars(sim.rules.events.breakdowns.mechanic_cost), {"op": "hire_mechanics", "area": id, "count": 1})
-		# Servicing, by kind of equipment the port has.
-		var kinds := {}
-		for crane: PortSim.Crane in sim.cranes:
-			kinds[crane.kind] = sim.rules.sts_cranes[crane.kind].name
-		for machine: Dictionary in sim.machines.list.values():
-			kinds[machine.gear] = sim.rules.yard_gear[machine.gear].name
-		for kind: String in kinds:
-			var on: bool = sim.serviced.get(kind, false)
-			var button := _action_button(_inspect_actions, "%s %ss" % ["Stop servicing" if on else "Service", kinds[kind]], {"op": "set_serviced", "kind": kind, "on": not on})
-			button.tooltip_text = "Serviced every %d working hours, out of work %d minutes each time, it breaks down %.0f times less often." % [roundi(sim.rules.events.breakdowns.service_every_hours), roundi(sim.rules.events.breakdowns.service_hours * 60.0), sim.rules.events.breakdowns.serviced_mtbf_factor]
-	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
-		for level: String in sim.rules.gate_levels:
-			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
-				_action_button(_inspect_actions, "Make %s" % sim.rules.gate_levels[level].name, {"op": "set_area", "id": id, "settings": {"level": level}})
-		var slots: int = sim.areas.list[id].settings.slots_per_hour
-		for change: int in [-5, 5]:
-			var to := clampi(slots + change, 0, PortSim.MAX_SLOTS_PER_HOUR)
-			if to != slots:
-				var button := _action_button(_inspect_actions, "%+d bookings" % change, {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}})
-				button.tooltip_text = "Lorries book an hour and are let in no sooner, %d an hour (0: no bookings, lorries come in as they arrive). Early lorries wait in a truck park, else in a booth." % to
 
 
 ## A Dredge 1 m button for `cells` cells of water, locked until dredging is.

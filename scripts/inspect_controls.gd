@@ -18,8 +18,87 @@ const ROLE_NAMES := {"import": "Import", "export": "Export", "reefer": "Reefer",
 ## The sections for `thing` (from Inspect.pick), or [] when it offers none here.
 static func sections(sim: PortSim, thing: Variant) -> Array[Dictionary]:
 	var found: Array[Dictionary] = []
-	if thing is Dictionary and thing.has("area") and thing.area in sim.areas.list and sim.areas.list[thing.area].type in Areas.BLOCK_TYPES:
-		found.assign(_block(sim, thing.area))
+	if not (thing is Dictionary and thing.has("area") and thing.area in sim.areas.list):
+		return found
+	var id: int = thing.area
+	if sim.areas.list[id].type in Areas.BLOCK_TYPES:
+		found.assign(_block(sim, id))
+		return found
+	match sim.areas.kind_of(sim.areas.list[id]):
+		"gate":
+			found.assign(_gate(sim, id))
+		"quay_apron":
+			found.assign(_quay(sim, id))
+		"agv_depot":
+			found.assign(_agv_depot(sim, id))
+		"fire_station":
+			found.assign([_section("Fleet", [_buy("Fire engines", sim.areas.list[id].settings.engines, {"op": "buy_engines", "area": id, "count": 1}, "Buy one for %s." % HudDetails.dollars(sim.rules.events.fires.engine_cost))])])
+		"workshop":
+			found.assign(_workshop(sim, id))
+	return found
+
+
+static func _section(title: String, controls: Array[Dictionary], open := true) -> Dictionary:
+	return {"title": title, "open": open, "controls": controls}
+
+
+## A count that only goes up, by buying one more.
+static func _buy(label: String, count: int, command: Dictionary, tip: String) -> Dictionary:
+	return {"kind": "stepper", "label": label, "value": str(count), "minus": {}, "plus": command, "tip": tip}
+
+
+## A gate: how it checks lorries, how many it books an hour, and a scanner.
+static func _gate(sim: PortSim, id: int) -> Array[Dictionary]:
+	var settings: Dictionary = sim.areas.list[id].settings
+	var levels: Array[Dictionary] = []
+	for level: String in sim.rules.gate_levels:
+		var refused: String = sim.set_area_error(id, {"level": level}) if level != settings.level else ""
+		levels.append({"text": sim.rules.gate_levels[level].name, "selected": level == settings.level, "command": {"op": "set_area", "id": id, "settings": {"level": level}}, "disabled": refused != "", "tip": refused})
+	var slots: int = settings.slots_per_hour
+	var booking := func(to: int) -> Dictionary: return {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}} if to != slots else {}
+	var found: Array[Dictionary] = [_section("Settings", [
+		{"kind": "choice", "label": "Level", "options": levels},
+		{"kind": "stepper", "label": "Bookings", "value": "%d an hour" % slots if slots > 0 else "None", "minus": booking.call(maxi(slots - 5, 0)), "plus": booking.call(mini(slots + 5, PortSim.MAX_SLOTS_PER_HOUR)), "tip": "Lorries book an hour and are let in no sooner (none: lorries come in as they arrive). Early lorries wait in a truck park, else in a booth."},
+	])]
+	if not settings.scanner:
+		found.append(_section("Upgrades", [{"kind": "button", "text": "Scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), "command": {"op": "buy_scanner", "gate": id}, "disabled": false, "tip": "Scans the boxes customs picks in this terminal, clearing most of them at once; the rest still go to a customs block."}]))
+	return found
+
+
+## A quay: deepening its berth and shore power.
+static func _quay(sim: PortSim, id: int) -> Array[Dictionary]:
+	var dredge: Dictionary = sim.rules.water.dredge
+	var cells := Marine.pocket_size(sim, id)
+	var locked := sim.lock_error("dredging")
+	var controls: Array[Dictionary] = [{"kind": "button", "text": "Dredge 1 m, %s" % HudDetails.dollars(cells * dredge.cost_per_cell_metre), "command": {"op": "dredge_berth", "apron": id, "metres": 1}, "disabled": locked != "", "tip": locked if locked else "Deepens this berth 1 m, down to %.0f m, so ships of a deeper draft can use it. Then %s every %d days to keep it." % [dredge.max_depth, HudDetails.dollars(cells * dredge.maintenance_per_cell_metre), dredge.maintenance_days]}]
+	if not sim.areas.list[id].settings.shore_power:
+		controls.append({"kind": "button", "text": "Shore power, %s" % HudDetails.dollars(sim.rules.town.shore_power_cost), "command": {"op": "buy_shore_power", "area": id}, "disabled": false, "tip": "Ships at this quay plug in and stop their engines, so %s no longer hears them." % sim.rules.town.name})
+	return [_section("Upgrades", controls)]
+
+
+## An AGV depot: its AGVs and chargers.
+static func _agv_depot(sim: PortSim, id: int) -> Array[Dictionary]:
+	var settings: Dictionary = sim.areas.list[id].settings
+	var agv: Dictionary = sim.rules.agv
+	var charger := _buy("Chargers", settings.chargers, {"op": "buy_chargers", "area": id, "count": 1} if settings.chargers < agv.max_chargers else {}, "Buy one for %s, up to %d. One AGV at home charges on each, flat to full in %.1f hours; a full battery lasts %d hours of work." % [HudDetails.dollars(agv.charger_cost), agv.max_chargers, agv.charge_hours, roundi(agv.battery_hours)])
+	return [_section("Fleet", [_buy("AGVs", settings.agvs, {"op": "buy_agvs", "area": id, "count": 1}, "Buy one for %s." % HudDetails.dollars(agv.cost)), charger])]
+
+
+## A workshop: its mechanics, and which kinds of equipment are serviced.
+static func _workshop(sim: PortSim, id: int) -> Array[Dictionary]:
+	var kinds := {}
+	for crane: PortSim.Crane in sim.cranes:
+		kinds[crane.kind] = sim.rules.sts_cranes[crane.kind].name
+	for machine: Dictionary in sim.machines.list.values():
+		kinds[machine.gear] = sim.rules.yard_gear[machine.gear].name
+	var items: Array[Dictionary] = []
+	for kind: String in kinds:
+		var on: bool = sim.serviced.get(kind, false)
+		items.append({"text": kinds[kind][0].to_upper() + kinds[kind].substr(1) + "s", "on": on, "command": {"op": "set_serviced", "kind": kind, "on": not on}})
+	var breakdowns: Dictionary = sim.rules.events.breakdowns
+	var found: Array[Dictionary] = [_section("Staff", [_buy("Mechanics", sim.areas.list[id].settings.mechanics, {"op": "hire_mechanics", "area": id, "count": 1}, "Hire one for %s." % HudDetails.dollars(breakdowns.mechanic_cost))])]
+	if not items.is_empty():
+		found.append(_section("Servicing", [{"kind": "checklist", "label": "Service these", "items": items, "tip": "Serviced every %d working hours, out of work %d minutes each time, it breaks down %.0f times less often." % [roundi(breakdowns.service_every_hours), roundi(breakdowns.service_hours * 60.0), breakdowns.serviced_mtbf_factor]}]))
 	return found
 
 

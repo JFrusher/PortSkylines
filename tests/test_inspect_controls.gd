@@ -13,6 +13,7 @@ var _failures := 0
 func _initialize() -> void:
 	_test_yard_block()
 	_test_transfer_block()
+	_test_other_areas()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -49,9 +50,9 @@ func _commands(sections: Array[Dictionary]) -> Array[Dictionary]:
 
 
 ## Each of `sim`'s offered commands taken on a fresh copy of it.
-func _all_taken(sim: PortSim, sections: Array[Dictionary], what: String) -> void:
+func _all_taken(sim: PortSim, sections: Array[Dictionary], what: String, least := 6) -> void:
 	var commands := _commands(sections)
-	_expect(commands.size() > 5, true, "%s offers its choices (%d)" % [what, commands.size()])
+	_expect(commands.size() >= least, true, "%s offers its choices (%d)" % [what, commands.size()])
 	for command: Dictionary in commands:
 		var copy := PortSim.from_dict(sim.to_dict())
 		_expect(copy.apply(command), "", "%s: %s is taken" % [what, command])
@@ -72,7 +73,6 @@ func _test_yard_block() -> void:
 	sim.apply({"op": "set_area", "id": 3, "settings": {"role": "customs"}})
 	var upgrades: Array = InspectControls.sections(sim, {"area": 3}).filter(func(s: Dictionary) -> bool: return s.title == "Upgrades")
 	_expect(upgrades.size(), 1, "a customs block can hire inspectors")
-	_expect(InspectControls.sections(sim, {"area": 1}), [] as Array[Dictionary], "a quay offers none of a block's")
 
 
 func _test_transfer_block() -> void:
@@ -91,3 +91,24 @@ func _test_transfer_block() -> void:
 	_expect(settings.controls.map(func(c: Dictionary) -> String: return c.label), ["Role"], "its gear is its ASCs: no gear choice")
 	_expect(sections.any(func(s: Dictionary) -> bool: return s.title == "Upgrades"), true, "racks can be bought")
 	_all_taken(sim, sections, "a transfer block")
+
+
+## Gates, quays, AGV depots, fire stations and workshops: their own
+## sections, and every command they offer taken.
+func _test_other_areas() -> void:
+	var sim := AreaPort.base(RandomPort.quick())
+	sim.creative = true
+	sim.milestones_passed = 5
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	var built := {}
+	for spec: Array in [["workshop", 62, 70], ["fire_station", 72, 80], ["agv_depot", 82, 95]]:
+		_expect(sim.apply({"op": "build_area", "type": spec[0], "segment": east, "side": 1, "from": spec[1], "to": spec[2]}), "", "a %s" % spec[0])
+		built[spec[0]] = sim.areas.list.keys().max()
+	sim.creative = false
+	sim.ledger.cash = 100_000_000
+	var gate: int = sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.kind_of(sim.areas.list[id]) == "gate")[0]
+	for case: Array in [[gate, ["Settings", "Upgrades"], 3], [1, ["Upgrades"], 2], [built.workshop, ["Staff", "Servicing"], 2], [built.fire_station, ["Fleet"], 1], [built.agv_depot, ["Fleet"], 2]]:
+		var kind := sim.areas.kind_of(sim.areas.list[case[0]])
+		var sections := InspectControls.sections(sim, {"area": case[0]})
+		_expect(sections.map(func(s: Dictionary) -> String: return s.title), case[1], "a %s's sections" % kind)
+		_all_taken(sim, sections, "a %s" % kind, case[2])
