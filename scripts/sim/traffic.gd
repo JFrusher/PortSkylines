@@ -282,6 +282,10 @@ func _obstacle(id: int) -> Dictionary:
 		# until then its stop line is just a far-off end of the room ahead.
 		if k > car.i and network.pieces[piece].node != 0 and piece not in car.booked and (distance > _booking_distance(car) or not _book(id, piece)):
 			return {"distance": distance, "end": false, "crossing": crossing}
+		# In an area, where two of its lanes meet (a slot's way out and the buffer), a car
+		# already standing at the meeting point goes first: the other stops short of it.
+		if k > car.i and network.pieces[car.route[k - 1]].area != 0 and _merge_taken(id, car.route[k - 1]):
+			return {"distance": distance, "end": false, "crossing": crossing}
 		# A driveway across the road waits at its start for a gap in the lanes it crosses.
 		if k > car.i and network.pieces[piece].has("give_way") and car.get("across", 0) != piece:
 			if distance > _booking_distance(car) or not _gap_across(piece):
@@ -437,6 +441,18 @@ func approach_busy(point: Vector2, arm: Vector2i) -> bool:
 	for piece: int in network.approach(point, arm):
 		for id: int in _on.get(piece, []):
 			if network.pieces[piece].length - cars[id].s <= maxf(APPROACH, cars[id].v * _rules.give_way_seconds):
+				return true
+	return false
+
+
+## Whether a car other than `id` stands with its front at the end of a
+## piece, other than `piece`, ending where `piece` does.
+func _merge_taken(id: int, piece: int) -> bool:
+	for other_piece: int in network.ending_at(network.pieces[piece].points[-1]):
+		if other_piece == piece:
+			continue
+		for other: int in _on.get(other_piece, []):
+			if other != id and cars[other].s >= network.pieces[other_piece].length - 0.5:
 				return true
 	return false
 

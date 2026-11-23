@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_test_a_junction_at_the_middle_keeps_the_driveways()
 	_test_vehicles_turn_either_way_out()
 	_test_crossing_the_road_gives_way()
+	_test_first_at_a_merge_goes_first()
 
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -169,6 +170,24 @@ func _test_crossing_the_road_gives_way() -> void:
 	_expect(sim.traffic._gap_across(across), false, "not with a car about to pass")
 	sim.traffic.remove(999)
 	_expect(sim.traffic._gap_across(across), true, "and again once it has gone")
+
+
+## Where a slot's way out meets the block's buffer, a car standing at the
+## meeting point keeps it: one coming the other way stops short.
+func _test_first_at_a_merge_goes_first() -> void:
+	var sim := AreaPort.base()
+	Drive._refresh(sim)
+	var meets := {}
+	for piece: int in sim.network.pieces:
+		if sim.network.pieces[piece].area == 3:
+			meets.get_or_add(sim.network.pieces[piece].points[-1], []).append(piece)
+	var pair: Array = meets.values().filter(func(p: Array) -> bool: return p.size() >= 2)[0]
+	var first: Array[int] = [pair[0]]
+	var second: Array[int] = [pair[1]]
+	sim.traffic.place_at(998, first, sim.network.pieces[pair[0]].length, 2.0, 4.0)
+	sim.traffic.place_at(999, second, 0.0, 2.0, 4.0)
+	_expect(sim.traffic._merge_taken(999, pair[1]), true, "the meeting point is taken")
+	_expect(sim.traffic._merge_taken(998, pair[0]), false, "by the car standing at it")
 
 
 ## The piece ending where a vehicle stands in area `id`'s first slot.
