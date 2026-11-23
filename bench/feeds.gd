@@ -45,7 +45,7 @@ func _initialize() -> void:
 		if tick % SAMPLE_TICKS == 0:
 			_sample(sim)
 		for entry: Dictionary in sim.ship_log.slice(log_seen):
-			print("CALL day %.2f %-10s %5d moves %5.1f h %d cranes %5.1f /h/crane late %.1f h" % [(sim.clock.calendar_minutes() - start) / 1440.0, entry.kind, entry.moves, entry.hours, entry.cranes, entry.moves / entry.hours / maxi(entry.cranes, 1) if entry.hours > 0.0 else 0.0, entry.late])
+			print("CALL day %.2f terminal %d %-10s %5d moves %5.1f h %d cranes %5.1f /h/crane late %.1f h" % [(sim.clock.calendar_minutes() - start) / 1440.0, entry.terminal, entry.kind, entry.moves, entry.hours, entry.cranes, entry.moves / entry.hours / maxi(entry.cranes, 1) if entry.hours > 0.0 else 0.0, entry.late])
 		log_seen = sim.ship_log.size()
 		if not sim.ledger.days.is_empty() and sim.ledger.days[-1].day != last_day:
 			last_day = sim.ledger.days[-1].day
@@ -81,6 +81,14 @@ func _day(sim: PortSim, day: Dictionary) -> void:
 		if day.lines[key] != 0:
 			parts.append("%s %s" % [key, HudDetails.dollars(day.lines[key])])
 	print("DAY %d net %s cash %s TEU %d | %s" % [day.day, HudDetails.dollars(day.closed - day.opened), HudDetails.dollars(day.closed), sim.teu_handled, ", ".join(parts)])
+	# Each terminal's day, to set an automated terminal against a manual one.
+	for terminal: int in day.terminals:
+		if terminal == 0:
+			continue
+		var lines: Dictionary = day.terminals[terminal]
+		var count: int = day.moves.terminals.get(terminal, [0, 0])[0]
+		var running: int = lines.get("upkeep", 0) + lines.get("it_systems", 0) + lines.get("power", 0) + lines.get("lighting", 0)
+		print("TERMINAL %d day %d: %d moves earning %s, running costs %s (upkeep %s, IT %s), %s a move" % [terminal, day.day, count, HudDetails.dollars(lines.get("moves", 0)), HudDetails.dollars(running), HudDetails.dollars(lines.get("upkeep", 0)), HudDetails.dollars(lines.get("it_systems", 0)), HudDetails.dollars(-running / maxi(count, 1))])
 
 
 func _sample(sim: PortSim) -> void:
