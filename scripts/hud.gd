@@ -169,7 +169,6 @@ var _selected_for := []
 var _inspect_view := InspectPanel.new()
 ## Buttons for the inspected area's terminal, and what they were last built for.
 ## Actions not yet given controls of their own, in the panel's Actions section.
-var _inspect_actions: HFlowContainer = _inspect_view.legacy
 var _actions_drawn := []
 var _guide_step := Label.new()
 var _guide_text := Label.new()
@@ -1232,51 +1231,11 @@ func _show_milestone() -> void:
 	_milestone_bar.value = sim.teu_handled
 
 
-## Reputation per line, the offers with Accept and Decline, and the agreed services.
-## For an inspected area: join each other terminal, or split off into a new one.
+## The inspected thing's sections of controls (InspectControls).
 func _draw_inspect_actions() -> void:
-	_draw_legacy_actions()
+	_actions_drawn = _actions_key()
 	_inspect_bulldoze.visible = _inspected is Dictionary and _inspected.has("area")
 	_inspect_view.show_sections(InspectControls.sections(sim, _inspected))
-
-
-## The actions not yet given controls of their own (InspectControls), as buttons.
-func _draw_legacy_actions() -> void:
-	_actions_drawn = _actions_key()
-	for child in _inspect_actions.get_children():
-		child.queue_free()
-	if _inspected is Dictionary and _inspected.has("junction"):
-		_draw_junction_actions(_inspected.junction)
-		return
-	if _inspected is Dictionary and _inspected.has("base"):
-		var id: int = _inspected.base
-		if id in sim.pilot_stations:
-			_action_button(_inspect_actions, "Hire a pilot, %s" % HudDetails.dollars(sim.rules.water.pilots.pilot_cost), {"op": "hire_pilots", "station": id, "count": 1})
-		elif id in sim.tug_depots:
-			_action_button(_inspect_actions, "Buy a tug, %s" % HudDetails.dollars(sim.rules.water.tugs.tug_cost), {"op": "buy_tugs", "depot": id, "count": 1})
-			_action_button(_inspect_actions, "Buy a fireboat, %s" % HudDetails.dollars(sim.rules.water.fireboats.cost), {"op": "buy_fireboats", "depot": id, "count": 1})
-		elif id in sim.service_jetties:
-			for service: String in sim.rules.water.services.boats:
-				var boat: Dictionary = sim.rules.water.services.boats[service]
-				_action_button(_inspect_actions, "Buy a %s, %s" % [boat.name.to_lower(), HudDetails.dollars(boat.cost)], {"op": "buy_service_boats", "jetty": id, "service": service, "count": 1})
-		return
-	if _inspected is Dictionary and _inspected.has("lane"):
-		if _inspected.lane in sim.ship_lanes.segments:
-			var lane: Dictionary = sim.ship_lanes.segments[_inspected.lane]
-			var cells := sim.ship_lanes.area(_inspected.lane).size()
-			_dredge_button(cells, {"op": "dredge_lane", "segment": _inspected.lane, "metres": 1})
-			if lane.type == "narrow":
-				var widen := _action_button(_inspect_actions, "Widen, %s" % HudDetails.dollars(sim.ship_lane_price(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], "wide", lane.control)), {"op": "widen_ship_lane", "segment": _inspected.lane})
-				widen.tooltip_text = "Rebuilds it as a wide lane, %d m across, where ships pass both ways instead of booking it one at a time." % Grid.metres(sim.rules.water.lanes.wide.half_width * 2 + 1)
-		return
-
-
-## A Dredge 1 m button for `cells` cells of water, locked until dredging is.
-func _dredge_button(cells: int, command: Dictionary) -> void:
-	var dredge: Dictionary = sim.rules.water.dredge
-	var button := _action_button(_inspect_actions, "Dredge 1 m, %s" % HudDetails.dollars(cells * dredge.cost_per_cell_metre), command)
-	button.disabled = sim.lock_error("dredging") != ""
-	button.tooltip_text = sim.lock_error("dredging") if button.disabled else "Deepens this water 1 m, down to %.0f m, so ships of a deeper draft can use it. Then %s every %d days to keep it." % [dredge.max_depth, HudDetails.dollars(cells * dredge.maintenance_per_cell_metre), dredge.maintenance_days]
 
 
 func _label(text: String) -> Label:
@@ -1399,43 +1358,14 @@ func _button(row: HBoxContainer, text: String, group: ButtonGroup, pressed: bool
 	return button
 
 
-## A plain button that issues `command` on each press.
-## What the inspect panel's buttons were drawn for; they are drawn again when it changes.
+## What the inspect panel's controls were drawn for; they are drawn again when it changes.
 func _actions_key() -> Array:
 	var junctions := Drive.junctions(sim)
 	var settings: Variant = [junctions.signals.has(_inspected.junction), junctions.signals.get(_inspected.junction, {}).get("green"), junctions.signs.get(_inspected.junction), junctions.arrows.get(_inspected.junction)] if _inspected is Dictionary and _inspected.has("junction") else null
 	return [sim, sim.areas.version, sim.templates.keys(), sim.dredge_version, sim.ship_lanes.version, sim.pilot_stations, sim.tug_depots, sim.service_jetties, sim.boats.list.size(), sim.workshops.vans.size(), sim.fires.engines.size(), sim.serviced.duplicate(), _inspected, settings]
 
 
-## Junction `point`'s buttons: signals on or off, each phase's green time,
-## and each arm's sign, which a press moves on: none, give way, stop.
-func _draw_junction_actions(point: Vector2) -> void:
-	var junctions := Drive.junctions(sim)
-	var signalled := point in junctions.signals
-	_action_button(_inspect_actions, "Signals off" if signalled else "Signals on", {"op": "set_signals", "point": point, "on": not signalled})
-	if signalled:
-		var greens: Array = junctions.signals[point].green
-		for i in greens.size():
-			for change: int in [-5, 5]:
-				var seconds := clampf(greens[i] + change, sim.rules.traffic.min_green_seconds, sim.rules.traffic.max_green_seconds)
-				if seconds != greens[i]:
-					_action_button(_inspect_actions, "Phase %d %+d s" % [i + 1, change], {"op": "set_green", "point": point, "phase": i, "seconds": seconds})
-	var next := {"": "give_way", "give_way": "stop", "stop": ""}
-	var label := {"": "no sign", "give_way": "give way", "stop": "stop"}
-	for arm: Vector2i in Drive.arms(sim, point):
-		var sign: String = junctions.signs.get(point, {}).get(arm, "")
-		var button := _action_button(_inspect_actions, "From the %s: %s" % [Inspect.arm_name(arm), label[sign]], {"op": "set_sign", "point": point, "arm": arm, "sign": next[sign]})
-		button.tooltip_text = "Press for %s. Give way: traffic from here waits for a gap; stop: it also stops at the line first." % label[next[sign]]
-	# Lane arrows, each lane coming in (lane 1 nearest the middle) cycling through the turns it may take.
-	var presets := [[], ["left"], ["straight"], ["right"], ["left", "straight"], ["straight", "right"], ["left", "straight", "right"]]
-	for arm: Vector2i in Drive.arms(sim, point):
-		for lane: int in Drive.junction_lanes(sim).approach(point, arm).size():
-			var turns: Array = junctions.arrows.get(point, {}).get(arm, {}).get(lane, [])
-			var after: Array = presets[(presets.find(turns) + 1) % presets.size()]
-			var button := _action_button(_inspect_actions, "From the %s, lane %d: %s" % [Inspect.arm_name(arm), lane + 1, " + ".join(turns) if not turns.is_empty() else "as usual"], {"op": "set_lane_arrows", "point": point, "arm": arm, "lane": lane, "turns": after})
-			button.tooltip_text = "Press for %s. Lane arrows set the turns a lane takes at the junction; as usual, the inner lane turns left and goes straight on, the outer turns right." % (" + ".join(after) if not after.is_empty() else "as usual")
-
-
+## A plain button that issues `command` on each press.
 func _action_button(row: Container, text: String, command: Dictionary) -> Button:
 	var button := Button.new()
 	button.text = text

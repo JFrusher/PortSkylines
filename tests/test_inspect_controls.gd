@@ -14,6 +14,8 @@ func _initialize() -> void:
 	_test_yard_block()
 	_test_transfer_block()
 	_test_other_areas()
+	_test_junction()
+	_test_water()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -112,3 +114,43 @@ func _test_other_areas() -> void:
 		var sections := InspectControls.sections(sim, {"area": case[0]})
 		_expect(sections.map(func(s: Dictionary) -> String: return s.title), case[1], "a %s's sections" % kind)
 		_all_taken(sim, sections, "a %s" % kind, case[2])
+
+
+## A junction: lights, then each phase's green, signs and lane arrows as
+## dropdowns, every one taken.
+func _test_junction() -> void:
+	var sim := AreaPort.terminal(80)
+	var point := Vector2i(86, sim.site_entry().y)
+	sim.creative = true
+	_expect(sim.apply({"op": "build_road", "from": point, "to": point + Vector2i(0, 20), "type": "terminal_1_1"}), "", "a stub road south makes the bend a T")
+	var junction := {"junction": Vector2(point)}
+	var sections := InspectControls.sections(sim, junction)
+	_expect(sections.map(func(s: Dictionary) -> String: return s.title), ["Signals", "Signs", "Lane arrows"], "a junction's sections")
+	_expect(sections[1].controls.size(), 3, "a sign dropdown for each of its 3 roads in")
+	_all_taken(sim, sections, "a junction without lights", 4)
+	sim.apply({"op": "set_signals", "point": Vector2(point), "on": true})
+	sections = InspectControls.sections(sim, junction)
+	_expect(sections[0].controls.filter(func(c: Dictionary) -> bool: return c.kind == "stepper").size() >= 2, true, "a green stepper for each phase")
+	_all_taken(sim, sections, "a junction with lights", 4)
+
+
+## Pilot stations, tug depots, services jetties and ship lanes.
+func _test_water() -> void:
+	var sim := AreaPort.base(RandomPort.quick(), "")
+	sim.creative = true
+	sim.milestones_passed = 5
+	_expect(sim.apply({"op": "build_pilot_station", "cell": Vector2i(66, 180)}), "", "a pilot station")
+	_expect(sim.apply({"op": "build_tug_depot", "cell": Vector2i(66, 520)}), "", "a tug depot")
+	_expect(sim.apply({"op": "build_services_jetty", "cell": Vector2i(66, 400)}), "", "a services jetty")
+	sim.creative = false
+	sim.ledger.cash = 100_000_000
+	for base: int in [1, 2, 3]:
+		var sections := InspectControls.sections(sim, {"base": base})
+		_expect(sections.map(func(s: Dictionary) -> String: return s.title), ["Fleet"], "marine base %d's sections" % base)
+		_all_taken(sim, sections, "marine base %d" % base, 1)
+	var lane: int = sim.ship_lanes.segments.keys()[0]
+	var sections := InspectControls.sections(sim, {"lane": lane})
+	_expect(sections[0].controls.size(), 2, "a narrow lane can be dredged and widened")
+	_all_taken(sim, sections, "a ship lane", 1)
+	sim.ship_lanes.segments[lane].dredged = 100
+	_expect(InspectControls.sections(sim, {"lane": lane})[0].controls[0].disabled, true, "dredging greys out at the deepest")

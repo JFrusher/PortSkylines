@@ -12,9 +12,6 @@ signal command_issued(command: Dictionary)
 var _open := {}
 var _overview := Label.new()
 var _sections := VBoxContainer.new()
-## Actions not yet given controls of their own: buttons, in their own section.
-var legacy := HFlowContainer.new()
-var _legacy_section: VBoxContainer
 
 
 func _init() -> void:
@@ -23,8 +20,6 @@ func _init() -> void:
 	_overview.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_section("Overview", true).add_child(_overview)
 	add_child(_sections)
-	_legacy_section = _section("Actions", true)
-	_legacy_section.add_child(legacy)
 
 
 ## The overview's lines of state.
@@ -41,7 +36,6 @@ func show_sections(sections: Array[Dictionary]) -> void:
 		var body := _section(spec.title, spec.open, _sections)
 		for control: Dictionary in spec.controls:
 			body.add_child(_control(control))
-	_legacy_section.get_parent().visible = legacy.get_child_count() > 0
 
 
 ## A collapsible section titled `title` in `parent` (this panel when null);

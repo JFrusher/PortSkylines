@@ -1924,7 +1924,7 @@ func dredge_lane(segment: int, metres: int) -> String:
 		return "No ship lane there"
 	var lane: Dictionary = ship_lanes.segments[segment]
 	var cells := ship_lanes.area(segment).size()
-	var err := _dredge_error(ship_lanes.depth(segment, areas.coast), metres, cells)
+	var err := dredge_error(ship_lanes.depth(segment, areas.coast), metres, cells)
 	if err == "":
 		ledger.post("dredging", -metres * cells * rules.water.dredge.cost_per_cell_metre)
 		lane.dredged += metres
@@ -1940,7 +1940,7 @@ func dredge_berth(apron: int, metres: int) -> String:
 	var depth := Marine.pocket_depth(self, apron)
 	if depth == 0.0:
 		return "Land or a quay blocks this berth's water"
-	var err := _dredge_error(depth, metres, cells)
+	var err := dredge_error(depth, metres, cells)
 	if err == "":
 		ledger.post("dredging", -metres * cells * rules.water.dredge.cost_per_cell_metre)
 		pocket_dredged[apron] = pocket_dredged.get(apron, 0.0) + metres
@@ -1948,7 +1948,9 @@ func dredge_berth(apron: int, metres: int) -> String:
 	return err
 
 
-func _dredge_error(depth: float, metres: int, cells: int) -> String:
+## Why dredging `metres` m off `cells` cells of water `depth` m deep would
+## be refused, or "".
+func dredge_error(depth: float, metres: int, cells: int) -> String:
 	var locked := lock_error("dredging")
 	if locked:
 		return locked

@@ -18,6 +18,12 @@ const ROLE_NAMES := {"import": "Import", "export": "Export", "reefer": "Reefer",
 ## The sections for `thing` (from Inspect.pick), or [] when it offers none here.
 static func sections(sim: PortSim, thing: Variant) -> Array[Dictionary]:
 	var found: Array[Dictionary] = []
+	if thing is Dictionary and thing.has("junction"):
+		found.assign(_junction(sim, thing.junction))
+	elif thing is Dictionary and thing.has("base"):
+		found.assign(_marine_base(sim, thing.base))
+	elif thing is Dictionary and thing.has("lane") and thing.lane in sim.ship_lanes.segments:
+		found.assign(_ship_lane(sim, thing.lane))
 	if not (thing is Dictionary and thing.has("area") and thing.area in sim.areas.list):
 		return found
 	var id: int = thing.area
@@ -36,6 +42,10 @@ static func sections(sim: PortSim, thing: Variant) -> Array[Dictionary]:
 		"workshop":
 			found.assign(_workshop(sim, id))
 	return found
+
+
+static func _upper(text: String) -> String:
+	return text[0].to_upper() + text.substr(1)
 
 
 static func _section(title: String, controls: Array[Dictionary], open := true) -> Dictionary:
@@ -67,10 +77,7 @@ static func _gate(sim: PortSim, id: int) -> Array[Dictionary]:
 
 ## A quay: deepening its berth and shore power.
 static func _quay(sim: PortSim, id: int) -> Array[Dictionary]:
-	var dredge: Dictionary = sim.rules.water.dredge
-	var cells := Marine.pocket_size(sim, id)
-	var locked := sim.lock_error("dredging")
-	var controls: Array[Dictionary] = [{"kind": "button", "text": "Dredge 1 m, %s" % HudDetails.dollars(cells * dredge.cost_per_cell_metre), "command": {"op": "dredge_berth", "apron": id, "metres": 1}, "disabled": locked != "", "tip": locked if locked else "Deepens this berth 1 m, down to %.0f m, so ships of a deeper draft can use it. Then %s every %d days to keep it." % [dredge.max_depth, HudDetails.dollars(cells * dredge.maintenance_per_cell_metre), dredge.maintenance_days]}]
+	var controls: Array[Dictionary] = [_dredge(sim, Marine.pocket_depth(sim, id), Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})]
 	if not sim.areas.list[id].settings.shore_power:
 		controls.append({"kind": "button", "text": "Shore power, %s" % HudDetails.dollars(sim.rules.town.shore_power_cost), "command": {"op": "buy_shore_power", "area": id}, "disabled": false, "tip": "Ships at this quay plug in and stop their engines, so %s no longer hears them." % sim.rules.town.name})
 	return [_section("Upgrades", controls)]
@@ -94,7 +101,7 @@ static func _workshop(sim: PortSim, id: int) -> Array[Dictionary]:
 	var items: Array[Dictionary] = []
 	for kind: String in kinds:
 		var on: bool = sim.serviced.get(kind, false)
-		items.append({"text": kinds[kind][0].to_upper() + kinds[kind].substr(1) + "s", "on": on, "command": {"op": "set_serviced", "kind": kind, "on": not on}})
+		items.append({"text": _upper(kinds[kind]) + "s", "on": on, "command": {"op": "set_serviced", "kind": kind, "on": not on}})
 	var breakdowns: Dictionary = sim.rules.events.breakdowns
 	var found: Array[Dictionary] = [_section("Staff", [_buy("Mechanics", sim.areas.list[id].settings.mechanics, {"op": "hire_mechanics", "area": id, "count": 1}, "Hire one for %s." % HudDetails.dollars(breakdowns.mechanic_cost))])]
 	if not items.is_empty():
@@ -126,7 +133,7 @@ static func _block(sim: PortSim, id: int) -> Array[Dictionary]:
 				continue
 			var refused: String = refusal.call({"gear": gear}) if gear != settings.gear else ""
 			var price := sim.gear_price(id, gear) if gear != settings.gear else 0
-			gears.append({"text": spec.name[0].to_upper() + spec.name.substr(1) + (", %s" % HudDetails.dollars(price) if price > 0 else ""), "selected": gear == settings.gear, "command": setting.call({"gear": gear}), "disabled": refused != "", "tip": refused if refused else "Stacks %d high, upkeep %s a machine a day" % [spec.tiers, HudDetails.dollars(spec.upkeep_per_machine)]})
+			gears.append({"text": _upper(spec.name) + (", %s" % HudDetails.dollars(price) if price > 0 else ""), "selected": gear == settings.gear, "command": setting.call({"gear": gear}), "disabled": refused != "", "tip": refused if refused else "Stacks %d high, upkeep %s a machine a day" % [spec.tiers, HudDetails.dollars(spec.upkeep_per_machine)]})
 		controls.append({"kind": "choice", "label": "Gear", "options": gears})
 	found.append({"title": "Settings", "open": true, "controls": controls})
 
@@ -172,4 +179,78 @@ static func _block(sim: PortSim, id: int) -> Array[Dictionary]:
 		upgrades.append({"kind": "stepper", "label": "Inspectors", "value": str(settings.inspectors), "minus": {}, "plus": {"op": "hire_inspectors", "area": id, "count": 1}, "tip": "Hire one for %s." % HudDetails.dollars(sim.rules.customs.inspector_cost)})
 	if not upgrades.is_empty():
 		found.append({"title": "Upgrades", "open": true, "controls": upgrades})
+	return found
+
+
+## Dredge 1 m off `cells` cells of water `depth` m deep, greyed with the
+## sim's reason when it would refuse.
+static func _dredge(sim: PortSim, depth: float, cells: int, command: Dictionary) -> Dictionary:
+	var dredge: Dictionary = sim.rules.water.dredge
+	var refused := sim.dredge_error(depth, 1, cells)
+	return {"kind": "button", "text": "Dredge 1 m, %s" % HudDetails.dollars(cells * dredge.cost_per_cell_metre), "command": command, "disabled": refused != "", "tip": refused if refused else "Deepens this water 1 m, down to %.0f m, so ships of a deeper draft can use it. Then %s every %d days to keep it." % [dredge.max_depth, HudDetails.dollars(cells * dredge.maintenance_per_cell_metre), dredge.maintenance_days]}
+
+
+## A ship lane: dredging it, and widening a narrow one.
+static func _ship_lane(sim: PortSim, id: int) -> Array[Dictionary]:
+	var lane: Dictionary = sim.ship_lanes.segments[id]
+	var controls: Array[Dictionary] = [_dredge(sim, sim.ship_lanes.depth(id, sim.areas.coast), sim.ship_lanes.area(id).size(), {"op": "dredge_lane", "segment": id, "metres": 1})]
+	if lane.type == "narrow":
+		controls.append({"kind": "button", "text": "Widen, %s" % HudDetails.dollars(sim.ship_lane_price(sim.ship_lanes.nodes[lane.a], sim.ship_lanes.nodes[lane.b], "wide", lane.control)), "command": {"op": "widen_ship_lane", "segment": id}, "disabled": false, "tip": "Rebuilds it as a wide lane, %d m across, where ships pass both ways instead of booking it one at a time." % Grid.metres(sim.rules.water.lanes.wide.half_width * 2 + 1)})
+	return [_section("Upgrades", controls)]
+
+
+## A pilot station, tug depot or services jetty: the craft it keeps.
+static func _marine_base(sim: PortSim, id: int) -> Array[Dictionary]:
+	var water: Dictionary = sim.rules.water
+	var craft: Array[Dictionary] = []
+	if id in sim.pilot_stations:
+		craft.append(_buy("Pilots", sim.pilot_stations[id].pilots, {"op": "hire_pilots", "station": id, "count": 1}, "Hire one for %s." % HudDetails.dollars(water.pilots.pilot_cost)))
+	elif id in sim.tug_depots:
+		craft.append(_buy("Tugs", sim.tug_depots[id].tugs, {"op": "buy_tugs", "depot": id, "count": 1}, "Buy one for %s." % HudDetails.dollars(water.tugs.tug_cost)))
+		craft.append(_buy("Fireboats", _boats(sim, id, "fireboat"), {"op": "buy_fireboats", "depot": id, "count": 1}, "Buy one for %s." % HudDetails.dollars(water.fireboats.cost)))
+	elif id in sim.service_jetties:
+		for service: String in water.services.boats:
+			var boat: Dictionary = water.services.boats[service]
+			craft.append(_buy(boat.name + "s", _boats(sim, id, service), {"op": "buy_service_boats", "jetty": id, "service": service, "count": 1}, "Buy one for %s." % HudDetails.dollars(boat.cost)))
+	return [_section("Fleet", craft)] if not craft.is_empty() else [] as Array[Dictionary]
+
+
+static func _boats(sim: PortSim, base: int, kind: String) -> int:
+	return sim.boats.of(base).filter(func(b: int) -> bool: return sim.boats.list[b].kind == kind).size()
+
+
+## A junction: its signals and each phase's green, each arm's sign, and
+## each lane's arrows.
+static func _junction(sim: PortSim, point: Vector2) -> Array[Dictionary]:
+	var junctions := Drive.junctions(sim)
+	var signalled := point in junctions.signals
+	var traffic: Dictionary = sim.rules.traffic
+	var signals: Array[Dictionary] = [{"kind": "toggle", "label": "Traffic lights", "on": signalled, "command": {"op": "set_signals", "point": point, "on": not signalled}, "tip": "Lights give each way in turn a green; without them, signs and the rule of the road decide."}]
+	if signalled:
+		var greens: Array = junctions.signals[point].green
+		for i: int in greens.size():
+			var green := func(change: float) -> Dictionary:
+				var seconds := clampf(greens[i] + change, traffic.min_green_seconds, traffic.max_green_seconds)
+				return {"op": "set_green", "point": point, "phase": i, "seconds": seconds} if seconds != greens[i] else {}
+			signals.append({"kind": "stepper", "label": "Phase %d green" % (i + 1), "value": "%d s" % roundi(greens[i]), "minus": green.call(-5.0), "plus": green.call(5.0), "tip": "How long this phase's green lasts, %d to %d s." % [traffic.min_green_seconds, traffic.max_green_seconds]})
+	var found: Array[Dictionary] = [_section("Signals", signals)]
+
+	var sign_names := {"": "No sign", "give_way": "Give way", "stop": "Stop"}
+	var signs: Array[Dictionary] = []
+	var arrows: Array[Dictionary] = []
+	var presets := [[], ["left"], ["straight"], ["right"], ["left", "straight"], ["straight", "right"], ["left", "straight", "right"]]
+	for arm: Vector2i in Drive.arms(sim, point):
+		var sign: String = junctions.signs.get(point, {}).get(arm, "")
+		var options: Array[Dictionary] = []
+		for each: String in sign_names:
+			options.append({"text": sign_names[each], "selected": each == sign, "command": {"op": "set_sign", "point": point, "arm": arm, "sign": each}, "disabled": false, "tip": "Give way: traffic from here waits for a gap; stop: it also stops at the line first."})
+		signs.append({"kind": "choice", "label": "From the %s" % Inspect.arm_name(arm), "options": options})
+		for lane: int in Drive.junction_lanes(sim).approach(point, arm).size():
+			var turns: Array = junctions.arrows.get(point, {}).get(arm, {}).get(lane, [])
+			var choices: Array[Dictionary] = []
+			for preset: Array in presets:
+				choices.append({"text": _upper(" + ".join(preset) if not preset.is_empty() else "as usual"), "selected": preset == turns, "command": {"op": "set_lane_arrows", "point": point, "arm": arm, "lane": lane, "turns": preset}, "disabled": false, "tip": "The turns this lane takes; as usual, the inner lane turns left and goes straight on, the outer turns right."})
+			arrows.append({"kind": "choice", "label": "%s, lane %d" % [_upper(Inspect.arm_name(arm)), lane + 1], "options": choices})
+	found.append(_section("Signs", signs, not signalled))
+	found.append(_section("Lane arrows", arrows, false))
 	return found
