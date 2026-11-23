@@ -206,6 +206,9 @@ static func build(refused: Array[String]) -> PortSim:
 	_do(sim, refused, {"op": "set_area", "id": north[-1], "settings": {"level": "ocr"}})
 	north.append(_area(sim, refused, {"op": "build_area", "type": "gate", "segment": spine_north, "side": -1, "from": 20, "to": 34}))
 	_do(sim, refused, {"op": "set_area", "id": north[-1], "settings": {"level": "ocr"}})
+	# Its own workshop: mechanics repair only in their own terminal.
+	var north_workshop := _area(sim, refused, {"op": "build_area", "type": "workshop", "segment": spine_north, "side": 1, "from": 6, "to": 14})
+	north.append(north_workshop)
 	# M11's harbour life, south of the highway road west of the gates: a
 	# workshop and a fire station, a customs block, and a tree belt east of
 	# the gates, between the port and the town.
@@ -247,6 +250,7 @@ static func build(refused: Array[String]) -> PortSim:
 	for kind: String in ["tides", "breakdowns", "fires"]:
 		_do(sim, refused, {"op": "set_event_kind", "kind": kind, "on": true})
 	_do(sim, refused, {"op": "hire_mechanics", "area": workshop, "count": 2})
+	_do(sim, refused, {"op": "hire_mechanics", "area": north_workshop, "count": 2})
 	_do(sim, refused, {"op": "buy_engines", "area": station, "count": 1})
 	_do(sim, refused, {"op": "set_area", "id": customs, "settings": {"role": "customs"}})
 	_do(sim, refused, {"op": "hire_inspectors", "area": customs, "count": 2})
