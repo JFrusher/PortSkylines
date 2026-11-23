@@ -37,6 +37,7 @@ Each test prints `tests: N failure(s)` and exits non-zero on failure. CI also fa
 | `test_policies.gd` | M13's policies: one changes exactly its parameters, is a saved command with a daily ledger line, and a scenario for each |
 | `test_block_rules.gd` | M13's per-block rules: a box breaking a block's size, line, reefer or height rule is never placed in it, and one no block takes stays aboard |
 | `test_automation.gd` | M13's automation tier on M11's transfer blocks (the ASC blocks): locked until the hub, the ramp-up curve against a manual block, capex in the block's price and the IT line a day |
+| `test_inspect_controls.gd` | The inspect panel's controls (InspectControls): a block offers a handful of grouped controls, not a button per value, and every command they offer is one the sim takes |
 | `test_soak.gd` | Two game days of calm and congested ports, each with an RMG rail yard sending boxes by train, under random commands, with ledger invariants checked every tick and midnight, and stack, box, cell, slot and machine invariants every vehicle second |
 
 ## Save fixtures

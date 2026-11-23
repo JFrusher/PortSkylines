@@ -134,6 +134,7 @@ func _process(dt: float) -> void:
 	_accumulated = minf(left, SimClock.TICK_SECONDS)
 	view.alpha = _accumulated / SimClock.TICK_SECONDS
 	view.info_view = hud.info_view()
+	view.selection = hud.selected_cells()
 	view.day_night = hud.day_night
 	sky.cycle = hud.day_night
 	_follow(dt)

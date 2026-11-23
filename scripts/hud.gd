@@ -156,10 +156,20 @@ var _info_mode := ""
 var _view_legend: HBoxContainer
 ## What the inspect panel shows, from Inspect.pick.
 var _inspected: Variant
-var _inspect_name := Label.new()
-var _inspect_lines := Label.new()
+## Where the inspect panel is docked, below the news icon.
+const INSPECT_AT := Vector2(8, 72)
+## The inspect panel's header label, naming what is inspected.
+var _inspect_name: Label
+## The inspect panel itself (its header holds _inspect_name, in a panel of its own).
+var _inspect_panel: PanelContainer
+var _inspect_bulldoze := Button.new()
+var _selected: Array[Vector2i] = []
+var _selected_for := []
+## The inspect panel's body: overview and sections of controls.
+var _inspect_view := InspectPanel.new()
 ## Buttons for the inspected area's terminal, and what they were last built for.
-var _inspect_actions := HFlowContainer.new()
+## Actions not yet given controls of their own, in the panel's Actions section.
+var _inspect_actions: HFlowContainer = _inspect_view.legacy
 var _actions_drawn := []
 var _guide_step := Label.new()
 var _guide_text := Label.new()
@@ -245,13 +255,28 @@ func _ready() -> void:
 
 	# The inspect panel stands beside what was clicked, as in Cities: Skylines.
 	_inspect_column = _corner(Control.PRESET_TOP_LEFT)
+	_inspect_column.position = INSPECT_AT
 	var inspect_panel := _panel(_inspect_column, "Inspect")
-	_inspect_name.theme_type_variation = "ClockLabel"
-	inspect_panel.add_child(_inspect_name)
-	inspect_panel.add_child(_inspect_lines)
-	# Wide enough that its buttons wrap in rows rather than stack.
-	_inspect_actions.custom_minimum_size.x = 360
-	inspect_panel.add_child(_inspect_actions)
+	_inspect_panel = _panel_of(inspect_panel)
+	# Its header names what is inspected, with locate and bulldoze beside close.
+	var inspect_heading: HBoxContainer = _panel_of(inspect_panel).get_child(0).get_child(0).get_child(0)
+	_inspect_name = inspect_heading.get_child(0)
+	var locate := Button.new()
+	locate.tooltip_text = "Move the camera to it"
+	locate.pressed.connect(func() -> void: event_picked.emit(_inspect_cell))
+	_inspect_bulldoze.tooltip_text = "Bulldoze it"
+	for pair: Array in [[locate, "locate"], [_inspect_bulldoze, "bulldoze"]]:
+		var button: Button = pair[0]
+		button.custom_minimum_size = Vector2(32, 32)
+		var icon := UiIcon.make(pair[1], 18.0)
+		icon.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_KEEP_SIZE, 7)
+		button.add_child(icon)
+	_inspect_bulldoze.pressed.connect(func() -> void: command_issued.emit({"op": "remove_area", "id": _inspected.area}))
+	for button: Button in [locate, _inspect_bulldoze]:
+		inspect_heading.add_child(button)
+		inspect_heading.move_child(button, inspect_heading.get_child_count() - 2)
+	inspect_panel.add_child(_inspect_view)
+	_inspect_view.command_issued.connect(func(command: Dictionary) -> void: command_issued.emit(command))
 	_panel_of(inspect_panel).visible = false
 
 	# Top right: the scenario and the guide, for now.
@@ -810,25 +835,26 @@ func _set_ui_scale(factor: float, button: Button) -> void:
 	button.text = "UI %d%%" % roundi(factor * 100)
 
 
-## Opens the inspect panel on whatever is at grid cell `cell`, beside it.
+## The cells of what is inspected, for the world to highlight, as Cities:
+## Skylines marks what its info panel shows; [] when nothing is.
+func selected_cells() -> Array[Vector2i]:
+	var shown := _inspect_panel.visible
+	var key := [_inspected, sim.areas.version, shown]
+	if key != _selected_for:
+		_selected_for = key
+		_selected = [] as Array[Vector2i]
+		if shown and _inspected is Dictionary and _inspected.has("area") and _inspected.area in sim.areas.list:
+			_selected.assign(sim.areas.cells(_inspected.area))
+		elif shown and _inspected != null:
+			_selected = [_inspect_cell] as Array[Vector2i]
+	return _selected
+
+
+## Opens the inspect panel on whatever is at grid cell `cell`.
 func inspect(cell: Vector2i) -> void:
 	_inspected = Inspect.pick(sim, cell)
 	_inspect_cell = cell
-	_show_only(_panel_of(_inspect_name))
-
-
-## Keeps the inspect panel beside its cell on screen as the camera moves,
-## to the right of it or, near the right edge, to its left, inside the
-## screen above the toolbar.
-func _place_inspect() -> void:
-	var panel := _panel_of(_inspect_name)
-	if not panel.visible:
-		return
-	var at: Vector2 = to_screen.call(_inspect_cell)
-	var room := get_viewport().get_visible_rect().size - Vector2(0, STATUS_BAR_HEIGHT + 8)
-	var size := panel.size
-	var x := at.x + 28.0 if at.x + 28.0 + size.x < room.x else at.x - 28.0 - size.x
-	_inspect_column.position = Vector2(clampf(x, 8.0, room.x - size.x - 8.0), clampf(at.y - size.y / 2.0, 8.0, room.y - size.y))
+	_show_only(_inspect_panel)
 
 
 ## Shows a short-lived message, such as why a build was refused.
@@ -870,14 +896,12 @@ func _process(dt: float) -> void:
 	_show_guide()
 	_fit_left_panels()
 
-	_place_inspect()
 	if _inspect_name.is_visible_in_tree():
 		var lines := Inspect.describe(sim, _inspected)
-		_panel_of(_inspect_name).visible = not lines.is_empty()
+		_inspect_panel.visible = not lines.is_empty()
 		if not lines.is_empty():
 			_inspect_name.text = lines[0]
-			_inspect_lines.text = "\n".join(lines.slice(1))
-			_inspect_lines.visible = lines.size() > 1
+			_inspect_view.set_overview(lines.slice(1))
 		if _actions_drawn != _actions_key():
 			_draw_inspect_actions()
 
@@ -1211,6 +1235,13 @@ func _show_milestone() -> void:
 ## Reputation per line, the offers with Accept and Decline, and the agreed services.
 ## For an inspected area: join each other terminal, or split off into a new one.
 func _draw_inspect_actions() -> void:
+	_draw_legacy_actions()
+	_inspect_bulldoze.visible = _inspected is Dictionary and _inspected.has("area")
+	_inspect_view.show_sections(InspectControls.sections(sim, _inspected))
+
+
+## The actions not yet given controls of their own (InspectControls), as buttons.
+func _draw_legacy_actions() -> void:
 	_actions_drawn = _actions_key()
 	for child in _inspect_actions.get_children():
 		child.queue_free()
@@ -1243,17 +1274,12 @@ func _draw_inspect_actions() -> void:
 	var id: int = _inspected.area
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron":
 		_dredge_button(Marine.pocket_size(sim, id), {"op": "dredge_berth", "apron": id, "metres": 1})
-	if sim.areas.list[id].type in Areas.BLOCK_TYPES and sim.areas.list[id].settings.role == "customs":
-		_action_button(_inspect_actions, "Hire an inspector, %s" % HudDetails.dollars(sim.rules.customs.inspector_cost), {"op": "hire_inspectors", "area": id, "count": 1})
 	if sim.areas.kind_of(sim.areas.list[id]) == "quay_apron" and not sim.areas.list[id].settings.shore_power:
 		_action_button(_inspect_actions, "Buy shore power, %s" % HudDetails.dollars(sim.rules.town.shore_power_cost), {"op": "buy_shore_power", "area": id}).tooltip_text = "Ships at this quay plug in and stop their engines, so %s no longer hears them." % sim.rules.town.name
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate" and not sim.areas.list[id].settings.scanner:
 		_action_button(_inspect_actions, "Buy a scanner, %s" % HudDetails.dollars(sim.rules.customs.scanner_cost), {"op": "buy_scanner", "gate": id})
 	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
 		_action_button(_inspect_actions, "Buy an AGV, %s" % HudDetails.dollars(sim.rules.agv.cost), {"op": "buy_agvs", "area": id, "count": 1})
-	if sim.areas.kind_of(sim.areas.list[id]) == "transfer_block" and not sim.areas.list[id].settings.racks:
-		var racks := _action_button(_inspect_actions, "Buy racks, %s" % HudDetails.dollars(sim.rules.agv.rack_cost), {"op": "buy_racks", "area": id})
-		racks.tooltip_text = "A rack at each AGV slot: AGVs set imports down and go, and pick up exports the ASCs have staged, without waiting for an ASC."
 	if sim.areas.kind_of(sim.areas.list[id]) == "agv_depot":
 		var charger := _action_button(_inspect_actions, "Buy a charger, %s" % HudDetails.dollars(sim.rules.agv.charger_cost), {"op": "buy_chargers", "area": id, "count": 1})
 		charger.disabled = sim.areas.list[id].settings.chargers >= sim.rules.agv.max_chargers
@@ -1272,26 +1298,6 @@ func _draw_inspect_actions() -> void:
 			var on: bool = sim.serviced.get(kind, false)
 			var button := _action_button(_inspect_actions, "%s %ss" % ["Stop servicing" if on else "Service", kinds[kind]], {"op": "set_serviced", "kind": kind, "on": not on})
 			button.tooltip_text = "Serviced every %d working hours, out of work %d minutes each time, it breaks down %.0f times less often." % [roundi(sim.rules.events.breakdowns.service_every_hours), roundi(sim.rules.events.breakdowns.service_hours * 60.0), sim.rules.events.breakdowns.serviced_mtbf_factor]
-	if sim.areas.list[id].type in Areas.BLOCK_TYPES:
-		var settings: Dictionary = sim.areas.list[id].settings
-		var names := {"dangerous": "dangerous-goods", "tranship": "transhipment", "customs": "customs"}
-		var unlocks := {"reefer": "reefers", "tranship": "transhipment"}
-		for role: String in ["import", "export", "reefer", "dangerous", "tranship", "customs"]:
-			if role != settings.role:
-				var make := _action_button(_inspect_actions, "Make %s block" % names.get(role, role), {"op": "set_area", "id": id, "settings": {"role": role}})
-				if role in unlocks:
-					make.disabled = sim.lock_error(unlocks[role]) != ""
-					make.tooltip_text = sim.lock_error(unlocks[role])
-		# A transfer block is worked by its twin ASCs, which work nowhere else.
-		for gear: String in sim.rules.yard_gear if sim.areas.list[id].type == "yard_block" else {}:
-			if gear != settings.gear and gear != "asc" and (settings.role == "empty" or not sim.rules.yard_gear[gear].empties_only):
-				var button := _action_button(_inspect_actions, "Use %s" % sim.rules.yard_gear[gear].name, {"op": "set_area", "id": id, "settings": {"gear": gear}})
-				button.disabled = sim.lock_error(gear) != ""
-				button.tooltip_text = sim.lock_error(gear) if button.disabled else "Stacks %d high, upkeep $%d a machine a day" % [sim.rules.yard_gear[gear].tiers, sim.rules.yard_gear[gear].upkeep_per_machine]
-				if not button.disabled and sim.gear_price(id, gear) > 0:
-					button.text += ", %s" % HudDetails.dollars(sim.gear_price(id, gear))
-					button.tooltip_text += ". Automated: AGVs serve it, it starts slower than manual gear and ramps up past it over %d days, and its IT systems cost %s a day" % [sim.rules.automation.ramp_up[-1][0], HudDetails.dollars(sim.rules.automation.it_upkeep_per_block)]
-		_draw_block_rules(id, settings)
 	if sim.areas.kind_of(sim.areas.list[id]) == "gate":
 		for level: String in sim.rules.gate_levels:
 			if level != sim.areas.list[id].settings.level and sim.lock_error(level) == "":
@@ -1302,38 +1308,6 @@ func _draw_inspect_actions() -> void:
 			if to != slots:
 				var button := _action_button(_inspect_actions, "%+d bookings" % change, {"op": "set_area", "id": id, "settings": {"slots_per_hour": to}})
 				button.tooltip_text = "Lorries book an hour and are let in no sooner, %d an hour (0: no bookings, lorries come in as they arrive). Early lorries wait in a truck park, else in a booth." % to
-
-
-## Yard block `id`'s rule buttons: the sizes and lines it takes, reefers,
-## and its stack height.
-func _draw_block_rules(id: int, settings: Dictionary) -> void:
-	var set_rule := func(text: String, rule: Dictionary, tip: String) -> void:
-		_action_button(_inspect_actions, text, {"op": "set_area", "id": id, "settings": rule}).tooltip_text = tip
-	for sizes: Array in [[], [1], [2]]:
-		if sizes != settings.sizes:
-			set_rule.call("Take %s" % ("every size" if sizes.is_empty() else "%d ft only" % (sizes[0] * 20)), {"sizes": sizes}, "Boxes of another size go to a block that takes them, or stay aboard their ship when none does.")
-	set_rule.call("Refuse reefers" if settings.reefers else "Take reefers", {"reefers": not settings.reefers}, "Whether reefers may be stacked here.")
-	if settings.stacking == "fill_low":
-		set_rule.call("Stack by departure", {"stacking": "by_departure"}, "Each box goes on a stack where it buries nothing leaving sooner, for the fewest re-handles.")
-	else:
-		set_rule.call("Stack low first", {"stacking": "fill_low"}, "Each box goes on the lowest stack, so stacks stay level.")
-	var high: int = AreaFlow.tiers(sim, id)
-	if high > 1:
-		set_rule.call("Stack to %d" % (high - 1), {"max_tiers": high - 1}, "Lower stacks hold less and need fewer re-handles.")
-	if settings.max_tiers > 0:
-		set_rule.call("Stack as high as the gear", {"max_tiers": 0}, "")
-	for line: String in sim.rules.lines:
-		var taken: Array = settings.lines.duplicate()
-		if line in taken:
-			taken.erase(line)
-		else:
-			taken.append(line)
-		set_rule.call("%s %s" % ["Not only" if line in settings.lines else "Only", sim.contracts.name_of(line)], {"lines": taken}, "A block that names lines takes only their boxes; one that names none takes every line's.")
-	var name := "Rules of block %d" % id
-	_action_button(_inspect_actions, "Save rules as template", {"op": "save_template", "name": name, "id": id}).tooltip_text = "Saves this block's rules as \"%s\", to give other blocks." % name
-	for template: String in sim.templates:
-		if template != name:
-			_action_button(_inspect_actions, "Apply %s" % template, {"op": "apply_template", "name": template, "id": id}).tooltip_text = "Gives this block the boxes it takes and its stacking from the template, keeping its role and gear."
 
 
 ## A Dredge 1 m button for `cells` cells of water, locked until dredging is.

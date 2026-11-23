@@ -238,6 +238,10 @@ var _junction_signs := MeshInstance3D.new()
 var _junctions_drawn: Variant = null
 var _hover := _box(Vector3(Grid.CELL, 1.5, Grid.CELL) / METRES_PER_UNIT, Color(1, 1, 1, 0.5))
 var _info := MeshInstance3D.new()
+## The cells of what the inspect panel shows, highlighted.
+var selection: Array[Vector2i] = []
+var _selection := MeshInstance3D.new()
+var _selection_drawn: Array[Vector2i] = []
 var _info_left := 0.0
 var _drawn_land := -1
 
@@ -274,6 +278,11 @@ func _ready() -> void:
 	_ship_lanes.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_ship_lanes.material_override.vertex_color_use_as_albedo = true
 	add_child(_info)
+	add_child(_selection)
+	_selection.material_override = StandardMaterial3D.new()
+	_selection.material_override.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_selection.material_override.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_selection.material_override.albedo_color = Color(0.35, 0.75, 1.0, 0.35)
 	add_child(_town)
 	add_child(_town_windows)
 	for preview: MeshInstance3D in [_road_preview, _area_preview, _info]:
@@ -420,6 +429,9 @@ func show_area_preview(cells: Array[Vector2i], ok: bool) -> void:
 
 
 func _process(dt: float) -> void:
+	if not is_same(selection, _selection_drawn):
+		_selection_drawn = selection
+		_draw_selection()
 	_info.visible = info_view in INFO_LEGENDS
 	_info_left -= dt
 	if _info.visible and _info_left <= 0.0:
@@ -826,6 +838,19 @@ static func _workshop(size: Vector2) -> Array:
 	for k: int in 5:
 		parts.append([Vector3(size.x * 0.4, 0.008, 0.022), Vector3(-size.x * 0.125, h * (0.12 + k * 0.14), front - 0.008), Color(0.22, 0.24, 0.26)])
 	return parts
+
+
+## Highlights the selected cells just above the info views.
+func _draw_selection() -> void:
+	if selection.is_empty():
+		_selection.mesh = null
+		return
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	tool.set_normal(Vector3.UP)
+	for cell: Vector2i in selection:
+		_cell_quad(tool, cell, INFO_TOP + 0.05)
+	_selection.mesh = tool.commit()
 
 
 ## Colours each place info_shares gives from green through amber to red.

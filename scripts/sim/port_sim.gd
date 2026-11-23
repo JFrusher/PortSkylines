@@ -1414,8 +1414,8 @@ func set_area(id: int, settings: Dictionary) -> String:
 
 ## Saves yard block `id`'s rules as template `name`, replacing one of that name.
 func save_template(name: String, id: int) -> String:
-	if id not in areas.list or areas.kind_of(areas.list[id]) != "yard_block":
-		return "Templates are saved from a yard block"
+	if id not in areas.list or areas.list[id].type not in Areas.BLOCK_TYPES:
+		return "Templates are saved from a yard or transfer block"
 	if name.strip_edges() == "":
 		return "Name the template"
 	var kept := {}
@@ -1429,8 +1429,8 @@ func save_template(name: String, id: int) -> String:
 func apply_template(name: String, id: int) -> String:
 	if name not in templates:
 		return "No template called %s" % name
-	if id not in areas.list or areas.kind_of(areas.list[id]) != "yard_block":
-		return "Templates are applied to a yard block"
+	if id not in areas.list or areas.list[id].type not in Areas.BLOCK_TYPES:
+		return "Templates are applied to a yard or transfer block"
 	return set_area(id, templates[name])
 
 

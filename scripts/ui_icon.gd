@@ -4,7 +4,7 @@ extends Control
 ## game has no icon art, and drawn icons stay sharp at every interface size.
 ## Set `glyph` to one of GLYPHS; it fills its rect, centred, in `color`.
 
-const GLYPHS := ["roads", "quay", "cranes", "yard", "gate", "water", "bulldoze", "inspect", "map", "statistics", "harbour", "menu", "news", "advisor", "scenario", "views"]
+const GLYPHS := ["roads", "quay", "cranes", "yard", "gate", "water", "bulldoze", "inspect", "map", "statistics", "harbour", "menu", "news", "advisor", "scenario", "views", "locate"]
 
 @export var glyph := "roads"
 var color := Color(0.92, 0.95, 1.0)
@@ -64,6 +64,11 @@ func _draw() -> void:
 			line.call(Vector2(0.6, 0.5), Vector2(0.75, 0.5))
 			for x: float in [0.25, 0.5]:
 				draw_circle(p.call(x, 0.78), s * 0.1, color)
+		"locate":
+			draw_arc(p.call(0.5, 0.5), s * 0.28, 0.0, TAU, 24, color, w, true)
+			draw_circle(p.call(0.5, 0.5), s * 0.07, color)
+			for tick: Array in [[Vector2(0.5, 0.05), Vector2(0.5, 0.22)], [Vector2(0.5, 0.78), Vector2(0.5, 0.95)], [Vector2(0.05, 0.5), Vector2(0.22, 0.5)], [Vector2(0.78, 0.5), Vector2(0.95, 0.5)]]:
+				line.call(tick[0], tick[1])
 		"inspect":
 			draw_arc(p.call(0.42, 0.42), s * 0.27, 0.0, TAU, 20, color, w, true)
 			line.call(Vector2(0.62, 0.62), Vector2(0.92, 0.92))
