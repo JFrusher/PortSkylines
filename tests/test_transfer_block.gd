@@ -49,13 +49,15 @@ func _terminal(sim: PortSim, keep_import_block := false) -> int:
 	_expect(sim.apply({"op": "build_area", "type": "transfer_block", "segment": east, "side": -1, "from": 55, "to": 66}), "", "a transfer block back to the road behind")
 	var block: int = sim.areas.list.keys().max()
 	_paint(sim, Rect2i(74, 195, 17, 112))  # the quay
-	_paint(sim, Rect2i(74, 288, 60, 19))  # the front road, short of the block
+	_paint(sim, Rect2i(74, 288, 103, 19))  # the front road
 	_paint(sim, Rect2i(141, 275, 12, 13))  # the block, all but its back rows
 	_expect(AreaFlow.agv_unreachable(sim, block), false, "no AGV terminal yet, nothing to warn of")
 	_expect(sim.apply({"op": "build_area", "type": "agv_depot", "segment": east, "side": -1, "from": 30, "to": 40}), "", "an AGV depot")
-	_expect(AreaFlow.agv_unreachable(sim, block), true, "with the zone stopping short of the block, AGVs can't reach it")
-	_paint(sim, Rect2i(134, 288, 43, 19))  # the rest of the front road
-	_expect(AreaFlow.agv_unreachable(sim, block), false, "with the zone joined up, they can, turning out across the road")
+	_expect(AreaFlow.agv_unreachable(sim, block), true, "with nowhere in the zone to turn, AGVs can't reach it")
+	# AGVs need somewhere in the zone to turn: a dead end off the front road.
+	sim.apply({"op": "build_road", "type": "terminal_1_1", "from": Vector2i(170, 300), "to": Vector2i(170, 316)})
+	_paint(sim, Rect2i(160, 300, 20, 20))
+	_expect(AreaFlow.agv_unreachable(sim, block), false, "with a dead end to turn in, they can")
 	_expect(sim.apply({"op": "buy_agvs", "area": sim.areas.list.keys().max(), "count": 6}), "", "six AGVs")
 	sim.creative = false
 	sim.ledger.cash = 10000000
