@@ -281,6 +281,8 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 		sim.boxes[id].onward = onward
 		sim.boxes[id].due = sim.clock.calendar_minutes() + sim.rules.lines[ship.line].connection_hours * 60.0
 		sim.exports += 1
+		# Its onward ship calls only at another terminal: a lorry takes it there (inter-terminal trucking).
+		sim.boxes[id].to = _onward_terminal(sim, ship.line, onward, here)
 	# Booked to barge first, by its line's share while barges call at this
 	# terminal, so a barge discount takes boxes from rail and road alike: it
 	# waits in its block for a barge, and no lorry takes it.
@@ -667,6 +669,21 @@ static func barges_call(sim: PortSim, terminal: int) -> bool:
 ## Where `ship`'s transhipment boxes go on: "feeder" off a big ship, "mother"
 ## off a feeder, while its line has a service of that size and transhipment
 ## is unlocked; else "".
+## The terminal `line`'s `onward` services ("feeder" or "mother") berth at,
+## when none berths at `here`; else 0.
+static func _onward_terminal(sim: PortSim, line: String, onward: String, here: int) -> int:
+	var found := 0
+	for service: Dictionary in sim.contracts.services:
+		if service.line != line or (service.kind == "feeder") != (onward == "feeder") or service.apron not in sim.areas.list:
+			continue
+		var terminal: int = sim.areas.list[service.apron].terminal
+		if terminal == here:
+			return 0
+		if found == 0:
+			found = terminal
+	return found
+
+
 static func tranship_onward(sim: PortSim, ship: PortSim.Ship) -> String:
 	if sim.lock_error("transhipment") or sim.rules.lines[ship.line].tranship_share <= 0.0:
 		return ""
@@ -966,11 +983,21 @@ static func dispatch_import_lorry(sim: PortSim) -> bool:
 		if not _has_gate(sim, sim.areas.list[block].terminal):
 			sim._event("Lorries can't come in: build a gate in %s" % sim.areas.terminals[sim.areas.list[block].terminal].name)
 			continue
+		# A transhipment bound for another terminal goes first: it has a ship to meet there.
+		for id: int in sim.area_stacks[block].of_kind("tranship", sim.boxes):
+			if sim.boxes[id].to == 0 or id in sim._claimed:
+				continue
+			if box == 0 or sim.boxes[box].kind != "tranship" or sim.boxes[id].due < sim.boxes[box].due:
+				box = id
+				terminal = sim.areas.list[block].terminal
+			break
+		if box != 0 and sim.boxes[box].kind == "tranship":
+			continue
 		# Imports come soonest due first, so the block's first unclaimed one is its best.
 		for id: int in sim.area_stacks[block].of_kind("import", sim.boxes):
 			if id in sim._claimed or sim.boxes[id].barge or sim.boxes[id].customs != "":
 				continue
-			if sim.boxes[id].due <= now and (box == 0 or sim.boxes[id].due < sim.boxes[box].due):
+			if sim.boxes[id].due <= now and (box == 0 or (sim.boxes[box].kind == "import" and sim.boxes[id].due < sim.boxes[box].due)):
 				box = id
 				terminal = sim.areas.list[block].terminal
 			break
@@ -1398,7 +1425,7 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 			vehicle.state = "under_crane"
 		"leaving":
 			if vehicle.loaded:
-				if sim.boxes[vehicle.box].kind == "import" and sim.boxes[vehicle.box].to:
+				if sim.boxes[vehicle.box].kind in ["import", "tranship"] and sim.boxes[vehicle.box].to:
 					sim._transfer_out(vehicle.box)
 					_gone(sim, vehicle)
 					return
@@ -1516,7 +1543,10 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 		elif box.dg:
 			block = _block_for(sim, "dangerous", terminal, vehicle.box, at)
 		elif block == 0:
-			block = _block_for(sim, "export", terminal, vehicle.box, at)
+			if box.kind == "tranship":
+				block = _block_for(sim, "tranship", terminal, vehicle.box, at)
+			if block == 0:
+				block = _block_for(sim, "export", terminal, vehicle.box, at)
 		if block:
 			_go_to(sim, vehicle, block)
 		else:

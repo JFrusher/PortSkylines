@@ -2620,15 +2620,18 @@ func barge_share(line: String) -> float:
 ## comes back as an empty of its line and size return_days later, with the
 ## chance return_share; the rest go back to inland depots.
 ## Box `id`, a transfer, has left its terminal by road: an internal move
-## charged to that terminal; it waits to go in to the other as an export.
+## charged to that terminal; it waits to go in to the other, an import as
+## an export for its line's ship there, a transhipment for its onward ship.
 func _transfer_out(id: int) -> void:
 	ledger.post("transfers", -rules.transfers.cost_per_box, boxes[id].from)
 	transfers.append({"box": id, "terminal": boxes[id].to})
 	_claimed.erase(id)
-	boxes[id].kind = "export"
+	# An import goes on as an export for its line's ship there; a transhipment stays one.
+	if boxes[id].kind == "import":
+		boxes[id].kind = "export"
+		exports += 1
 	boxes[id].to = 0
 	boxes[id].in = -1.0
-	exports += 1
 
 
 func _import_left(id: int) -> void:

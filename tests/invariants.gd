@@ -108,10 +108,13 @@ static func check(sim: PortSim, expect: Callable, deep_every: int) -> void:
 	for block: int in sim._straddles_out:
 		expect.call(sim._straddles_out[block], sim.vehicles.filter(func(v: Vehicle) -> bool: return v.straddle == block).size(), "block %d's straddle carriers out are counted %s" % [block, at])
 	expect.call(sim.exports, sim.boxes.values().filter(func(box: Dictionary) -> bool: return box.kind in ["export", "tranship"]).size(), "the export count matches the boxes %s" % at)
-	# M9: a box going on by ship or barge never leaves by road.
+	# M9: a box going on by ship or barge never leaves by road; a transhipment
+	# rides a lorry only between terminals, out to its onward ship's (it has
+	# `to`) or in from the other (not stacked since).
 	for vehicle: Vehicle in sim.vehicles:
 		if vehicle.kind == "lorry" and vehicle.box in sim.boxes:
-			expect.call(sim.boxes[vehicle.box].kind != "tranship" and not sim.boxes[vehicle.box].barge, true, "lorry %d never takes box %d, bound for a ship or barge %s" % [vehicle.id, vehicle.box, at])
+			var box: Dictionary = sim.boxes[vehicle.box]
+			expect.call(not box.barge and (box.kind != "tranship" or box.to != 0 or box.in < 0.0), true, "lorry %d never takes box %d, bound for a ship or barge, but between terminals %s" % [vehicle.id, vehicle.box, at])
 	for area: int in sim.handovers.slots():
 		for holder: int in sim.handovers.slots()[area]:
 			expect.call(holder == 0 or holder in ids, true, "area %d's slots hold vehicles that are there %s" % [area, at])

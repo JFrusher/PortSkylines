@@ -8,7 +8,8 @@ const RandomPort := preload("res://tests/random_port.gd")
 ##
 ## Layout: berths along the curving coast (a Neopanamax berth for the North
 ## Terminal, an AGV terminal (M11): an AGV zone from its quay to transfer
-## blocks, lorries at their backs, an AGV depot with chargers, racks; ULCV,
+## blocks (reefer ones too), lorries at their backs, an AGV depot with
+## chargers, racks; ULCV,
 ## Panamax and feeder berths for the South Terminal, with manual gear), a
 ## spine road down x = SPINE with a connector road east from each berth to
 ## it, and the highway road from the spine to the site entry, with the
@@ -73,6 +74,9 @@ const LANES: Array = [[-18, 18], [-36, -18, 18, 36], [-18, 18], [-18]]
 ## either side, where lorries come; and the dangerous-goods one, alone at
 ## the east end, as dangerous goods stand 24 m from other blocks.
 const AGV_BLOCKS: Array[int] = [30, 50, 70, 90, 110]
+## Their roles, north side then south: reefers plugged in as in a real ASC
+## block, one block each side.
+const AGV_ROLES: Array[String] = ["import", "export", "reefer", "import", "export", "export", "import", "reefer", "export", "import"]
 const AGV_DG_BLOCK := 134
 ## The AGV depot's AGVs and chargers.
 const AGVS := 10
@@ -304,7 +308,7 @@ static func _agv_terminal(sim: PortSim, refused: Array[String], berth: Dictionar
 		for start: int in AGV_BLOCKS:
 			racked.append(_area(sim, refused, {"op": "build_area", "type": "transfer_block", "segment": connector, "side": side, "from": start, "to": start + 11}))
 	for k in racked.size():
-		_do(sim, refused, {"op": "set_area", "id": racked[k], "settings": {"role": "import" if k % 2 == 0 else "export"}})
+		_do(sim, refused, {"op": "set_area", "id": racked[k], "settings": {"role": AGV_ROLES[k]}})
 	var dangerous := _area(sim, refused, {"op": "build_area", "type": "transfer_block", "segment": connector, "side": -1, "from": AGV_DG_BLOCK, "to": AGV_DG_BLOCK + 11})
 	_do(sim, refused, {"op": "set_area", "id": dangerous, "settings": {"role": "dangerous"}})
 	var areas: Array[int] = [depot, dangerous]
