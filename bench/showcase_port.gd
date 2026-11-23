@@ -275,6 +275,7 @@ static func build(refused: Array[String]) -> PortSim:
 		sim.ships.append(ship)
 		if not AreaFlow.berth(sim, ship):
 			refused.append("a %s doesn't berth at its berth" % berth.kind)
+	_stage_exports(sim)
 	return sim
 
 
@@ -365,6 +366,32 @@ static func _fill(sim: PortSim) -> void:
 			stacks.place_at(spot, box, sim.boxes[box].teu)
 			sim.boxes[box].in = now
 			placed += 1
+
+
+## Stacks the exports the ships due want in the export blocks, as lorries
+## would have brought them over the days before in a running port; each block
+## kept half empty, as _fill keeps them.
+static func _stage_exports(sim: PortSim) -> void:
+	var now := sim.clock.calendar_minutes()
+	var half := {}
+	var tries := 0
+	while AreaFlow.export_demand(sim) > 0 and tries < BOXES * 4:
+		var before := tries
+		for block: int in sim.areas.list:
+			var area: Dictionary = sim.areas.list[block]
+			if area.type not in Areas.BLOCK_TYPES or area.settings.role != "export" or AreaFlow.export_demand(sim) <= 0:
+				continue
+			tries += 1
+			var box := sim._new_box("export", now + sim.rules.export_lead_hours * 60.0, "meridian")
+			var stacks := AreaFlow._stacks(sim, block)
+			var spot := AreaFlow._place_spot(sim, block, box)
+			if stacks.room() <= half.get_or_add(block, stacks.room() / 2) or sim.boxes[box].reefer or sim.boxes[box].dg or spot < 0:
+				sim._drop_box(box)
+				continue
+			stacks.place_at(spot, box, sim.boxes[box].teu)
+			sim.boxes[box].in = now
+		if tries == before:
+			break
 
 
 ## Lanes in from the sea to every berth (the Panamax's wide, the ULCV's
