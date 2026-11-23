@@ -12,6 +12,7 @@ var _failures := 0
 func _initialize() -> void:
 	_test_reefer_ship_sets_a_peak()
 	_test_unplugged_reefers_are_fined()
+	_test_no_reefers_without_a_reefer_block()
 	_test_reefer_exports_plug_in()
 	_test_hot_days_draw_more()
 	_test_reefers_wait_for_their_milestone()
@@ -38,12 +39,16 @@ func _test_reefer_ship_sets_a_peak() -> void:
 	_expect(sim.ledger.days[-1].lines.get("reefer_fines", 0), 0, "plugged reefers cost no fines")
 
 
-## With no reefer block, reefers stack in the import block, and each is fined
-## once after plug_minutes.
+## Reefers left off a plug (their block set to imports) are each fined once
+## after plug_minutes, and draw nothing.
 func _test_unplugged_reefers_are_fined() -> void:
-	var sim := _reefer_port(false)
-	_expect(_run_until(sim, func() -> bool: return AreaFlow.unplugged_reefers(sim) == 40), true, "the ship's 40 reefers stack in the import block")
-	_expect(sim.power.peak_kw, 0.0, "unplugged reefers draw nothing")
+	var sim := _reefer_port(true)
+	_expect(_run_until(sim, func() -> bool: return AreaFlow.plugged_reefers(sim) == 40), true, "the ship's 40 reefers are plugged in")
+	var block: int = sim.areas.list.keys()[-1]
+	_expect(sim.apply({"op": "set_area", "id": block, "settings": {"role": "import"}}), "", "their block is set to imports")
+	_expect(AreaFlow.unplugged_reefers(sim), 40, "which leaves them off a plug")
+	sim.tick()
+	_expect(AreaFlow.plugged_reefers(sim), 0, "none is plugged in, so none draws power")
 	for i in roundi((sim.rules.reefers.plug_minutes + 60.0) / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
 	_expect(AreaFlow.unplugged_reefers(sim), 40, "they are still stacked")
@@ -53,6 +58,16 @@ func _test_unplugged_reefers_are_fined() -> void:
 	_expect(sim.ledger.today.get("reefer_fines", 0), -40 * sim.rules.reefers.fine, "and only once")
 
 
+## With no reefer block, lines send no reefers, so none is fined.
+func _test_no_reefers_without_a_reefer_block() -> void:
+	var sim := _reefer_port(false)
+	for i in SimClock.TICKS_PER_DAY:
+		sim.tick()
+	_expect(sim.boxes.values().filter(func(b: Dictionary) -> bool: return b.reefer).size(), 0, "no reefers")
+	_expect(sim.ledger.days[-1].lines.get("reefer_fines", 0), 0, "no fines")
+	_expect(sim.teu_handled > 0, true, "while the ship is worked")
+
+
 ## Reefer exports from the gate go to the reefer block, not the export block.
 func _test_reefer_exports_plug_in() -> void:
 	var sim := _reefer_port(true, 0, 10)
@@ -60,12 +75,17 @@ func _test_reefer_exports_plug_in() -> void:
 	_expect(AreaFlow.unplugged_reefers(sim), 0, "and none in the export block")
 
 
-## A new port gets no reefers before the terminal milestone, so it is never
-## fined for plugs it can't build yet; past it, reefers come.
+## A new port gets no reefers before the terminal milestone, even with a
+## reefer block; past it, reefers come.
 func _test_reefers_wait_for_their_milestone() -> void:
 	var rules := RandomPort.strait()
 	rules.box_mix.reefer_share = 1.0
-	var sim := PortSim.new(1, rules)
+	var sim := AreaPort.working_terminal(0, 0, rules)
+	var east := sim.roads.segment_at(Vector2i(200, sim.site_entry().y))
+	sim.creative = true
+	_expect(sim.apply({"op": "build_area", "type": "yard_block", "segment": east, "side": 1, "from": 61, "to": 90}), "", "a block")
+	sim.areas.list[sim.areas.list.keys()[-1]].settings.role = "reefer"
+	sim.milestones_passed = 1
 	var before := sim._new_box("import", 0.0, rules.lines.keys()[0])
 	_expect(sim.boxes[before].reefer, false, "no reefer before the terminal milestone")
 	sim.teu_handled = int(rules.milestones.terminal.teu)

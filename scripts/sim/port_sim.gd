@@ -2564,12 +2564,18 @@ func _sail(ship: Ship, crane_count: int) -> void:
 	_check_objectives()
 
 
+## Whether the port has a reefer block (a yard or transfer block in the reefer role).
+func has_reefer_block() -> bool:
+	return areas.list.values().any(func(a: Dictionary) -> bool: return a.type in Areas.BLOCK_TYPES and a.settings.role == "reefer")
+
+
 func _new_box(kind: String, due: float, line: String) -> int:
 	var id := _next_box
 	_next_box += 1
 	var teu := 2 if rng.randf() < rules.box_mix.forty_share else 1
-	# No reefers before their milestone, so a new port isn't fined for plugs it can't have yet.
-	var reefer: bool = rng.randf() < rules.box_mix.reefer_share and unlocked("reefers")
+	# No reefers before their milestone, nor while the port has no reefer block,
+	# as rail: lines send reefers to a port that can plug them in.
+	var reefer: bool = rng.randf() < rules.box_mix.reefer_share and unlocked("reefers") and has_reefer_block()
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share

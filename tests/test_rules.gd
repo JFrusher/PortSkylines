@@ -141,6 +141,8 @@ func _test_crane_timing() -> void:
 	var rules := RandomPort.quick()
 	rules.ship_classes.panamax.import_moves = 120
 	rules.ship_classes.panamax.export_moves = 0
+	# No dangerous goods: with no block for them, each would be shut out and cost a move.
+	rules.box_mix.dg_share = 0.0
 	rules.yard_gear.reach_stacker.bays_per_machine = 1
 	rules.yard_gear.reach_stacker.lift_seconds = 1.0
 	rules.yard_gear.reach_stacker.set_down_seconds = 1.0
