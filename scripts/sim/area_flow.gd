@@ -397,7 +397,7 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 static func _send_fetcher(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship) -> void:
 	if not _may_send(sim, sim.areas.list[ship.apron].terminal):
 		return
-	var box := _export_box(sim, ship) if ship.exports > 0 else _surplus_empty(sim, ship)
+	var box := _export_box(sim, ship, sim.areas.centre(_crane_slot(sim, crane, ship))) if ship.exports > 0 else _surplus_empty(sim, ship)
 	if box == 0:
 		return
 	var block := _block_of(sim, box)
@@ -638,24 +638,32 @@ static func _fetchers(sim: PortSim, ship: PortSim.Ship) -> Array[Vehicle]:
 
 ## The box `ship` loads next from its terminal's working blocks, or 0: for
 ## a barge, an import booked to barge; else a transhipment box of its line
-## going on by a ship of its size first, then an export; the least buried,
-## so loading digs out as few boxes as it can.
-static func _export_box(sim: PortSim, ship: PortSim.Ship) -> int:
+## going on by a ship of its size first, then an export. For a tractor at
+## `from`, the cheapest by _block_cost plus a move for each box dug out above
+## it; else (INF) the least buried. Ties went to the first block, so every
+## crane's tractors emptied one export block at a time behind its one machine.
+static func _export_box(sim: PortSim, ship: PortSim.Ship, from := Vector2.INF) -> int:
 	var terminal: int = sim.areas.list[ship.apron].terminal
 	var group := "feeder" if ship.kind == "feeder" else "mother"
 	var inland: bool = sim.rules.ship_classes[ship.kind].inland
 	var mine := func(box: int) -> bool: return sim.boxes[box].barge if inland else sim.boxes[box].line == ship.line and sim.boxes[box].onward == group
+	var bound := _bound(sim) if from != Vector2.INF else {}
 	for kind: String in (["import"] if inland else ["tranship", "export"]):
 		var best := 0
-		var fewest := 0
+		var lowest := INF
 		for block: int in sim.area_stacks:
 			if block not in sim.areas.list or sim.areas.list[block].terminal != terminal or sim.areas.idle_reason(block) != "":
 				continue
 			var stacks: AreaStacks = sim.area_stacks[block]
+			var base := _block_cost(sim, block, from, bound) if from != Vector2.INF else 0.0
+			var move := _move_minutes(sim, block) if from != Vector2.INF else 1.0
 			for box: int in stacks.of_kind(kind, sim.boxes):
-				if box not in sim._claimed and (kind == "export" or mine.call(box)) and (best == 0 or stacks.above(box) < fewest):
+				if box in sim._claimed or not (kind == "export" or mine.call(box)):
+					continue
+				var cost := base + stacks.above(box) * move
+				if cost < lowest:
 					best = box
-					fewest = stacks.above(box)
+					lowest = cost
 		if best:
 			return best
 	return 0
@@ -974,11 +982,10 @@ static func _blocks_with_room(sim: PortSim, role: String, terminal: int, box: in
 	if candidates.is_empty():
 		return candidates
 	var coming := {}  # block -> boxes on their way, and tractors under a crane waiting for a box bound for it
-	var bound := {}  # block -> every vehicle bound for it
 	for v: Vehicle in sim.vehicles:
-		bound[v.area] = bound.get(v.area, 0) + 1
 		if v.loaded or v.state == "under_crane":
 			coming[v.area] = coming.get(v.area, 0) + 1
+	var bound := _bound(sim)
 	var found: Array[int] = []
 	var cost := {}
 	for id in candidates:
@@ -986,15 +993,34 @@ static func _blocks_with_room(sim: PortSim, role: String, terminal: int, box: in
 			continue
 		found.append(id)
 		if from != Vector2.INF:
-			var gear: Dictionary = sim.rules.yard_gear[sim.areas.list[id].settings.gear]
-			# A vehicle second is a calendar minute, and a machine's seconds are game seconds.
-			var drive := from.distance_to(sim.areas.centre(_buffer_start(sim, id))) / tractor_speed(sim)
-			var move: float = (gear.lift_seconds + gear.set_down_seconds) / 60.0 / pace(sim, id)
-			cost[id] = drive + bound.get(id, 0) * move / sim.machines.count_for(sim.areas.list[id].settings.gear, _bays(sim, id))
+			cost[id] = _block_cost(sim, id, from, bound)
 	if from != Vector2.INF:
 		# Stable on ties, by id, so a replay picks the same.
 		found.sort_custom(func(a: int, b: int) -> bool: return [cost[a], a] < [cost[b], b])
 	return found
+
+
+## Block -> every vehicle bound for it.
+static func _bound(sim: PortSim) -> Dictionary:
+	var bound := {}
+	for v: Vehicle in sim.vehicles:
+		bound[v.area] = bound.get(v.area, 0) + 1
+	return bound
+
+
+## Minutes for a vehicle at `from` to be served at block `id`: the drive
+## there plus the vehicles already bound for it (`bound`, from _bound) times
+## a move of its gear, over its machines.
+static func _block_cost(sim: PortSim, id: int, from: Vector2, bound: Dictionary) -> float:
+	var drive := from.distance_to(sim.areas.centre(_buffer_start(sim, id))) / tractor_speed(sim)
+	return drive + bound.get(id, 0) * _move_minutes(sim, id) / sim.machines.count_for(sim.areas.list[id].settings.gear, _bays(sim, id))
+
+
+## Minutes one move of block `id`'s gear takes at its pace.
+static func _move_minutes(sim: PortSim, id: int) -> float:
+	var gear: Dictionary = sim.rules.yard_gear[sim.areas.list[id].settings.gear]
+	# A vehicle second is a calendar minute, and a machine's seconds are game seconds.
+	return (gear.lift_seconds + gear.set_down_seconds) / 60.0 / pace(sim, id)
 
 
 ## The transhipment block with room in `ship`'s terminal nearest the berths
