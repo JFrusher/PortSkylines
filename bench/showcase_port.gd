@@ -226,11 +226,11 @@ static func build(refused: Array[String]) -> PortSim:
 	# Signals where the connectors and the highway meet the spine.
 	for row: int in [berths[0].row, sim.site_entry().y, berths[1].row, berths[2].row]:
 		_do(sim, refused, {"op": "set_signals", "point": Vector2i(SPINE, row), "on": true})
-	# Cranes on each berth's spots, by the ships it takes.
+	# Cranes on every one of each berth's spots, by the ships it takes.
 	var cranes := {"neopanamax": "wide_sts", "ulcv": "mega_sts", "panamax": "sts", "feeder": "sts"}
 	for berth: Dictionary in berths:
 		var spots := AreaFlow.crane_spots(sim, berth.apron)
-		for k in mini(spots.size(), 3):
+		for k in spots.size():
 			_do(sim, refused, {"op": "place_sts", "apron": berth.apron, "along": spots[k], "kind": cranes[berth.kind]})
 	_do(sim, refused, {"op": "place_sts", "apron": barge, "along": AreaFlow.crane_spots(sim, barge)[0], "kind": "barge_crane"})
 	_do(sim, refused, {"op": "buy_tractors", "count": 150})
