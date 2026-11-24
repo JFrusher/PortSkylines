@@ -23,7 +23,8 @@ func _initialize() -> void:
 	_run_by_rules(sim)
 	sim.creative = false
 	sim.ledger.cash = sim.rules.start_money
-	sim.ledger.opened = sim.ledger.cash
+	# The creative build's costs sit in today's lines with no cash spent.
+	sim.ledger.opened = sim.ledger.cash - sim.ledger.today_total()
 	var start := Time.get_ticks_msec()
 	var lowest := sim.money
 	var most_boxes := 0
