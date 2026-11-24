@@ -17,6 +17,7 @@ func _initialize() -> void:
 	_test_by_departure_needs_fewer_rehandles()
 	_test_templates_copy_rules()
 	_test_discharge_spreads_over_blocks()
+	_test_two_machines_never_share_the_last_tier()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -171,3 +172,22 @@ func _test_discharge_spreads_over_blocks() -> void:
 	_expect(AreaFlow._stacks(sim, port[1]).room() > 0, true, "the first block still has room")
 	_expect(second > 0, true, "yet the second takes boxes too (%d and %d)" % [first, second])
 	_expect(absi(first - second) <= maxi(first, second) / 2, true, "about evenly (%d and %d)" % [first, second])
+
+
+## Soak, day 5: two machines were sent to a block's last tier; a 20 ft box
+## took it and the 40 ft box behind it had nowhere to go (stack -1). A tier a
+## machine is carrying a box to is not offered again.
+func _test_two_machines_never_share_the_last_tier() -> void:
+	var sim := AreaPort.base()
+	var block: int = sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.list[id].type == "yard_block")[0]
+	var stacks := AreaFlow._stacks(sim, block)
+	var id := 900000
+	while stacks.room() > 1:
+		id += 1
+		stacks.place(id, 2)
+	var last := stacks.place_spot(2)
+	_expect(last >= 0, true, "one tier is left")
+	sim.machine_jobs[1] = {"rack": block, "slot": 0, "box": id + 1, "position": last}
+	_expect(stacks.place_spot(2, "fill_low", 0.0, {}, true, AreaFlow.targeted(sim, block)), -1, "a machine carrying a box to it takes it out of the offer")
+	sim.machine_jobs.erase(1)
+	_expect(stacks.place_spot(2, "fill_low", 0.0, {}, true, AreaFlow.targeted(sim, block)), last, "and it is offered again once the machine is done")

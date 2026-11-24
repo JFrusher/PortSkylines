@@ -876,7 +876,28 @@ static func miss_connections(sim: PortSim, now: float) -> int:
 ## Where `box` goes in yard block `block`, by the block's stacking strategy
 ## (AreaStacks.place_spot), or -1.
 static func _place_spot(sim: PortSim, block: int, box: int, within_room := true) -> int:
-	return _stacks(sim, block).place_spot(sim.boxes[box].teu, sim.areas.list[block].settings.stacking, sim.boxes[box].due, sim.boxes, within_room)
+	return _stacks(sim, block).place_spot(sim.boxes[box].teu, sim.areas.list[block].settings.stacking, sim.boxes[box].due, sim.boxes, within_room, targeted(sim, block))
+
+
+## The stack positions in `block` a machine is carrying a box to, so two
+## machines are never sent to the same last tier.
+static func targeted(sim: PortSim, block: int) -> Dictionary:
+	var found := {}
+	for job: Dictionary in sim.machine_jobs.values():
+		if job.position < 0:
+			continue
+		var at := 0
+		if job.has("rack"):
+			at = job.rack
+		elif job.has("train"):
+			var train := RailFlow._train(sim, job.train)
+			at = train.block if train else 0
+		else:
+			var vehicle := _vehicle(sim, job.vehicle)
+			at = vehicle.area if vehicle else 0
+		if at == block:
+			found[job.position] = true
+	return found
 
 
 ## How high yard block `block` stacks: as high as its gear, or its own

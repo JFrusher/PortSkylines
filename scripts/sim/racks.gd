@@ -92,7 +92,7 @@ static func tick(sim: PortSim) -> void:
 			if machine == 0:
 				break
 			if rack.state == "in":
-				var position := stacks.place_spot(sim.boxes[rack.box].teu)
+				var position := stacks.place_spot(sim.boxes[rack.box].teu, "fill_low", 0.0, {}, true, AreaFlow.targeted(sim, block))
 				if position < 0:
 					continue
 				sim.machines.give(machine, 0, layout.stacks[position].bay)
@@ -116,7 +116,7 @@ static func job_done(sim: PortSim, machine: int) -> void:
 	if job.position >= 0:
 		var stacks := AreaFlow._stacks(sim, job.rack)
 		var teu: int = sim.boxes[job.box].teu
-		stacks.place_at(job.position if stacks.fits(job.position, teu) else stacks.place_spot(teu), job.box, teu)
+		stacks.place_at(job.position if stacks.fits(job.position, teu) else stacks.place_spot(teu, "fill_low", 0.0, {}, true, AreaFlow.targeted(sim, job.rack)), job.box, teu)
 		sim.boxes[job.box].in = sim.clock.calendar_minutes()
 		sim.racks[job.rack].erase(job.slot)
 	else:
