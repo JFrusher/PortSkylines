@@ -265,7 +265,9 @@ func _ahead(id: int) -> Dictionary:
 	var found := _obstacle(id)
 	var stand: float = found.distance - (0.0 if found.end else _gap())
 	var crossing: float = found.crossing
-	if not found.end and crossing < found.distance and stand - car.length < crossing + 1.0:
+	# A crossing is kept clear of a car that can't get past it before stopping: not before the end of
+	# its look-ahead, which on short pieces can fall just past one and held it there for ever.
+	if not found.end and not found.get("horizon", false) and crossing < found.distance and stand - car.length < crossing + 1.0:
 		return {"distance": crossing, "end": false}
 	return found
 
@@ -280,8 +282,8 @@ func _obstacle(id: int) -> Dictionary:
 		var piece: int = car.route[k]
 		# A connection is booked only once the car is near enough to need it:
 		# until then its stop line is just a far-off end of the room ahead.
-		# With a crossing to keep clear before the stop line, it books from far enough back to clear the
-		# crossing: else it waits short of the crossing, too far back to book, for ever.
+		# With a crossing to keep clear before the stop line, it books from far enough back to clear
+		# the crossing: else it waits short of the crossing, too far back to book, for ever.
 		var reach: float = _booking_distance(car) + (car.length + 1.0 if crossing < distance else 0.0)
 		if k > car.i and network.pieces[piece].node != 0 and piece not in car.booked and (distance > reach or not _book(id, piece)):
 			return {"distance": distance, "end": false, "crossing": crossing}
@@ -321,7 +323,8 @@ func _obstacle(id: int) -> Dictionary:
 		distance += network.pieces[piece].length
 		if k == car.route.size() - 1:
 			return {"distance": distance, "end": true, "crossing": crossing}
-	return {"distance": distance, "end": false, "crossing": crossing}
+	# As far as it looks: nothing to stop for yet, which isn't room that ends here.
+	return {"distance": distance, "end": false, "crossing": crossing, "horizon": true}
 
 
 ## How near a stop line `car` must be to book the connection beyond it:
