@@ -7,6 +7,7 @@ const STATES := {
 	"arriving": "Driving to its area", "queued": "Waiting for a handover slot", "to_slot": "Driving to its handover slot",
 	"handling": "Waiting for a yard machine", "handled": "Being handled in the yard", "under_crane": "Under a crane", "at_gate": "At the gate", "returning": "Driving out of the yard",
 	"leaving": "Leaving the port", "to_crane": "Bringing an export to its crane",
+	"to_wait": "Driving to wait for its crane", "waiting": "Waiting in a slot for its crane",
 }
 const SHIP_STATES := ["Arriving", "Working", "Leaving", "At anchor"]
 const TRAIN_STATES := {"arriving": "Coming in to its siding", "working": "At its siding, being worked", "leaving": "Leaving the port"}

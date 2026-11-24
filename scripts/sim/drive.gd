@@ -294,7 +294,7 @@ static func _refresh(sim: PortSim) -> void:
 		assert(near[0] != 0, "a vehicle stands on the lanes")
 		var route: Array[int] = [near[0]]
 		sim.traffic.place_at(vehicle.id, route, near[1], _top(sim, vehicle), _length(sim, vehicle))
-		if vehicle.target != Areas.NO_SPOT and vehicle.state.trim_prefix("no_route:") in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
+		if vehicle.target != Areas.NO_SPOT and vehicle.state.trim_prefix("no_route:") in ["arriving", "to_slot", "returning", "leaving", "to_crane", "to_wait"]:
 			var state := vehicle.state.trim_prefix("no_route:")
 			head(sim, vehicle, vehicle.target, state)
 	if old != null:

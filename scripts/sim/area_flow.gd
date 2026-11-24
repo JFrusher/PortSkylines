@@ -1429,6 +1429,66 @@ static func _go_to(sim: PortSim, vehicle: Vehicle, area: int) -> void:
 	_head(sim, vehicle, _buffer_start(sim, _door(sim, vehicle)), "arriving")
 
 
+## Sends a tractor with an export back to the slot under its crane; with that
+## slot taken, to wait in the nearest free apron slot before it instead, off
+## the apron's one through lane, where a queue for one crane held up every
+## crane past it and every tractor leaving for the yard. AGVs keep to their grid.
+static func _to_crane(sim: PortSim, vehicle: Vehicle) -> void:
+	if vehicle.kind == "tractor" and _stand_taken(sim, vehicle):
+		var wait := _waiting_stand(sim, vehicle.home)
+		if wait != Areas.NO_SPOT:
+			_head(sim, vehicle, wait, "to_wait")
+			return
+	_head(sim, vehicle, vehicle.home, "to_crane")
+
+
+## Whether the slot under `vehicle`'s crane holds a vehicle or another is
+## already bringing its export there.
+static func _stand_taken(sim: PortSim, vehicle: Vehicle) -> bool:
+	var slot := Vector2i(vehicle.home.x, _slot_of(sim, vehicle.home))
+	for other: Vehicle in sim.vehicles:
+		if other != vehicle and other.home == vehicle.home and other.state.trim_prefix("no_route:") == "to_crane":
+			return true
+	for id: int in sim.traffic.cars:
+		var car: Dictionary = sim.traffic.cars[id]
+		if id != vehicle.id and sim.network.pieces[car.route[car.i]].slot == slot:
+			return true
+	return false
+
+
+## The stand of the free apron slot nearest before crane stand `home` in
+## driving order, under no crane and with no vehicle in it or bound for it;
+## NO_SPOT with none.
+static func _waiting_stand(sim: PortSim, home: Vector3i) -> Vector3i:
+	var apron := home.x
+	var count: int = sim.areas.layout(apron).slots.size()
+	var at := _slot_of(sim, home)
+	var step := -1 if Drive.flow(sim, apron) >= 0 else 1
+	var cranes := {}
+	for crane: PortSim.Crane in sim.cranes:
+		if crane.apron == apron:
+			cranes[_slot_at_column(sim, apron, crane.along)] = true
+	var held := {}
+	for id: int in sim.traffic.cars:
+		var car: Dictionary = sim.traffic.cars[id]
+		held[sim.network.pieces[car.route[car.i]].slot] = true
+	var bound := {}
+	for v: Vehicle in sim.vehicles:
+		bound[v.target] = true
+	var s := at + step
+	while s >= 0 and s < count:
+		var stand := _stand(sim, apron, s)
+		if s not in cranes and Vector2i(apron, s) not in held and stand not in bound:
+			return stand
+		s += step
+	return Areas.NO_SPOT
+
+
+## The index of the apron slot holding spot `spot`, or -1.
+static func _slot_of(sim: PortSim, spot: Vector3i) -> int:
+	return sim.areas.layout(spot.x).slots.find_custom(func(cells: Array) -> bool: return spot in cells)
+
+
 ## The first cell of `door`'s buffer strip in driving order, where vehicles come in.
 static func _buffer_start(sim: PortSim, door: int) -> Vector3i:
 	var buffer: Array = _part(sim, door, "buffer")
@@ -1477,7 +1537,11 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 		if vehicle.booked <= sim.clock.calendar_minutes():
 			_arrived(sim, vehicle)
 		return
-	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane", "to_charge"]:
+	if vehicle.state == "waiting":
+		if not _stand_taken(sim, vehicle):
+			_head(sim, vehicle, vehicle.home, "to_crane")
+		return
+	if vehicle.state not in ["arriving", "to_slot", "returning", "leaving", "to_crane", "to_charge", "to_wait"]:
 		return
 	# On its way, not there yet nor waited long enough to unstick: nothing to do.
 	if vehicle.id in sim.traffic.cars and vehicle.id not in sim.traffic.due:
@@ -1494,6 +1558,8 @@ static func _drive(sim: PortSim, vehicle: Vehicle) -> void:
 			_gone(sim, vehicle)
 		"to_crane":
 			vehicle.state = "under_crane"
+		"to_wait":
+			vehicle.state = "waiting"
 		"leaving":
 			if vehicle.loaded:
 				if sim.boxes[vehicle.box].kind in ["import", "tranship"] and sim.boxes[vehicle.box].to:
@@ -1710,7 +1776,7 @@ static func _machine_done(sim: PortSim, machine: int) -> void:
 		vehicle.loaded = true
 		sim._set_area(vehicle, 0)
 		vehicle.slot = -1
-		_head(sim, vehicle, vehicle.home, "to_crane")
+		_to_crane(sim, vehicle)
 	else:
 		if sim.boxes[vehicle.box].kind == "import":
 			sim.dwell_times.append(sim.clock.calendar_minutes() - sim.boxes[vehicle.box].in)
