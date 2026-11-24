@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 68
+const VERSION := 69
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -156,6 +156,15 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v67(data)
 	if data.version < 68:
 		data = _migrate_v68(data)
+	if data.version < 69:
+		data = _migrate_v69(data)
+	return data
+
+
+## v69 lets a line cancel at most one service a day; none has yet today.
+static func _migrate_v69(data: Dictionary) -> Dictionary:
+	data.sim.contracts.cancelled_today = {}
+	data.version = 69
 	return data
 
 
@@ -759,7 +768,7 @@ static func _valid_sim(data: Variant) -> bool:
 	if not _has_fields(data.finance, {"loans": TYPE_ARRAY, "days_negative": TYPE_INT, "blocked_until": TYPE_FLOAT}):
 		return false
 	if not _has_fields(data.contracts, {
-		"reputation": TYPE_DICTIONARY, "services": TYPE_ARRAY, "offers": TYPE_ARRAY, "next_id": TYPE_INT,
+		"reputation": TYPE_DICTIONARY, "services": TYPE_ARRAY, "offers": TYPE_ARRAY, "next_id": TYPE_INT, "cancelled_today": TYPE_DICTIONARY,
 	}):
 		return false
 	# Roads and areas first: ships and cranes are checked against the aprons.

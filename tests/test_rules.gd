@@ -409,6 +409,12 @@ func _test_reputation_cancels_and_recovers() -> void:
 		calls += 1
 	_expect(said.contains("cancelled"), true, "a line let down too often cancels a service (%s)" % said)
 	_expect(contracts.services.size(), 1, "one service is gone")
+	# Month soak, day 6: knocks landing while a line was unhappy cancelled a service each.
+	_expect(contracts.called("kestrel", 12.0, 20.0, 60.0), "", "another knock the same day cancels nothing more")
+	_expect(contracts.services.size(), 1, "so its other service stays")
+	contracts.cancelled_today.clear()  # midnight, as PortSim._end_of_day
+	_expect(contracts.called("kestrel", 12.0, 20.0, 60.0).contains("cancelled"), true, "the next day it may cancel again")
+	_expect(contracts.services.size(), 0, "and does")
 	_expect(contracts.reputation.kestrel < rules.reputation.offer_above, true, "and it offers nothing while unhappy")
 	while contracts.reputation.kestrel < rules.reputation.offer_above:
 		contracts.called("kestrel", 0.0, 30.0, 40.0)

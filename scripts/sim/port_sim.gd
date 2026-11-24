@@ -2251,6 +2251,7 @@ func _event(text: String, at := Grid.NONE) -> void:
 
 
 func _end_of_day() -> void:
+	contracts.cancelled_today.clear()
 	# Each terminal's part rounded; the port's takes the rest, so the day's total is daily_upkeep().
 	var upkeep := daily_upkeep()
 	var parts := upkeep_parts()

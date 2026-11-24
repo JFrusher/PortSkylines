@@ -127,7 +127,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `contracts.max_services_per_berth` | int | Services plus offers per berth with a road, at most |
 | `reputation.start` | number | Every line's reputation (0–100) at the start |
 | `reputation.offer_above` | number | A line offers services only at or above this |
-| `reputation.cancel_below` | number | Below this a line cancels a service after each call |
+| `reputation.cancel_below` | number | Below this a line cancels a service after a knock, at most one a day |
 | `reputation.on_time` | number | Change for a call that sails within its window |
 | `reputation.late_per_hour` | number | Change per hour a call sails after its window |
 | `reputation.moves_per_hour_target`, `.per_move_per_hour` | number | Change per berth move per hour above (or below) the target |
