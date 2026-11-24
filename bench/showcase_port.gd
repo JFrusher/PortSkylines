@@ -49,7 +49,7 @@ const BEND_FROM := Vector2(400, 420)
 const BEND_CONTROL := Vector2(460, 420)
 const BEND_TO := Vector2(460, 480)
 const BEND_RING := 8.0
-const BEND_YARDS: Array = [[1, 4, "import", "rtg"], [1, 50, "export", "rtg"], [-1, 4, "export", "rtg"], [-1, 50, "empty", "empty_handler"]]
+const BEND_YARDS: Array = [[1, 4, "import", "rtg"], [1, 50, "export", "rtg"], [-1, 4, "empty", "empty_handler"], [-1, 50, "empty", "empty_handler"]]
 
 ## Policies switched on; the other two (day gates, day shifts) idle the port at night.
 const POLICIES: Array[String] = ["appointments", "dual_cycling"]
@@ -62,7 +62,7 @@ const BLOCK := 40
 const YARDS: Array = [
 	[],  # the North Terminal is the AGV terminal: transfer blocks, built by _agv_terminal
 	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "straddle"], [1, 62, "reefer", "rtg"]],
-	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "reach_stacker"], [1, 62, "empty", "empty_handler"]],
+	[[-1, 20, "import", "rtg"], [-1, 62, "empty", "empty_handler"], [1, 20, "import", "reach_stacker"], [1, 62, "empty", "empty_handler"]],
 	[[-1, 20, "export", "reach_stacker"], [1, 20, "import", "reach_stacker"], [-1, 62, "tranship", "rtg"], [1, 62, "tranship", "rtg"]],
 ]
 
