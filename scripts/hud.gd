@@ -1073,7 +1073,7 @@ func _area_tip(area: Dictionary, both_sides: bool) -> String:
 		"agv_depot": "Home of AGVs, the driverless carriers: built inside the AGV zone, its terminal moves boxes between quay and yard on its AGVs instead of tractors. Dear to buy, cheap to run. Buy AGVs by inspecting it",
 		"fire_station": "Its fire engines drive out to fires in the yard and on ships at berth (switch fires on in the menu); a fire no crew reaches soon burns boxes. Buy engines by inspecting it",
 		"tree_belt": "A belt of trees that screens the town next door: noise and floodlight from behind it reach the town at half strength",
-		"workshop": "Its mechanics drive out in their vans to repair the quay cranes and yard gear that break down in its terminal (switch breakdowns on in the menu). Hire mechanics by inspecting it",
+		"workshop": "Its mechanics drive out in their vans to repair the quay cranes and yard gear that break down anywhere in the port (switch breakdowns on in the menu). Hire mechanics by inspecting it",
 	}[area.kind]
 	if both_sides:
 		what += ", built on both sides of the road so lorries check in and out without turning round"

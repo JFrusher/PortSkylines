@@ -2,7 +2,7 @@ class_name Workshops
 extends RefCounted
 ## Workshops and their mechanics (M11). Each mechanic hired at a workshop
 ## has a van. A van sets out for the nearest broken quay crane or yard
-## machine in its workshop's terminal, drives the road there at van speed,
+## machine anywhere in the port, drives the road there at van speed,
 ## repairs it for a while, then drives back; with nothing broken it services
 ## equipment of a kind the player has serviced once it is due. Vans keep to
 ## the roads but
@@ -67,11 +67,10 @@ func tick(sim: PortSim) -> void:
 		if fix.slice(0, -1) in busy:
 			continue
 		var at := _where(sim, fix)
-		var terminal: int = _terminal(sim, fix)
 		var best := 0
 		for id: int in vans:
 			var van: Dictionary = vans[id]
-			if van.job == "home" and sim.areas.list[van.workshop].terminal == terminal and terminal != 0 and (best == 0 or van.at.distance_to(at) < vans[best].at.distance_to(at)):
+			if van.job == "home" and (best == 0 or van.at.distance_to(at) < vans[best].at.distance_to(at)):
 				best = id
 		if best == 0:
 			continue
@@ -166,11 +165,6 @@ static func _where(sim: PortSim, fix: Array) -> Vector2:
 		return sim.areas.point(fix[1], fix[2], 0)
 	var machine: Dictionary = sim.machines.list[fix[1]]
 	return sim.areas.point(machine.area, mini(machine.bay * AreaLayout.BAY, sim.areas.list[machine.area].columns - 1), 0)
-
-
-static func _terminal(sim: PortSim, fix: Array) -> int:
-	var area: int = fix[1] if fix[0] == "crane" else sim.machines.list[fix[1]].area
-	return sim.areas.list[area].terminal if area in sim.areas.list else 0
 
 
 ## The middle of workshop `area`'s road edge, where its vans live.

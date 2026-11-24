@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_off_breaks_nothing_and_moves_no_storm()
 	_test_broken_equipment_does_no_work()
 	_test_a_workshop_mends_what_breaks()
+	_test_one_workshop_serves_the_port()
 	_test_preventive_maintenance()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -79,7 +80,7 @@ func _test_broken_equipment_does_no_work() -> void:
 		_expect(sim.events.any(func(e: Dictionary) -> bool: return e.text.ends_with("broke down")), true, "the event list says so")
 
 
-## The base port with a workshop along the east road in its terminal and
+## The base port with a workshop along the east road and
 ## `mechanics` mechanics, and its quay cranes all broken.
 func _workshop_port(mechanics: int) -> PortSim:
 	var sim := AreaPort.base()
@@ -115,6 +116,18 @@ func _test_a_workshop_mends_what_breaks() -> void:
 	_expect(one > 0.0 and two > 0.0, true, "mechanics mend them (one: %.0f min, two: %.0f min)" % [one, two])
 	_expect(two < one, true, "two mechanics mend two cranes sooner than one")
 	_expect(two <= most + 60.0, true, "each within its repair and the drive (%.0f min)" % two)
+
+
+## A workshop's mechanics mend what breaks anywhere in the port, not only
+## in its own terminal.
+func _test_one_workshop_serves_the_port() -> void:
+	var sim := _workshop_port(1)
+	var workshop: int = sim.areas.list.keys().max()
+	sim.creative = true
+	_expect(sim.apply({"op": "paint_terminal", "cells": sim.areas.cells(workshop), "terminal": -1}), "", "the workshop is painted into a terminal of its own")
+	sim.creative = false
+	_expect(sim.areas.list[workshop].terminal != sim.areas.list[1].terminal, true, "away from the cranes' terminal")
+	_expect(_until_mended(sim, 12.0) > 0.0, true, "and its mechanic still mends the cranes")
 
 
 ## Serviced equipment fails serviced_mtbf_factor times less often; once it
