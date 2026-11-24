@@ -155,8 +155,9 @@ func _test_vehicles_turn_either_way_out() -> void:
 
 
 ## A car about to cross the road out of a block waits while a car on the lane
-## it crosses is about to pass, and goes once it has; cars on the lanes never
-## stand on its crossing points.
+## it crosses is about to pass, and goes once it has, or in front of one
+## standing queued short of it; cars on the lanes never stand on its
+## crossing points.
 func _test_crossing_the_road_gives_way() -> void:
 	var sim := AreaPort.base()
 	Drive._refresh(sim)
@@ -167,6 +168,8 @@ func _test_crossing_the_road_gives_way() -> void:
 	var lane: int = sim.network.ending_at(sim.network.pieces[across].give_way[0]).filter(func(p: int) -> bool: return sim.network.pieces[p].segment != 0)[0]
 	var route: Array[int] = [lane]
 	sim.traffic.place_at(999, route, sim.network.pieces[lane].length - 2.0, 2.0, 4.0)
+	_expect(sim.traffic._gap_across(across), true, "a car standing short of it is queued, and is crossed in front of")
+	sim.traffic.cars[999].v = 2.0
 	_expect(sim.traffic._gap_across(across), false, "not with a car about to pass")
 	sim.traffic.remove(999)
 	_expect(sim.traffic._gap_across(across), true, "and again once it has gone")

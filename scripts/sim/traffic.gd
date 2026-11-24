@@ -282,7 +282,7 @@ func _obstacle(id: int) -> Dictionary:
 		# until then its stop line is just a far-off end of the room ahead.
 		# With a crossing to keep clear before the stop line, it books from far enough back to clear the
 		# crossing: else it waits short of the crossing, too far back to book, for ever.
-		var reach := _booking_distance(car) + (car.length + 1.0 if crossing < distance else 0.0)
+		var reach: float = _booking_distance(car) + (car.length + 1.0 if crossing < distance else 0.0)
 		if k > car.i and network.pieces[piece].node != 0 and piece not in car.booked and (distance > reach or not _book(id, piece)):
 			return {"distance": distance, "end": false, "crossing": crossing}
 		# In an area, where two of its lanes meet (a slot's way out and the buffer), a car
