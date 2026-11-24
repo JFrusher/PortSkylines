@@ -2579,7 +2579,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "missed": false, "customs": "", "customs_until": 0.0}
 	exports += 1 if kind == "export" else 0
 	return id
 
@@ -2657,7 +2657,7 @@ func _empty_collected(id: int) -> void:
 func _new_empty(line: String, teu: int) -> int:
 	var id := _next_box
 	_next_box += 1
-	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
+	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "missed": false, "customs": "", "customs_until": 0.0}
 	return id
 
 

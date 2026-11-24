@@ -52,7 +52,9 @@ func _two_terminals(rules: Dictionary, kinds: Array) -> Array:
 	var line: String = sim.rules.lines.keys()[0]
 	for k: int in 2:
 		var apron: int = [1, second][k]
-		sim.contracts.services.append({"id": 900 + apron, "line": line, "kind": kinds[k], "start": 9000, "window_hours": 12.0, "moves": 0, "apron": apron, "any_berth": false, "asked": 9000, "next_start": -1.0})
+		# A day out: inside the lines' connection window, after any test here ends.
+		var start := fposmod(sim.clock.calendar_minutes() + SimClock.MINUTES_PER_DAY, Contracts.MINUTES_PER_WEEK)
+		sim.contracts.services.append({"id": 900 + apron, "line": line, "kind": kinds[k], "start": start, "window_hours": 12.0, "moves": 0, "apron": apron, "any_berth": false, "asked": start, "next_start": -1.0})
 	sim.creative = false
 	sim.ledger.cash = 10_000_000
 	return [sim, two, block, line]

@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 67
+const VERSION := 68
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -154,6 +154,17 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v66(data)
 	if data.version < 67:
 		data = _migrate_v67(data)
+	if data.version < 68:
+		data = _migrate_v68(data)
+	return data
+
+
+## v68 fines and knocks a missed transhipment connection once; an older box
+## has missed none yet, so its next miss counts.
+static func _migrate_v68(data: Dictionary) -> Dictionary:
+	for box: Dictionary in data.sim.boxes.values():
+		box.missed = false
+	data.version = 68
 	return data
 
 

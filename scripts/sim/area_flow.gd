@@ -276,7 +276,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	# A share of a line's boxes go on with it: off its big ships onto its next
 	# feeder, or off its feeders onto its next big ship, within the window.
 	var onward := tranship_onward(sim, ship) if not inland else ""
-	if sim.boxes[id].to == 0 and onward != "" and sim.rng.randf() < sim.rules.lines[ship.line].tranship_share:
+	if sim.boxes[id].to == 0 and onward != "" and sim.rng.randf() < sim.rules.lines[ship.line].tranship_share and _onward_room(sim, ship.line, onward) > 0:
 		sim.boxes[id].kind = "tranship"
 		sim.boxes[id].onward = onward
 		sim.boxes[id].due = sim.clock.calendar_minutes() + sim.rules.lines[ship.line].connection_hours * 60.0
@@ -684,6 +684,25 @@ static func _onward_terminal(sim: PortSim, line: String, onward: String, here: i
 	return found
 
 
+## How many more of `line`'s boxes its `onward` ships calling within its
+## connection window can take: their export moves, less the boxes already
+## waiting for them. Past that, a box lands as a plain import.
+# shortcut: a ship of the line already alongside isn't counted, as its call is this week's; count it if transhipment runs short while one is in.
+static func _onward_room(sim: PortSim, line: String, onward: String) -> int:
+	var now := sim.clock.calendar_minutes()
+	var by: float = now + sim.rules.lines[line].connection_hours * 60.0
+	var room := 0
+	for service: Dictionary in sim.contracts.services:
+		if service.line == line and (service.kind == "feeder") == (onward == "feeder") and Contracts.next_call(service, now) <= by:
+			room += int(sim.rules.ship_classes[service.kind].export_moves)
+	if room == 0:
+		return 0
+	for box: Dictionary in sim.boxes.values():
+		if box.kind == "tranship" and box.line == line and box.onward == onward:
+			room -= 1
+	return room
+
+
 static func tranship_onward(sim: PortSim, ship: PortSim.Ship) -> String:
 	if sim.lock_error("transhipment") or sim.rules.lines[ship.line].tranship_share <= 0.0:
 		return ""
@@ -856,20 +875,25 @@ static func fine_unplugged(sim: PortSim, now: float) -> void:
 
 
 ## Each transhipment box whose connection window ran out by `now` misses its
-## ship: its line is fined and thinks less of the port, and the box waits a
-## further window for the next one. Returns how many missed.
+## ship and waits a further window for the next one. The first time it
+## misses, its line is fined and thinks less of the port, in one knock per
+## line for the check, so a check cancels at most one service per line.
+## Returns how many missed.
 static func miss_connections(sim: PortSim, now: float) -> int:
 	var missed := 0
+	var knocks := {}  # line -> boxes missing for the first time
 	for id: int in sim.boxes:
 		var box: Dictionary = sim.boxes[id]
 		if box.kind != "tranship" or box.due > now:
 			continue
-		sim.ledger.post("connection_fines", -sim.rules.transhipment.missed_fine, box.from)
-		var cancelled := sim.contracts.penalise(box.line, sim.rules.transhipment.missed_reputation)
-		if cancelled:
-			sim._event(cancelled)
+		if not box.missed:
+			box.missed = true
+			sim.ledger.post("connection_fines", -sim.rules.transhipment.missed_fine, box.from)
+			knocks[box.line] = knocks.get(box.line, 0) + 1
 		box.due += sim.rules.lines[box.line].connection_hours * 60.0
 		missed += 1
+	for line: String in knocks:
+		sim._event_if(sim.contracts.penalise(line, sim.rules.transhipment.missed_reputation * knocks[line]))
 	return missed
 
 
