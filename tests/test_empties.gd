@@ -120,11 +120,13 @@ func _test_exporters_collect_empties() -> void:
 
 
 ## A ship loads its line's empties after its exports, while the port holds
-## more than keep of them, up to max_per_call, at price_factor of a move.
+## more than keep of them, up to per_call_share of its imports, at
+## price_factor of a move. (Month soak: a flat 80 a call let a ULCV's
+## thousand returning empties fill the depots.)
 func _test_lines_ship_surplus_empties() -> void:
 	var rules := RandomPort.rules()
 	rules.empties.keep = 5
-	rules.empties.max_per_call = 10
+	rules.empties.per_call_share = 1.0  # 4 imports: up to 4 empties
 	rules.empties.return_days = 30.0  # none of this ship's imports come back in the run
 	rules.ship_classes.feeder.import_moves = 4
 	rules.ship_classes.feeder.export_moves = 0
@@ -142,8 +144,8 @@ func _test_lines_ship_surplus_empties() -> void:
 		if not sim.ship_log.is_empty():
 			break
 	_expect(sim.ship_log.size(), 1, "the ship sailed")
-	_expect(sim.ship_log[0].moves if not sim.ship_log.is_empty() else -1, 4 + 7, "it took its 4 imports off and the 7 empties above keep aboard")
-	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "keep empties stay in the port")
+	_expect(sim.ship_log[0].moves if not sim.ship_log.is_empty() else -1, 4 + 4, "it took its 4 imports off and 4 of the 7 empties above keep aboard, as many as its imports")
+	_expect(AreaFlow._stacks(sim, block).boxes().size(), 8, "the rest stay in the port")
 	var empty := {"kind": "empty", "teu": 1, "reefer": false}
 	_expect(sim.move_price(empty), roundi(rules.move_price.per_20ft * rules.empties.price_factor), "an empty earns price_factor of a move")
 

@@ -2351,7 +2351,8 @@ func _call(service: Dictionary) -> void:
 	ledger.post("port_dues", spec.port_dues)
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
-	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
+	# Sized to the ship: a big ship's imports send back as many empties for it to take.
+	ship.empties = roundi(ship.boxes * rules.empties.per_call_share) if lock_error("empties") == "" else 0
 	ship.needs = Services.wants(self, service.kind)
 	ships.append(ship)
 	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
