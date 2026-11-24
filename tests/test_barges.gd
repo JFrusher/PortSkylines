@@ -98,7 +98,7 @@ func _test_barge_boxes_leave_only_by_barge() -> void:
 	var sim := AreaPort.base(rules, "")
 	var exports := AreaPort.add_export_block(sim)
 	# Riverline's barges call at the terminal's berth.
-	sim.contracts.services.append({"id": 900, "line": "riverline", "kind": "barge", "start": 9000, "window_hours": 8.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000})
+	sim.contracts.services.append({"id": 900, "line": "riverline", "kind": "barge", "start": 9000, "window_hours": 8.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000, "next_start": -1.0})
 	var big := PortSim.Ship.new("panamax", "aurora", sim.clock.calendar_minutes() + 6000.0, 60, 0)
 	sim.ships.append(big)
 	_expect(AreaFlow.berth(sim, big), true, "the Panamax berths")
@@ -170,7 +170,7 @@ func _split(dollars: int) -> Dictionary:
 	rules.lines.aurora.barge_share = 0.1
 	var sim := AreaPort.base(rules, "")
 	AreaPort.add_rail_block(sim)
-	sim.contracts.services.append({"id": 900, "line": "riverline", "kind": "barge", "start": 9000, "window_hours": 8.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000})
+	sim.contracts.services.append({"id": 900, "line": "riverline", "kind": "barge", "start": 9000, "window_hours": 8.0, "moves": 0, "apron": 1, "any_berth": true, "asked": 9000, "next_start": -1.0})
 	_expect(sim.apply({"op": "set_barge_discount", "dollars": dollars}), "", "the barge discount is set to $%d" % dollars)
 	var big := PortSim.Ship.new("panamax", "aurora", sim.clock.calendar_minutes() + 6000.0, 200, 0)
 	sim.ships.append(big)

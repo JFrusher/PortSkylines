@@ -366,7 +366,7 @@ func _test_apron_and_gate_layouts() -> void:
 	_expect(sim.areas.layout(4).lanes.size(), 6, "a large gate has 6 lanes, each with its booth")
 	_expect(sim.areas.layout(4).slots.size(), 6, "so 6 lorries are checked at once")
 	_expect(sim.areas.kind_of(sim.areas.list[4]), "gate", "every size is a gate")
-	_expect(sim.areas.list[2].settings, {"level": "manual", "slots_per_hour": 0}, "a new gate has manual booths and takes no bookings")
+	_expect(sim.areas.list[2].settings, {"level": "manual", "slots_per_hour": 0, "scanner": false}, "a new gate has manual booths and takes no bookings")
 	_expect(AreaFlow.gate_throughput(sim, 2), 4 * 60.0 / sim.rules.gate_levels.manual.minutes, "throughput is lanes times lorries a booth checks an hour")
 	var upkeep := sim.daily_upkeep()
 	sim.teu_handled = int(sim.rules.milestones.terminal.teu)
@@ -386,10 +386,10 @@ func _test_area_settings() -> void:
 	sim.apply({"op": "build_area", "type": "quay_apron", "segment": 1, "side": 1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "yard_block", "segment": 1, "side": -1, "from": 0, "to": 29})
 	sim.apply({"op": "build_area", "type": "gate", "segment": 1, "side": -1, "from": 35, "to": 50})
-	_expect(sim.areas.list[2].settings, {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"}, "a new yard block starts as an import block with reach stackers")
+	_expect(sim.areas.list[2].settings, {"role": "import", "gear": "reach_stacker", "lines": [], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low", "inspectors": 0}, "a new yard block starts as an import block with reach stackers")
 	var line: String = sim.rules.lines.keys()[0]
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "export", "lines": [line]}}), "", "a yard block's role and lines are set")
-	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low"}, "unset rules stay as they were")
+	_expect(sim.areas.list[2].settings, {"role": "export", "gear": "reach_stacker", "lines": [line], "sizes": [], "reefers": true, "max_tiers": 0, "stacking": "fill_low", "inspectors": 0}, "unset rules stay as they were")
 	_expect(sim.apply({"op": "set_area", "id": 2, "settings": {"role": "reefer"}}), "Unlocked at milestone 2: %d TEU across the quay" % sim.rules.milestones.terminal.teu, "reefer blocks wait for the terminal milestone")
 	sim.teu_handled = int(sim.rules.milestones.terminal.teu)
 	sim._check_milestones()
@@ -520,7 +520,7 @@ func _test_machine_jobs() -> void:
 		if phases.is_empty() or phases[-1] != machines.phase(rtg):
 			phases.append(machines.phase(rtg))
 		ticks += 1
-		if not machines.tick().is_empty():
+		if not machines.tick([] as Array[String]).is_empty():
 			break
 	_expect(ticks, ceili(seconds / Machines.SECONDS_PER_TICK), "one move takes the data's time in game seconds (%.1f s)" % seconds)
 	_expect(phases, ["travel", "lift", "travel", "set_down"], "in the phases travel, lift, travel and set down")
@@ -529,7 +529,7 @@ func _test_machine_jobs() -> void:
 	var stacker := machines.add(1, "reach_stacker", 8)
 	machines.give(stacker, 8, 8)
 	var lift_only := 0
-	while machines.tick().is_empty():
+	while machines.tick([] as Array[String]).is_empty():
 		lift_only += 1
 	_expect(lift_only + 1, ceili((gear.reach_stacker.lift_seconds + gear.reach_stacker.set_down_seconds) / Machines.SECONDS_PER_TICK), "a move within one bay is just lift and set down")
 
@@ -540,9 +540,9 @@ func _test_area_stacks() -> void:
 	yard.place_at(0, 2, 2)
 	yard.place_at(0, 3, 2)
 	_expect(yard.above(1), 2, "a box under two others has two above it")
-	_expect(yard.take(1), 2, "taking out a buried box costs a rehandle per box above it")
+	_expect(yard.take(1, 0), 2, "taking out a buried box costs a rehandle per box above it")
 	_expect(yard.boxes().has(1), false, "and it is gone")
-	_expect([yard.stacks[0], yard.boxes().size()], [[], 2], "the boxes moved off it now sit on other stacks")
+	_expect([yard.stacks[0], yard.boxes().size()], [[], 2], "with room to spare, the boxes lifted off it go to other stacks")
 	var mixed := AreaStacks.new(2, 3)
 	mixed.place_at(0, 10, 1)
 	_expect(mixed.fits(0, 2), false, "a 40 ft box never rests on a 20")
@@ -551,12 +551,30 @@ func _test_area_stacks() -> void:
 	_expect(mixed.stacks[0], [[10, 11]], "two 20s share a tier")
 	_expect(mixed.place(12, 2), 1, "a 40 goes to the next stack that takes it")
 	_expect(mixed.place(13, 1), 0, "a 20 goes onto the 20s' tier stack")
-	_expect(mixed.take(10), 1, "a 20 under a box costs one rehandle")
+	_expect(mixed.take(10, 0), 1, "a 20 under a box costs one rehandle")
 	_expect(mixed.stacks[0], [[11]], "its partner stays put")
 	var full := AreaStacks.new(1, 4)
 	for id in range(1, 4):
 		full.place_at(0, id, 2)
-	_expect(full.take(1), -1, "with nowhere to move the boxes above, a buried box can't come out")
+	_expect(full.take(1, 0), 2, "with no room on any other stack, a buried box still comes out")
+	_expect(full.stacks[0], [[2], [3]], "the boxes above it set back where they were")
+	# The yard deadlock bench/feeds.gd found: digging a 20 out of a stack of 20s
+	# put the 20s above it on stacks open to 40s, closing them, till no 40 could be dug out.
+	var twenties := AreaStacks.new(4, 4)
+	for id in range(1, 9):
+		twenties.place_at(0, id, 1)
+	for id in range(9, 15):
+		twenties.place_at(2 if id < 12 else 3, id, 2)
+	_expect(twenties.room(), 6, "a near-full block: an empty stack and a tier spare on two others")
+	_expect(twenties.take(1, 0), 6, "a 20 at the bottom of a stack of 20s is dug out")
+	_expect(twenties.boxes().size(), 13, "the 20s above it all set down")
+	_expect(twenties.take(9, 0) >= 0, true, "and one under 40s still comes out, the block being full of 20s")
+	# A dig leaves the room promised to boxes on their way: lifted boxes go back on their own stack.
+	var promised := AreaStacks.new(2, 4)
+	promised.place_at(0, 30, 2)
+	promised.place_at(0, 31, 2)
+	_expect(promised.take(30, promised.room()), 1, "a box under a 40 is dug out")
+	_expect([promised.stacks[0], promised.stacks[1]], [[[31]], []], "and the 40 goes back where it was, not onto room promised")
 	var kept := AreaStacks.new(2, 4)
 	kept.place_at(0, 20, 2)
 	kept.place_at(0, 21, 2)
@@ -569,7 +587,7 @@ func _test_area_stacks() -> void:
 	for id: int in [1, 2, 3, 4, 5]:
 		sorted.place_at(0 if id < 4 else 1, id, 2)
 	_expect([sorted.of_kind("import", table), sorted.of_kind("export", table)], [[3, 1, 4], [2, 5]], "boxes of a kind come soonest due first, ties in stacking order")
-	sorted.take(1)
+	sorted.take(1, 0)
 	_expect(sorted.of_kind("import", table), [3, 4], "and the order follows the stacks as they change")
 	_expect(sorted.of_kind("reefer", table), [], "a kind with no boxes has none")
 
@@ -670,7 +688,7 @@ func _test_delivery() -> void:
 	var below: int = stacks.boxes()[0]
 	var above: int = stacks.boxes()[1]
 	if stacks.position_of(below) != stacks.position_of(above):
-		stacks.take(above)
+		stacks.take(above, 0)
 		stacks.place_at(stacks.position_of(below), above, 2)
 	_expect(stacks.position_of(below) == stacks.position_of(above), true, "both boxes are on one stack, one on the other")
 	for box: int in stacks.boxes():
@@ -822,7 +840,8 @@ func _test_stuck_tractor_moves_on() -> void:
 	var tractor := Vehicle.new(sim._next_vehicle, "tractor", [Drive.entry_cell(sim)] as Array[Vector3i])
 	sim._next_vehicle += 1
 	_expect(Drive.place(sim, tractor), true, "a tractor comes in at the site entry")
-	tractor.box = sim._new_box("import", 0.0, "")
+	# Due tomorrow, so no lorry comes for it (and meets the parked tractor) meanwhile.
+	tractor.box = sim._new_box("import", sim.clock.calendar_minutes() + 1440.0, "")
 	tractor.loaded = true
 	sim._add_vehicle(tractor)
 	AreaFlow._go_to(sim, tractor, block)
@@ -901,19 +920,21 @@ func _outbound(sim: PortSim, _entry: Vector2i) -> Vector3i:
 ## from the lane nearest `from` to the one nearest `to`; [] when there is none.
 func _lane_route(roads: RoadNet, from: Vector2, to: Vector2, lorry: bool) -> Array[int]:
 	var network := LaneNetwork.new(roads, Content.base().junctions)
-	var start: int = network.nearest(from, lorry)[0]
-	var end: int = network.nearest(to, lorry)[0]
+	var who := "lorry" if lorry else "tractor"
+	var start: int = network.nearest(from, who)[0]
+	var end: int = network.nearest(to, who)[0]
 	if start == 0 or end == 0:
 		return []
-	return network.route(start, end, lorry)
+	return network.route(start, end, who)
 
 
 ## The lane network's route for a lorry (`lorry`) or a tractor from spot
 ## `from` to spot `to`, as Drive finds it; [] when there is none.
 func _route(sim: PortSim, from: Vector3i, to: Vector3i, lorry: bool) -> Array[int]:
 	Drive.flow(sim, 0)
-	var start: int = sim.network.nearest(sim.areas.centre(from), lorry)[0]
-	return Drive._best_route(sim, start, to, lorry)
+	var who := "lorry" if lorry else "tractor"
+	var start: int = sim.network.nearest(sim.areas.centre(from), who)[0]
+	return Drive._best_route(sim, start, to, who)
 
 
 ## Whether `layout`'s parts, other than the lanes slots lie in, cover `cells`

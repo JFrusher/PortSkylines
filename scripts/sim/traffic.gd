@@ -101,7 +101,7 @@ func fits(piece: int, s: float, length: float) -> bool:
 ## Puts car `id` on `route` (piece ids) with its front `s` cells along the
 ## first piece, `top` cells a second at most and `length` cells long.
 func place_at(id: int, route: Array[int], s: float, top: float, length: float) -> void:
-	cars[id] = {"route": route, "i": 0, "s": s, "v": 0.0, "top": top, "length": length, "booked": [], "waited": 0.0}
+	cars[id] = {"route": route, "i": 0, "s": s, "v": 0.0, "top": top, "length": length, "booked": [], "waited": 0.0, "moved": 0.0}
 	due[id] = true
 	_put(route[0], id)
 	_entered[route[0]] = _entered.get(route[0], 0) + 1
@@ -139,10 +139,28 @@ func arrived(id: int) -> bool:
 	return car.i == car.route.size() - 1 and car.s >= network.pieces[car.route[-1]].length - 0.001
 
 
-## [where car `id`'s front is, the way it heads], in grid units.
-func pose(id: int) -> Array[Vector2]:
+## [where car `id`'s front is, the way its body points], in grid units. The
+## body runs from its rear, its length back along the way it came, to its
+## front, so through a sharp corner it swings round as a lorry does instead
+## of snapping to the next piece's direction.
+func pose(id: int, alpha := 1.0) -> Array[Vector2]:
 	var car: Dictionary = cars[id]
-	return network.point_along(car.route[car.i], car.s)
+	# Between ticks it is drawn part way along what it drove in the last one.
+	var at := _back_along(car, car.i, car.s, (1.0 - alpha) * car.moved)
+	var front := network.point_along(car.route[at[0]], at[1])
+	var tail := _back_along(car, at[0], at[1], car.length)
+	var rear: Vector2 = network.point_along(car.route[tail[0]], tail[1])[0]
+	return [front[0], front[0] - rear if not front[0].is_equal_approx(rear) else front[1]]
+
+
+## [route index, distance along that piece] `distance` back along `car`'s
+## route from piece index `i`, `s` along it; no further back than its start.
+func _back_along(car: Dictionary, i: int, s: float, distance: float) -> Array:
+	var back := s - distance
+	while back < 0.0 and i > 0:
+		i -= 1
+		back += network.pieces[car.route[i]].length
+	return [i, maxf(back, 0.0)]
 
 
 ## Everything the traffic holds, for a save: the cars, who is on and has
@@ -174,6 +192,12 @@ func remove(id: int) -> void:
 	cars.erase(id)
 
 
+## Cars made to stand where they are this tick, whatever is ahead: AGVs on a
+## safety stop near a service vehicle in the AGV zone (see AreaFlow). Not
+## saved: set again each tick.
+var held := {}
+
+
 ## Moves every car on for `seconds`, in order of id.
 func tick(seconds: float) -> void:
 	due.clear()
@@ -185,6 +209,7 @@ func tick(seconds: float) -> void:
 
 func _move(id: int, seconds: float) -> void:
 	var car: Dictionary = cars[id]
+	car.moved = 0.0
 	var piece: int = car.route[car.i]
 	# At its route's end it stands, as the look ahead would find: nothing is in front of it.
 	if car.i == car.route.size() - 1 and car.s >= network.pieces[piece].length:
@@ -192,6 +217,10 @@ func _move(id: int, seconds: float) -> void:
 		car.waited += seconds
 		_stuck[piece] = _stuck.get(piece, 0.0) + seconds
 		due[id] = true
+		return
+	# On a safety stop it stands, without counting as stuck.
+	if id in held:
+		car.v = 0.0
 		return
 	# Stopped behind a car that hasn't moved since, it stays stopped: the look
 	# ahead would find that car just as near again.
@@ -236,7 +265,9 @@ func _ahead(id: int) -> Dictionary:
 	var found := _obstacle(id)
 	var stand: float = found.distance - (0.0 if found.end else _gap())
 	var crossing: float = found.crossing
-	if not found.end and crossing < found.distance and stand - car.length < crossing + 1.0:
+	# A crossing is kept clear of a car that can't get past it before stopping: not before the end of
+	# its look-ahead, which on short pieces can fall just past one and held it there for ever.
+	if not found.end and not found.get("horizon", false) and crossing < found.distance and stand - car.length < crossing + 1.0:
 		return {"distance": crossing, "end": false}
 	return found
 
@@ -251,8 +282,20 @@ func _obstacle(id: int) -> Dictionary:
 		var piece: int = car.route[k]
 		# A connection is booked only once the car is near enough to need it:
 		# until then its stop line is just a far-off end of the room ahead.
-		if k > car.i and network.pieces[piece].node != 0 and piece not in car.booked and (distance > _booking_distance(car) or not _book(id, piece)):
+		# With a crossing to keep clear before the stop line, it books from far enough back to clear
+		# the crossing: else it waits short of the crossing, too far back to book, for ever.
+		var reach: float = _booking_distance(car) + (car.length + 1.0 if crossing < distance else 0.0)
+		if k > car.i and network.pieces[piece].node != 0 and piece not in car.booked and (distance > reach or not _book(id, piece)):
 			return {"distance": distance, "end": false, "crossing": crossing}
+		# In an area, where two of its lanes meet (a slot's way out and the buffer), a car
+		# already standing at the meeting point goes first: the other stops short of it.
+		if k > car.i and network.pieces[car.route[k - 1]].area != 0 and _merge_taken(id, car.route[k - 1]):
+			return {"distance": distance, "end": false, "crossing": crossing}
+		# A driveway across the road waits at its start for a gap in the lanes it crosses.
+		if k > car.i and network.pieces[piece].has("give_way") and car.get("across", 0) != piece:
+			if distance > _booking_distance(car) or not _gap_across(piece):
+				return {"distance": distance, "end": false, "crossing": crossing}
+			car.across = piece
 		# The nearer of the car ahead and a crossing a train has booked stops it.
 		# Cars keep their order along a piece, so the one ahead is the next.
 		var nearest := INF
@@ -280,7 +323,8 @@ func _obstacle(id: int) -> Dictionary:
 		distance += network.pieces[piece].length
 		if k == car.route.size() - 1:
 			return {"distance": distance, "end": true, "crossing": crossing}
-	return {"distance": distance, "end": false, "crossing": crossing}
+	# As far as it looks: nothing to stop for yet, which isn't room that ends here.
+	return {"distance": distance, "end": false, "crossing": crossing, "horizon": true}
 
 
 ## How near a stop line `car` must be to book the connection beyond it:
@@ -338,6 +382,7 @@ func _put(piece: int, id: int) -> void:
 ## whole length is clear of it.
 func _advance(id: int, distance: float) -> void:
 	var car: Dictionary = cars[id]
+	car.moved = distance
 	car.s += distance
 	while car.s > network.pieces[car.route[car.i]].length and car.i + 1 < car.route.size():
 		_on[car.route[car.i]].erase(id)
@@ -404,6 +449,40 @@ func approach_busy(point: Vector2, arm: Vector2i) -> bool:
 			if network.pieces[piece].length - cars[id].s <= maxf(APPROACH, cars[id].v * _rules.give_way_seconds):
 				return true
 	return false
+
+
+## Whether a car other than `id` stands with its front at the very end of a
+## piece, other than `piece`, ending where `piece` does.
+func _merge_taken(id: int, piece: int) -> bool:
+	for other_piece: int in network.ending_at(network.pieces[piece].points[-1]):
+		if other_piece == piece:
+			continue
+		for other: int in _on.get(other_piece, []):
+			if other != id and cars[other].s >= network.pieces[other_piece].length - 0.01:
+				return true
+	return false
+
+
+## Whether driveway `piece` may cross now: no car moving on a lane it
+## crosses or joins will reach that point within give_way_seconds, and none
+## is at or over it. One standing short of it is queued, and is crossed in
+## front of.
+func _gap_across(piece: int) -> bool:
+	for point: Vector2 in network.pieces[piece].give_way:
+		for lane: int in network.ending_at(point):
+			if network.pieces[lane].segment == 0:
+				continue
+			for other: int in _on.get(lane, []):
+				var short: float = network.pieces[lane].length - cars[other].s
+				# One standing short of it is queued, not coming: crossing in front of it keeps the
+				# point clear, as no car stands on one (set_crossings); waiting for it could be for ever.
+				if short < 0.01 or (cars[other].v > 0.1 and short <= maxf(APPROACH, cars[other].v * _rules.give_way_seconds)):
+					return false
+			for after: int in network.pieces[lane].next:
+				for other: int in _on.get(after, []):
+					if cars[other].s < cars[other].length:
+						return false
+	return true
 
 
 ## The cells where rail track crosses lanes: level crossings, each free.

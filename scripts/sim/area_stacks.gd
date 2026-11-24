@@ -54,13 +54,14 @@ func fits(position: int, teu: int) -> bool:
 
 
 ## Where a box of `teu` goes, or -1 when nothing takes it. "fill_low": the
-## lowest stack, so stacks stay level; "by_departure": for a box leaving at
+## lowest stack, so stacks stay level (a 20 on a stack of 20s first, keeping
+## stacks open to 40s); "by_departure": for a box leaving at
 ## `due`, a stack where every box leaves no sooner (`boxes` is the sim's box
 ## table), the one whose first leaver goes soonest so open ground is kept for
 ## last, else the stack whose first leaver goes latest. Ties in layout order.
 ## With `within_room`, only a stack where the box leaves room() at zero or
-## more, so a buried box can always be dug out; a box already in a machine's
-## hand passes false, as it has to go somewhere.
+## more, so the boxes on their way, counted against room(), still fit; a box
+## already in a machine's hand passes false, as it has to go somewhere.
 func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, within_room := true) -> int:
 	var best := -1
 	var best_key := []
@@ -68,7 +69,10 @@ func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, withi
 	for position in stacks.size():
 		if not fits(position, teu) or (within_room and spare < _room_cost(position, teu)):
 			continue
-		var key := [stacks[position].size()]
+		# A 20 goes on a stack of 20s first: on one open to 40s it would close the whole
+		# stack to them, which room() counts as every tier of it lost.
+		var on_twenties: bool = teu == 1 and not stacks[position].is_empty() and _teu[stacks[position][-1][0]] == 1
+		var key := [0 if on_twenties or teu == 2 else 1, stacks[position].size()]
 		if strategy == "by_departure":
 			var soonest := INF
 			for id: int in _boxes(position):
@@ -83,7 +87,7 @@ func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, withi
 ## How much of room() a box of `teu` on `position` uses: a 40 one tier, a 20
 ## on a stack open to 40s all its free tiers, as the stack then takes only 20s;
 ## admission counts a box as one, so placing must not overspend what is left
-## for digging a buried box out.
+## for the boxes already on their way.
 func _room_cost(position: int, teu: int) -> int:
 	var tiers: Array = stacks[position]
 	if not tiers.is_empty() and _teu[tiers[-1][0]] == 1:
@@ -118,20 +122,21 @@ func above(id: int) -> int:
 	return count
 
 
-## Takes box `id` out, first moving each box above it to another stack.
-## Returns the rehandles made, or -1 if a box above had nowhere to go.
-func take(id: int) -> int:
+## Takes box `id` out. Each box above it is lifted off and set down where
+## it costs room() least, while the block can spare that beyond `promised`
+## (the room boxes on their way here are counted against); else back on its
+## own stack once `id` is gone, as a yard crane shuffles within its bay. So
+## a dig always finishes, however full the block, and leaves room for what
+## is coming. Returns the rehandles made.
+func take(id: int, promised: int) -> int:
 	var position: int = _where[id]
-	var moved := 0
+	# What the dig may spend elsewhere, taken before lifting: lifting frees the dug stack only for now.
+	var budget := room() - promised
+	var lifted: Array = []  # [box, teu], topmost first
 	while above(id) > 0:
 		var top: int = stacks[position][-1][-1]
-		var teu: int = _teu[top]
-		var to := _other_stack(position, teu)
-		if to < 0:
-			return -1
+		lifted.append([top, _teu[top]])
 		_remove_top(position)
-		place_at(to, top, teu)
-		moved += 1
 	# Nothing is above its tier now; a 20 ft box beside it stays.
 	var tiers: Array = stacks[position]
 	tiers[-1].erase(id)
@@ -139,9 +144,25 @@ func take(id: int) -> int:
 		tiers.pop_back()
 	_teu.erase(id)
 	_where.erase(id)
+	lifted.reverse()
+	for box: Array in lifted:
+		var to := _spare_stack(position, box[1], budget)
+		if to >= 0:
+			budget -= _room_cost(to, box[1])
+		place_at(to if to >= 0 else position, box[0], box[1])
 	version += 1
-	rehandles += moved
-	return moved
+	rehandles += lifted.size()
+	return lifted.size()
+
+
+## The stack other than `position` where a box of `teu` costs room() least,
+## at most `spare`, or -1.
+func _spare_stack(position: int, teu: int, spare: int) -> int:
+	var best := -1
+	for to in stacks.size():
+		if to != position and fits(to, teu) and _room_cost(to, teu) <= spare and (best < 0 or _room_cost(to, teu) < _room_cost(best, teu)):
+			best = to
+	return best
 
 
 ## One housekeeping move: the top box of the first stack where it buries a
@@ -178,16 +199,16 @@ static func from_dict(d: Dictionary) -> AreaStacks:
 	return area
 
 
-## How many more 40 ft boxes fit, keeping a stack's height spare so a buried
-## box can always be dug out: stacks topped with 20s take only 20s, so they
-## count none. Any box fits while this is above zero.
+## How many more 40 ft boxes fit: stacks topped with 20s take only 20s, so
+## they count none. Any box fits while this is above zero. No room is kept
+## for digging: a dig sets boxes back on their own stack when it must.
 func room() -> int:
 	var free := 0
 	for position in stacks.size():
 		var tiers: Array = stacks[position]
 		if tiers.is_empty() or _teu[tiers[-1][0]] == 2:
 			free += _tiers - tiers.size()
-	return free - _tiers
+	return free
 
 
 ## How many boxes the area holds.
@@ -231,13 +252,6 @@ func _boxes(position: int) -> Array:
 	for tier: Array in stacks[position]:
 		found.append_array(tier)
 	return found
-
-
-func _other_stack(position: int, teu: int) -> int:
-	for to in stacks.size():
-		if to != position and fits(to, teu):
-			return to
-	return -1
 
 
 func _remove_top(position: int) -> void:

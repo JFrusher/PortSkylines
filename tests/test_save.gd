@@ -24,6 +24,7 @@ func _initialize() -> void:
 	_test_v46_trains_on_points()
 	_test_v47_lanes_get_a_control_point()
 	_test_v48_areas_lose_their_grid_ends()
+	_test_v49_boats_on_the_water()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -308,6 +309,37 @@ func _test_v48_areas_lose_their_grid_ends() -> void:
 		var before: Dictionary = old.sim.areas.list[id]
 		_expect(["start", "end", "out"].any(func(key: String) -> bool: return area.has(key)), false, "area %d has no grid ends" % id)
 		_expect([sim.areas.cell_at(id, 0, 0), sim.areas.cell_at(id, area.columns - 1, 0)], [before.start, before.end], "and its shape finds them where they were")
+
+
+## v49 puts a boat on the water for each pilot and tug, home at its base;
+## a ship with a pilot keeps them aboard, their boat home, and a ship's tugs
+## start beside it.
+func _test_v49_boats_on_the_water() -> void:
+	var file := FileAccess.open("res://tests/fixtures/save_v48.bin", FileAccess.READ)
+	file.get_buffer(SaveFile.MAGIC.length())
+	var old: Dictionary = file.get_var()
+	file.close()
+	_expect(old.sim.ships.is_empty(), false, "the v48 save has a ship")
+	if old.sim.ships.is_empty():
+		return
+	old.sim.pilot_stations[90] = {"cell": Vector2i(66, 180), "pilots": 2}
+	old.sim.tug_depots[91] = {"cell": Vector2i(66, 240), "tugs": 3}
+	var ship: Dictionary = old.sim.ships[0]
+	ship.pilot = true
+	ship.tugs = 2
+	ship.tug_depot = 91
+	_write_payload("user://v48_boats.bin", old)
+	var loaded := SaveFile.load_from("user://v48_boats.bin")
+	DirAccess.remove_absolute("user://v48_boats.bin")
+	_expect(loaded.get("error", ""), "", "the v48 save with boats loads")
+	if not loaded.has("sim"):
+		return
+	var sim: PortSim = loaded.sim
+	var jobs := sim.boats.list.values().map(func(b: Dictionary) -> String: return "%s %s %s" % [b.kind, b.job, b.ship == ship.id])
+	jobs.sort()
+	_expect(jobs, ["pilot ashore true", "pilot home false", "tug home false", "tug with true", "tug with true"], "a boat per pilot and tug, the ship's pilot aboard and its tugs beside it")
+	_expect(Marine.free_pilots(sim), 1, "one pilot free")
+	_expect(Marine.free_tugs(sim, 91), 1, "one tug free")
 
 
 func _test_traffic_cars_are_validated() -> void:

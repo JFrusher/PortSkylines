@@ -135,7 +135,7 @@ You need **[Godot 4.7.2](https://godotengine.org/download)** (the standard build
 | <kbd>Esc</kbd> | Game menu; also stops following a box |
 
 > [!TIP]
-> Want to see everything at once? In a debug run (from the editor), **Menu → Mega port (debug)** loads the big test port with every milestone reached, rail running and the yards full. **Menu → Showcase port (debug)** loads a smaller, dense two-terminal port with one of nearly every part: every berth and STS crane, a grid of yard lanes, reefer, empty, dangerous-goods and rail blocks, OCR and automated gates, a truck park, ship lanes, an anchorage, pilots, tugs and a breakwater, plus M12's automation (ASC blocks served by AGVs beside manual ones), policies, block rules and a saved template. It grows with each new feature.
+> Want to see everything at once? In a debug run (from the editor), **Menu → Mega port (debug)** loads the big test port with every milestone reached, rail running and the yards full. **Menu → Showcase port (debug)** loads a smaller, dense port with one of nearly every part: an AGV North Terminal (an AGV zone, depot, chargers and transfer blocks with racks), a manual South Terminal (a grid of yard lanes, reefer, empty, dangerous-goods and rail blocks, OCR and automated gates, a truck park) with the barge berth; every berth and STS crane, ship lanes, an anchorage, pilots, tugs and a breakwater; M11's harbour life and M13's policies, block rules and a saved template. It grows with each new feature.
 
 ### Windows build
 
@@ -159,9 +159,10 @@ godot --export-release "Windows" build/windows/PortSkylines.exe
 | ✅ | [M8 The whole port](docs/phases/m08-whole-port.md): natural coasts, ship lanes, anchorage, pilots, tugs, ULCV | Done |
 | ✅ | [M9 Barge and feeder transhipment](docs/phases/m09-barge-and-feeder.md): transhipment, barges up the river, straddle carriers | Done |
 | ⬜ | [M10 Roads like Cities: Skylines](docs/phases/m10-curved-roads.md) | Planned |
-| ⬜ | [M11 Events and regulations](docs/phases/m11-events.md) | Planned |
-| 🟧 | [M12 Policies, rules and automation](docs/phases/m12-automation.md) | In progress |
-| ⬜ | [M13 Release 1.0 on Windows](docs/phases/m13-release.md) | Planned |
+| ✅ | [M11 Harbour life](docs/phases/m11-harbour-life.md): services, tides and wind, breakdowns, fire, customs, AGVs, the town, scenarios, the new UI | Done |
+| ⬜ | [M12 Events and regulations](docs/phases/m12-events.md) | Planned |
+| 🟧 | [M13 Policies, rules and automation](docs/phases/m13-automation.md) | In progress |
+| ⬜ | [M14 Release 1.0 on Windows](docs/phases/m14-release.md) | Planned |
 
 > [!IMPORTANT]
 > M6's exit target is 60 fps at 1080p on a GTX 1660-class PC with the endgame port at 1×. Today the sim tick at that load is 32 ms on a 2.1 GHz cloud CPU, so it is not met yet. The measurements and the options are in [docs/perf.md](docs/perf.md).

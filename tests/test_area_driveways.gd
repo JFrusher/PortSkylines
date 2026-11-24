@@ -18,6 +18,10 @@ func _initialize() -> void:
 	_test_lanes_run_through_the_cells_middles()
 	_test_driveways_bend_with_their_area()
 	_test_a_junction_at_the_middle_keeps_the_driveways()
+	_test_vehicles_turn_either_way_out()
+	_test_crossing_the_road_gives_way()
+	_test_first_at_a_merge_goes_first()
+
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
 
@@ -69,8 +73,8 @@ func _test_every_slot_and_booth_is_reached() -> void:
 			_expect(ends.is_empty(), false, "a piece ends where a vehicle stands in area %d's slot %d" % [id, s])
 			if ends.is_empty():
 				continue
-			_expect(network.route(start, ends[0]).is_empty(), false, "area %d's slot %d is reached from the entry" % [id, s])
-			_expect(network.route(ends[0], start).is_empty(), false, "and left again for the entry")
+			_expect(network.route(start, ends[0], "tractor").is_empty(), false, "area %d's slot %d is reached from the entry" % [id, s])
+			_expect(network.route(ends[0], start, "tractor").is_empty(), false, "and left again for the entry")
 			kinds[sim.areas.kind_of(sim.areas.list[id])] = true
 	_expect(kinds.keys().size() >= 3, true, "yard block, apron and gate slots are all among them (%s)" % [kinds.keys()])
 
@@ -108,7 +112,7 @@ func _test_driveways_bend_with_their_area() -> void:
 	_expect(off_grid.is_empty(), false, "the bent block's lanes leave the grid's rows")
 	for s: int in layout.slots.size():
 		var ends := network.ending_at(_centre(sim, block, _driven(network, block, layout.slots[s])[-1]))
-		_expect(not ends.is_empty() and not starts.is_empty() and not network.route(starts[0], ends[0]).is_empty(), true, "slot %d on the bend is reached from the buffer" % s)
+		_expect(not ends.is_empty() and not starts.is_empty() and not network.route(starts[0], ends[0], "tractor").is_empty(), true, "slot %d on the bend is reached from the buffer" % s)
 
 
 ## A road meeting an apron's road at the apron's middle, as the showcase's
@@ -133,3 +137,63 @@ func _test_a_junction_at_the_middle_keeps_the_driveways() -> void:
 	while ship.state == PortSim.Ship.State.WORKING and sim.clock.calendar_minutes() < 900.0:
 		sim.tick()
 	_expect(ship.exports, 0, "its exports are fetched back to the crane and loaded")
+
+
+## A vehicle leaving a yard block for the quay crosses the road and heads
+## back, as out of a Cities: Skylines building, instead of driving on to the
+## next place to turn round (the site entry here, 1.8 km on).
+func _test_vehicles_turn_either_way_out() -> void:
+	var sim := AreaPort.base()
+	var network := _network(sim)
+	var block := _stand(sim, network, 3)
+	var quay := _stand(sim, network, 1)
+	var route := network.route(block, quay, "tractor")
+	var apart: float = network.pieces[block].points[-1].distance_to(network.pieces[quay].points[-1])
+	_expect(route.is_empty(), false, "the quay is reached from the block")
+	_expect(network.length(route) < 3.0 * apart, true, "by a short way (%.0f cells driven, %.0f apart)" % [network.length(route), apart])
+	_expect(route.any(func(p: int) -> bool: return network.pieces[p].has("give_way")), true, "across the road")
+
+
+## A car about to cross the road out of a block waits while a car on the lane
+## it crosses is about to pass, and goes once it has, or in front of one
+## standing queued short of it; cars on the lanes never stand on its
+## crossing points.
+func _test_crossing_the_road_gives_way() -> void:
+	var sim := AreaPort.base()
+	Drive._refresh(sim)
+	var across: int = sim.network.pieces.keys().filter(func(p: int) -> bool: return sim.network.pieces[p].has("give_way") and sim.network.pieces[p].give_way.size() == 2)[0]
+	_expect(sim.traffic._gap_across(across), true, "an empty road can be crossed")
+	for point: Vector2 in sim.network.pieces[across].give_way:
+		_expect(sim.traffic._crossings.has(Vector2i(point.floor())), true, "lane traffic keeps %s clear, as a level crossing" % point)
+	var lane: int = sim.network.ending_at(sim.network.pieces[across].give_way[0]).filter(func(p: int) -> bool: return sim.network.pieces[p].segment != 0)[0]
+	var route: Array[int] = [lane]
+	sim.traffic.place_at(999, route, sim.network.pieces[lane].length - 2.0, 2.0, 4.0)
+	_expect(sim.traffic._gap_across(across), true, "a car standing short of it is queued, and is crossed in front of")
+	sim.traffic.cars[999].v = 2.0
+	_expect(sim.traffic._gap_across(across), false, "not with a car about to pass")
+	sim.traffic.remove(999)
+	_expect(sim.traffic._gap_across(across), true, "and again once it has gone")
+
+
+## Where a slot's way out meets the block's buffer, a car standing at the
+## meeting point keeps it: one coming the other way stops short.
+func _test_first_at_a_merge_goes_first() -> void:
+	var sim := AreaPort.base()
+	Drive._refresh(sim)
+	var meets := {}
+	for piece: int in sim.network.pieces:
+		if sim.network.pieces[piece].area == 3:
+			meets.get_or_add(sim.network.pieces[piece].points[-1], []).append(piece)
+	var pair: Array = meets.values().filter(func(p: Array) -> bool: return p.size() >= 2)[0]
+	var first: Array[int] = [pair[0]]
+	var second: Array[int] = [pair[1]]
+	sim.traffic.place_at(998, first, sim.network.pieces[pair[0]].length, 2.0, 4.0)
+	sim.traffic.place_at(999, second, 0.0, 2.0, 4.0)
+	_expect(sim.traffic._merge_taken(999, pair[1]), true, "the meeting point is taken")
+	_expect(sim.traffic._merge_taken(998, pair[0]), false, "by the car standing at it")
+
+
+## The piece ending where a vehicle stands in area `id`'s first slot.
+func _stand(sim: PortSim, network: LaneNetwork, id: int) -> int:
+	var layout: Dictionary = LaneNetwork._local(sim.areas.layout(id))
+	return network.ending_at(_centre(sim, id, _driven(network, id, layout.slots[0])[-1]))[0]

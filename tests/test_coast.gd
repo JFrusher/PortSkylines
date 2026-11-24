@@ -33,20 +33,20 @@ func _shore(sim: PortSim, row: int) -> Vector2i:
 func _test_the_game_plays_the_estuary() -> void:
 	var sim := PortSim.new(1)
 	_expect(sim.map, "estuary", "a new game is played on the data's map")
-	var shores := range(200, 400, 10).map(func(row: int) -> int: return _shore(sim, row).x)
+	var shores := range(400, 800, 20).map(func(row: int) -> int: return _shore(sim, row).x)
 	_expect(shores.max() - shores.min() > 3, true, "its coast curves: the shore moves %d cells over the start land's rows" % (shores.max() - shores.min()))
 	_expect(sim.areas.is_water(Vector2i(sim.areas.coast.size.x - 1, sim.areas.coast.size.y / 2)), false, "the highway comes in on land")
 	var river := 0
 	for x: int in range(sim.areas.coast.size.x / 2, sim.areas.coast.size.x):
-		river += 1 if sim.areas.is_water(Vector2i(x, 40)) else 0
+		river += 1 if sim.areas.is_water(Vector2i(x, 80)) else 0
 	_expect(river > 0, true, "a river crosses the land in the north")
-	var water := _shore(sim, 300)
+	var water := _shore(sim, 600)
 	_expect(sim.build_road_error(water + Vector2i(-10, 0), water + Vector2i(10, 0), "terminal_1_1"), "Roads can't be built on water", "roads stay off the water")
 
 
 func _test_depth_grows_offshore() -> void:
 	var sim := PortSim.new(1)
-	var shore := _shore(sim, 200)
+	var shore := _shore(sim, 400)
 	var coast := sim.areas.coast
 	var rule: Dictionary = sim.rules.maps.estuary.depth
 	_expect(coast.depth(shore + Vector2i(1, 0)), 0.0, "land has no depth")
@@ -54,13 +54,13 @@ func _test_depth_grows_offshore() -> void:
 	_expect(coast.depth(shore) >= rule.shore and coast.depth(shore) <= rule.shore + 1.0, true, "beside the shore it is about the map's shore depth (%.1f m)" % coast.depth(shore))
 	var deepest := 0.0
 	for x: int in range(0, shore.x):
-		deepest = maxf(deepest, coast.depth(Vector2i(x, 200)))
+		deepest = maxf(deepest, coast.depth(Vector2i(x, 400)))
 	_expect(deepest <= rule.max, true, "and never deeper than the map's deepest")
 
 
 func _test_a_berth_fills_behind_its_quay() -> void:
 	var sim := PortSim.new(1)
-	var click := _shore(sim, 300) + Vector2i(8, 0)
+	var click := _shore(sim, 600) + Vector2i(8, 0)
 	var plan := sim.berth_plan("feeder", click)
 	_expect(plan.get("angle"), 180.0, "a berth faces the water, west here")
 	var cells: Array[Vector2i] = plan.cells

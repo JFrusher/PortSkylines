@@ -1,23 +1,30 @@
 extends RefCounted
+
+const RandomPort := preload("res://tests/random_port.gd")
 ## The showcase port, for testing and showing the game's parts: a dense
 ## two-terminal port on the Estuary's natural coast, built by the commands
 ## the toolbar sends, with one of nearly everything the game has. Grown as
 ## features land; tests/test_showcase.gd builds it and runs it.
 ##
 ## Layout: berths along the curving coast (a Neopanamax berth for the North
-## Terminal; ULCV, Panamax and feeder berths for the South Terminal), a
+## Terminal, an AGV terminal (M11): an AGV zone from its quay to transfer
+## blocks (reefer ones too), lorries at their backs, an AGV depot with
+## chargers, racks; ULCV,
+## Panamax and feeder berths for the South Terminal, with manual gear), a
 ## spine road down x = SPINE with a connector road east from each berth to
 ## it, and the highway road from the spine to the site entry, with the
 ## gates and truck park. Yards line the connectors and the yard lanes
 ## between them, parallel lanes from each quay road to the spine. A barge
-## berth on the river's south bank joins the spine's north end. M12's
-## automation: the Panamax and ULCV berths' yards have ASC blocks, served by
-## AGVs, beside manual ones; policies are on, some blocks stack by departure
-## or have rules of their own, and a template is saved and applied.
-## M10's curves:
+## berth on the river's south bank joins the spine's north end, with a gate
+## and blocks of its own along the spine, in the South Terminal. M13's
+## policies are on, some blocks stack by departure or have rules of their
+## own, and a template is saved and applied. M10's curves:
 ## a yard road curving south off the spine to a roundabout, with blocks on
 ## its bend, the track's corner to the rail block on a curve, and the river
-## channel curving down the river.
+## channel curving down the river. M11's harbour life: every event kind on,
+## a manned workshop and fire station, a customs block with inspectors and a
+## gate scanner, shore power at the ULCV berth, a tree belt toward the town
+## and a fund for it.
 
 ## The grid line the spine road runs down, and the rows it spans.
 const SPINE := 300
@@ -44,8 +51,6 @@ const BEND_TO := Vector2(460, 480)
 const BEND_RING := 8.0
 const BEND_YARDS: Array = [[1, 4, "import", "rtg"], [1, 50, "export", "rtg"], [-1, 4, "export", "rtg"], [-1, 50, "empty", "empty_handler"]]
 
-## Automated blocks (ASCs, served by AGVs, not tractors) have AGVs bought for them.
-const AGVS := 40
 ## Policies switched on; the other two (day gates, day shifts) idle the port at night.
 const POLICIES: Array[String] = ["appointments", "dual_cycling"]
 
@@ -55,15 +60,31 @@ const BOXES := 3000
 const BLOCK := 40
 ## The yards along each berth's connector, west to east: [side, from, role, gear].
 const YARDS: Array = [
-	[[-1, 20, "import", "straddle"], [-1, 62, "import", "straddle"], [-1, 104, "export", "rtg"], [1, 20, "reefer", "rtg"], [1, 62, "tranship", "reach_stacker"], [1, 104, "empty", "empty_handler"]],
-	[[-1, 20, "import", "asc"], [-1, 62, "export", "asc"], [1, 20, "import", "rtg"], [1, 62, "reefer", "rtg"]],
-	[[-1, 20, "import", "asc"], [-1, 62, "export", "rtg"], [1, 20, "import", "asc"], [1, 62, "empty", "empty_handler"]],
+	[],  # the North Terminal is the AGV terminal: transfer blocks, built by _agv_terminal
+	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "straddle"], [1, 62, "reefer", "rtg"]],
+	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "reach_stacker"], [1, 62, "empty", "empty_handler"]],
 	[[-1, 20, "export", "reach_stacker"], [1, 20, "import", "reach_stacker"], [-1, 62, "tranship", "rtg"], [1, 62, "tranship", "rtg"]],
 ]
 
 ## Each berth's yard lanes, as rows off its connector; 18 apart, so a block
 ## (8 deep) fits each side with a cell between neighbours' blocks.
-const LANES: Array = [[-36, -18, 18], [-36, -18, 18, 36], [-18, 18], [-18]]
+const LANES: Array = [[-18, 18], [-36, -18, 18, 36], [-18, 18], [-18]]
+## The North Terminal's transfer blocks, along its connector: where each
+## starts on it, either side, 12 cells long, reaching back to the lanes
+## either side, where lorries come; and the dangerous-goods one, alone at
+## the east end, as dangerous goods stand 24 m from other blocks.
+const AGV_BLOCKS: Array[int] = [30, 50, 70, 90, 110]
+## Their roles, north side then south: reefers plugged in as in a real ASC
+## block, one block each side.
+const AGV_ROLES: Array[String] = ["import", "export", "reefer", "import", "export", "export", "import", "reefer", "export", "import"]
+const AGV_DG_BLOCK := 134
+## The AGV depot's AGVs and chargers.
+const AGVS := 10
+const CHARGERS := 4
+## The barge berth's own gate and blocks along the spine's run north to it:
+## [type, side, from, to, role or gate level].
+const BARGE_AREAS: Array = [["gate", -1, 2, 16, "ocr"], ["yard_block", -1, 19, 40, "import"], ["yard_block", 1, 10, 21, "export"], ["yard_block", 1, 56, 67, "dangerous"]]
+
 ## The blocks along each yard lane, west to east, as for YARDS.
 const LANE_YARDS: Array = [[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [-1, 104, "import", "rtg"], [1, 20, "export", "rtg"], [1, 62, "import", "rtg"], [1, 104, "export", "rtg"]]
 
@@ -71,7 +92,7 @@ const LANE_YARDS: Array = [[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"],
 ## The rules the showcase plays by: the game's own, with every milestone
 ## reached and cranes standing the moment they're ordered.
 static func rules() -> Dictionary:
-	var copy := Content.base().duplicate(true)
+	var copy := RandomPort.small_site(Content.base())
 	for milestone: Dictionary in copy.milestones.values():
 		milestone.teu = 0
 		milestone.reputation = 0.0
@@ -121,13 +142,12 @@ static func build(refused: Array[String]) -> PortSim:
 	var barge_road: int = sim.berth_plan("barge", BARGE_CLICK, 270.0).line[0].y
 	_do(sim, refused, {"op": "build_berth", "kind": "barge", "cell": BARGE_CLICK, "angle": 270.0})
 	var barge: int = sim.areas.list.keys().max()
-	north.append(barge)
 	_do(sim, refused, {"op": "build_road", "from": Vector2i(SPINE, barge_road), "to": Vector2i(SPINE, SPINE_ROWS.x), "type": "terminal_2_2"})
 	var south: Array[int] = [berths[1].apron, berths[2].apron, berths[3].apron]
 	# Yards along the connectors and yard lanes (a road east is side 1 to its
 	# south, -1 to its north).
-	for i in berths.size():
-		var mine := north if i == 0 else south
+	for i in range(1, berths.size()):
+		var mine := south
 		for offset: int in [0] + LANES[i]:
 			var road := sim.roads.segment_at(Vector2i((berths[i].road_x + SPINE) / 2, berths[i].row + offset))
 			for plan: Array in (YARDS[i] if offset == 0 else LANE_YARDS):
@@ -168,18 +188,34 @@ static func build(refused: Array[String]) -> PortSim:
 		_do(sim, refused, {"op": "set_area", "id": block, "settings": {"role": plan[2], "gear": plan[3]}})
 		south.append(block)
 	_do(sim, refused, {"op": "build_roundabout", "centre": BEND_TO + Vector2(0, BEND_RING), "radius": BEND_RING})
-	# The North Terminal's dangerous goods, apart on the spine's run north to
-	# the barge berth.
-	var north_hazard := _area(sim, refused, {"op": "build_area", "type": "yard_block", "segment": sim.roads.segment_at(Vector2i(SPINE, (SPINE_ROWS.x + barge_road) / 2)), "side": 1, "from": 20, "to": 20 + BLOCK - 1})
-	_do(sim, refused, {"op": "set_area", "id": north_hazard, "settings": {"role": "dangerous"}})
-	north.append(north_hazard)
+	# The barge berth is the South Terminal's, served by tractors, with a gate
+	# and blocks of its own on the spine's run north to it: barges take the
+	# boxes big ships bring for places up the river, so they share a terminal.
+	var barge_areas: Array[int] = [barge]
+	var spine_to_barge := sim.roads.segment_at(Vector2i(SPINE, (SPINE_ROWS.x + barge_road) / 2))
+	for plan: Array in BARGE_AREAS:
+		var id := _area(sim, refused, {"op": "build_area", "type": plan[0], "segment": spine_to_barge, "side": plan[1], "from": plan[2], "to": plan[3]})
+		_do(sim, refused, {"op": "set_area", "id": id, "settings": {"level": plan[4]} if plan[0] == "gate" else {"role": plan[4]}})
+		barge_areas.append(id)
+	# The North Terminal: AGVs from the quay to transfer blocks, lorries at their backs.
+	var agv := _agv_terminal(sim, refused, berths[0])
+	north.append_array(agv.areas)
 	# The North Terminal's own gate, on the spine north of the highway.
 	var spine_north := sim.roads.segment_at(Vector2i(SPINE, (berths[0].row + sim.site_entry().y) / 2))
 	north.append(_area(sim, refused, {"op": "build_area", "type": "gate", "segment": spine_north, "side": 1, "from": 20, "to": 34}))
 	_do(sim, refused, {"op": "set_area", "id": north[-1], "settings": {"level": "ocr"}})
 	north.append(_area(sim, refused, {"op": "build_area", "type": "gate", "segment": spine_north, "side": -1, "from": 20, "to": 34}))
 	_do(sim, refused, {"op": "set_area", "id": north[-1], "settings": {"level": "ocr"}})
-	# Two terminals, painted over exactly their areas.
+	# M11's harbour life, south of the highway road west of the gates: a
+	# workshop and a fire station, a customs block, and a tree belt east of
+	# the gates, between the port and the town.
+	var workshop := _area(sim, refused, {"op": "build_area", "type": "workshop", "segment": highway, "side": 1, "from": 10, "to": 18})
+	var station := _area(sim, refused, {"op": "build_area", "type": "fire_station", "segment": highway, "side": 1, "from": 22, "to": 30})
+	# Clear of the dangerous-goods block across the road, between the rail block and the gates.
+	var customs := _area(sim, refused, {"op": "build_area", "type": "yard_block", "segment": highway, "side": 1, "from": 172, "to": 172 + BLOCK - 1})
+	var belt := _area(sim, refused, {"op": "build_area", "type": "tree_belt", "segment": highway, "side": 1, "from": 256, "to": 290})
+	south.append_array([workshop, station, customs, belt])
+	south.append_array(barge_areas)
 	for group: Array[int] in [north, south]:
 		var cells: Array[Vector2i] = []
 		for id: int in group:
@@ -198,10 +234,25 @@ static func build(refused: Array[String]) -> PortSim:
 			_do(sim, refused, {"op": "place_sts", "apron": berth.apron, "along": spots[k], "kind": cranes[berth.kind]})
 	_do(sim, refused, {"op": "place_sts", "apron": barge, "along": AreaFlow.crane_spots(sim, barge)[0], "kind": "barge_crane"})
 	_do(sim, refused, {"op": "buy_tractors", "count": 150})
-	_do(sim, refused, {"op": "buy_agvs", "count": AGVS})
+	_do(sim, refused, {"op": "buy_agvs", "area": agv.depot, "count": AGVS})
+	_do(sim, refused, {"op": "buy_chargers", "area": agv.depot, "count": CHARGERS})
+	for block: int in agv.racked:
+		_do(sim, refused, {"op": "buy_racks", "area": block})
 	for policy: String in POLICIES:
 		_do(sim, refused, {"op": "set_policy", "policy": policy, "on": true})
 	_rules(sim, refused)
+	# Harbour life switched on and manned: every event kind, mechanics, a fire
+	# engine, customs inspectors and a scanner, shore power at the ULCV berth,
+	# and a fund for the town.
+	for kind: String in ["tides", "breakdowns", "fires"]:
+		_do(sim, refused, {"op": "set_event_kind", "kind": kind, "on": true})
+	_do(sim, refused, {"op": "hire_mechanics", "area": workshop, "count": 2})
+	_do(sim, refused, {"op": "buy_engines", "area": station, "count": 1})
+	_do(sim, refused, {"op": "set_area", "id": customs, "settings": {"role": "customs"}})
+	_do(sim, refused, {"op": "hire_inspectors", "area": customs, "count": 2})
+	_do(sim, refused, {"op": "buy_scanner", "gate": gate})
+	_do(sim, refused, {"op": "buy_shore_power", "area": berths[1].apron})
+	_do(sim, refused, {"op": "set_town_fund", "per_day": 1000})
 	_water(sim, refused, berths)
 	_river(sim, refused)
 	_fill(sim)
@@ -216,7 +267,7 @@ static func build(refused: Array[String]) -> PortSim:
 			id += 1
 			# Spread through the week, so the port is busy but not swamped.
 			var start := (id - 800) * 1800
-			sim.contracts.services.append({"id": id, "line": line, "kind": berth.kind, "start": start, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": berth.apron, "any_berth": false, "asked": start})
+			sim.contracts.services.append({"id": id, "line": line, "kind": berth.kind, "start": start, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": berth.apron, "any_berth": false, "asked": start, "next_start": -1.0})
 		var ship := PortSim.Ship.new(berth.kind, lines.get(berth.kind, ["meridian"])[0], sim.clock.calendar_minutes() + 60.0 * sim.rules.ship_classes[berth.kind].window_hours, sim.rules.ship_classes[berth.kind].import_moves / 4, sim.rules.ship_classes[berth.kind].export_moves / 4)
 		ship.berth = berth.apron
 		ship.any_berth = false
@@ -224,17 +275,64 @@ static func build(refused: Array[String]) -> PortSim:
 		sim.ships.append(ship)
 		if not AreaFlow.berth(sim, ship):
 			refused.append("a %s doesn't berth at its berth" % berth.kind)
+	_stage_exports(sim)
 	return sim
 
 
-## M12's block rules on the manual import blocks, in order: the first stacks
+## The North Terminal around `berth` as an AGV terminal (M11): an AGV zone
+## over the quay, the road beside it and its connector, where AGVs drive and
+## nothing else may; an AGV depot in it; transfer blocks either side of the
+## connector, AGVs at their fronts and lorries at their backs on the lanes;
+## a stub off the connector's east end for AGVs to turn in, and one off each
+## lane west of the blocks for lorries. Its areas, its depot and its racked
+## transfer blocks.
+static func _agv_terminal(sim: PortSim, refused: Array[String], berth: Dictionary) -> Dictionary:
+	var row: int = berth.row
+	var road_x: int = berth.road_x
+	var lo := Vector2i(99999, 99999)
+	var hi := Vector2i(-99999, -99999)
+	for cell: Vector2i in sim.areas.cells(berth.apron):
+		lo = lo.min(cell)
+		hi = hi.max(cell)
+	# The quay and its road, a little past both ends of the apron, where its
+	# lane leaves and joins the road; short of the next berth's road.
+	_paint_zone(sim, refused, Rect2i(lo.x - 1, lo.y - 4, road_x - lo.x + 19, hi.y - lo.y + 11))
+	_paint_zone(sim, refused, Rect2i(road_x, row - 9, SPINE - 14 - road_x, 19))
+	_do(sim, refused, {"op": "build_road", "from": Vector2i(SPINE - 28, row), "to": Vector2i(SPINE - 28, row + 14), "type": "terminal_1_1"})
+	_paint_zone(sim, refused, Rect2i(SPINE - 38, row, 22, 15))
+	for lane: int in [-18, 18]:
+		_do(sim, refused, {"op": "build_road", "from": Vector2i(road_x + 24, row + lane), "to": Vector2i(road_x + 24, row + lane + 12 * signi(lane)), "type": "terminal_1_1"})
+	var depot := _area(sim, refused, {"op": "build_area", "type": "agv_depot", "segment": sim.roads.segment_at(Vector2i(road_x, row + 34)), "side": -1, "from": 6, "to": 16})
+	var connector := sim.roads.segment_at(Vector2i((road_x + SPINE) / 2, row))
+	var racked: Array[int] = []
+	for side: int in [-1, 1]:
+		for start: int in AGV_BLOCKS:
+			racked.append(_area(sim, refused, {"op": "build_area", "type": "transfer_block", "segment": connector, "side": side, "from": start, "to": start + 11}))
+	for k in racked.size():
+		_do(sim, refused, {"op": "set_area", "id": racked[k], "settings": {"role": AGV_ROLES[k]}})
+	var dangerous := _area(sim, refused, {"op": "build_area", "type": "transfer_block", "segment": connector, "side": -1, "from": AGV_DG_BLOCK, "to": AGV_DG_BLOCK + 11})
+	_do(sim, refused, {"op": "set_area", "id": dangerous, "settings": {"role": "dangerous"}})
+	var areas: Array[int] = [depot, dangerous]
+	areas.append_array(racked)
+	return {"areas": areas, "depot": depot, "racked": racked}
+
+
+static func _paint_zone(sim: PortSim, refused: Array[String], rect: Rect2i) -> void:
+	var cells: Array[Vector2i] = []
+	for x in range(rect.position.x, rect.end.x):
+		for y in range(rect.position.y, rect.end.y):
+			cells.append(Vector2i(x, y))
+	_do(sim, refused, {"op": "paint_agv_zone", "cells": cells, "on": true})
+
+
+## M13's block rules on the manual import blocks, in order: the first stacks
 ## by departure, the second takes no reefers and stacks three high, and a
 ## template of the first's rules is saved and applied to the third.
 static func _rules(sim: PortSim, refused: Array[String]) -> void:
 	var blocks: Array[int] = []
 	for id: int in sim.areas.list:
 		var area: Dictionary = sim.areas.list[id]
-		if area.type == "yard_block" and area.settings.role == "import" and not sim.rules.yard_gear[area.settings.gear].automated:
+		if area.type == "yard_block" and area.settings.role == "import":
 			blocks.append(id)
 	_do(sim, refused, {"op": "set_area", "id": blocks[0], "settings": {"stacking": "by_departure"}})
 	_do(sim, refused, {"op": "set_area", "id": blocks[1], "settings": {"reefers": false, "max_tiers": 3}})
@@ -243,24 +341,57 @@ static func _rules(sim: PortSim, refused: Array[String]) -> void:
 
 
 ## Stacks BOXES imports, due over the next few hours, across the import and
-## reefer blocks, reefers on the reefer blocks' plugs.
+## reefer blocks, transfer blocks too, reefers on the reefer blocks' plugs.
 static func _fill(sim: PortSim) -> void:
 	var now := sim.clock.calendar_minutes()
 	var placed := 0
 	var tries := 0
+	var half := {}  # block -> the room() it keeps for ships: half what it had empty
 	while placed < BOXES and tries < BOXES * 4:
 		for block: int in sim.areas.list:
 			var area: Dictionary = sim.areas.list[block]
-			if area.type != "yard_block" or area.settings.role not in ["import", "reefer"] or placed == BOXES:
+			if area.type not in Areas.BLOCK_TYPES or area.settings.role not in ["import", "reefer"] or placed == BOXES:
 				continue
 			tries += 1
 			var box := sim._new_box("import", now + 30.0 + placed % 240, "meridian")
 			var stacks := AreaFlow._stacks(sim, block)
-			if sim.boxes[box].reefer != (area.settings.role == "reefer") or sim.boxes[box].dg or stacks.place(box, sim.boxes[box].teu) < 0:
+			if stacks.room() <= half.get_or_add(block, stacks.room() / 2):
 				sim._drop_box(box)
 				continue
+			# Placed as a machine would, keeping the room to dig a box out.
+			var spot := AreaFlow._place_spot(sim, block, box)
+			if sim.boxes[box].reefer != (area.settings.role == "reefer") or sim.boxes[box].dg or spot < 0:
+				sim._drop_box(box)
+				continue
+			stacks.place_at(spot, box, sim.boxes[box].teu)
 			sim.boxes[box].in = now
 			placed += 1
+
+
+## Stacks the exports the ships due want in the export blocks, as lorries
+## would have brought them over the days before in a running port; each block
+## kept half empty, as _fill keeps them.
+static func _stage_exports(sim: PortSim) -> void:
+	var now := sim.clock.calendar_minutes()
+	var half := {}
+	var tries := 0
+	while AreaFlow.export_demand(sim) > 0 and tries < BOXES * 4:
+		var before := tries
+		for block: int in sim.areas.list:
+			var area: Dictionary = sim.areas.list[block]
+			if area.type not in Areas.BLOCK_TYPES or area.settings.role != "export" or AreaFlow.export_demand(sim) <= 0:
+				continue
+			tries += 1
+			var box := sim._new_box("export", now + sim.rules.export_lead_hours * 60.0, "meridian")
+			var stacks := AreaFlow._stacks(sim, block)
+			var spot := AreaFlow._place_spot(sim, block, box)
+			if stacks.room() <= half.get_or_add(block, stacks.room() / 2) or sim.boxes[box].reefer or sim.boxes[box].dg or spot < 0:
+				sim._drop_box(box)
+				continue
+			stacks.place_at(spot, box, sim.boxes[box].teu)
+			sim.boxes[box].in = now
+		if tries == before:
+			break
 
 
 ## Lanes in from the sea to every berth (the Panamax's wide, the ULCV's

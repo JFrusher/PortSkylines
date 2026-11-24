@@ -124,7 +124,7 @@ func _test_by_departure_needs_fewer_rehandles() -> void:
 		var leaving := boxes.keys()
 		leaving.sort_custom(func(a: int, b: int) -> bool: return boxes[a].due < boxes[b].due)
 		for id: int in leaving:
-			_expect(stacks.take(id) >= 0, true, "box %d is dug out" % id)
+			_expect(stacks.take(id, 0) >= 0, true, "box %d is dug out" % id)
 		counts[strategy] = stacks.rehandles
 	_expect(counts.fill_low > 0, true, "filling low buries boxes (%d re-handles)" % counts.fill_low)
 	_expect(counts.by_departure < counts.fill_low, true, "stacking by departure needs fewer re-handles (%d against %d)" % [counts.by_departure, counts.fill_low])
@@ -145,7 +145,7 @@ func _test_templates_copy_rules() -> void:
 	var ruled := {"sizes": [2], "reefers": false, "max_tiers": 3, "stacking": "by_departure", "lines": [sim.rules.lines.keys()[1]]}
 	sim.apply({"op": "set_area", "id": port[1], "settings": ruled})
 	_expect(sim.apply({"op": "save_template", "name": "", "id": port[1]}), "Name the template", "a template needs a name")
-	_expect(sim.apply({"op": "save_template", "name": "forties", "id": 1}), "Templates are saved from a yard block", "and comes from a yard block")
+	_expect(sim.apply({"op": "save_template", "name": "forties", "id": 1}), "Templates are saved from a yard or transfer block", "and comes from a yard or transfer block")
 	_expect(sim.apply({"op": "save_template", "name": "forties", "id": port[1]}), "", "a block's rules are saved as a template")
 	_expect(sim.apply({"op": "apply_template", "name": "nothing", "id": port[2]}), "No template called nothing", "an unknown template is refused")
 	sim.apply({"op": "set_area", "id": port[2], "settings": {"role": "export"}})

@@ -70,4 +70,3 @@ func _run_by_rules(sim: PortSim) -> void:
 		_expect(sim.apply({"op": "apply_template", "name": "by departure", "id": id}), "", "block %d takes the template" % id)
 	var automated: int = blocks.filter(func(id: int) -> bool: return sim.areas.list[id].settings.role == "import" and sim.areas.list[id].settings.gear == "rtg" and not RailFlow.is_rail_block(sim, id))[0]
 	_expect(sim.apply({"op": "set_area", "id": automated, "settings": {"gear": "asc"}}), "", "an import block is automated")
-	_expect(sim.apply({"op": "buy_agvs", "count": 12}), "", "with AGVs to serve it")

@@ -90,7 +90,7 @@ static func from_dict(d: Dictionary, areas: Areas, cells_each: float) -> Handove
 func _state(area: int) -> Dictionary:
 	if area not in _at:
 		var slots := []
-		slots.resize(_areas.layout(area).slots.size())
+		slots.resize(_part(area, "slots").size())
 		slots.fill(0)
 		_at[area] = {"slots": slots, "buffer": [], "road": []}
 	return _at[area]
@@ -105,4 +105,10 @@ func _refill(area: int) -> void:
 
 ## How many vehicles fit in `area`'s buffer strip at `spacing` cells each.
 func buffer_room(area: int) -> int:
-	return floori(_areas.layout(area).buffer.size() / spacing)
+	return floori(_part(area, "buffer").size() / spacing)
+
+
+## `key` of `area`'s layout; a negative area is a transfer block's back
+## door (see AreaFlow._door), with its back slots and buffer.
+func _part(area: int, key: String) -> Array:
+	return _areas.layout(absi(area))[("back_" + key) if area < 0 else key]

@@ -1,10 +1,11 @@
 {
 	"lines": {
-		"aurora": {
+		"aurora": {"customs_share": 0.03, 
 			"tranship_share": 0.2,
 			"connection_hours": 48.0,
 			"name": "Aurora Lines",
 			"livery": "#d55e00",
+			"stripe": "#f4f1ea",
 			"classes": {
 				"feeder": 3.0,
 				"panamax": 1.0
@@ -13,11 +14,12 @@
 			"rail_share": 0.1,
 			"barge_share": 0.1
 		},
-		"kestrel": {
+		"kestrel": {"customs_share": 0.08, 
 			"tranship_share": 0.0,
 			"connection_hours": 48.0,
 			"name": "Kestrel Shipping",
 			"livery": "#0072b2",
+			"stripe": "#f4f1ea",
 			"classes": {
 				"feeder": 1.0
 			},
@@ -25,11 +27,12 @@
 			"rail_share": 0.05,
 			"barge_share": 0.0
 		},
-		"meridian": {
+		"meridian": {"customs_share": 0.03, 
 			"tranship_share": 0.3,
 			"connection_hours": 48.0,
 			"name": "Meridian Box",
 			"livery": "#f0e442",
+			"stripe": "#2b2b2b",
 			"classes": {
 				"panamax": 2.0,
 				"feeder": 1.0,
@@ -40,11 +43,12 @@
 			"rail_share": 0.15,
 			"barge_share": 0.15
 		},
-		"riverline": {
+		"riverline": {"customs_share": 0.02, 
 			"tranship_share": 0.0,
 			"connection_hours": 48.0,
 			"name": "Riverline Barges",
 			"livery": "#009e73",
+			"stripe": "#f4f1ea",
 			"classes": {
 				"barge": 1.0
 			},

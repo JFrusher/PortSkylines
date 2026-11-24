@@ -29,7 +29,7 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 
 ## The piece of `network`'s road lanes passing through `position`.
 func _piece_at(network: LaneNetwork, position: Vector2) -> int:
-	var found := network.nearest(position, false)
+	var found := network.nearest(position, "tractor")
 	return found[0] if found[0] != 0 and network.point_along(found[0], found[1])[0].distance_to(position) < 0.01 else 0
 
 
@@ -48,7 +48,7 @@ func _test_both_lanes_carry() -> void:
 	var start := _piece_at(network, Vector2(102, 250.5))
 	var ends := [_piece_at(network, Vector2(175, 250.5)), _piece_at(network, Vector2(138.5, 285))]
 	_expect(ends.has(0) or start == 0, false, "the start and both ends are found")
-	var routes := ends.map(func(end: int) -> Array: return network.route(start, end))
+	var routes := ends.map(func(end: int) -> Array: return network.route(start, end, "tractor"))
 	_expect(routes.all(func(r: Array) -> bool: return not r.is_empty()), true, "the inner lane reaches both")
 	var outer := {}
 	for id: int in network.pieces:
@@ -92,8 +92,8 @@ func _test_a_lane_change_costs_nothing() -> void:
 	var other := _piece_at(network, Vector2(138, 250.5))
 	_expect([start != 0, own != 0, other != 0], [true, true, true], "both lanes are found")
 	var length := func(route: Array) -> float: return route.reduce(func(sum: float, id: int) -> float: return sum + network.pieces[id].length, 0.0)
-	var to_own := network.route(start, own)
-	var to_other := network.route(start, other)
+	var to_own := network.route(start, own, "tractor")
+	var to_other := network.route(start, other, "tractor")
 	_expect(to_other.is_empty(), false, "the other lane is reached")
 	_expect(absf(length.call(to_other) - length.call(to_own)) < 1.0, true, "no further than its own lane's end (%.1f against %.1f)" % [length.call(to_other), length.call(to_own)])
 
@@ -109,4 +109,4 @@ func _test_nearest_is_the_road_lane() -> void:
 	var ends := network.pieces.keys().filter(func(id: int) -> bool: return network.pieces[id].node < 0).map(func(id: int) -> Vector2: return network.pieces[id].points[-1])
 	_expect(ends.size(), 2, "a lane change each way")
 	for end: Vector2 in ends:
-		_expect(network.pieces[network.nearest(end, false)[0]].segment != 0, true, "at a change's end %s the nearest piece is the road lane" % end)
+		_expect(network.pieces[network.nearest(end, "tractor")[0]].segment != 0, true, "at a change's end %s the nearest piece is the road lane" % end)
