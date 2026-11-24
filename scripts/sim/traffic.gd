@@ -457,16 +457,20 @@ func _merge_taken(id: int, piece: int) -> bool:
 	return false
 
 
-## Whether driveway `piece` may cross now: no car on a lane it crosses or
-## joins will reach that point within give_way_seconds or stands within
-## APPROACH cells short of it, and none is over it.
+## Whether driveway `piece` may cross now: no car moving on a lane it
+## crosses or joins will reach that point within give_way_seconds, and none
+## is at or over it. One standing short of it is queued, and is crossed in
+## front of.
 func _gap_across(piece: int) -> bool:
 	for point: Vector2 in network.pieces[piece].give_way:
 		for lane: int in network.ending_at(point):
 			if network.pieces[lane].segment == 0:
 				continue
 			for other: int in _on.get(lane, []):
-				if network.pieces[lane].length - cars[other].s <= maxf(APPROACH, cars[other].v * _rules.give_way_seconds):
+				var short: float = network.pieces[lane].length - cars[other].s
+				# One standing short of it is queued, not coming: crossing in front of it keeps the
+				# point clear, as no car stands on one (set_crossings); waiting for it could be for ever.
+				if short < 0.01 or (cars[other].v > 0.1 and short <= maxf(APPROACH, cars[other].v * _rules.give_way_seconds)):
 					return false
 			for after: int in network.pieces[lane].next:
 				for other: int in _on.get(after, []):
