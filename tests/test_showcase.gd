@@ -20,6 +20,8 @@ func _initialize() -> void:
 	_expect(transfer.size(), 2 * Showcase.AGV_BLOCKS.size() + 1, "the North Terminal's transfer blocks")
 	_expect(transfer.filter(func(id: int) -> bool: return AreaFlow.agv_unreachable(sim, id)), [], "AGVs reach every one from the quay")
 	_expect(AreaFlow.agv_depots(sim, 1).size(), 1, "from one AGV depot")
+	# A start past the week's end never falls due, so that service would never call.
+	_expect(sim.contracts.services.filter(func(s: Dictionary) -> bool: return s.start >= Contracts.MINUTES_PER_WEEK).map(func(s: Dictionary) -> String: return s.kind), [], "every weekly service starts inside the week")
 	var agvs := 0
 	for i: int in roundi(120.0 / SimClock.CALENDAR_MINUTES_PER_TICK):
 		sim.tick()
