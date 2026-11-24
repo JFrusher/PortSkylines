@@ -279,7 +279,7 @@ static func _discharge(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, m
 	if sim.boxes[id].to == 0 and onward != "" and sim.rng.randf() < sim.rules.lines[ship.line].tranship_share and _onward_room(sim, ship.line, onward) > 0:
 		sim.boxes[id].kind = "tranship"
 		sim.boxes[id].onward = onward
-		sim.boxes[id].due = sim.clock.calendar_minutes() + sim.rules.lines[ship.line].connection_hours * 60.0
+		sim.boxes[id].due = _onward_due(sim, ship.line, onward)
 		sim.exports += 1
 		# Its onward ship calls only at another terminal: a lorry takes it there (inter-terminal trucking).
 		sim.boxes[id].to = _onward_terminal(sim, ship.line, onward, here)
@@ -697,18 +697,40 @@ static func _onward_terminal(sim: PortSim, line: String, onward: String, here: i
 ## waiting for them. Past that, a box lands as a plain import.
 # shortcut: a ship of the line already alongside isn't counted, as its call is this week's; count it if transhipment runs short while one is in.
 static func _onward_room(sim: PortSim, line: String, onward: String) -> int:
-	var now := sim.clock.calendar_minutes()
-	var by: float = now + sim.rules.lines[line].connection_hours * 60.0
 	var room := 0
-	for service: Dictionary in sim.contracts.services:
-		if service.line == line and (service.kind == "feeder") == (onward == "feeder") and Contracts.next_call(service, now) <= by:
-			room += int(sim.rules.ship_classes[service.kind].export_moves)
+	for service: Dictionary in _onward_calls(sim, line, onward):
+		room += int(sim.rules.ship_classes[service.kind].export_moves)
 	if room == 0:
 		return 0
 	for box: Dictionary in sim.boxes.values():
 		if box.kind == "tranship" and box.line == line and box.onward == onward:
 			room -= 1
 	return room
+
+
+## `line`'s services of the `onward` group whose next call starts within its
+## connection window from now.
+static func _onward_calls(sim: PortSim, line: String, onward: String) -> Array[Dictionary]:
+	var now := sim.clock.calendar_minutes()
+	var by: float = now + sim.rules.lines[line].connection_hours * 60.0
+	var found: Array[Dictionary] = []
+	for service: Dictionary in sim.contracts.services:
+		if service.line == line and (service.kind == "feeder") == (onward == "feeder") and Contracts.next_call(service, now) <= by:
+			found.append(service)
+	return found
+
+
+## When a box landing now for `line`'s `onward` ships misses its connection:
+## when the last of those calls inside the window ends, so a box isn't counted
+## missed while the ship it waits for is still alongside loading. A due fixed
+## at connection_hours after landing marked 153 of 177 boxes missed in a week
+## of the month soak, each while its onward feeder was working.
+static func _onward_due(sim: PortSim, line: String, onward: String) -> float:
+	var now := sim.clock.calendar_minutes()
+	var due := now
+	for service: Dictionary in _onward_calls(sim, line, onward):
+		due = maxf(due, Contracts.next_call(service, now) + service.window_hours * 60.0)
+	return due
 
 
 static func tranship_onward(sim: PortSim, ship: PortSim.Ship) -> String:

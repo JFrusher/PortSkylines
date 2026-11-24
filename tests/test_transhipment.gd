@@ -121,8 +121,8 @@ func _test_the_role_is_locked_until_transhipment() -> void:
 
 
 ## Aurora's feeder is due inside a two-hour window, so boxes are landed for
-## it, but it is dropped before it calls: every box misses and waits on for
-## the next window, fined and costing Aurora reputation the first time only,
+## it, due when its call's window ends, but it is dropped before it calls:
+## every box misses then and waits on for the next window, fined and costing Aurora reputation the first time only,
 ## and that one check, with Aurora at the brink, cancels one of its two
 ## other services, not both.
 func _test_a_missed_connection_rolls_on() -> void:
@@ -152,7 +152,10 @@ func _test_a_missed_connection_rolls_on() -> void:
 	_expect(landed.size() > 3, true, "boxes are landed for Aurora's feeder (%d)" % landed.size())
 	_expect(sim.ledger.today.get("connection_fines", 0), 0, "none has missed yet")
 	var dues := landed.map(func(id: int) -> float: return sim.boxes[id].due)
-	while sim.clock.calendar_minutes() < start + 4.0 * 60.0:
+	# A box's connection ends with its onward call's window, not connection_hours after it landed.
+	var window_end: float = Contracts.next_call(feeder, start) + feeder.window_hours * 60.0
+	_expect(dues.all(func(due: float) -> bool: return due == window_end), true, "each is due when Aurora's feeder's window ends")
+	while sim.clock.calendar_minutes() < window_end + 60.0:
 		sim.tick()
 	var missed := landed.filter(func(id: int) -> bool: return id in sim.boxes and sim.boxes[id].kind == "tranship")
 	_expect(missed.size(), landed.size(), "they all wait on, none sent by road")
@@ -161,7 +164,7 @@ func _test_a_missed_connection_rolls_on() -> void:
 	_expect(is_equal_approx(sim.contracts.reputation.aurora, reputation + rules.transhipment.missed_reputation * landed.size()), true, "Aurora thinks less of the port by every box (%.2f to %.2f)" % [reputation, sim.contracts.reputation.aurora])
 	_expect(sim.contracts.services.size(), 1, "and cancels one service in that check, not one a box")
 	var after: float = sim.contracts.reputation.aurora
-	while sim.clock.calendar_minutes() < start + 6.0 * 60.0:
+	while sim.clock.calendar_minutes() < window_end + 180.0:
 		sim.tick()
 	_expect(range(landed.size()).all(func(i: int) -> bool: return sim.boxes[landed[i]].due == dues[i] + 240.0), true, "each rolls on again")
 	_expect(sim.ledger.today.get("connection_fines", 0), -landed.size() * rules.transhipment.missed_fine, "but is not fined again")
