@@ -1375,9 +1375,24 @@ static func _free_hour(sim: PortSim, gate: int) -> int:
 
 
 ## Whether a lorry can be sent to `gate` now: it takes walk-ins, or has a
-## booking left this hour or the next, so lorries come at most an hour early.
+## booking left this hour or the next, so lorries come at most an hour early;
+## and there is room for it off the road (_room_off_road).
 static func can_book(sim: PortSim, gate: int) -> bool:
-	return _free_hour(sim, gate) <= floori(sim.clock.calendar_minutes() / 60.0) + 1
+	return _free_hour(sim, gate) <= floori(sim.clock.calendar_minutes() / 60.0) + 1 and _room_off_road(sim, gate)
+
+
+## Whether a lorry for `gate` would have somewhere off the road to go, where
+## its terminal has a truck park: a free space in it, or, with nobody parked,
+## the gate not full. Else it waits off the map. Day 6 of the month soak: a wave of lorries filled the
+## six-space park, 176 queued for it on the highway, and the gates' own
+## lorries stood behind them; counted as coming, they kept both gates full
+## with nobody in a booth, so no parked lorry was let go.
+static func _room_off_road(sim: PortSim, gate: int) -> bool:
+	var park := _park_for(sim, sim.areas.list[gate].terminal)
+	if park == 0:
+		return true  # with no park a rush queues on the road, as it always has
+	var parked := sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == park).size()
+	return parked < sim.areas.layout(park).slots.size() or (parked == 0 and not _gate_full(sim, gate))
 
 
 ## Whether the lorries coming in through `gate` fill its slots and buffer.
