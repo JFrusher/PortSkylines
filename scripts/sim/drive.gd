@@ -77,7 +77,8 @@ static func move_on(sim: PortSim, vehicle: Vehicle) -> bool:
 	for end in sim.network.ending_at(sim.areas.centre(vehicle.target)):
 		var piece: Dictionary = sim.network.pieces[end]
 		if LaneNetwork.may_use(piece, vehicle.kind) and sim.traffic.fits(end, piece.length, length):
-			sim.traffic.remove(vehicle.id)
+			if vehicle.id in sim.traffic.cars:
+				sim.traffic.remove(vehicle.id)
 			sim.traffic.place_at(vehicle.id, [end] as Array[int], piece.length, _top(sim, vehicle), length)
 			return true
 	return false
@@ -278,10 +279,18 @@ static func _refresh(sim: PortSim) -> void:
 		var at: Vector2 = old.pose(vehicle.id)[0] if old != null and vehicle.id in old.cars else sim.areas.centre(vehicle.path[0])
 		var near := sim.network.nearest(at, vehicle.kind)
 		assert(near[0] != 0, "a vehicle stands on the lanes")
+		var length := _length(sim, vehicle)
+		var state := vehicle.state.trim_prefix("no_route:")
+		var heading: bool = vehicle.target != Areas.NO_SPOT and state in ["arriving", "to_slot", "returning", "leaving", "to_crane"]
+		# Its spot taken by a car put back before it (two lanes became one),
+		# it is moved on to where it was heading, else to the nearest room.
+		if not sim.traffic.fits(near[0], near[1], length) and heading and move_on(sim, vehicle):
+			continue
+		var s := _room_near(sim, near[0], near[1], length)
+		assert(s >= 0.0, "room on the lanes for %s %d after the network changed" % [vehicle.kind, vehicle.id])
 		var route: Array[int] = [near[0]]
-		sim.traffic.place_at(vehicle.id, route, near[1], _top(sim, vehicle), _length(sim, vehicle))
-		if vehicle.target != Areas.NO_SPOT and vehicle.state.trim_prefix("no_route:") in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
-			var state := vehicle.state.trim_prefix("no_route:")
+		sim.traffic.place_at(vehicle.id, route, s, _top(sim, vehicle), length)
+		if heading:
 			head(sim, vehicle, vehicle.target, state)
 	if old != null:
 		for cell: Vector2i in old._crossings:
@@ -367,3 +376,19 @@ static func _length(sim: PortSim, vehicle: Vehicle) -> float:
 ## Piece IDs must retain geometry, connections and junction/crossing meaning.
 static func _identity(sim: PortSim) -> Dictionary:
 	return {"pieces": sim.network.pieces.duplicate(true), "conflicts": sim.network._conflicts.duplicate(true), "arms": sim.network._arm_of.duplicate(true), "crossings": sim._crossing_cells.duplicate()}
+
+
+## Where on `piece` a car `length` long fits nearest `s`: at it or behind
+## it, else ahead of it; -1.0 when nowhere on the piece.
+static func _room_near(sim: PortSim, piece: int, s: float, length: float) -> float:
+	var at := s
+	while at >= 0.0:
+		if sim.traffic.fits(piece, at, length):
+			return at
+		at -= 0.25
+	at = s + 0.25
+	while at <= sim.network.pieces[piece].length:
+		if sim.traffic.fits(piece, at, length):
+			return at
+		at += 0.25
+	return -1.0
