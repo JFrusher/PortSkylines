@@ -1925,11 +1925,16 @@ static func remove(sim: PortSim, id: int) -> void:
 			sim._drop_box(box)
 			lost += 1
 		sim.area_stacks.erase(id)
+	# A machine lifting a vehicle's box has taken it off its stack already.
+	var lifting := {}
+	for job: Dictionary in sim.machine_jobs.values():
+		if job.has("vehicle") and job.position < 0:
+			lifting[job.vehicle] = true
 	for vehicle: Vehicle in sim.vehicles.duplicate():
 		# Bound for the area, fetching an export for a crane on it, driving out
 		# through it, or on its way to collect a box that was stacked in it.
 		if vehicle.area == id or vehicle.home.x == id or vehicle.target.x == id or vehicle.box in stacked:
-			if vehicle.loaded:
+			if vehicle.loaded or vehicle.id in lifting:
 				sim._drop_box(vehicle.box)
 				lost += 1
 			elif vehicle.box != 0:
