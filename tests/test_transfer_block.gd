@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_placed_to_the_back_road()
 	_test_agvs_front_lorries_back()
 	_test_racks_take_imports()
+	_test_rack_imports_hold_room()
 	_test_racks_stage_exports()
 	_test_agvs_fetch_exports_without_racks()
 	print("tests: %d failure(s)" % _failures)
@@ -118,6 +119,21 @@ func _test_racks_take_imports() -> void:
 	_expect(racked > 0, true, "AGVs set imports on the racks")
 	_expect(lost, false, "every box on a rack is still in the port")
 	_expect(sim.area_stacks[block].count() > 0, true, "and the ASCs stack them")
+
+
+## An import an AGV left on a rack, or one an ASC is carrying in, holds its
+## room in the block as a loaded vehicle does, so a dig can't spend it (soak,
+## day 3: block 83 filled under an ASC carrying one in); an export waiting to
+## go out holds none.
+func _test_rack_imports_hold_room() -> void:
+	var sim := AreaPort.base()
+	var block := _terminal(sim)
+	_expect(sim.apply({"op": "buy_racks", "area": block}), "", "racks bought")
+	var before := AreaFlow.promised(sim, block)
+	sim.racks[block][0] = {"box": 1, "state": "in"}
+	sim.racks[block][1] = {"box": 2, "state": "in_moving"}
+	sim.racks[block][2] = {"box": 3, "state": "wait"}
+	_expect(AreaFlow.promised(sim, block), before + 2, "two imports on racks hold room, the export waiting doesn't")
 
 
 ## A transfer block taking exports, with racks: export lorries bring them in

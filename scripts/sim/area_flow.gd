@@ -1736,9 +1736,14 @@ static func _gate_done(sim: PortSim, vehicle: Vehicle) -> void:
 
 ## The room in block `block` promised to boxes on their way: a loaded
 ## vehicle bound for it, or a tractor under a crane for a box bound for it,
-## as _blocks_with_room counts them.
+## as _blocks_with_room counts them; and at a racked block, an import an AGV
+## left on a rack for its ASC to stack. Without those, a dig spent the room
+## kept for them, and a racked block filled under an ASC carrying one in.
 static func promised(sim: PortSim, block: int) -> int:
-	return sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == block and (v.loaded or v.state == "under_crane")).size()
+	var racked := 0
+	for slot: int in sim.racks.get(block, {}):
+		racked += 1 if sim.racks[block][slot].state in ["in", "in_moving"] else 0
+	return racked + sim.vehicles.filter(func(v: Vehicle) -> bool: return v.area == block and (v.loaded or v.state == "under_crane")).size()
 
 
 ## Gives the block's machine `vehicle`'s job: a tractor's box onto a stack,
