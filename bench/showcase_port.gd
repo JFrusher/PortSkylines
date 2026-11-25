@@ -79,8 +79,8 @@ const AGV_BLOCKS: Array[int] = [30, 50, 70, 90, 110]
 const AGV_ROLES: Array[String] = ["import", "export", "reefer", "import", "export", "export", "import", "reefer", "export", "import"]
 const AGV_DG_BLOCK := 134
 ## The AGV depot's AGVs and chargers.
-const AGVS := 10
-const CHARGERS := 4
+const AGVS := 20
+const CHARGERS := 8
 ## The barge berth's own gate and blocks along the spine's run north to it:
 ## [type, side, from, to, role or gate level].
 const BARGE_AREAS: Array = [["gate", -1, 2, 16, "ocr"], ["yard_block", -1, 19, 40, "import"], ["yard_block", 1, 10, 21, "export"], ["yard_block", 1, 56, 67, "dangerous"]]

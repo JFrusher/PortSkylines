@@ -197,7 +197,15 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 		sim._event("A %s is waiting: no crane on its berth reaches %d rows" % [ship.kind, sim.rules.ship_classes[ship.kind].outreach], sim.areas.cell_at(ship.apron, 0, 0))
 		return
 	var wind := sim.event_plan.wind(sim.rules, sim.clock.calendar_minutes())
+	# The crane with the fewest vehicles working it asks first, so each gets its
+	# share: asking in a fixed order left the last crane of the showcase's AGV
+	# berth 0.6 AGVs on average, idle 72% of the time. Ties by position, as a replay needs.
+	var working_it := {}
 	for crane in working:
+		working_it[crane] = sim.fetching_to(_crane_slot(sim, crane, ship)).size() + (1 if crane.tractor != 0 else 0)
+	var by_share: Array[PortSim.Crane] = working.duplicate()
+	by_share.sort_custom(func(a: PortSim.Crane, b: PortSim.Crane) -> bool: return [working_it[a], a.along] < [working_it[b], b.along])
+	for crane in by_share:
 		# Over its wind limit a crane stops where it is; a broken one waits for its repair.
 		if crane.broken or wind >= sim.rules.sts_cranes[crane.kind].wind_limit_kmh:
 			continue
