@@ -151,5 +151,8 @@ static func _away(sim: PortSim, vehicle: Vehicle, state: String) -> void:
 	sim.handovers.leave(door, vehicle.id)
 	sim._set_area(vehicle, 0)
 	vehicle.slot = -1
-	AreaFlow._head(sim, vehicle, AreaFlow._buffer_end(sim, door) if state == "returning" else vehicle.home, state)
+	if state == "returning":
+		AreaFlow._head(sim, vehicle, AreaFlow._buffer_end(sim, door), state)
+	else:
+		AreaFlow._to_crane(sim, vehicle)
 	AreaFlow._promote(sim, block)

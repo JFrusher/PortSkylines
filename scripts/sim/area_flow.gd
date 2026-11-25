@@ -1480,12 +1480,12 @@ static func _go_to(sim: PortSim, vehicle: Vehicle, area: int) -> void:
 	_head(sim, vehicle, _buffer_start(sim, _door(sim, vehicle)), "arriving")
 
 
-## Sends a tractor with an export back to the slot under its crane; with that
-## slot taken, to wait in the nearest free apron slot before it instead, off
+## Sends a tractor or AGV with an export back to the slot under its crane; with
+## that slot taken, to wait in the nearest free apron slot before it instead, off
 ## the apron's one through lane, where a queue for one crane held up every
-## crane past it and every tractor leaving for the yard. AGVs keep to their grid.
+## crane past it and every vehicle leaving for the yard.
 static func _to_crane(sim: PortSim, vehicle: Vehicle) -> void:
-	if vehicle.kind == "tractor" and _stand_taken(sim, vehicle):
+	if _stand_taken(sim, vehicle):
 		var wait := _waiting_stand(sim, vehicle.home)
 		if wait != Areas.NO_SPOT:
 			_head(sim, vehicle, wait, "to_wait")
