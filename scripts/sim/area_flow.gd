@@ -385,6 +385,9 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 		if sim.barge_discount > 0:
 			sim.ledger.post("barge", -sim.barge_discount, sim.areas.list[ship.apron].terminal)
 	sim._drop_box(tractor.box)
+	# Empty now: an AGV low on charge outlives _gone below, on its way to its depot.
+	tractor.box = 0
+	tractor.loaded = false
 	ship.moves += 1
 	# Dual cycling: with imports still aboard, the tractor stays beneath the
 	# crane for one, bound for an import block, as a tractor sent for it would be.
@@ -394,8 +397,6 @@ static func _load(sim: PortSim, crane: PortSim.Crane, ship: PortSim.Ship, move_m
 		return
 	sim._fetching[tractor.home].erase(tractor)
 	tractor.home = Areas.NO_SPOT
-	tractor.box = 0
-	tractor.loaded = false
 	sim._set_area(tractor, block)
 	crane.tractor = tractor.id
 
