@@ -1156,7 +1156,13 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 	var packed: bool = not sim.stuffing.is_empty() and sim.stuffing[0].at <= sim.clock.calendar_minutes()
 	if not packed and export_demand(sim) <= 0:
 		return false
-	for terminal: int in sim.areas.terminals:
+	# One coming for an empty to pack goes first where empties are: taking the
+	# first terminal sent every such lorry to one with no empty depot, so none
+	# was ever taken out and the depots, all in the other terminal, only filled.
+	var terminals: Array = sim.areas.terminals.keys()
+	if not packed:
+		terminals.sort_custom(func(a: int, b: int) -> bool: return [_free_empty(sim, a) == 0, a] < [_free_empty(sim, b) == 0, b])
+	for terminal: int in terminals:
 		if not _has_gate(sim, terminal) or _export_room(sim, terminal) <= 0:
 			continue
 		var entry := _entry_cell(sim)
