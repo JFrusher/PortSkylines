@@ -265,8 +265,9 @@ static func build(refused: Array[String]) -> PortSim:
 		for line: String in lines.get(berth.kind, ["meridian"]):
 			var spec: Dictionary = sim.rules.ship_classes[berth.kind]
 			id += 1
-			# One a day through the week, so the port is busy but not swamped.
-			var start := (id - 800) * SimClock.MINUTES_PER_DAY
+			# Every 28 h from 12 h in, so all seven days of the week have a call
+			# (one a day from day 1 left day 0 without a move every week).
+			var start := 720 + (id - 801) * 1680
 			sim.contracts.services.append({"id": id, "line": line, "kind": berth.kind, "start": start, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": berth.apron, "any_berth": false, "asked": start, "next_start": -1.0})
 		var ship := PortSim.Ship.new(berth.kind, lines.get(berth.kind, ["meridian"])[0], sim.clock.calendar_minutes() + 60.0 * sim.rules.ship_classes[berth.kind].window_hours, sim.rules.ship_classes[berth.kind].import_moves / 4, sim.rules.ship_classes[berth.kind].export_moves / 4)
 		ship.berth = berth.apron
