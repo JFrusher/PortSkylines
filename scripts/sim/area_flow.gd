@@ -230,8 +230,10 @@ static func work(sim: PortSim, ship: PortSim.Ship) -> void:
 				sim._sail(ship, working.size())
 				sim._event("A %s is sailing, fully loaded" % ship.kind, sim.areas.cell_at(ship.apron, 0, 0))
 		elif _export_box(sim, ship) == 0 and not _exports_coming(sim, sim.areas.list[ship.apron].terminal):
-			sim._sail(ship, working.size())
-			sim._event("A %s sailed %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.cell_at(ship.apron, 0, 0))
+			# It goes without the rest, but still takes its empties: sailing at once,
+			# a ULCV left 1,000 behind with the depots full (month soak).
+			sim._event("A %s sails %d exports short: none ready in the yard" % [ship.kind, ship.exports], sim.areas.cell_at(ship.apron, 0, 0))
+			ship.exports = 0
 
 
 ## Whether `crane` loads this tick though `ship` still has imports aboard:
@@ -1166,8 +1168,9 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 	# One coming for an empty to pack goes first where empties are: taking the
 	# first terminal sent every such lorry to one with no empty depot, so none
 	# was ever taken out and the depots, all in the other terminal, only filled.
+	# Where no empty is free, its own export goes where it is wanted most.
 	var terminals: Array = sim.areas.terminals.keys()
-	terminals.sort_custom(func(a: int, b: int) -> bool: return [_free_empty(sim, a) == 0, a] < [_free_empty(sim, b) == 0, b])
+	terminals.sort_custom(func(a: int, b: int) -> bool: return [_free_empty(sim, a) == 0, -export_demand_at(sim, a), a] < [_free_empty(sim, b) == 0, -export_demand_at(sim, b), b])
 	return _send_export_lorry(sim, terminals, false)
 
 
@@ -1180,7 +1183,9 @@ static func dispatch_export_lorry(sim: PortSim) -> bool:
 static func dispatch_packed_lorry(sim: PortSim) -> bool:
 	if sim.stuffing.is_empty() or sim.stuffing[0].at > sim.clock.calendar_minutes() or _entry_cell(sim) == Areas.NO_SPOT:
 		return false
-	return _send_export_lorry(sim, sim.areas.terminals.keys(), true)
+	var terminals: Array = sim.areas.terminals.keys()
+	terminals.sort_custom(func(a: int, b: int) -> bool: return [-export_demand_at(sim, a), a] < [-export_demand_at(sim, b), b])
+	return _send_export_lorry(sim, terminals, true)
 
 
 ## Sends an export lorry to the first of `terminals` with a gate, export room
@@ -1262,22 +1267,77 @@ static func _free_empty(sim: PortSim, terminal: int) -> int:
 	return 0
 
 
-## Exports wanted and not yet in the port: room on ships in port, and on the
-## calls of agreed services due within export_lead_hours, less every export
-## box already in a yard, on a vehicle or on its way, and every empty being
-## packed or a lorry is coming to take out.
-# shortcut: demand is port-wide; split it per terminal when contracts belong to one (M8 step 3).
+## Exports wanted and not yet on their way, over the port: each terminal's
+## unmet demand (export_demand_at), and the calls of agreed services that may
+## take any berth, due within export_lead_hours, which no terminal holds for
+## yet; less every empty being packed or a lorry is coming to take out, whose
+## export will go where it is wanted.
 static func export_demand(sim: PortSim) -> int:
+	var unmet := 0
+	var spare := 0  # exports held beyond their terminal's own wants, for any-berth calls
+	for terminal: int in sim.areas.terminals:
+		var at := export_demand_at(sim, terminal)
+		unmet += maxi(at, 0)
+		spare += maxi(-at, 0)
+	var any_berth := 0
+	for service: Dictionary in _due_services(sim):
+		if service.apron not in sim.areas.list:
+			any_berth += sim.rules.ship_classes[service.kind].export_moves
+	return unmet + maxi(any_berth - spare, 0) - sim.stuffing.size() - _lorries(sim).collecting
+
+
+## The agreed services whose calls are due within export_lead_hours.
+static func _due_services(sim: PortSim) -> Array[Dictionary]:
 	var week_now := fposmod(sim.clock.calendar_minutes(), Contracts.MINUTES_PER_WEEK)
-	var wanted := 0
-	for ship: PortSim.Ship in sim.ships:
-		if ship.state != PortSim.Ship.State.LEAVING:
-			wanted += ship.exports
+	var due: Array[Dictionary] = []
 	for service: Dictionary in sim.contracts.services:
 		var until := fposmod(service.start - week_now, Contracts.MINUTES_PER_WEEK)
 		if until > 0.0 and until <= sim.rules.export_lead_hours * 60.0:
+			due.append(service)
+	return due
+
+
+## Exports wanted at `terminal` and not there yet: room on the ships at or
+## bound for its berths, and on the calls of agreed services due there within
+## export_lead_hours, less the exports in its yard, being fetched to its ships
+## or on lorries coming to it. Counted port-wide, exports piled up in one
+## terminal while the other's ships sailed short (month soak: a Neopanamax
+## 294 short with 1,544 in the other terminal, a ULCV 611 short with 1,190).
+static func export_demand_at(sim: PortSim, terminal: int) -> int:
+	var wanted := 0
+	for ship: PortSim.Ship in sim.ships:
+		var apron: int = ship.apron if ship.apron != 0 else ship.berth
+		if ship.state != PortSim.Ship.State.LEAVING and apron in sim.areas.list and sim.areas.list[apron].terminal == terminal:
+			wanted += ship.exports
+	for service: Dictionary in _due_services(sim):
+		if service.apron in sim.areas.list and sim.areas.list[service.apron].terminal == terminal:
 			wanted += sim.rules.ship_classes[service.kind].export_moves
-	return wanted - sim.exports - sim.stuffing.size() - _lorries(sim).collecting
+	return wanted - _exports_at(sim).get(terminal, 0) - _lorries(sim).exports.get(terminal, 0)
+
+
+## Exports (and transhipments, which ships load as exports) held in each
+## terminal: stacked or racked in its blocks, or on a vehicle fetching one to
+## a crane of its. Kept until the tick or a new box, as _lorries is.
+static func _exports_at(sim: PortSim) -> Dictionary:
+	var key := [sim.clock.ticks, sim._next_box, sim.boxes.size()]
+	if sim._exports_at_for == key:
+		return sim._exports_at
+	var held := {}
+	for block: int in sim.area_stacks:
+		if block in sim.areas.list:
+			var t: int = sim.areas.list[block].terminal
+			held[t] = held.get(t, 0) + sim.area_stacks[block].of_kind("export", sim.boxes).size() + sim.area_stacks[block].of_kind("tranship", sim.boxes).size()
+	for block: int in sim.racks:
+		if block in sim.areas.list:
+			var t: int = sim.areas.list[block].terminal
+			held[t] = held.get(t, 0) + Racks.on_racks(sim, block).filter(func(b: int) -> bool: return sim.boxes[b].kind in ["export", "tranship"]).size()
+	for v: Vehicle in sim.vehicles:
+		if v.kind != "lorry" and v.box in sim.boxes and sim.boxes[v.box].kind in ["export", "tranship"] and v.home.x in sim.areas.list:
+			var t: int = sim.areas.list[v.home.x].terminal
+			held[t] = held.get(t, 0) + 1
+	sim._exports_at = held
+	sim._exports_at_for = key
+	return held
 
 
 ## The lorries export demand and room count, in one pass over the vehicles:
@@ -1309,7 +1369,7 @@ static func _lorries(sim: PortSim) -> Dictionary:
 ## Whether exports are on their way into `terminal`, or can still be sent:
 ## wanted, with a gate to come in by and room in its export blocks.
 static func _exports_coming(sim: PortSim, terminal: int) -> bool:
-	if export_demand(sim) > 0 and _has_gate(sim, terminal) and _export_room(sim, terminal) > 0:
+	if export_demand_at(sim, terminal) > 0 and _has_gate(sim, terminal) and _export_room(sim, terminal) > 0:
 		return true
 	return sim.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry" and v.loaded and sim.boxes[v.box].kind == "export" and v.area in sim.areas.list and sim.areas.list[v.area].terminal == terminal)
 

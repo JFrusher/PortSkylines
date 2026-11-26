@@ -22,6 +22,8 @@ func _initialize() -> void:
 	_expect(AreaFlow.agv_depots(sim, 1).size(), 1, "from one AGV depot")
 	# A start past the week's end never falls due, so that service would never call.
 	_expect(sim.contracts.services.filter(func(s: Dictionary) -> bool: return s.start >= Contracts.MINUTES_PER_WEEK).map(func(s: Dictionary) -> String: return s.kind), [], "every weekly service starts inside the week")
+	# Each terminal starts with exports for its own ships due, not the port's in one of them.
+	_expect(sim.areas.terminals.keys().filter(func(t: int) -> bool: return AreaFlow._exports_at(sim).get(t, 0) == 0), [], "each terminal holds exports for its own ships")
 	var agvs := 0
 	var waited := 0
 	for i: int in roundi(120.0 / SimClock.CALENDAR_MINUTES_PER_TICK):

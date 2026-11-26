@@ -369,7 +369,7 @@ static func _fill(sim: PortSim) -> void:
 			placed += 1
 
 
-## Stacks the exports the ships due want in the export blocks, as lorries
+## Stacks the exports each terminal's ships due want in its export blocks, as lorries
 ## would have brought them over the days before in a running port; each block
 ## kept half empty, as _fill keeps them.
 static func _stage_exports(sim: PortSim) -> void:
@@ -380,7 +380,7 @@ static func _stage_exports(sim: PortSim) -> void:
 		var before := tries
 		for block: int in sim.areas.list:
 			var area: Dictionary = sim.areas.list[block]
-			if area.type not in Areas.BLOCK_TYPES or area.settings.role != "export" or AreaFlow.export_demand(sim) <= 0:
+			if area.type not in Areas.BLOCK_TYPES or area.settings.role != "export" or AreaFlow.export_demand_at(sim, area.terminal) <= 0:
 				continue
 			tries += 1
 			var box := sim._new_box("export", now + sim.rules.export_lead_hours * 60.0, "meridian")

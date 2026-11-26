@@ -15,6 +15,7 @@ func _initialize() -> void:
 	_test_exporters_collect_empties()
 	_test_packed_exports_have_their_own_clock()
 	_test_lines_ship_surplus_empties()
+	_test_short_of_exports_still_takes_empties()
 	_test_some_empties_go_inland()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -165,6 +166,32 @@ func _test_lines_ship_surplus_empties() -> void:
 	_expect(AreaFlow._stacks(sim, block).boxes().size(), 8, "the rest stay in the port")
 	var empty := {"kind": "empty", "teu": 1, "reefer": false}
 	_expect(sim.move_price(empty), roundi(rules.move_price.per_20ft * rules.empties.price_factor), "an empty earns price_factor of a move")
+
+
+## A ship with no exports to be had still takes its empties before it sails:
+## sailing at once, a ULCV left 1,000 behind with the depots full (month soak).
+func _test_short_of_exports_still_takes_empties() -> void:
+	var rules := RandomPort.rules()
+	rules.empties.keep = 5
+	rules.empties.per_call_share = 1.0
+	rules.empties.return_days = 30.0
+	rules.ship_classes.feeder.import_moves = 4
+	rules.ship_classes.feeder.export_moves = 3  # wanted, but the port has no export block to bring them to
+	var sim := AreaPort.base(rules, "")
+	var block := AreaPort.add_export_block(sim)
+	sim.apply({"op": "set_area", "id": block, "settings": {"role": "empty"}})
+	var line: String = sim.rules.lines.keys()[0]
+	for i in 12:
+		sim.returning.append({"at": 0.0, "line": line, "teu": 1})
+	while AreaFlow._stacks(sim, block).boxes().size() < 12:
+		sim.tick()
+	RandomPort.calls(sim, "feeder", roundi(sim.clock.calendar_minutes()) + 10, 45, 1)
+	for i in roundi(12 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		if not sim.ship_log.is_empty():
+			break
+	_expect(sim.events.any(func(e: Dictionary) -> bool: return "sails 3 exports short" in e.text), true, "it goes 3 exports short")
+	_expect(sim.ship_log[0].moves if not sim.ship_log.is_empty() else -1, 4 + 4, "and still takes its 4 imports off and 4 empties aboard")
 
 
 ## Only return_share of the imports that leave come back as empties.

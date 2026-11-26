@@ -89,6 +89,8 @@ var dredge_version := 0
 var _ship_routes := {}  # [kind, apron] -> lane ends in cells, see Marine.route
 var _lorries := {}  # see AreaFlow._lorries
 var _lorries_for := []
+var _exports_at := {}  # see AreaFlow._exports_at
+var _exports_at_for := []
 var _ship_routes_for := []
 ## Quay apron id -> its pocket's cells (Marine.pocket), kept while areas.version is _pockets_for; not saved.
 var _pockets := {}
