@@ -95,6 +95,11 @@ func _tick(sim: PortSim) -> void:
 		sim._until_export = sim.rules.export_lorry_interval_minutes
 	add("dispatch_export_lorry", start)
 	start = Time.get_ticks_usec()
+	sim._until_packed -= SimClock.CALENDAR_MINUTES_PER_TICK
+	if sim._until_packed <= 0.0 and AreaFlow.dispatch_packed_lorry(sim):
+		sim._until_packed = sim.rules.export_lorry_interval_minutes
+	add("dispatch_packed_lorry", start)
+	start = Time.get_ticks_usec()
 	sim._until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if sim._until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(sim):
 		sim._until_empty = sim.rules.lorry_interval_minutes

@@ -49,7 +49,7 @@ const BEND_FROM := Vector2(400, 420)
 const BEND_CONTROL := Vector2(460, 420)
 const BEND_TO := Vector2(460, 480)
 const BEND_RING := 8.0
-const BEND_YARDS: Array = [[1, 4, "import", "rtg"], [1, 50, "export", "rtg"], [-1, 4, "export", "rtg"], [-1, 50, "empty", "empty_handler"]]
+const BEND_YARDS: Array = [[1, 4, "import", "rtg"], [1, 50, "export", "rtg"], [-1, 4, "empty", "empty_handler"], [-1, 50, "empty", "empty_handler"]]
 
 ## Policies switched on; the other two (day gates, day shifts) idle the port at night.
 const POLICIES: Array[String] = ["appointments", "dual_cycling"]
@@ -62,7 +62,7 @@ const BLOCK := 40
 const YARDS: Array = [
 	[],  # the North Terminal is the AGV terminal: transfer blocks, built by _agv_terminal
 	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "straddle"], [1, 62, "reefer", "rtg"]],
-	[[-1, 20, "import", "rtg"], [-1, 62, "export", "rtg"], [1, 20, "import", "reach_stacker"], [1, 62, "empty", "empty_handler"]],
+	[[-1, 20, "import", "rtg"], [-1, 62, "empty", "empty_handler"], [1, 20, "import", "reach_stacker"], [1, 62, "empty", "empty_handler"]],
 	[[-1, 20, "export", "reach_stacker"], [1, 20, "import", "reach_stacker"], [-1, 62, "tranship", "rtg"], [1, 62, "tranship", "rtg"]],
 ]
 
@@ -79,8 +79,8 @@ const AGV_BLOCKS: Array[int] = [30, 50, 70, 90, 110]
 const AGV_ROLES: Array[String] = ["import", "export", "reefer", "import", "export", "export", "import", "reefer", "export", "import"]
 const AGV_DG_BLOCK := 134
 ## The AGV depot's AGVs and chargers.
-const AGVS := 10
-const CHARGERS := 4
+const AGVS := 20
+const CHARGERS := 8
 ## The barge berth's own gate and blocks along the spine's run north to it:
 ## [type, side, from, to, role or gate level].
 const BARGE_AREAS: Array = [["gate", -1, 2, 16, "ocr"], ["yard_block", -1, 19, 40, "import"], ["yard_block", 1, 10, 21, "export"], ["yard_block", 1, 56, 67, "dangerous"]]
@@ -226,11 +226,11 @@ static func build(refused: Array[String]) -> PortSim:
 	# Signals where the connectors and the highway meet the spine.
 	for row: int in [berths[0].row, sim.site_entry().y, berths[1].row, berths[2].row]:
 		_do(sim, refused, {"op": "set_signals", "point": Vector2i(SPINE, row), "on": true})
-	# Cranes on each berth's spots, by the ships it takes.
+	# Cranes on every one of each berth's spots, by the ships it takes.
 	var cranes := {"neopanamax": "wide_sts", "ulcv": "mega_sts", "panamax": "sts", "feeder": "sts"}
 	for berth: Dictionary in berths:
 		var spots := AreaFlow.crane_spots(sim, berth.apron)
-		for k in mini(spots.size(), 3):
+		for k in spots.size():
 			_do(sim, refused, {"op": "place_sts", "apron": berth.apron, "along": spots[k], "kind": cranes[berth.kind]})
 	_do(sim, refused, {"op": "place_sts", "apron": barge, "along": AreaFlow.crane_spots(sim, barge)[0], "kind": "barge_crane"})
 	_do(sim, refused, {"op": "buy_tractors", "count": 150})
@@ -265,8 +265,9 @@ static func build(refused: Array[String]) -> PortSim:
 		for line: String in lines.get(berth.kind, ["meridian"]):
 			var spec: Dictionary = sim.rules.ship_classes[berth.kind]
 			id += 1
-			# Spread through the week, so the port is busy but not swamped.
-			var start := (id - 800) * 1800
+			# Every 28 h from 12 h in, so all seven days of the week have a call
+			# (one a day from day 1 left day 0 without a move every week).
+			var start := 720 + (id - 801) * 1680
 			sim.contracts.services.append({"id": id, "line": line, "kind": berth.kind, "start": start, "window_hours": spec.window_hours, "moves": spec.import_moves + spec.export_moves, "apron": berth.apron, "any_berth": false, "asked": start, "next_start": -1.0})
 		var ship := PortSim.Ship.new(berth.kind, lines.get(berth.kind, ["meridian"])[0], sim.clock.calendar_minutes() + 60.0 * sim.rules.ship_classes[berth.kind].window_hours, sim.rules.ship_classes[berth.kind].import_moves / 4, sim.rules.ship_classes[berth.kind].export_moves / 4)
 		ship.berth = berth.apron
@@ -368,7 +369,7 @@ static func _fill(sim: PortSim) -> void:
 			placed += 1
 
 
-## Stacks the exports the ships due want in the export blocks, as lorries
+## Stacks the exports each terminal's ships due want in its export blocks, as lorries
 ## would have brought them over the days before in a running port; each block
 ## kept half empty, as _fill keeps them.
 static func _stage_exports(sim: PortSim) -> void:
@@ -379,7 +380,7 @@ static func _stage_exports(sim: PortSim) -> void:
 		var before := tries
 		for block: int in sim.areas.list:
 			var area: Dictionary = sim.areas.list[block]
-			if area.type not in Areas.BLOCK_TYPES or area.settings.role != "export" or AreaFlow.export_demand(sim) <= 0:
+			if area.type not in Areas.BLOCK_TYPES or area.settings.role != "export" or AreaFlow.export_demand_at(sim, area.terminal) <= 0:
 				continue
 			tries += 1
 			var box := sim._new_box("export", now + sim.rules.export_lead_hours * 60.0, "meridian")

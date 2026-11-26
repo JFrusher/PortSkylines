@@ -21,8 +21,9 @@ jobs:
       - name: Tests
         run: |
           for t in tests/test_*.gd; do
-            # A script error before quit() leaves Godot running, so cap each test.
-            timeout 300 $GODOT --headless --script "res://$t" 2>&1 | tee test.log
+            # A script error before quit() leaves Godot running, so cap each test;
+            # test_soak takes 250-300 s on a runner, so the cap leaves it room.
+            timeout 600 $GODOT --headless --script "res://$t" 2>&1 | tee test.log
             test "${PIPESTATUS[0]}" -eq 0
             if grep -E "SCRIPT ERROR|^ERROR" test.log; then
               exit 1

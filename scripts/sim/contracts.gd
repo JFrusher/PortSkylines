@@ -21,6 +21,9 @@ var services: Array[Dictionary] = []
 var offers: Array[Dictionary] = []
 ## Goes up on every change, so a panel knows when to redraw.
 var version := 0
+## Lines that cancelled a service today: a line cancels at most one a day,
+## however many knocks land while it is unhappy. Cleared at midnight.
+var cancelled_today := {}
 
 var _next_id := 1
 
@@ -294,7 +297,7 @@ func name_of(line: String) -> String:
 
 
 func to_dict() -> Dictionary:
-	return {"reputation": reputation.duplicate(), "services": services.duplicate(true), "offers": offers.duplicate(true), "next_id": _next_id}
+	return {"reputation": reputation.duplicate(), "services": services.duplicate(true), "offers": offers.duplicate(true), "next_id": _next_id, "cancelled_today": cancelled_today.duplicate()}
 
 
 static func from_dict(d: Dictionary, game_rules: Dictionary) -> Contracts:
@@ -306,6 +309,7 @@ static func from_dict(d: Dictionary, game_rules: Dictionary) -> Contracts:
 	contracts.services.assign(d.services)
 	contracts.offers.assign(d.offers)
 	contracts._next_id = d.next_id
+	contracts.cancelled_today = d.cancelled_today.duplicate()
 	return contracts
 
 
@@ -319,12 +323,13 @@ func lift(points: float) -> void:
 func _change(line: String, change: float) -> String:
 	reputation[line] = clampf(reputation[line] + change * rules.lines[line].sensitivity, 0.0, 100.0)
 	version += 1
-	if reputation[line] >= rules.reputation.cancel_below:
+	if reputation[line] >= rules.reputation.cancel_below or line in cancelled_today:
 		return ""
 	var theirs := services.filter(func(s: Dictionary) -> bool: return s.line == line)
 	if theirs.is_empty():
 		return ""
 	services.erase(theirs[-1])
+	cancelled_today[line] = true
 	return "%s cancelled a weekly %s service: its reputation of the port fell to %d" % [name_of(line), theirs[-1].kind, roundi(reputation[line])]
 
 

@@ -1,9 +1,9 @@
 extends SceneTree
-## M12's exit criterion: a large port runs a game month with no commands and
-## stays solvent and stable. The showcase port (bench/showcase_port.gd), set
-## up to run by rules: dual cycling on, every yard block stacking by
-## departure through one template, its first import block automated with
-## AGVs. It then starts from the start money, not creative, and runs 30 game
+## M13's exit criterion: a large port runs a game month with no commands and
+## stays solvent and stable. The showcase port (bench/showcase_port.gd), whose
+## North Terminal is already automated (AGVs to ASC transfer blocks), set up
+## to run by rules: dual cycling on, every yard block stacking by departure
+## through one template. It then starts from the start money, not creative, and runs 30 game
 ## days with no command, checked at every midnight: cash never below zero,
 ## every closed day adding up, ships sailing every day, and the yard, boxes
 ## and vehicles staying bounded. About an hour and a half on the CI box, so
@@ -23,7 +23,8 @@ func _initialize() -> void:
 	_run_by_rules(sim)
 	sim.creative = false
 	sim.ledger.cash = sim.rules.start_money
-	sim.ledger.opened = sim.ledger.cash
+	# The creative build's costs sit in today's lines with no cash spent.
+	sim.ledger.opened = sim.ledger.cash - sim.ledger.today_total()
 	var start := Time.get_ticks_msec()
 	var lowest := sim.money
 	var most_boxes := 0
@@ -59,8 +60,8 @@ func _expect(actual: Variant, expected: Variant, what: String) -> void:
 		printerr("FAIL %s: got %s, want %s" % [what, actual, expected])
 
 
-## Sets the port up to run without input: dual cycling, stacking by departure
-## everywhere by template, and the first plain import block automated with AGVs.
+## Sets the port up to run without input: dual cycling, and stacking by
+## departure everywhere by template.
 func _run_by_rules(sim: PortSim) -> void:
 	_expect(sim.apply({"op": "set_policy", "policy": "dual_cycling", "on": true}), "", "dual cycling is on")
 	var blocks := sim.areas.list.keys().filter(func(id: int) -> bool: return sim.areas.list[id].type == "yard_block")
@@ -68,5 +69,3 @@ func _run_by_rules(sim: PortSim) -> void:
 	_expect(sim.apply({"op": "save_template", "name": "by departure", "id": blocks[0]}), "", "its rules are a template")
 	for id: int in blocks:
 		_expect(sim.apply({"op": "apply_template", "name": "by departure", "id": id}), "", "block %d takes the template" % id)
-	var automated: int = blocks.filter(func(id: int) -> bool: return sim.areas.list[id].settings.role == "import" and sim.areas.list[id].settings.gear == "rtg" and not RailFlow.is_rail_block(sim, id))[0]
-	_expect(sim.apply({"op": "set_area", "id": automated, "settings": {"gear": "asc"}}), "", "an import block is automated")

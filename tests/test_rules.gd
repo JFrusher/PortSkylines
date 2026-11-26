@@ -230,7 +230,7 @@ func _test_a_full_block_takes_no_more() -> void:
 	var stacks := AreaFlow._stacks(sim, 3)
 	var id := 900000
 	while stacks.room() > 1:
-		sim.boxes[id] = {"kind": "import", "due": 1e9, "teu": 1, "reefer": false, "dg": false, "rush": false, "in": 0.0, "line": sim.rules.lines.keys()[0], "rail": false, "barge": false, "place": sim.rules.hinterland.places.keys()[0], "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
+		sim.boxes[id] = {"kind": "import", "due": 1e9, "teu": 1, "reefer": false, "dg": false, "rush": false, "in": 0.0, "line": sim.rules.lines.keys()[0], "rail": false, "barge": false, "place": sim.rules.hinterland.places.keys()[0], "from": 0, "to": 0, "onward": "", "missed": false, "customs": "", "customs_until": 0.0}
 		stacks.place(id, 1)
 		id += 1
 	var most := -INF
@@ -409,6 +409,12 @@ func _test_reputation_cancels_and_recovers() -> void:
 		calls += 1
 	_expect(said.contains("cancelled"), true, "a line let down too often cancels a service (%s)" % said)
 	_expect(contracts.services.size(), 1, "one service is gone")
+	# Month soak, day 6: knocks landing while a line was unhappy cancelled a service each.
+	_expect(contracts.called("kestrel", 12.0, 20.0, 60.0), "", "another knock the same day cancels nothing more")
+	_expect(contracts.services.size(), 1, "so its other service stays")
+	contracts.cancelled_today.clear()  # midnight, as PortSim._end_of_day
+	_expect(contracts.called("kestrel", 12.0, 20.0, 60.0).contains("cancelled"), true, "the next day it may cancel again")
+	_expect(contracts.services.size(), 0, "and does")
 	_expect(contracts.reputation.kestrel < rules.reputation.offer_above, true, "and it offers nothing while unhappy")
 	while contracts.reputation.kestrel < rules.reputation.offer_above:
 		contracts.called("kestrel", 0.0, 30.0, 40.0)

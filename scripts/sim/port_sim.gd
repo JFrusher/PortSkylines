@@ -89,6 +89,8 @@ var dredge_version := 0
 var _ship_routes := {}  # [kind, apron] -> lane ends in cells, see Marine.route
 var _lorries := {}  # see AreaFlow._lorries
 var _lorries_for := []
+var _exports_at := {}  # see AreaFlow._exports_at
+var _exports_at_for := []
 var _ship_routes_for := []
 ## Quay apron id -> its pocket's cells (Marine.pocket), kept while areas.version is _pockets_for; not saved.
 var _pockets := {}
@@ -265,6 +267,7 @@ var _agv_depots_for := Vector2i(-1, -1)
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
+var _until_packed := 0.0
 var _until_empty := 0.0
 var _next_vehicle := 1
 var _next_box := 1
@@ -508,6 +511,7 @@ func to_dict() -> Dictionary:
 		"claimed": _claimed.duplicate(),
 		"until_lorry": _until_lorry,
 		"until_export": _until_export,
+		"until_packed": _until_packed,
 		"until_empty": _until_empty,
 		"returning": returning.duplicate(true),
 		"stuffing": stuffing.duplicate(true),
@@ -618,6 +622,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 			sim._flagged[id] = true
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
+	sim._until_packed = d.until_packed
 	sim._until_empty = d.until_empty
 	sim.returning.assign(d.returning)
 	sim.stuffing.assign(d.stuffing)
@@ -2093,6 +2098,9 @@ func tick() -> void:
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
+	_until_packed -= SimClock.CALENDAR_MINUTES_PER_TICK
+	if open and _until_packed <= 0.0 and AreaFlow.dispatch_packed_lorry(self):
+		_until_packed = rules.export_lorry_interval_minutes
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes
@@ -2251,6 +2259,7 @@ func _event(text: String, at := Grid.NONE) -> void:
 
 
 func _end_of_day() -> void:
+	contracts.cancelled_today.clear()
 	# Each terminal's part rounded; the port's takes the rest, so the day's total is daily_upkeep().
 	var upkeep := daily_upkeep()
 	var parts := upkeep_parts()
@@ -2350,7 +2359,8 @@ func _call(service: Dictionary) -> void:
 	ledger.post("port_dues", spec.port_dues)
 	ship.berth = service.apron
 	ship.any_berth = service.any_berth
-	ship.empties = rules.empties.max_per_call if lock_error("empties") == "" else 0
+	# Sized to the ship: a big ship's imports send back as many empties for it to take.
+	ship.empties = roundi(ship.boxes * rules.empties.per_call_share) if lock_error("empties") == "" else 0
 	ship.needs = Services.wants(self, service.kind)
 	ships.append(ship)
 	_berths_seen = Vector2i(-1, -1)  # the new ship has not looked yet
@@ -2579,7 +2589,7 @@ func _new_box(kind: String, due: float, line: String) -> int:
 	var dg: bool = not reefer and rng.randf() < rules.box_mix.dg_share
 	# shortcut: only imports rush, against their ship's window; rush exports when lines book them by deadline.
 	var rush: bool = kind == "import" and rng.randf() < rules.box_mix.rush_share
-	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
+	boxes[id] = {"kind": kind, "due": due, "teu": teu, "reefer": reefer, "dg": dg, "rush": rush, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "missed": false, "customs": "", "customs_until": 0.0}
 	exports += 1 if kind == "export" else 0
 	return id
 
@@ -2657,7 +2667,7 @@ func _empty_collected(id: int) -> void:
 func _new_empty(line: String, teu: int) -> int:
 	var id := _next_box
 	_next_box += 1
-	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "customs": "", "customs_until": 0.0}
+	boxes[id] = {"kind": "empty", "due": 0.0, "teu": teu, "reefer": false, "dg": false, "rush": false, "in": -1.0, "line": line, "rail": false, "barge": false, "place": _pick_place(), "from": 0, "to": 0, "onward": "", "missed": false, "customs": "", "customs_until": 0.0}
 	return id
 
 

@@ -273,14 +273,28 @@ static func _refresh(sim: PortSim) -> void:
 			sim.traffic.restore(saved.traffic)
 			sim._delays = saved.weighed.duplicate()
 			return
+	# A car goes back on the new piece that runs where its old one did, so one
+	# part way round a turn stays on the turn; else on the lane nearest its front.
+	var same := {}  # _piece_key -> new piece
+	if old != null:
+		for id: int in sim.network.pieces:
+			same[_piece_key(sim.network.pieces[id])] = id
 	for vehicle: Vehicle in sim.vehicles:
-		# Where its car was; only a vehicle with no car yet goes by its spot.
-		var at: Vector2 = old.pose(vehicle.id)[0] if old != null and vehicle.id in old.cars else sim.areas.centre(vehicle.path[0])
-		var near := sim.network.nearest(at, vehicle.kind)
+		var had := old != null and vehicle.id in old.cars
+		var near := [0, 0.0]
+		if had:
+			var car: Dictionary = old.cars[vehicle.id]
+			var piece: int = same.get(_piece_key(old.network.pieces[car.route[car.i]]), 0)
+			if piece != 0:
+				near = [piece, car.s]
+		if near[0] == 0:
+			# Where its car was; only a vehicle with no car yet goes by its spot.
+			var at: Vector2 = old.pose(vehicle.id)[0] if had else sim.areas.centre(vehicle.path[0])
+			near = sim.network.nearest(at, vehicle.kind)
 		assert(near[0] != 0, "a vehicle stands on the lanes")
 		var route: Array[int] = [near[0]]
 		sim.traffic.place_at(vehicle.id, route, near[1], _top(sim, vehicle), _length(sim, vehicle))
-		if vehicle.target != Areas.NO_SPOT and vehicle.state.trim_prefix("no_route:") in ["arriving", "to_slot", "returning", "leaving", "to_crane"]:
+		if vehicle.target != Areas.NO_SPOT and vehicle.state.trim_prefix("no_route:") in ["arriving", "to_slot", "returning", "leaving", "to_crane", "to_wait"]:
 			var state := vehicle.state.trim_prefix("no_route:")
 			head(sim, vehicle, vehicle.target, state)
 	if old != null:
@@ -367,3 +381,10 @@ static func _length(sim: PortSim, vehicle: Vehicle) -> float:
 ## Piece IDs must retain geometry, connections and junction/crossing meaning.
 static func _identity(sim: PortSim) -> Dictionary:
 	return {"pieces": sim.network.pieces.duplicate(true), "conflicts": sim.network._conflicts.duplicate(true), "arms": sim.network._arm_of.duplicate(true), "crossings": sim._crossing_cells.duplicate()}
+
+
+## A lane piece by where it runs: its first and last points and its length,
+## the same for a piece a rebuild left unchanged under a new id.
+static func _piece_key(piece: Dictionary) -> String:
+	var points: PackedVector2Array = piece.points
+	return "%.3f,%.3f>%.3f,%.3f/%.3f" % [points[0].x, points[0].y, points[-1].x, points[-1].y, piece.length]

@@ -10,6 +10,9 @@ const SERVICES := 3
 ## Cells a yard block runs along the road, so it holds a feeder's imports while
 ## they wait for lorries; a shorter one fills and stalls the cranes.
 const YARD_LENGTH := 40
+## Cranes the guide asks for: a new port's feeders take no empties (its depots
+## hold too few), so two work one inside its window; the third spot is for later.
+const FIRST_CRANES := 2
 
 
 ## The steps in order for `sim`: {"text", "done": Callable() -> bool}.
@@ -30,8 +33,8 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 			return _areas(sim, "yard_block").any(func(id: int) -> bool:
 				var block: Dictionary = sim.areas.list[id]
 				return block.columns >= YARD_LENGTH and sim.areas.terminal_error(block.terminal) == "" and sim.areas.idle_reason(id) == "")},
-		{"text": "Place STS cranes on both of the berth's marked crane spots: one crane alone can't work a feeder within its window (Cranes, key 3).", "done": func() -> bool:
-			return sim.cranes.size() + sim.crane_orders.size() >= sim.rules.berths.feeder.crane_spots},
+		{"text": "Place STS cranes on %d of the berth's marked crane spots: one crane alone can't work a feeder within its window. The last spot is for later, when feeders take empties too (Cranes, key 3)." % FIRST_CRANES, "done": func() -> bool:
+			return sim.cranes.size() + sim.crane_orders.size() >= FIRST_CRANES},
 		{"text": "Buy tractors to carry boxes between crane and yard (Cranes, key 3).", "done": func() -> bool:
 			return sim.tractors > 0},
 		{"text": "Open Contracts and accept %d lines' offers. Each is a weekly call, so several keep the berth busy; offers come every few hours once the crane is up." % SERVICES, "done": func() -> bool:

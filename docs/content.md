@@ -15,7 +15,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `maps.<key>.depth.shore`, `.per_metre`, `.max` | number | The sea's depth: `shore` metres beside land, `per_metre` more for each metre further out, at most `max` |
 | `reclaim.cost_per_cell` | int | Filling one 4 m cell of water behind a quay wall |
 | `lines.<key>.tranship_share`, `.connection_hours` | number, number | The share of the boxes a line's big ships land that go on with its next feeder within the window, and of its feeders' boxes that go on with its next big ship |
-| `transhipment.price_factor`, `.missed_fine`, `.missed_reputation` | number, int, number | A transhipment move pays the move price times this; a box not loaded within its connection window costs the fine and this much of its line's reputation (times the line's sensitivity), and waits a further window for the next ship |
+| `transhipment.price_factor`, `.missed_fine`, `.missed_reputation` | number, int, number | A transhipment move pays the move price times this; a box not loaded within its connection window costs the fine and this much of its line's reputation (times the line's sensitivity) the first time it misses, and waits a further window for the next ship |
 | `transfers.share`, `.cost_per_box` | number, int | Of the imports a line lands at one terminal while it has a service at another, the share that leave on its ship there; each is driven between the terminals at this cost, an internal move |
 | `road_types.<key>.ring` | true/false | Marks a one-way roundabout ring road; joining roads give way to it <!-- coderabbit-ai-generated:v1 --> <!-- coderabbit-ai-generated-section:v1:1403ec659508fbef18491e78cc0db0eca0160fdf3bdf0e763f79f05fd3b35b0c --> |
 | `road_types.<key>.min_radius_cells` | number >0 (POSITIVE) | Smallest radius of the road's centre curve, in cells; must be greater than zero |
@@ -127,7 +127,7 @@ Whole numbers are allowed where a key is a number; keys marked *int* must be who
 | `contracts.max_services_per_berth` | int | Services plus offers per berth with a road, at most |
 | `reputation.start` | number | Every line's reputation (0–100) at the start |
 | `reputation.offer_above` | number | A line offers services only at or above this |
-| `reputation.cancel_below` | number | Below this a line cancels a service after each call |
+| `reputation.cancel_below` | number | Below this a line cancels a service after a knock, at most one a day |
 | `reputation.on_time` | number | Change for a call that sails within its window |
 | `reputation.late_per_hour` | number | Change per hour a call sails after its window |
 | `reputation.moves_per_hour_target`, `.per_move_per_hour` | number | Change per berth move per hour above (or below) the target |

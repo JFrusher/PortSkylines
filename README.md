@@ -82,7 +82,7 @@ Lines offer **weekly services** for berth windows, and the week is planned berth
 | **Special cargo** | Rush imports fined when their call is late; dangerous goods only in their own blocks, kept apart from the rest |
 | **Straddle carriers** | A straddle block stacks three high and drives its own boxes to the quay and back, so it needs no tractors |
 | **Barges** | Barges come down the river from inland, berth only at barge berths, land exports for the big ships and take away the imports booked to barge; a barge discount draws boxes off road and rail alike |
-| **Transhipment** | A share of each line's boxes go on from its big ships to its feeders and back within a connection window, at a lower move price, stacked in the transhipment block nearest the berth they leave from |
+| **Transhipment** | A share of each line's boxes go on from its big ships to its feeders and back within a connection window, as many as the line's onward calls in that window can take, at a lower move price, stacked in the transhipment block nearest the berth they leave from |
 | **Economy** | Move prices, storage fees past free days, upkeep by terminal, loans, a bailout, and an end-of-year scoreboard |
 | **Ships** | Feeder, Panamax and Neopanamax, gated by channel depth, berth length and crane outreach; dredging deepens the channel |
 | **Saves** | Versioned save files that migrate every older version, each one kept as a test fixture |

@@ -612,3 +612,65 @@ two runs (1,532 vehicles at the end), against the 19.5 ms gate and step
 11's 15.65. The sim bench: about 2.3–2.6 ms a tick on average, worst 9–13
 ms, once step 21a's curve rebuilding was fixed (it had raised the worst
 tick to 90–120 ms; see the M10 notes).
+
+## M13 step 11: the month-long hands-off soak (2026-11-25)
+
+`bench/month_soak.gd`: the showcase run by rules (dual cycling, stacking
+by departure by template) from the start money, 30 game days with no
+command. **Passes: no failure.** 4,234 s on a 4-core cloud box (Godot
+4.7.2, debug build), so it stays a hand-run bench.
+
+| Day | Cash | Moves | Services | Reputation (average) | Vehicles |
+|---|---|---|---|---|---|
+| 10 | 1,882,107 | 3,275 | 6 | 77 | 42 |
+| 20 | 2,176,317 | 279 | 6 | 94 | 19 |
+| 30 | 2,619,592 | 1,859 | 6 | 84 | 65 |
+
+Cash never below zero, no loan, every day's ledger adding up, cranes
+working every day (the quietest day moved 100 boxes) and the port ending
+richer than it started; all six services held all month.
+
+Its first run failed every check: the port went bust on day 9 and was
+bailed out on day 17. What it took, each found by a probe and proved
+before the fix (PR 47):
+
+- The bench: a stale RTG-to-ASC step, and day 1 opened at the start money
+  though the creative build's costs sat in its lines.
+- Transhipment sent on only what the onward calls inside the window can
+  take, fined and knocked once, due when the onward call's window ends.
+- A line cancels at most one service a day.
+- Ships take empties in proportion to their imports; an export lorry
+  coming for an empty goes where the empties are.
+- No two machines sent to a block's last tier; imports on racks hold their
+  room in the block.
+- A rebuild puts each car back on its own piece.
+- Export pickups spread over blocks by cost; tractors wait for a busy
+  crane in a free apron slot; with a truck park, a lorry comes in only with
+  room off the road.
+- The showcase: a crane on every berth spot, four empty depots, and its
+  six services spread over all seven days.
+
+Still slow but not failing: 12 of 28 calls late (the AGV terminal's
+Neopanamax, 50 moves an hour against the 67 it needs; feeders a few hours
+over 12 h), and three of four empty depots full by the end.
+
+### Late calls: the AGV quay and the feeder berth (2026-11-26)
+
+The Neopanamax on the AGV quay: AGVs queued for one crane on the apron's one
+lane held up those bound past it (11% of crane time empty for it). AGVs now
+go to the crane with the fewest vehicles and wait for a busy crane in a free
+apron slot, as tractors do; the showcase has 20 AGVs and 8 chargers. A call
+of 600 moves went from 10.4 h to 8.3 h (72 moves an hour; it needs 67).
+
+Feeders: an experiment of 10 runs (5 options, 2 seeds, five feeder calls
+each, empty depots stocked half full as a port some weeks in has them)
+found the empties make feeders late. Today's 520 moves (400 cargo, 120
+empties) took 14.1 h on two cranes, 0 of 8 calls inside 12 h; with no
+empties 9.7 h, 10 of 10. Each empty costs more crane time than a cargo box,
+as tractors fetch it from a depot. Two wide cranes (28 an hour) still
+missed every time (12.7 h): the cranes wait on tractors. A quarter share of
+empties was 4 of 10. A third crane spot on the feeder berth: 10.8 h, 8 of
+9 on time, with empties still leaving on feeders, which the full depots
+need. So the feeder berth now has three crane spots (berths.json). Old
+saves keep their two feeder cranes where they stand; a third fits on the
+new middle spot.

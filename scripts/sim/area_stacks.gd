@@ -62,12 +62,13 @@ func fits(position: int, teu: int) -> bool:
 ## With `within_room`, only a stack where the box leaves room() at zero or
 ## more, so the boxes on their way, counted against room(), still fit; a box
 ## already in a machine's hand passes false, as it has to go somewhere.
-func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, within_room := true) -> int:
+## Positions in `taken` (a machine already carrying a box there) are skipped.
+func place_spot(teu: int, strategy := "fill_low", due := 0.0, boxes := {}, within_room := true, taken := {}) -> int:
 	var best := -1
 	var best_key := []
 	var spare := room()
 	for position in stacks.size():
-		if not fits(position, teu) or (within_room and spare < _room_cost(position, teu)):
+		if position in taken or not fits(position, teu) or (within_room and spare < _room_cost(position, teu)):
 			continue
 		# A 20 goes on a stack of 20s first: on one open to 40s it would close the whole
 		# stack to them, which room() counts as every tier of it lost.

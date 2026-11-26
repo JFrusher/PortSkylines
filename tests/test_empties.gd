@@ -13,7 +13,9 @@ func _initialize() -> void:
 	_test_empties_come_back()
 	_test_empties_turned_away()
 	_test_exporters_collect_empties()
+	_test_packed_exports_have_their_own_clock()
 	_test_lines_ship_surplus_empties()
+	_test_short_of_exports_still_takes_empties()
 	_test_some_empties_go_inland()
 	print("tests: %d failure(s)" % _failures)
 	quit(1 if _failures else 0)
@@ -119,12 +121,30 @@ func _test_exporters_collect_empties() -> void:
 	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "each of the 5 exports took out an empty")
 
 
+## An export packed in an empty comes back on its own clock, not the export
+## clock: sharing it, each packed export took two lorries and exports came in
+## at half the rate (month soak).
+func _test_packed_exports_have_their_own_clock() -> void:
+	var sim := AreaPort.base(RandomPort.rules(), "")
+	AreaPort.add_export_block(sim)
+	sim.stuffing.append({"at": 0.0})
+	sim._until_export = 1e9  # the export clock never comes round
+	var packed := false
+	for i in roundi(10 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		packed = packed or sim.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry" and v.loaded and sim.boxes[v.box].kind == "export")
+	_expect(packed, true, "a packed export came in with the export clock held")
+	_expect(sim.stuffing.size(), 0, "and left the stuffing queue")
+
+
 ## A ship loads its line's empties after its exports, while the port holds
-## more than keep of them, up to max_per_call, at price_factor of a move.
+## more than keep of them, up to per_call_share of its imports, at
+## price_factor of a move. (Month soak: a flat 80 a call let a ULCV's
+## thousand returning empties fill the depots.)
 func _test_lines_ship_surplus_empties() -> void:
 	var rules := RandomPort.rules()
 	rules.empties.keep = 5
-	rules.empties.max_per_call = 10
+	rules.empties.per_call_share = 1.0  # 4 imports: up to 4 empties
 	rules.empties.return_days = 30.0  # none of this ship's imports come back in the run
 	rules.ship_classes.feeder.import_moves = 4
 	rules.ship_classes.feeder.export_moves = 0
@@ -142,10 +162,36 @@ func _test_lines_ship_surplus_empties() -> void:
 		if not sim.ship_log.is_empty():
 			break
 	_expect(sim.ship_log.size(), 1, "the ship sailed")
-	_expect(sim.ship_log[0].moves if not sim.ship_log.is_empty() else -1, 4 + 7, "it took its 4 imports off and the 7 empties above keep aboard")
-	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "keep empties stay in the port")
+	_expect(sim.ship_log[0].moves if not sim.ship_log.is_empty() else -1, 4 + 4, "it took its 4 imports off and 4 of the 7 empties above keep aboard, as many as its imports")
+	_expect(AreaFlow._stacks(sim, block).boxes().size(), 8, "the rest stay in the port")
 	var empty := {"kind": "empty", "teu": 1, "reefer": false}
 	_expect(sim.move_price(empty), roundi(rules.move_price.per_20ft * rules.empties.price_factor), "an empty earns price_factor of a move")
+
+
+## A ship with no exports to be had still takes its empties before it sails:
+## sailing at once, a ULCV left 1,000 behind with the depots full (month soak).
+func _test_short_of_exports_still_takes_empties() -> void:
+	var rules := RandomPort.rules()
+	rules.empties.keep = 5
+	rules.empties.per_call_share = 1.0
+	rules.empties.return_days = 30.0
+	rules.ship_classes.feeder.import_moves = 4
+	rules.ship_classes.feeder.export_moves = 3  # wanted, but the port has no export block to bring them to
+	var sim := AreaPort.base(rules, "")
+	var block := AreaPort.add_export_block(sim)
+	sim.apply({"op": "set_area", "id": block, "settings": {"role": "empty"}})
+	var line: String = sim.rules.lines.keys()[0]
+	for i in 12:
+		sim.returning.append({"at": 0.0, "line": line, "teu": 1})
+	while AreaFlow._stacks(sim, block).boxes().size() < 12:
+		sim.tick()
+	RandomPort.calls(sim, "feeder", roundi(sim.clock.calendar_minutes()) + 10, 45, 1)
+	for i in roundi(12 * 60 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		if not sim.ship_log.is_empty():
+			break
+	_expect(sim.events.any(func(e: Dictionary) -> bool: return "sails 3 exports short" in e.text), true, "it goes 3 exports short")
+	_expect(sim.ship_log[0].moves if not sim.ship_log.is_empty() else -1, 4 + 4, "and still takes its 4 imports off and 4 empties aboard")
 
 
 ## Only return_share of the imports that leave come back as empties.

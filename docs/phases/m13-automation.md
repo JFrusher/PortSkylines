@@ -28,7 +28,7 @@
 
 ### Running without input
 10. **Auto-replace and auto-order** *(cuttable)*. Optional rules: replace broken equipment, and order cranes when berth productivity drops below a target. Test: rules fire at their thresholds.
-11. **Month-long hands-off soak.** A scripted large port runs a game month with no commands and stays solvent and stable. Test: the exit criterion.
+11. **Month-long hands-off soak.** A scripted large port runs a game month with no commands and stays solvent and stable. Test: the exit criterion. *Built: `bench/month_soak.gd` passes, all six services held for the month; the run, and the fixes it took, are in [docs/perf.md](../perf.md).*
 
 ### From the developer's notes (24 Oct 2026)
 - **Buildings inside areas, as Industries.** An area gains buildings that serve it: a yard gatehouse. The AGV depot and the maintenance bay (the workshop) became area types along roads in [M11](m11-harbour-life.md), as the developer chose on 15 Nov 2026.
