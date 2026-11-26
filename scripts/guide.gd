@@ -30,7 +30,7 @@ static func steps(sim: PortSim) -> Array[Dictionary]:
 			return _areas(sim, "yard_block").any(func(id: int) -> bool:
 				var block: Dictionary = sim.areas.list[id]
 				return block.columns >= YARD_LENGTH and sim.areas.terminal_error(block.terminal) == "" and sim.areas.idle_reason(id) == "")},
-		{"text": "Place STS cranes on both of the berth's marked crane spots: one crane alone can't work a feeder within its window (Cranes, key 3).", "done": func() -> bool:
+		{"text": "Place STS cranes on every one of the berth's marked crane spots: fewer can't work a feeder and its empties within its window (Cranes, key 3).", "done": func() -> bool:
 			return sim.cranes.size() + sim.crane_orders.size() >= sim.rules.berths.feeder.crane_spots},
 		{"text": "Buy tractors to carry boxes between crane and yard (Cranes, key 3).", "done": func() -> bool:
 			return sim.tractors > 0},

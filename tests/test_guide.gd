@@ -28,7 +28,7 @@ func _initialize() -> void:
 		[{"op": "build_area", "type": "gate", "segment": 3, "side": -1, "from": 419, "to": 433}],
 		[{"op": "paint_terminal", "cells": AreaPort.region(sim), "terminal": -1}],
 		[{"op": "build_area", "type": "yard_block", "segment": 3, "side": 1, "from": 2, "to": 41}],
-		[{"op": "place_sts", "kind": "sts", "apron": 1, "along": 37}, {"op": "place_sts", "kind": "sts", "apron": 1, "along": 12}],
+		[{"op": "place_sts", "kind": "sts", "apron": 1, "along": 41}, {"op": "place_sts", "kind": "sts", "apron": 1, "along": 25}, {"op": "place_sts", "kind": "sts", "apron": 1, "along": 8}],
 		[{"op": "buy_tractors", "count": 4}],
 	]
 	_expect(Guide.current(sim), 0, "a new game starts at the first step")
