@@ -1151,26 +1151,42 @@ static func dispatch_empty_lorry(sim: PortSim) -> bool:
 
 ## Sends a lorry in from the site entry to a terminal with a gate whose
 ## export blocks have room for more than the export lorries already on their
-## way: with an export packed in an empty it took out, once one is due back;
-## else, while calls want more exports than the port holds, to take out an
+## way, while calls want more exports than the port holds: to take out an
 ## empty to pack, or with an export packed in its own empty when the port
-## has none. False when nothing is due or wanted, there is no room, or the
-## way in is busy.
+## has none. False when nothing is wanted, there is no room, or the way in
+## is busy.
 static func dispatch_export_lorry(sim: PortSim) -> bool:
 	# With the way in busy nothing is sent, so demand isn't worked out for nothing.
 	if _entry_cell(sim) == Areas.NO_SPOT:
 		return false
 	if not sim.transfers.is_empty() and _transfer_in(sim):
 		return true
-	var packed: bool = not sim.stuffing.is_empty() and sim.stuffing[0].at <= sim.clock.calendar_minutes()
-	if not packed and export_demand(sim) <= 0:
+	if export_demand(sim) <= 0:
 		return false
 	# One coming for an empty to pack goes first where empties are: taking the
 	# first terminal sent every such lorry to one with no empty depot, so none
 	# was ever taken out and the depots, all in the other terminal, only filled.
 	var terminals: Array = sim.areas.terminals.keys()
-	if not packed:
-		terminals.sort_custom(func(a: int, b: int) -> bool: return [_free_empty(sim, a) == 0, a] < [_free_empty(sim, b) == 0, b])
+	terminals.sort_custom(func(a: int, b: int) -> bool: return [_free_empty(sim, a) == 0, a] < [_free_empty(sim, b) == 0, b])
+	return _send_export_lorry(sim, terminals, false)
+
+
+## Sends a lorry back in with an export packed in an empty it took out, once
+## one is due, on its own clock: sharing the export clock, each packed export
+## took two of its lorries, so with empties in the port exports came in at
+## half the rate, ships sailed short and the empties stayed (month soak, 29.4
+## of 30 an hour for 57 hours of unmet demand). False when none is due, there
+## is no room, or the way in is busy.
+static func dispatch_packed_lorry(sim: PortSim) -> bool:
+	if sim.stuffing.is_empty() or sim.stuffing[0].at > sim.clock.calendar_minutes() or _entry_cell(sim) == Areas.NO_SPOT:
+		return false
+	return _send_export_lorry(sim, sim.areas.terminals.keys(), true)
+
+
+## Sends an export lorry to the first of `terminals` with a gate, export room
+## and a booking: `packed`, with the export packed in an empty that came back;
+## else for a free empty there, or with its own export where there is none.
+static func _send_export_lorry(sim: PortSim, terminals: Array, packed: bool) -> bool:
 	for terminal: int in terminals:
 		if not _has_gate(sim, terminal) or _export_room(sim, terminal) <= 0:
 			continue

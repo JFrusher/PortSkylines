@@ -265,6 +265,7 @@ var _agv_depots_for := Vector2i(-1, -1)
 ## Calendar minutes until the next import lorry and export lorry.
 var _until_lorry := 0.0
 var _until_export := 0.0
+var _until_packed := 0.0
 var _until_empty := 0.0
 var _next_vehicle := 1
 var _next_box := 1
@@ -508,6 +509,7 @@ func to_dict() -> Dictionary:
 		"claimed": _claimed.duplicate(),
 		"until_lorry": _until_lorry,
 		"until_export": _until_export,
+		"until_packed": _until_packed,
 		"until_empty": _until_empty,
 		"returning": returning.duplicate(true),
 		"stuffing": stuffing.duplicate(true),
@@ -618,6 +620,7 @@ static func from_dict(d: Dictionary) -> PortSim:
 			sim._flagged[id] = true
 	sim._until_lorry = d.until_lorry
 	sim._until_export = d.until_export
+	sim._until_packed = d.until_packed
 	sim._until_empty = d.until_empty
 	sim.returning.assign(d.returning)
 	sim.stuffing.assign(d.stuffing)
@@ -2093,6 +2096,9 @@ func tick() -> void:
 	_until_export -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_export <= 0.0 and AreaFlow.dispatch_export_lorry(self):
 		_until_export = rules.export_lorry_interval_minutes
+	_until_packed -= SimClock.CALENDAR_MINUTES_PER_TICK
+	if open and _until_packed <= 0.0 and AreaFlow.dispatch_packed_lorry(self):
+		_until_packed = rules.export_lorry_interval_minutes
 	_until_empty -= SimClock.CALENDAR_MINUTES_PER_TICK
 	if open and _until_empty <= 0.0 and AreaFlow.dispatch_empty_lorry(self):
 		_until_empty = rules.lorry_interval_minutes

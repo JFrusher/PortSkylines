@@ -6,7 +6,7 @@ extends RefCounted
 ## VERSION means adding a step to _migrate() and committing
 ## tests/fixtures/save_v<N>.bin.
 
-const VERSION := 69
+const VERSION := 70
 ## The first save on a map's natural coastline. Older saves were built on a
 ## straight sea strip that no map keeps, so they are refused, as the
 ## developer chose for the coastline (and before it for painted terminals).
@@ -158,6 +158,16 @@ static func _migrate(data: Dictionary) -> Dictionary:
 		data = _migrate_v68(data)
 	if data.version < 69:
 		data = _migrate_v69(data)
+	if data.version < 70:
+		data = _migrate_v70(data)
+	return data
+
+
+## v70 sends lorries back with packed exports on their own clock; an older
+## save's is due now.
+static func _migrate_v70(data: Dictionary) -> Dictionary:
+	data.sim.until_packed = 0.0
+	data.version = 70
 	return data
 
 
@@ -737,7 +747,7 @@ static func _valid_sim(data: Variant) -> bool:
 		"ships": TYPE_ARRAY, "cranes": TYPE_ARRAY, "vehicles": TYPE_ARRAY,
 		"boxes": TYPE_DICTIONARY, "tractors": TYPE_INT,
 		"gave_up": TYPE_INT, "moved_on": TYPE_INT, "turn_times": TYPE_ARRAY, "terminal_turns": TYPE_DICTIONARY, "claimed": TYPE_DICTIONARY,
-		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "policies": TYPE_DICTIONARY, "templates": TYPE_DICTIONARY, "automated_since": TYPE_DICTIONARY, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "serviced": TYPE_DICTIONARY, "agv_home": TYPE_DICTIONARY, "racks": TYPE_DICTIONARY, "town": TYPE_DICTIONARY, "scenario": TYPE_DICTIONARY, "reports": TYPE_ARRAY, "today_calls": TYPE_DICTIONARY, "fires": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
+		"contracts": TYPE_DICTIONARY, "finance": TYPE_DICTIONARY, "creative": TYPE_BOOL, "policies": TYPE_DICTIONARY, "templates": TYPE_DICTIONARY, "automated_since": TYPE_DICTIONARY, "land": TYPE_DICTIONARY, "ship_lanes": TYPE_DICTIONARY, "anchorages": TYPE_DICTIONARY, "next_anchorage": TYPE_INT, "pilot_stations": TYPE_DICTIONARY, "tug_depots": TYPE_DICTIONARY, "service_jetties": TYPE_DICTIONARY, "event_plan": TYPE_DICTIONARY, "workshops": TYPE_DICTIONARY, "serviced": TYPE_DICTIONARY, "agv_home": TYPE_DICTIONARY, "racks": TYPE_DICTIONARY, "town": TYPE_DICTIONARY, "scenario": TYPE_DICTIONARY, "reports": TYPE_ARRAY, "today_calls": TYPE_DICTIONARY, "fires": TYPE_DICTIONARY, "next_station": TYPE_INT, "boats": TYPE_DICTIONARY, "passages": TYPE_ARRAY, "next_ship": TYPE_INT, "pocket_dredged": TYPE_DICTIONARY, "dredge_version": TYPE_INT, "crane_orders": TYPE_ARRAY, "teu_handled": TYPE_INT, "year": TYPE_DICTIONARY, "scoreboard": TYPE_ARRAY, "dwell_times": TYPE_ARRAY, "storage": TYPE_DICTIONARY, "until_lorry": TYPE_FLOAT, "until_export": TYPE_FLOAT, "until_packed": TYPE_FLOAT, "until_empty": TYPE_FLOAT, "returning": TYPE_ARRAY, "stuffing": TYPE_ARRAY, "transfers": TYPE_ARRAY, "milestones_passed": TYPE_INT, "objectives_done": TYPE_DICTIONARY, "on_time_calls": TYPE_DICTIONARY, "bookings": TYPE_DICTIONARY,
 		"next_vehicle": TYPE_INT, "next_box": TYPE_INT,
 		"junctions": TYPE_DICTIONARY, "traffic": TYPE_DICTIONARY, "handovers": TYPE_DICTIONARY, "machines": TYPE_DICTIONARY, "map": TYPE_STRING, "site": TYPE_DICTIONARY,
 		"machine_jobs": TYPE_DICTIONARY, "area_stacks": TYPE_DICTIONARY,

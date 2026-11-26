@@ -13,6 +13,7 @@ func _initialize() -> void:
 	_test_empties_come_back()
 	_test_empties_turned_away()
 	_test_exporters_collect_empties()
+	_test_packed_exports_have_their_own_clock()
 	_test_lines_ship_surplus_empties()
 	_test_some_empties_go_inland()
 	print("tests: %d failure(s)" % _failures)
@@ -117,6 +118,22 @@ func _test_exporters_collect_empties() -> void:
 	_expect(collected >= 0.0, true, "an exporter's lorry left with an empty")
 	_expect(first_export >= collected + 60.0, true, "and the first export came in after it was packed (collected %.0f, export %.0f)" % [collected, first_export])
 	_expect(AreaFlow._stacks(sim, block).boxes().size(), 5, "each of the 5 exports took out an empty")
+
+
+## An export packed in an empty comes back on its own clock, not the export
+## clock: sharing it, each packed export took two lorries and exports came in
+## at half the rate (month soak).
+func _test_packed_exports_have_their_own_clock() -> void:
+	var sim := AreaPort.base(RandomPort.rules(), "")
+	AreaPort.add_export_block(sim)
+	sim.stuffing.append({"at": 0.0})
+	sim._until_export = 1e9  # the export clock never comes round
+	var packed := false
+	for i in roundi(10 / SimClock.CALENDAR_MINUTES_PER_TICK):
+		sim.tick()
+		packed = packed or sim.vehicles.any(func(v: Vehicle) -> bool: return v.kind == "lorry" and v.loaded and sim.boxes[v.box].kind == "export")
+	_expect(packed, true, "a packed export came in with the export clock held")
+	_expect(sim.stuffing.size(), 0, "and left the stuffing queue")
 
 
 ## A ship loads its line's empties after its exports, while the port holds
