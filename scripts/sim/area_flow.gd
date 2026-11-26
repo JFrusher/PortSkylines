@@ -2018,6 +2018,11 @@ static func remove(sim: PortSim, id: int) -> void:
 			if vehicle.area != id and vehicle.area in sim.areas.list:
 				sim.handovers.drop(_door(sim, vehicle), vehicle.id)
 				_promote(sim, vehicle.area)
+			# A crane elsewhere working with it lets it go, or it works a vehicle that is gone.
+			for crane: PortSim.Crane in sim.cranes:
+				if crane.tractor == vehicle.id:
+					crane.tractor = 0
+					crane.timer = 0.0
 			sim._drop_vehicle(vehicle)
 	for machine: int in sim.machines.list.keys():
 		if sim.machines.list[machine].area == id:
